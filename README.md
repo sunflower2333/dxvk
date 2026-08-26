@@ -162,7 +162,8 @@ optional `mesa_run_id` set to a successful Mesa workflow run that uploaded
 `turnip-wddm-arm64-icd-bundle`. The workflow uses
 `gh run download` to verify and combine that bundle with the five DXVK ARM64 DLLs. Copy the
 resulting directory beside a native ARM64 D3D application and launch it through
-`launch-wddm-arm64.ps1`; it selects the bundled Vulkan manifest with `VK_DRIVER_FILES` and does
+`launch-wddm-arm64.ps1`; it selects the bundled Vulkan manifest with `VK_DRIVER_FILES` (and the
+legacy `VK_ICD_FILENAMES` alias) and does
 not install either a system ICD or a kernel driver. The standalone
 `dxvk_wddm_d3d9_smoke_arm64.exe` and `dxvk_wddm_d3d11_smoke_arm64.exe` in the build artifact are
 minimal native D3D9/D3D11 offscreen clear/copy/readback workloads for the target VM; they must be

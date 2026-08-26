@@ -27,6 +27,9 @@ if ([IO.Path]::GetDirectoryName($application) -ne $bundleRoot) {
 }
 
 $env:VK_DRIVER_FILES = $manifest
+# Keep compatibility with Vulkan loaders predating VK_DRIVER_FILES. Both
+# variables point at the same app-local manifest and never install a system ICD.
+$env:VK_ICD_FILENAMES = $manifest
 if (-not [string]::IsNullOrWhiteSpace($DeviceLuid)) {
    if ($DeviceLuid -notmatch '^[0-9a-fA-F]{16}$') {
       throw 'DeviceLuid must contain exactly 16 hexadecimal digits.'

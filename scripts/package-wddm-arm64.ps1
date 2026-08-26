@@ -164,7 +164,8 @@ DXVK ARM64 plus Mesa Turnip WDDM app-local bundle.
 
 Copy the DLLs and ICD files beside a native ARM64 D3D8/9/10/11 application.
 Run launch-wddm-arm64.ps1 from that directory. The launcher selects the bundled
-Turnip manifest through VK_DRIVER_FILES and never installs a system ICD or KMD.
+Turnip manifest through VK_DRIVER_FILES (and the legacy VK_ICD_FILENAMES alias)
+and never installs a system ICD or KMD.
 Run run-wddm-smoke-arm64.ps1 to execute both bundled offscreen readback tests
 with DXVK logging enabled.
 This package requires the matching viogpuwddm.sys Native Context miniport.

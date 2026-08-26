@@ -23,6 +23,7 @@ if (-not [string]::IsNullOrWhiteSpace($DeviceLuid) -and
 }
 
 $env:VK_DRIVER_FILES = $manifest
+$env:VK_ICD_FILENAMES = $manifest
 $env:DXVK_HUD = 'devinfo,version,submissions'
 $env:DXVK_LOG_LEVEL = 'info'
 $logRoot = Join-Path $BundleRoot 'logs'

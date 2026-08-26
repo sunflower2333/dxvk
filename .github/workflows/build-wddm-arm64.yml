@@ -91,8 +91,13 @@ jobs:
           if ($missing.Count -ne 0) {
             throw "DXVK package is missing required DLLs: $($missing -join ', ')"
           }
+          $clPath = (Get-Command cl.exe -ErrorAction Stop).Source
+          $linkPath = Join-Path (Split-Path -Parent $clPath) 'link.exe'
+          if (-not (Test-Path -Path $linkPath -PathType Leaf)) {
+            throw "MSVC linker was not found beside cl.exe: $linkPath"
+          }
           foreach ($dll in $dlls) {
-            $headers = (& link.exe /dump /headers $dll.FullName | Out-String)
+            $headers = (& $linkPath /dump /headers $dll.FullName | Out-String)
             if ($headers -notmatch 'ARM64') {
               throw "DXVK output is not ARM64: $($dll.Name)"
             }

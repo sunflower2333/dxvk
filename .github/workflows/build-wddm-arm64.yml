@@ -2,6 +2,11 @@ name: Build DXVK ARM64 for WDDM Turnip
 
 on:
   workflow_dispatch:
+    inputs:
+      mesa_run_id:
+        description: 'Successful Mesa run containing turnip-wddm-arm64-icd-bundle (optional)'
+        required: false
+        type: string
   push:
     branches:
       - wddm
@@ -138,4 +143,53 @@ jobs:
         with:
           name: dxvk-wddm-arm64-${{ github.sha }}
           path: artifacts/arm64/**
+          if-no-files-found: error
+
+      - name: Validate packaging scripts
+        if: ${{ inputs.mesa_run_id != '' }}
+        shell: pwsh
+        run: |
+          foreach ($path in @(
+            'scripts/package-wddm-arm64.ps1',
+            'scripts/launch-wddm-arm64.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              throw "PowerShell parse failed for ${path}: $($errors -join '; ')"
+            }
+          }
+
+      - name: Download Mesa Turnip artifact with gh
+        if: ${{ inputs.mesa_run_id != '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path mesa-turnip | Out-Null
+          gh run download '${{ inputs.mesa_run_id }}' --repo sunflower2333/mesa --name turnip-wddm-arm64-icd-bundle --dir mesa-turnip
+          $manifests = @(Get-ChildItem -LiteralPath mesa-turnip -Recurse -File `
+            -Filter freedreno_icd.arm64.json)
+          if ($manifests.Count -ne 1) {
+            throw "Mesa artifact must contain one ARM64 Turnip ICD manifest, found $($manifests.Count)"
+          }
+          "MESA_TURNIP_ROOT=$($manifests[0].Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+
+      - name: Assemble verified DXVK plus Turnip bundle
+        if: ${{ inputs.mesa_run_id != '' }}
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/package-wddm-arm64.ps1 `
+            -DxvkRoot (Join-Path $PWD 'build-msvc-arm64/src') `
+            -TurnipBundleRoot $env:MESA_TURNIP_ROOT `
+            -OutputRoot (Join-Path $PWD 'artifacts/wddm-arm64')
+
+      - name: Upload DXVK plus Turnip bundle
+        if: ${{ inputs.mesa_run_id != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxvk-turnip-wddm-arm64-${{ github.sha }}
+          path: artifacts/wddm-arm64/**
           if-no-files-found: error

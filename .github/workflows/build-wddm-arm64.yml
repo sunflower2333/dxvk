@@ -92,7 +92,7 @@ jobs:
             throw "DXVK package is missing required DLLs: $($missing -join ', ')"
           }
           foreach ($dll in $dlls) {
-            $headers = (& dumpbin.exe /headers $dll.FullName | Out-String)
+            $headers = (& link.exe /dump /headers $dll.FullName | Out-String)
             if ($headers -notmatch 'ARM64') {
               throw "DXVK output is not ARM64: $($dll.Name)"
             }

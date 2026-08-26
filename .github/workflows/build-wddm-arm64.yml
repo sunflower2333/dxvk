@@ -23,6 +23,7 @@ on:
       - 'version.h.in'
       - 'scripts/package-wddm-arm64.ps1'
       - 'scripts/launch-wddm-arm64.ps1'
+      - 'scripts/run-wddm-smoke-arm64.ps1'
       - 'tests/**'
 
 jobs:
@@ -197,7 +198,8 @@ jobs:
         run: |
           foreach ($path in @(
             'scripts/package-wddm-arm64.ps1',
-            'scripts/launch-wddm-arm64.ps1'
+            'scripts/launch-wddm-arm64.ps1',
+            'scripts/run-wddm-smoke-arm64.ps1'
           )) {
             $tokens = $null
             $errors = $null

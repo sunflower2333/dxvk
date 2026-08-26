@@ -158,11 +158,12 @@ jobs:
           cl /nologo /std:c++17 /W4 /WX /EHsc /MT `
             tests\wddm-d3d11-smoke.cpp `
             /Fe:$smoke /link d3d11.lib dxgi.lib
-          $headers = & dumpbin /headers $smoke 2>&1
+          $linkPath = (Get-Command link.exe -ErrorAction Stop).Source
+          $headers = (& $linkPath /dump /headers $smoke 2>&1 | Out-String)
           if ($LASTEXITCODE -ne 0 -or $headers -notmatch 'ARM64') {
             throw 'D3D11 smoke workload is not an ARM64 PE image'
           }
-          $imports = & dumpbin /imports $smoke 2>&1
+          $imports = (& $linkPath /dump /imports $smoke 2>&1 | Out-String)
           if ($LASTEXITCODE -ne 0 -or $imports -notmatch 'D3D11CreateDevice' -or
               $imports -notmatch 'CreateDXGIFactory1') {
             throw 'D3D11 smoke workload does not import the DXGI/D3D11 entry points'

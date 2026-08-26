@@ -113,6 +113,10 @@ namespace dxvk {
 
     DXGI_SWAP_CHAIN_DESC1     m_desc;
 
+    // Source rectangle used when presenting the back buffer. A zeroed
+    // rectangle means the complete back buffer, matching DXGI's default.
+    RECT                      m_presentRegion = { };
+
     Rc<DxvkDevice>            m_device;
     Rc<Presenter>             m_presenter;
 
@@ -144,6 +148,8 @@ namespace dxvk {
     Rc<hud::HudLatencyItem>   m_latencyHud;
 
     Rc<DxvkImageView> GetBackBufferView();
+
+    VkRect2D GetPresentRegion() const;
 
     HRESULT PresentImage(
             UINT                      SyncInterval,

@@ -43,6 +43,32 @@ def main() -> int:
         "the D3D10 smoke must use the supported HARDWARE driver type",
     )
 
+    d3d11_swapchain = (ROOT / "src/d3d11/d3d11_swapchain.cpp").read_text(
+        encoding="utf-8"
+    )
+    require_once(
+        d3d11_swapchain,
+        "if (!pRegion)\n      return E_INVALIDARG;",
+        "the D3D11 source-region path must reject a null rectangle",
+    )
+    require_once(
+        d3d11_swapchain,
+        "uint64_t(pRegion->right) > m_desc.Width",
+        "the D3D11 source-region path must bound-check the right edge",
+    )
+    require_once(
+        d3d11_swapchain,
+        "cSourceRect     = sourceRect,",
+        "D3D11 presentation must snapshot the source rectangle for the CS task",
+    )
+    require_once(
+        d3d11_swapchain,
+        "cSwapImage, cSourceRect);",
+        "D3D11 presentation must pass the source rectangle to the blitter",
+    )
+    if "// TODO implement\n    return E_NOTIMPL;" in d3d11_swapchain:
+        raise RuntimeError("D3D11 source-region handling must not remain a stub")
+
     clear_stale_filter = "Remove-Item Env:DXVK_FILTER_DEVICE_LUID -ErrorAction SilentlyContinue"
     for relative in (
         "scripts/launch-wddm-arm64.ps1",

@@ -179,13 +179,23 @@ namespace dxvk {
     const DXGI_SWAP_CHAIN_DESC1*    pDesc,
     const UINT*                     pNodeMasks,
           IUnknown* const*          ppPresentQueues) {
+    if (!pDesc)
+      return E_INVALIDARG;
+
+    bool extentChanged = m_desc.Width != pDesc->Width
+                      || m_desc.Height != pDesc->Height;
+
     if (m_desc.Format != pDesc->Format)
       m_presenter->setSurfaceFormat(GetSurfaceFormat(pDesc->Format));
 
-    if (m_desc.Width != pDesc->Width || m_desc.Height != pDesc->Height)
-      m_presenter->setSurfaceExtent({ m_desc.Width, m_desc.Height });
+    if (extentChanged)
+      m_presenter->setSurfaceExtent({ pDesc->Width, pDesc->Height });
 
     m_desc = *pDesc;
+
+    if (extentChanged)
+      m_presentRegion = { };
+
     CreateBackBuffers();
     return S_OK;
   }
@@ -193,8 +203,22 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D11SwapChain::SetPresentRegion(
     const RECT*                     pRegion) {
-    // TODO implement
-    return E_NOTIMPL;
+    if (!pRegion)
+      return E_INVALIDARG;
+
+    // DXGI source regions are expressed in back-buffer coordinates. Reject
+    // malformed rectangles before they reach the Vulkan blitter, which uses
+    // unsigned extents and would otherwise turn a negative size into a very
+    // large texture access.
+    if (pRegion->left < 0 || pRegion->top < 0
+     || pRegion->right <= pRegion->left
+     || pRegion->bottom <= pRegion->top
+     || uint64_t(pRegion->right) > m_desc.Width
+     || uint64_t(pRegion->bottom) > m_desc.Height)
+      return E_INVALIDARG;
+
+    m_presentRegion = *pRegion;
+    return S_OK;
   }
 
 
@@ -381,6 +405,24 @@ namespace dxvk {
   }
 
 
+  VkRect2D D3D11SwapChain::GetPresentRegion() const {
+    RECT region = m_presentRegion;
+
+    if (region.right <= region.left || region.bottom <= region.top) {
+      region.left = 0;
+      region.top = 0;
+      region.right = LONG(m_desc.Width);
+      region.bottom = LONG(m_desc.Height);
+    }
+
+    return {
+      { region.left, region.top },
+      { uint32_t(region.right - region.left),
+        uint32_t(region.bottom - region.top) }
+    };
+  }
+
+
   HRESULT D3D11SwapChain::PresentImage(
             UINT                      SyncInterval,
       const DXGI_PRESENT_PARAMETERS*  pPresentParameters) {
@@ -444,6 +486,8 @@ namespace dxvk {
 
     m_frameId += 1;
 
+    VkRect2D sourceRect = GetPresentRegion();
+
     // Present from CS thread so that we don't
     // have to synchronize with it first.
     DxvkImageViewKey viewInfo = { };
@@ -461,6 +505,7 @@ namespace dxvk {
       cBlitter        = m_blitter,
       cBackBuffer     = backBuffer->createView(viewInfo),
       cSwapImage      = GetBackBufferView(),
+      cSourceRect     = sourceRect,
       cSync           = sync,
       cPresenter      = m_presenter,
       cLatency        = m_latency,
@@ -482,7 +527,7 @@ namespace dxvk {
 
       cBlitter->present(contextObjects,
         cBackBuffer, VkRect2D(),
-        cSwapImage, VkRect2D());
+        cSwapImage, cSourceRect);
 
       // Submit current command list and present
       ctx->synchronizeWsi(cSync);

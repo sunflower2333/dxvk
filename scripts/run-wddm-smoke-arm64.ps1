@@ -29,6 +29,8 @@ $env:DXVK_HUD = 'devinfo,version,submissions'
 $env:DXVK_LOG_LEVEL = 'info'
 $logRoot = Join-Path $BundleRoot 'logs'
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
+Get-ChildItem -LiteralPath $logRoot -File -Force -ErrorAction SilentlyContinue |
+   Remove-Item -Force
 $env:DXVK_LOG_PATH = $logRoot
 if (-not [string]::IsNullOrWhiteSpace($DeviceLuid)) {
    $env:DXVK_FILTER_DEVICE_LUID = $DeviceLuid.ToLowerInvariant()

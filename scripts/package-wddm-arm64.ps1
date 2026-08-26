@@ -109,8 +109,8 @@ if (-not (Test-Path -LiteralPath $TurnipBundleRoot -PathType Container)) {
 }
 
 Assert-TurnipBundle -Root $TurnipBundleRoot
-if (Test-Path -LiteralPath $OutputRoot -PathType Container -and
-    @(Get-ChildItem -LiteralPath $OutputRoot -Force).Count -ne 0) {
+if ((Test-Path -LiteralPath $OutputRoot -PathType Container) -and
+    (@(Get-ChildItem -LiteralPath $OutputRoot -Force).Count -ne 0)) {
    throw "Output directory must be empty: $OutputRoot"
 }
 New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null

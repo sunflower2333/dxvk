@@ -55,7 +55,7 @@ jobs:
             ForEach-Object { , ($_ -Split '=', 2) } |
             ForEach-Object { [Environment]::SetEnvironmentVariable($_[0], $_[1]) }
           Write-Host "Using ARM64 toolchain from $vsDevCmd"
-          cl.exe /Bv
+          Get-Command cl.exe | Format-List Source
 
       - name: Configure and build
         shell: pwsh

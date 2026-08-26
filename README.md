@@ -164,8 +164,9 @@ optional `mesa_run_id` set to a successful Mesa workflow run that uploaded
 resulting directory beside a native ARM64 D3D application and launch it through
 `launch-wddm-arm64.ps1`; it selects the bundled Vulkan manifest with `VK_DRIVER_FILES` and does
 not install either a system ICD or a kernel driver. The standalone
-`dxvk_wddm_d3d11_smoke_arm64.exe` in the build artifact is a minimal native D3D11 device-creation
-workload for the target VM; it must be run beside the bundle and is not a CI runtime result.
+`dxvk_wddm_d3d11_smoke_arm64.exe` in the build artifact is a minimal native D3D11 offscreen
+clear/copy/readback workload for the target VM; it must be run beside the bundle and is not a CI
+runtime result.
 
 ### Build troubleshooting
 DXVK requires threading support from your mingw-w64 build environment. If you

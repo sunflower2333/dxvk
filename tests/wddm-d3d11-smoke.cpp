@@ -1,10 +1,11 @@
 /*
- * Compile/link smoke workload for the ARM64 WDDM bundle.
+ * Offscreen D3D11 smoke workload for the ARM64 WDDM bundle.
  *
  * This deliberately does not run in CI: it must execute beside the matching
- * DXVK and Turnip files on the target VM.  Keeping the workload here ensures
- * the bundle is consumable by a native D3D11 process, rather than proving only
- * that the five proxy DLLs have the expected PE machine type.
+ * DXVK and Turnip files on the target VM.  The workload clears a render target,
+ * copies it to a staging resource, and verifies the readback.  That exercises
+ * device creation, shader-free command submission, synchronization, and GPU
+ * memory access instead of proving only that the proxy DLLs load.
  */
 
 #include <windows.h>
@@ -28,6 +29,10 @@ try_adapter(IDXGIAdapter1 *adapter)
   };
   ID3D11Device *device = nullptr;
   ID3D11DeviceContext *context = nullptr;
+  ID3D11Texture2D *renderTarget = nullptr;
+  ID3D11RenderTargetView *renderTargetView = nullptr;
+  ID3D11Texture2D *staging = nullptr;
+  bool passed = false;
   const HRESULT status = D3D11CreateDevice(
     adapter,
     D3D_DRIVER_TYPE_UNKNOWN,
@@ -40,11 +45,64 @@ try_adapter(IDXGIAdapter1 *adapter)
     nullptr,
     &context);
 
+  if (SUCCEEDED(status) && device != nullptr && context != nullptr) {
+    D3D11_TEXTURE2D_DESC renderDesc = {};
+    renderDesc.Width = 4;
+    renderDesc.Height = 4;
+    renderDesc.MipLevels = 1;
+    renderDesc.ArraySize = 1;
+    renderDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    renderDesc.SampleDesc.Count = 1;
+    renderDesc.Usage = D3D11_USAGE_DEFAULT;
+    renderDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+
+    HRESULT step = device->CreateTexture2D(&renderDesc, nullptr, &renderTarget);
+    if (SUCCEEDED(step))
+      step = device->CreateRenderTargetView(renderTarget, nullptr, &renderTargetView);
+
+    if (SUCCEEDED(step)) {
+      const float clearColor[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
+      context->OMSetRenderTargets(1, &renderTargetView, nullptr);
+      context->ClearRenderTargetView(renderTargetView, clearColor);
+      context->Flush();
+
+      D3D11_TEXTURE2D_DESC stagingDesc = renderDesc;
+      stagingDesc.Usage = D3D11_USAGE_STAGING;
+      stagingDesc.BindFlags = 0;
+      stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+      stagingDesc.MiscFlags = 0;
+      step = device->CreateTexture2D(&stagingDesc, nullptr, &staging);
+    }
+
+    if (SUCCEEDED(step)) {
+      context->CopyResource(staging, renderTarget);
+      context->Flush();
+
+      D3D11_MAPPED_SUBRESOURCE mapped = {};
+      step = context->Map(staging, 0, D3D11_MAP_READ, 0, &mapped);
+      if (SUCCEEDED(step)) {
+        if (mapped.pData != nullptr && mapped.RowPitch >= 4 * sizeof(BYTE)) {
+          const BYTE *pixel = static_cast<const BYTE *>(mapped.pData);
+          passed = pixel[0] == 0xff && pixel[1] == 0x00 && pixel[2] == 0x00 && pixel[3] == 0xff;
+        }
+        context->Unmap(staging, 0);
+      }
+    }
+  }
+
+  if (staging != nullptr)
+    staging->Release();
+  if (renderTargetView != nullptr)
+    renderTargetView->Release();
+  if (renderTarget != nullptr)
+    renderTarget->Release();
   if (context != nullptr)
     context->Release();
   if (device != nullptr)
     device->Release();
-  return SUCCEEDED(status);
+  if (FAILED(status))
+    return false;
+  return passed;
 }
 
 int
@@ -72,6 +130,6 @@ main()
 
   factory->Release();
   if (!created)
-    std::fprintf(stderr, "No hardware adapter created a D3D11 device\n");
+    std::fprintf(stderr, "No hardware adapter completed the D3D11 offscreen clear/readback\n");
   return created ? 0 : 2;
 }

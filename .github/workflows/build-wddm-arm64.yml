@@ -159,7 +159,7 @@ jobs:
             tests\wddm-d3d11-smoke.cpp `
             /Fe:$smoke /link d3d11.lib dxgi.lib
           $headers = & dumpbin /headers $smoke 2>&1
-          if ($LASTEXITCODE -ne 0 -or $headers -notmatch 'AA64 machine') {
+          if ($LASTEXITCODE -ne 0 -or $headers -notmatch 'ARM64') {
             throw 'D3D11 smoke workload is not an ARM64 PE image'
           }
           $imports = & dumpbin /imports $smoke 2>&1

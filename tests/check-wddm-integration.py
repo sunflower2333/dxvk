@@ -43,6 +43,30 @@ def main() -> int:
         "the D3D10 smoke must use the supported HARDWARE driver type",
     )
 
+    d3d9_smoke = (ROOT / "tests/wddm-d3d9-smoke.cpp").read_text(encoding="utf-8")
+    for fragment, message in (
+        ("D3DCOLOR_ARGB(255, 0, 0, 255)", "D3D9 must clear to a contrasting blue"),
+        ("DrawPrimitiveUP(D3DPT_TRIANGLELIST, 2", "D3D9 must submit a real draw"),
+        ("passed = VerifyRedPixels(locked);", "D3D9 must validate the full readback"),
+    ):
+        require_once(d3d9_smoke, fragment, message)
+
+    d3d11_smoke = (ROOT / "tests/wddm-d3d11-smoke.cpp").read_text(encoding="utf-8")
+    for fragment, message in (
+        ("D3DCompile(", "D3D11 must compile the target-side shaders"),
+        ("context->Draw(3, 0);", "D3D11 must submit a real draw"),
+        ("const float clearColor[4] = {0.0f, 0.0f, 1.0f, 1.0f};", "D3D11 must clear to a contrasting blue"),
+        ("passed = verify_red_pixels(mapped);", "D3D11 must validate the full readback"),
+    ):
+        require_once(d3d11_smoke, fragment, message)
+
+    workflow = (ROOT / ".github/workflows/build-wddm-arm64.yml").read_text(encoding="utf-8")
+    for fragment, message in (
+        ("/link d3d11.lib d3dcompiler.lib dxgi.lib", "D3D11 smoke must link the shader compiler"),
+        ("$imports -notmatch 'D3DCompile'", "CI must verify the D3D compiler import"),
+    ):
+        require_once(workflow, fragment, message)
+
     d3d11_swapchain = (ROOT / "src/d3d11/d3d11_swapchain.cpp").read_text(
         encoding="utf-8"
     )

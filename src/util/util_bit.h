@@ -10,7 +10,9 @@
   #define DXVK_ARCH_ARM64
 #endif
 
-#ifdef DXVK_ARCH_X86
+#if defined(_MSC_VER)
+  #include <intrin.h>
+#elif defined(DXVK_ARCH_X86)
   #ifndef _MSC_VER
     #if defined(_WIN32) && (defined(__AVX__) || defined(__AVX2__))
       #error "AVX-enabled builds not supported due to stack alignment issues."
@@ -23,8 +25,6 @@
     #if defined(__WINE__) && defined(__clang__)
       #pragma pop_macro("_WIN32")
     #endif
-  #else
-    #include <intrin.h>
   #endif
 #endif
 

@@ -24,7 +24,11 @@ namespace dxvk::sync {
         #if defined(DXVK_ARCH_X86)
         _mm_pause();
         #elif defined(DXVK_ARCH_ARM64)
+        #if defined(_MSC_VER)
+        _YieldProcessor();
+        #else
         __asm__ __volatile__ ("yield");
+        #endif
         #else
         /* Do nothing (busy-loop). Please add more #elif above here if
          * your CPU architecture has a suitable pause/yield instruction */

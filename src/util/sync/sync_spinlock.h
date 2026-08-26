@@ -25,7 +25,10 @@ namespace dxvk::sync {
         _mm_pause();
         #elif defined(DXVK_ARCH_ARM64)
         #if defined(_MSC_VER)
-        _YieldProcessor();
+        // MSVC exposes the ARM64 yield instruction as an intrinsic. The
+        // x86-oriented _YieldProcessor macro is not declared by the ARM64
+        // headers shipped with the WDK/VS ARM64 toolchain.
+        __yield();
         #else
         __asm__ __volatile__ ("yield");
         #endif

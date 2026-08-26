@@ -89,16 +89,19 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path mesa-turnip | Out-Null
           gh run download '${{ inputs.mesa_run_id }}' --repo sunflower2333/mesa --name turnip-wddm-arm64-icd-bundle --dir mesa-turnip
-          if (-not (Test-Path -LiteralPath mesa-turnip/freedreno_icd.arm64.json -PathType Leaf)) {
-            throw 'Mesa artifact did not contain the ARM64 Turnip ICD manifest'
+          $manifests = @(Get-ChildItem -LiteralPath mesa-turnip -Recurse -File `
+            -Filter freedreno_icd.arm64.json)
+          if ($manifests.Count -ne 1) {
+            throw "Mesa artifact must contain one ARM64 Turnip ICD manifest, found $($manifests.Count)"
           }
+          "MESA_TURNIP_ROOT=$($manifests[0].Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
 
       - name: Assemble verified app-local bundle
         shell: pwsh
         run: |
           pwsh -NoProfile -File scripts/package-wddm-arm64.ps1 `
             -DxvkRoot (Join-Path $PWD 'build-msvc-arm64/src') `
-            -TurnipBundleRoot (Join-Path $PWD 'mesa-turnip') `
+            -TurnipBundleRoot $env:MESA_TURNIP_ROOT `
             -OutputRoot (Join-Path $PWD 'artifacts/wddm-arm64')
 
       - name: Upload DXVK plus Turnip bundle

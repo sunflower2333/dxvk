@@ -27,7 +27,7 @@ static bool try_adapter(IDXGIAdapter1 *adapter) {
   ID3D10Texture2D *staging = nullptr;
   bool passed = false;
 
-  HRESULT status = D3D10CreateDevice1(adapter, D3D10_DRIVER_TYPE_UNKNOWN,
+  HRESULT status = D3D10CreateDevice1(adapter, D3D10_DRIVER_TYPE_HARDWARE,
                                       nullptr, D3D10_CREATE_DEVICE_BGRA_SUPPORT,
                                       D3D10_FEATURE_LEVEL_10_0,
                                       D3D10_1_SDK_VERSION, &device);

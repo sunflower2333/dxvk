@@ -23,6 +23,7 @@ on:
       - 'version.h.in'
       - 'scripts/package-wddm-arm64.ps1'
       - 'scripts/launch-wddm-arm64.ps1'
+      - 'tests/**'
 
 jobs:
   build:
@@ -139,6 +140,34 @@ jobs:
             }
           $hashes | Set-Content -Path (Join-Path $output 'SHA256SUMS.txt') -Encoding ascii
           Get-ChildItem $output | Sort-Object Name | Format-Table Name, Length
+
+      - name: Build native ARM64 D3D11 smoke workload
+        shell: pwsh
+        run: |
+          $installationPath = Get-VSSetupInstance |
+            Select-VSSetupInstance -Require Microsoft.VisualStudio.Workload.NativeDesktop -Latest |
+            Select-Object -ExpandProperty InstallationPath
+          if ([string]::IsNullOrWhiteSpace($installationPath)) {
+            throw 'Visual Studio NativeDesktop installation was not found'
+          }
+          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          & $env:COMSPEC /s /c "`"$vsDevCmd`" -arch=arm64 -host_arch=x64 -no_logo && set" |
+            ForEach-Object { , ($_ -Split '=', 2) } |
+            ForEach-Object { [Environment]::SetEnvironmentVariable($_[0], $_[1]) }
+          $smoke = Join-Path $PWD 'artifacts\arm64\dxvk_wddm_d3d11_smoke_arm64.exe'
+          cl /nologo /std:c++17 /W4 /WX /EHsc /MT `
+            tests\wddm-d3d11-smoke.cpp `
+            /Fe:$smoke /link d3d11.lib dxgi.lib
+          $headers = & dumpbin /headers $smoke 2>&1
+          if ($LASTEXITCODE -ne 0 -or $headers -notmatch 'AA64 machine') {
+            throw 'D3D11 smoke workload is not an ARM64 PE image'
+          }
+          $imports = & dumpbin /imports $smoke 2>&1
+          if ($LASTEXITCODE -ne 0 -or $imports -notmatch 'D3D11CreateDevice' -or
+              $imports -notmatch 'CreateDXGIFactory1') {
+            throw 'D3D11 smoke workload does not import the DXGI/D3D11 entry points'
+          }
+          Write-Host 'Native ARM64 D3D11 smoke workload linked; execute it only with the app-local bundle on the target VM.'
 
       - name: Upload ARM64 DXVK artifact
         uses: actions/upload-artifact@v4

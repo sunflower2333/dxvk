@@ -81,6 +81,16 @@ jobs:
         run: |
           $output = Join-Path $PWD 'artifacts\arm64'
           New-Item -ItemType Directory -Force -Path $output | Out-Null
+          $installationPath = Get-VSSetupInstance |
+            Select-VSSetupInstance -Require Microsoft.VisualStudio.Workload.NativeDesktop -Latest |
+            Select-Object -ExpandProperty InstallationPath
+          if ([string]::IsNullOrWhiteSpace($installationPath)) {
+            throw 'Visual Studio NativeDesktop installation was not found'
+          }
+          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          & $env:COMSPEC /s /c "`"$vsDevCmd`" -arch=arm64 -host_arch=x64 -no_logo && set" |
+            ForEach-Object { , ($_ -Split '=', 2) } |
+            ForEach-Object { [Environment]::SetEnvironmentVariable($_[0], $_[1]) }
           $dlls = Get-ChildItem -Path (Join-Path $PWD 'build-msvc-arm64\src') -Recurse -File -Filter '*.dll'
           if ($dlls.Count -eq 0) {
             throw 'No DXVK DLLs were produced'

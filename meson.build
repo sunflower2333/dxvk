@@ -10,10 +10,6 @@ cc = meson.get_compiler('c')
 dxvk_is_msvc = cpp.get_argument_syntax() == 'msvc'
 
 compiler_args = [
-  '-msse',
-  '-msse2',
-  '-msse3',
-  '-mfpmath=sse',
   '-Wimplicit-fallthrough',
   # gcc
   '-Wno-missing-field-initializers',
@@ -27,6 +23,17 @@ compiler_args = [
   '-Wno-unused-const-variable',
   '-Wno-missing-braces',
 ]
+
+# These flags describe the x86 floating-point ABI and are invalid for the
+# ARM64 guest target used by the WDDM Turnip bundle.
+if cpu_family == 'x86' or cpu_family == 'x86_64'
+  compiler_args += [
+    '-msse',
+    '-msse2',
+    '-msse3',
+    '-mfpmath=sse',
+  ]
+endif
 
 link_args = []
 

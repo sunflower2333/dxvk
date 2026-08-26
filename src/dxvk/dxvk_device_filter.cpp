@@ -1,6 +1,8 @@
 #include "dxvk_device_filter.h"
+#include <cctype>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 namespace dxvk {
   
@@ -13,15 +15,57 @@ namespace dxvk {
   }
 
 
+  static std::string convertLUID(const uint8_t luid[VK_LUID_SIZE]) {
+    std::ostringstream stream;
+    stream << std::hex << std::setfill('0');
+    for (size_t i = 0; i < VK_LUID_SIZE; ++i)
+      stream << std::setw(2) << static_cast<uint32_t>(luid[i] & 0xff);
+    return stream.str();
+  }
+
+
+  static std::string normalizeLUID(const std::string& value) {
+    if (value.size() != VK_LUID_SIZE * 2)
+      return { };
+
+    std::string result = value;
+
+    for (char& c : result) {
+      if (!std::isxdigit(static_cast<unsigned char>(c)))
+        return { };
+      c = char(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    return result;
+  }
+
+
   DxvkDeviceFilter::DxvkDeviceFilter(
           DxvkDeviceFilterFlags flags,
     const DxvkOptions&          options)
   : m_flags(flags) {
     m_matchDeviceName = env::getEnvVar("DXVK_FILTER_DEVICE_NAME");
     m_matchDeviceUUID = env::getEnvVar("DXVK_FILTER_DEVICE_UUID");
+    m_matchDeviceLuid = env::getEnvVar("DXVK_FILTER_DEVICE_LUID");
 
     if (m_matchDeviceName.empty())
       m_matchDeviceName = options.deviceFilter;
+
+    if (m_matchDeviceLuid.empty())
+      m_matchDeviceLuid = options.deviceLuid;
+
+    if (!m_matchDeviceLuid.empty()) {
+      auto normalized = normalizeLUID(m_matchDeviceLuid);
+
+      if (normalized.empty()) {
+        Logger::warn(str::format(
+          "Ignoring invalid DXVK_FILTER_DEVICE_LUID/dxvk.deviceLuid value: ",
+          m_matchDeviceLuid));
+        m_matchDeviceLuid.clear();
+      } else {
+        m_matchDeviceLuid = std::move(normalized);
+      }
+    }
 
     if (!m_matchDeviceName.empty())
       m_flags.set(DxvkDeviceFilterFlag::MatchDeviceName);
@@ -29,8 +73,12 @@ namespace dxvk {
     if (!m_matchDeviceUUID.empty())
       m_flags.set(DxvkDeviceFilterFlag::MatchDeviceUUID);
 
+    if (!m_matchDeviceLuid.empty())
+      m_flags.set(DxvkDeviceFilterFlag::MatchDeviceLuid);
+
     if (m_flags.any(DxvkDeviceFilterFlag::MatchDeviceName,
-                    DxvkDeviceFilterFlag::MatchDeviceUUID))
+                    DxvkDeviceFilterFlag::MatchDeviceUUID,
+                    DxvkDeviceFilterFlag::MatchDeviceLuid))
       m_flags.clr(DxvkDeviceFilterFlag::SkipCpuDevices);
   }
 
@@ -48,6 +96,9 @@ namespace dxvk {
       adapterInfo.deviceName, " (",
       adapterInfo.driverName, " ",
       driverVersion.toString(), ")"));
+
+    if (adapterInfo.luidIsValid)
+      Logger::info(str::format("  Device LUID: ", convertLUID(adapterInfo.deviceLuid)));
 
     std::string compatError;
 
@@ -68,6 +119,14 @@ namespace dxvk {
 
       if (uuidStr.find(m_matchDeviceUUID) == std::string::npos) {
         Logger::info("  Skipping: UUID filter");
+        return false;
+      }
+    }
+
+    if (m_flags.test(DxvkDeviceFilterFlag::MatchDeviceLuid)) {
+      if (!adapterInfo.luidIsValid
+       || convertLUID(adapterInfo.deviceLuid) != m_matchDeviceLuid) {
+        Logger::info("  Skipping: LUID filter");
         return false;
       }
     }

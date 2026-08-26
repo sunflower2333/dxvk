@@ -78,6 +78,9 @@ On Windows, log files will be created in the game's working directory by default
 Some applications do not provide a method to select a different GPU. In that case, DXVK can be forced to use a given device:
 - `DXVK_FILTER_DEVICE_NAME="Device Name"` Selects devices with a matching Vulkan device name, which can be retrieved with tools such as `vulkaninfo`. Matches on substrings, so "VEGA" or "AMD RADV VEGA10" is supported if the full device name is "AMD RADV VEGA10 (LLVM 9.0.0)", for example. If the substring matches more than one device, the first device matched will be used.
 - `DXVK_FILTER_DEVICE_UUID="00000000000000000000000000000001"` Selects a device by matching its Vulkan device UUID, which can also be retrieved using tools such as `vulkaninfo`. The UUID must be a 32-character hexadecimal string with no dashes. This method provides more precise selection, especially when using multiple identical GPUs.
+- `DXVK_FILTER_DEVICE_LUID="0000000000000000"` Selects a device by matching its Vulkan device LUID exactly. The LUID must be the 16 hexadecimal digits printed in the DXVK startup log as `Device LUID`; this is the byte-exact WDDM adapter identity and is preferable to ordinal selection when multiple adapters are present.
+
+The same LUID filter can be set in `dxvk.conf` with `dxvk.deviceLuid = "..."`.
 
 **Note:** If the device filter is configured incorrectly, it may filter out all devices and applications will be unable to create a D3D device.
 
@@ -144,6 +147,15 @@ ninja install
 ```
 
 The D3D8, D3D9, D3D10, D3D11 and DXGI DLLs will be located in `/your/dxvk/directory/bin`.
+
+### Windows ARM64 WDDM build
+
+The `wddm` branch includes a GitHub Actions workflow which builds the MSVC
+ARM64 DLL set on the pre-provisioned `windows-2025-vs2026` runner. Trigger
+`Build DXVK ARM64 for WDDM Turnip` manually, or push to `wddm`, then install
+the uploaded DLLs beside the ARM64 test application. The workflow is build and
+PE-architecture evidence only; it does not imply that the KMD or Turnip ICD
+has passed runtime validation.
 
 ### Build troubleshooting
 DXVK requires threading support from your mingw-w64 build environment. If you

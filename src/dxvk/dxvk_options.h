@@ -91,6 +91,9 @@ namespace dxvk {
 
     /// Device name
     std::string deviceFilter;
+
+    /// Exact Vulkan device LUID, encoded as 16 hexadecimal digits
+    std::string deviceLuid;
   };
 
 }

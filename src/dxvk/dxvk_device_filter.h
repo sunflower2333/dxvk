@@ -15,7 +15,8 @@ namespace dxvk {
   enum class DxvkDeviceFilterFlag {
     MatchDeviceName   = 0,
     SkipCpuDevices    = 1,
-    MatchDeviceUUID   = 3
+    MatchDeviceUUID   = 3,
+    MatchDeviceLuid   = 4
   };
 
   using DxvkDeviceFilterFlags = Flags<DxvkDeviceFilterFlag>;
@@ -53,6 +54,7 @@ namespace dxvk {
 
     std::string m_matchDeviceName;
     std::string m_matchDeviceUUID;
+    std::string m_matchDeviceLuid;
 
   };
 

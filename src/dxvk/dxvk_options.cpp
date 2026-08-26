@@ -25,6 +25,7 @@ namespace dxvk {
     zeroMappedMemory      = config.getOption<bool>    ("dxvk.zeroMappedMemory",       false);
     allowFse              = config.getOption<bool>    ("dxvk.allowFse",               false);
     deviceFilter          = config.getOption<std::string>("dxvk.deviceFilter",        "");
+    deviceLuid             = config.getOption<std::string>("dxvk.deviceLuid",          "");
     lowerSinCos           = config.getOption<Tristate>("dxvk.lowerSinCos",            Tristate::Auto);
     tilerMode             = config.getOption<Tristate>("dxvk.tilerMode",              Tristate::Auto);
 

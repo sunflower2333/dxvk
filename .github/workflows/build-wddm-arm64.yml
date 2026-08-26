@@ -1,0 +1,90 @@
+name: Build DXVK ARM64 for WDDM Turnip
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - wddm
+    paths:
+      - '.github/workflows/build-wddm-arm64.yml'
+      - 'include/**'
+      - 'src/**'
+      - '*.ini'
+      - '*.in'
+      - '*.conf'
+      - 'meson.build'
+      - 'meson_options.txt'
+      - 'version.h.in'
+
+jobs:
+  build:
+    name: ARM64 MSVC DXVK DLLs
+    runs-on: windows-2025-vs2026
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Download D3D8 SDK headers
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/NovaRain/DXSDK_Collection/master/DXSDK_Aug2007/Include/d3d8.h -OutFile include/d3d8.h
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/NovaRain/DXSDK_Collection/master/DXSDK_Aug2007/Include/d3d8types.h -OutFile include/d3d8types.h
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/NovaRain/DXSDK_Collection/master/DXSDK_Aug2007/Include/d3d8caps.h -OutFile include/d3d8caps.h
+
+      - name: Setup glslangValidator
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/HansKristian-Work/vkd3d-proton-ci/main/glslangValidator.exe -OutFile glslangValidator.exe
+          Add-Content -Path $env:GITHUB_PATH -Value $PWD
+
+      - name: Configure ARM64 developer environment
+        shell: pwsh
+        run: |
+          $installationPath = Get-VSSetupInstance |
+            Select-VSSetupInstance -Require Microsoft.VisualStudio.Workload.NativeDesktop -Latest |
+            Select-Object -ExpandProperty InstallationPath
+          if ([string]::IsNullOrWhiteSpace($installationPath)) {
+            throw 'Visual Studio NativeDesktop installation was not found'
+          }
+          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          & $env:COMSPEC /s /c "`"$vsDevCmd`" -arch=arm64 -host_arch=x64 -no_logo && set" |
+            ForEach-Object { , ($_ -Split '=', 2) } |
+            ForEach-Object { [Environment]::SetEnvironmentVariable($_[0], $_[1]) }
+          Write-Host "Using ARM64 toolchain from $vsDevCmd"
+          cl.exe /Bv
+
+      - name: Configure and build
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check meson
+          meson setup --buildtype release --backend vs2022 build-msvc-arm64
+          msbuild -m build-msvc-arm64/dxvk.sln /p:Configuration=Release
+
+      - name: Validate ARM64 PE output
+        shell: pwsh
+        run: |
+          $output = Join-Path $PWD 'artifacts\arm64'
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          $dlls = Get-ChildItem -Path (Join-Path $PWD 'build-msvc-arm64\src') -Recurse -File -Filter '*.dll'
+          if ($dlls.Count -eq 0) {
+            throw 'No DXVK DLLs were produced'
+          }
+          foreach ($dll in $dlls) {
+            $headers = (& dumpbin.exe /headers $dll.FullName | Out-String)
+            if ($headers -notmatch 'ARM64') {
+              throw "DXVK output is not ARM64: $($dll.Name)"
+            }
+            Copy-Item $dll.FullName $output
+          }
+          Get-ChildItem $output | Sort-Object Name | Format-Table Name, Length
+
+      - name: Upload ARM64 DXVK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxvk-wddm-arm64-${{ github.sha }}
+          path: artifacts/arm64/*.dll
+          if-no-files-found: error

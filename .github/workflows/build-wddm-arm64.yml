@@ -28,6 +28,10 @@ jobs:
           fetch-depth: 1
           submodules: false
 
+      - name: Setup shallow submodules
+        shell: pwsh
+        run: git submodule update --init --depth 1
+
       - name: Download D3D8 SDK headers
         shell: pwsh
         run: |
@@ -60,6 +64,13 @@ jobs:
       - name: Configure and build
         shell: pwsh
         run: |
+          $installationPath = Get-VSSetupInstance |
+            Select-VSSetupInstance -Require Microsoft.VisualStudio.Workload.NativeDesktop -Latest |
+            Select-Object -ExpandProperty InstallationPath
+          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          & $env:COMSPEC /s /c "`"$vsDevCmd`" -arch=arm64 -host_arch=x64 -no_logo && set" |
+            ForEach-Object { , ($_ -Split '=', 2) } |
+            ForEach-Object { [Environment]::SetEnvironmentVariable($_[0], $_[1]) }
           python -m pip install --disable-pip-version-check meson
           meson setup --buildtype release --backend vs2022 build-msvc-arm64
           msbuild -m build-msvc-arm64/dxvk.sln /p:Configuration=Release

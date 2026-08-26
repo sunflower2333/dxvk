@@ -21,6 +21,8 @@ on:
       - 'meson_options.txt'
       - 'build-winarm64.txt'
       - 'version.h.in'
+      - 'scripts/package-wddm-arm64.ps1'
+      - 'scripts/launch-wddm-arm64.ps1'
 
 jobs:
   build:

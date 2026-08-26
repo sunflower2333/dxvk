@@ -168,7 +168,21 @@ jobs:
               $imports -notmatch 'CreateDXGIFactory1') {
             throw 'D3D11 smoke workload does not import the DXGI/D3D11 entry points'
           }
+
+          $smoke9 = Join-Path $PWD 'artifacts\arm64\dxvk_wddm_d3d9_smoke_arm64.exe'
+          cl /nologo /std:c++17 /W4 /WX /EHsc /MT `
+            tests\wddm-d3d9-smoke.cpp `
+            /Fe:$smoke9 /link d3d9.lib user32.lib
+          $headers9 = (& $linkPath /dump /headers $smoke9 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $headers9 -notmatch 'ARM64') {
+            throw 'D3D9 smoke workload is not an ARM64 PE image'
+          }
+          $imports9 = (& $linkPath /dump /imports $smoke9 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $imports9 -notmatch 'Direct3DCreate9') {
+            throw 'D3D9 smoke workload does not import Direct3DCreate9'
+          }
           Write-Host 'Native ARM64 D3D11 smoke workload linked; execute it only with the app-local bundle on the target VM.'
+          Write-Host 'Native ARM64 D3D9 smoke workload linked; execute it only with the app-local bundle on the target VM.'
 
       - name: Upload ARM64 DXVK artifact
         uses: actions/upload-artifact@v4

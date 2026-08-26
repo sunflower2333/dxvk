@@ -157,6 +157,13 @@ the uploaded DLLs beside the ARM64 test application. The workflow is build and
 PE-architecture evidence only; it does not imply that the KMD or Turnip ICD
 has passed runtime validation.
 
+To assemble an app-local runtime bundle, dispatch `Package DXVK with Turnip WDDM ARM64` with the
+successful Mesa workflow run ID that uploaded `turnip-wddm-arm64-icd-bundle`. The workflow uses
+`gh run download` to verify and combine that bundle with the five DXVK ARM64 DLLs. Copy the
+resulting directory beside a native ARM64 D3D application and launch it through
+`launch-wddm-arm64.ps1`; it selects the bundled Vulkan manifest with `VK_DRIVER_FILES` and does
+not install either a system ICD or a kernel driver.
+
 ### Build troubleshooting
 DXVK requires threading support from your mingw-w64 build environment. If you
 are missing this, you may see "error: ‘std::cv_status’ has not been declared"

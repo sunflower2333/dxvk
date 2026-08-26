@@ -1,0 +1,109 @@
+name: Package DXVK with Turnip WDDM ARM64
+
+on:
+  workflow_dispatch:
+    inputs:
+      mesa_run_id:
+        description: 'Successful Mesa run containing turnip-wddm-arm64-icd-bundle'
+        required: true
+        type: string
+
+jobs:
+  package:
+    name: DXVK plus Turnip ARM64 app-local bundle
+    runs-on: windows-2025-vs2026
+
+    steps:
+      - name: Checkout DXVK
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Setup shallow submodules
+        shell: pwsh
+        run: git submodule update --init --recursive --depth 1
+
+      - name: Validate packaging scripts
+        shell: pwsh
+        run: |
+          foreach ($path in @(
+            'scripts/package-wddm-arm64.ps1',
+            'scripts/launch-wddm-arm64.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              throw "PowerShell parse failed for ${path}: $($errors -join '; ')"
+            }
+          }
+
+      - name: Download D3D8 SDK headers
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/NovaRain/DXSDK_Collection/master/DXSDK_Aug2007/Include/d3d8.h -OutFile include/d3d8.h
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/NovaRain/DXSDK_Collection/master/DXSDK_Aug2007/Include/d3d8types.h -OutFile include/d3d8types.h
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/NovaRain/DXSDK_Collection/master/DXSDK_Aug2007/Include/d3d8caps.h -OutFile include/d3d8caps.h
+
+      - name: Setup glslangValidator
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://raw.githubusercontent.com/HansKristian-Work/vkd3d-proton-ci/main/glslangValidator.exe -OutFile glslangValidator.exe
+          Add-Content -Path $env:GITHUB_PATH -Value $PWD
+
+      - name: Configure ARM64 developer environment
+        shell: pwsh
+        run: |
+          $installationPath = Get-VSSetupInstance |
+            Select-VSSetupInstance -Require Microsoft.VisualStudio.Workload.NativeDesktop -Latest |
+            Select-Object -ExpandProperty InstallationPath
+          if ([string]::IsNullOrWhiteSpace($installationPath)) {
+            throw 'Visual Studio NativeDesktop installation was not found'
+          }
+          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          & $env:COMSPEC /s /c "`"$vsDevCmd`" -arch=arm64 -host_arch=x64 -no_logo && set" |
+            ForEach-Object { , ($_ -Split '=', 2) } |
+            ForEach-Object { [Environment]::SetEnvironmentVariable($_[0], $_[1]) }
+          Get-Command cl.exe | Format-List Source
+
+      - name: Build DXVK ARM64
+        shell: pwsh
+        run: |
+          $installationPath = Get-VSSetupInstance |
+            Select-VSSetupInstance -Require Microsoft.VisualStudio.Workload.NativeDesktop -Latest |
+            Select-Object -ExpandProperty InstallationPath
+          $vsDevCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          & $env:COMSPEC /s /c "`"$vsDevCmd`" -arch=arm64 -host_arch=x64 -no_logo && set" |
+            ForEach-Object { , ($_ -Split '=', 2) } |
+            ForEach-Object { [Environment]::SetEnvironmentVariable($_[0], $_[1]) }
+          python -m pip install --disable-pip-version-check meson
+          meson setup --cross-file build-winarm64.txt --buildtype release --backend ninja build-msvc-arm64
+          ninja -C build-msvc-arm64
+
+      - name: Download Mesa Turnip artifact with gh
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path mesa-turnip | Out-Null
+          gh run download '${{ inputs.mesa_run_id }}' --repo sunflower2333/mesa --name turnip-wddm-arm64-icd-bundle --dir mesa-turnip
+          if (-not (Test-Path -LiteralPath mesa-turnip/freedreno_icd.arm64.json -PathType Leaf)) {
+            throw 'Mesa artifact did not contain the ARM64 Turnip ICD manifest'
+          }
+
+      - name: Assemble verified app-local bundle
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/package-wddm-arm64.ps1 `
+            -DxvkRoot (Join-Path $PWD 'build-msvc-arm64/src') `
+            -TurnipBundleRoot (Join-Path $PWD 'mesa-turnip') `
+            -OutputRoot (Join-Path $PWD 'artifacts/wddm-arm64')
+
+      - name: Upload DXVK plus Turnip bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxvk-turnip-wddm-arm64-${{ github.sha }}
+          path: artifacts/wddm-arm64/**
+          if-no-files-found: error

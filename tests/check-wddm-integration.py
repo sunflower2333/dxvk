@@ -39,8 +39,8 @@ def main() -> int:
     d3d10_smoke = (ROOT / "tests/wddm-d3d10-smoke.cpp").read_text(encoding="utf-8")
     require_once(
         d3d10_smoke,
-        "D3D10CreateDevice1(adapter, D3D10_DRIVER_TYPE_HARDWARE",
-        "the D3D10 smoke must use the supported HARDWARE driver type",
+        "D3D10CreateDevice1(adapter, D3D10_DRIVER_TYPE_UNKNOWN",
+        "the D3D10 smoke must use UNKNOWN for an explicitly enumerated adapter",
     )
 
     d3d11_swapchain = (ROOT / "src/d3d11/d3d11_swapchain.cpp").read_text(

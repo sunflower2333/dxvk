@@ -1,0 +1,15 @@
+[binaries]
+c = 'cl'
+cpp = 'cl'
+ar = 'lib'
+strip = 'llvm-strip'
+windres = 'rc'
+
+[properties]
+needs_exe_wrapper = true
+
+[host_machine]
+system = 'windows'
+cpu_family = 'aarch64'
+cpu = 'arm64'
+endian = 'little'

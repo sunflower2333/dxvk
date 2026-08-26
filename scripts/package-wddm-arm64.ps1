@@ -116,10 +116,14 @@ if ((Test-Path -LiteralPath $OutputRoot -PathType Container) -and
 New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 
 foreach ($name in $dxvkDlls) {
-   $source = Join-Path $DxvkRoot $name
-   if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+   $matches = @(Get-ChildItem -LiteralPath $DxvkRoot -Recurse -File -Filter $name)
+   if ($matches.Count -eq 0) {
       throw "DXVK build is missing required DLL: $name"
    }
+   if ($matches.Count -ne 1) {
+      throw "DXVK build contains multiple candidates for required DLL: $name"
+   }
+   $source = $matches[0].FullName
    Assert-Arm64Pe -Path $source
    Copy-Item -LiteralPath $source -Destination (Join-Path $OutputRoot $name) -Force
 }

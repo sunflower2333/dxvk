@@ -65,7 +65,7 @@ namespace dxvk::bit {
   }
 
   inline uint32_t tzcnt(uint32_t n) {
-    #if defined(_MSC_VER) && !defined(__clang__)
+    #if defined(DXVK_ARCH_X86) && defined(_MSC_VER) && !defined(__clang__)
     if(n == 0)
       return 32;
     return _tzcnt_u32(n);
@@ -161,13 +161,13 @@ namespace dxvk::bit {
   }
 
   inline uint32_t lzcnt(uint32_t n) {
-    #if defined(_MSC_VER) && !defined(__clang__) && !defined(__LZCNT__)
+    #if defined(DXVK_ARCH_X86) && defined(_MSC_VER) && !defined(__clang__) && !defined(__LZCNT__)
     unsigned long bsr;
     if(n == 0)
       return 32;
     _BitScanReverse(&bsr, n);
     return 31-bsr;
-    #elif (defined(_MSC_VER) && !defined(__clang__)) || defined(__LZCNT__)
+    #elif defined(DXVK_ARCH_X86) && ((defined(_MSC_VER) && !defined(__clang__)) || defined(__LZCNT__))
     return _lzcnt_u32(n);
     #elif defined(__GNUC__) || defined(__clang__)
     return n != 0 ? __builtin_clz(n) : 32;

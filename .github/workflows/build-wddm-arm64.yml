@@ -31,7 +31,7 @@ jobs:
 
       - name: Setup shallow submodules
         shell: pwsh
-        run: git submodule update --init --depth 1
+        run: git submodule update --init --recursive --depth 1
 
       - name: Download D3D8 SDK headers
         shell: pwsh

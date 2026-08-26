@@ -99,16 +99,16 @@ jobs:
             Copy-Item $dll.FullName $output
           }
           @'
-DXVK ARM64 app-local package for the DroidVM Turnip WDDM ICD.
+          DXVK ARM64 app-local package for the DroidVM Turnip WDDM ICD.
 
-Copy the DLLs beside the ARM64 D3D8/9/10/11 application. The application must
-load the matching Mesa vulkan_freedreno.dll and its app-local ICD manifest.
-DXVK_FILTER_DEVICE_LUID may be set to the 16 hexadecimal digits printed by
-the DXVK startup log when more than one WDDM adapter is visible.
+          Copy the DLLs beside the ARM64 D3D8/9/10/11 application. The application must
+          load the matching Mesa vulkan_freedreno.dll and its app-local ICD manifest.
+          DXVK_FILTER_DEVICE_LUID may be set to the 16 hexadecimal digits printed by
+          the DXVK startup log when more than one WDDM adapter is visible.
 
-This package contains no kernel driver and does not install a system Vulkan
-ICD. KMD, Turnip, and DXVK rollback boundaries remain independent.
-'@ | Set-Content -Path (Join-Path $output 'README-wddm.txt') -Encoding ascii
+          This package contains no kernel driver and does not install a system Vulkan
+          ICD. KMD, Turnip, and DXVK rollback boundaries remain independent.
+          '@ | Set-Content -Path (Join-Path $output 'README-wddm.txt') -Encoding ascii
           $hashes = Get-ChildItem -Path $output -File -Filter '*.dll' |
             Sort-Object Name |
             ForEach-Object {

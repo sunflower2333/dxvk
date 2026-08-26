@@ -74,7 +74,7 @@ jobs:
             ForEach-Object { [Environment]::SetEnvironmentVariable($_[0], $_[1]) }
           python -m pip install --disable-pip-version-check meson
           meson setup --cross-file build-winarm64.txt --buildtype release --backend vs2022 build-msvc-arm64
-          msbuild -m build-msvc-arm64/dxvk.sln /p:Configuration=Release /p:Platform=ARM64
+          msbuild -m build-msvc-arm64/dxvk.sln /p:Configuration=Release /p:Platform=ARM64 /p:PlatformToolset=v180 /p:VisualStudioVersion=18.0
 
       - name: Validate ARM64 PE output
         shell: pwsh

@@ -85,6 +85,12 @@ jobs:
           if ($dlls.Count -eq 0) {
             throw 'No DXVK DLLs were produced'
           }
+          $required = @('d3d8.dll', 'd3d9.dll', 'd3d10core.dll', 'd3d11.dll', 'dxgi.dll')
+          $present = @($dlls | ForEach-Object Name)
+          $missing = @($required | Where-Object { $_ -notin $present })
+          if ($missing.Count -ne 0) {
+            throw "DXVK package is missing required DLLs: $($missing -join ', ')"
+          }
           foreach ($dll in $dlls) {
             $headers = (& dumpbin.exe /headers $dll.FullName | Out-String)
             if ($headers -notmatch 'ARM64') {
@@ -92,11 +98,29 @@ jobs:
             }
             Copy-Item $dll.FullName $output
           }
+          @'
+DXVK ARM64 app-local package for the DroidVM Turnip WDDM ICD.
+
+Copy the DLLs beside the ARM64 D3D8/9/10/11 application. The application must
+load the matching Mesa vulkan_freedreno.dll and its app-local ICD manifest.
+DXVK_FILTER_DEVICE_LUID may be set to the 16 hexadecimal digits printed by
+the DXVK startup log when more than one WDDM adapter is visible.
+
+This package contains no kernel driver and does not install a system Vulkan
+ICD. KMD, Turnip, and DXVK rollback boundaries remain independent.
+'@ | Set-Content -Path (Join-Path $output 'README-wddm.txt') -Encoding ascii
+          $hashes = Get-ChildItem -Path $output -File -Filter '*.dll' |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 -Path $_.FullName).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            }
+          $hashes | Set-Content -Path (Join-Path $output 'SHA256SUMS.txt') -Encoding ascii
           Get-ChildItem $output | Sort-Object Name | Format-Table Name, Length
 
       - name: Upload ARM64 DXVK artifact
         uses: actions/upload-artifact@v4
         with:
           name: dxvk-wddm-arm64-${{ github.sha }}
-          path: artifacts/arm64/*.dll
+          path: artifacts/arm64/**
           if-no-files-found: error

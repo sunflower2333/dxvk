@@ -168,6 +168,10 @@ not install either a system ICD or a kernel driver. The standalone
 minimal native D3D9/D3D11 offscreen clear/copy/readback workloads for the target VM; they must be
 run beside the bundle and are not CI runtime results.
 
+The combined bundle also contains `BUILD-PROVENANCE.txt`, recording the DXVK revision and Mesa
+workflow run used to assemble it. `RUNTIME_STATUS` remains compile-and-package evidence until the
+matching KMD, ICD, and workload have been exercised in the Windows VM.
+
 ### Build troubleshooting
 DXVK requires threading support from your mingw-w64 build environment. If you
 are missing this, you may see "error: ‘std::cv_status’ has not been declared"

@@ -7,7 +7,13 @@ param(
    [string]$TurnipBundleRoot,
 
    [Parameter(Mandatory = $true)]
-   [string]$OutputRoot
+   [string]$OutputRoot,
+
+   [string]$DxvkRevision = 'unknown',
+
+   [string]$MesaRepository = 'unknown',
+
+   [string]$MesaRunId = 'unknown'
 )
 
 Set-StrictMode -Version Latest
@@ -139,6 +145,17 @@ if (Test-Path -LiteralPath (Join-Path $DxvkRoot 'dxvk.conf') -PathType Leaf) {
    Copy-Item -LiteralPath (Join-Path $DxvkRoot 'dxvk.conf') `
       -Destination (Join-Path $OutputRoot 'dxvk.conf') -Force
 }
+
+@"
+DXVK_WDDM_BUNDLE_FORMAT=1
+DXVK_REPOSITORY=sunflower2333/dxvk
+DXVK_REVISION=$DxvkRevision
+MESA_REPOSITORY=$MesaRepository
+MESA_RUN_ID=$MesaRunId
+TURNIP_MANIFEST=freedreno_icd.arm64.json
+KMD_REQUIRED=viogpuwddm.sys
+RUNTIME_STATUS=compile-and-package-evidence-only
+"@ | Set-Content -LiteralPath (Join-Path $OutputRoot 'BUILD-PROVENANCE.txt') -Encoding ascii
 
 @'
 DXVK ARM64 plus Mesa Turnip WDDM app-local bundle.

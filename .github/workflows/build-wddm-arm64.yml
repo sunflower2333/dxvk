@@ -230,7 +230,25 @@ jobs:
           pwsh -NoProfile -File scripts/package-wddm-arm64.ps1 `
             -DxvkRoot (Join-Path $PWD 'build-msvc-arm64/src') `
             -TurnipBundleRoot $env:MESA_TURNIP_ROOT `
-            -OutputRoot (Join-Path $PWD 'artifacts/wddm-arm64')
+            -OutputRoot (Join-Path $PWD 'artifacts/wddm-arm64') `
+            -DxvkRevision $env:GITHUB_SHA `
+            -MesaRepository 'sunflower2333/mesa' `
+            -MesaRunId '${{ inputs.mesa_run_id }}'
+          $provenance = Join-Path $PWD 'artifacts/wddm-arm64/BUILD-PROVENANCE.txt'
+          if (-not (Test-Path -LiteralPath $provenance -PathType Leaf)) {
+            throw 'Combined bundle is missing BUILD-PROVENANCE.txt'
+          }
+          $provenanceText = Get-Content -LiteralPath $provenance -Raw
+          foreach ($requiredLine in @(
+            "DXVK_REVISION=$env:GITHUB_SHA",
+            'MESA_REPOSITORY=sunflower2333/mesa',
+            'MESA_RUN_ID=${{ inputs.mesa_run_id }}',
+            'RUNTIME_STATUS=compile-and-package-evidence-only'
+          )) {
+            if ($provenanceText -notmatch [regex]::Escape($requiredLine)) {
+              throw "Combined bundle provenance is missing: $requiredLine"
+            }
+          }
 
       - name: Upload DXVK plus Turnip bundle
         if: ${{ inputs.mesa_run_id != '' }}

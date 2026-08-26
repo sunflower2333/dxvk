@@ -36,6 +36,13 @@ def main() -> int:
         "the WDDM LUID filter must compare the byte-exact Vulkan identity",
     )
 
+    d3d10_smoke = (ROOT / "tests/wddm-d3d10-smoke.cpp").read_text(encoding="utf-8")
+    require_once(
+        d3d10_smoke,
+        "D3D10CreateDevice1(adapter, D3D10_DRIVER_TYPE_HARDWARE",
+        "the D3D10 smoke must use the supported HARDWARE driver type",
+    )
+
     clear_stale_filter = "Remove-Item Env:DXVK_FILTER_DEVICE_LUID -ErrorAction SilentlyContinue"
     for relative in (
         "scripts/launch-wddm-arm64.ps1",

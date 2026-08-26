@@ -11,6 +11,7 @@ $BundleRoot = [IO.Path]::GetFullPath($BundleRoot)
 $manifest = Join-Path $BundleRoot 'freedreno_icd.arm64.json'
 $smokes = @(
    'dxvk_wddm_d3d9_smoke_arm64.exe',
+   'dxvk_wddm_d3d10_smoke_arm64.exe',
    'dxvk_wddm_d3d11_smoke_arm64.exe'
 )
 
@@ -51,6 +52,6 @@ finally {
    Pop-Location
 }
 
-Write-Host 'DXVK ARM64 WDDM smoke workloads passed.'
+Write-Host 'DXVK ARM64 WDDM D3D9/D3D10/D3D11 smoke workloads passed.'
 Get-ChildItem -LiteralPath $logRoot -File -ErrorAction SilentlyContinue |
    Sort-Object Name | Format-Table Name, Length

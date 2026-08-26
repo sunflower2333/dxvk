@@ -9,6 +9,8 @@ param(
    [Parameter(Mandatory = $true)]
    [string]$OutputRoot,
 
+   [string]$SmokeRoot = '',
+
    [string]$DxvkRevision = 'unknown',
 
    [string]$MesaRepository = 'unknown',
@@ -20,6 +22,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $dxvkDlls = @('d3d8.dll', 'd3d9.dll', 'd3d10core.dll', 'd3d11.dll', 'dxgi.dll')
+$smokeFiles = @(
+   'dxvk_wddm_d3d9_smoke_arm64.exe',
+   'dxvk_wddm_d3d10_smoke_arm64.exe',
+   'dxvk_wddm_d3d11_smoke_arm64.exe'
+)
 $turnipFiles = @('freedreno_icd.arm64.json', 'vulkan_freedreno.dll', 'z-1.dll')
 
 function Get-PeMachine {
@@ -106,6 +113,9 @@ function Assert-TurnipBundle {
 $DxvkRoot = [IO.Path]::GetFullPath($DxvkRoot)
 $TurnipBundleRoot = [IO.Path]::GetFullPath($TurnipBundleRoot)
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
+if (-not [string]::IsNullOrWhiteSpace($SmokeRoot)) {
+   $SmokeRoot = [IO.Path]::GetFullPath($SmokeRoot)
+}
 
 if (-not (Test-Path -LiteralPath $DxvkRoot -PathType Container)) {
    throw "DXVK build root does not exist: $DxvkRoot"
@@ -132,6 +142,20 @@ foreach ($name in $dxvkDlls) {
    $source = $matches[0].FullName
    Assert-Arm64Pe -Path $source
    Copy-Item -LiteralPath $source -Destination (Join-Path $OutputRoot $name) -Force
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SmokeRoot)) {
+   if (-not (Test-Path -LiteralPath $SmokeRoot -PathType Container)) {
+      throw "DXVK smoke root does not exist: $SmokeRoot"
+   }
+   foreach ($name in $smokeFiles) {
+      $source = Join-Path $SmokeRoot $name
+      if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+         throw "DXVK smoke workload is missing: $source"
+      }
+      Assert-Arm64Pe -Path $source
+      Copy-Item -LiteralPath $source -Destination (Join-Path $OutputRoot $name) -Force
+   }
 }
 
 foreach ($name in $turnipFiles) {
@@ -166,8 +190,8 @@ Copy the DLLs and ICD files beside a native ARM64 D3D8/9/10/11 application.
 Run launch-wddm-arm64.ps1 from that directory. The launcher selects the bundled
 Turnip manifest through VK_DRIVER_FILES (and the legacy VK_ICD_FILENAMES alias)
 and never installs a system ICD or KMD.
-Run run-wddm-smoke-arm64.ps1 to execute both bundled offscreen readback tests
-with DXVK logging enabled.
+Run run-wddm-smoke-arm64.ps1 to execute the bundled D3D9, D3D10, and D3D11
+offscreen readback tests with DXVK logging enabled.
 This package requires the matching viogpuwddm.sys Native Context miniport.
 '@ | Set-Content -LiteralPath (Join-Path $OutputRoot 'README-wddm-arm64.txt') -Encoding ascii
 

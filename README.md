@@ -165,11 +165,12 @@ resulting directory beside a native ARM64 D3D application and launch it through
 `launch-wddm-arm64.ps1`; it selects the bundled Vulkan manifest with `VK_DRIVER_FILES` (and the
 legacy `VK_ICD_FILENAMES` alias) and does
 not install either a system ICD or a kernel driver. The standalone
-`dxvk_wddm_d3d9_smoke_arm64.exe` and `dxvk_wddm_d3d11_smoke_arm64.exe` in the build artifact are
-minimal native D3D9/D3D11 offscreen clear/copy/readback workloads for the target VM; they must be
-run beside the bundle and are not CI runtime results.
+`dxvk_wddm_d3d9_smoke_arm64.exe`, `dxvk_wddm_d3d10_smoke_arm64.exe`, and
+`dxvk_wddm_d3d11_smoke_arm64.exe` in the build artifact are minimal native D3D9/D3D10/D3D11
+offscreen clear/copy/readback workloads for the target VM; they must be run beside the bundle and
+are not CI runtime results.
 
-The combined bundle also contains `run-wddm-smoke-arm64.ps1`, which runs both workloads with the
+The combined bundle also contains `run-wddm-smoke-arm64.ps1`, which runs all three workloads with the
 app-local ICD, enables the DXVK device/version/submission HUD, and writes DXVK logs to `logs/`.
 It returns a failure if either workload cannot complete its GPU readback.
 

@@ -142,7 +142,7 @@ jobs:
           $hashes | Set-Content -Path (Join-Path $output 'SHA256SUMS.txt') -Encoding ascii
           Get-ChildItem $output | Sort-Object Name | Format-Table Name, Length
 
-      - name: Build native ARM64 D3D11 smoke workload
+      - name: Build native ARM64 D3D9/D3D10/D3D11 smoke workloads
         shell: pwsh
         run: |
           $installationPath = Get-VSSetupInstance |
@@ -182,8 +182,20 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $imports9 -notmatch 'Direct3DCreate9') {
             throw 'D3D9 smoke workload does not import Direct3DCreate9'
           }
-          Write-Host 'Native ARM64 D3D11 smoke workload linked; execute it only with the app-local bundle on the target VM.'
-          Write-Host 'Native ARM64 D3D9 smoke workload linked; execute it only with the app-local bundle on the target VM.'
+
+          $smoke10 = Join-Path $PWD 'artifacts\arm64\dxvk_wddm_d3d10_smoke_arm64.exe'
+          cl /nologo /std:c++17 /W4 /WX /EHsc /MT `
+            tests\wddm-d3d10-smoke.cpp `
+            /Fe:$smoke10 /link d3d10_1.lib dxgi.lib
+          $headers10 = (& $linkPath /dump /headers $smoke10 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $headers10 -notmatch 'ARM64') {
+            throw 'D3D10 smoke workload is not an ARM64 PE image'
+          }
+          $imports10 = (& $linkPath /dump /imports $smoke10 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $imports10 -notmatch 'D3D10CreateDevice1') {
+            throw 'D3D10 smoke workload does not import D3D10CreateDevice1'
+          }
+          Write-Host 'Native ARM64 D3D9/D3D10/D3D11 smoke workloads linked; execute them only with the app-local bundle on the target VM.'
 
       - name: Upload ARM64 DXVK artifact
         uses: actions/upload-artifact@v4
@@ -232,6 +244,7 @@ jobs:
           pwsh -NoProfile -File scripts/package-wddm-arm64.ps1 `
             -DxvkRoot (Join-Path $PWD 'build-msvc-arm64/src') `
             -TurnipBundleRoot $env:MESA_TURNIP_ROOT `
+            -SmokeRoot (Join-Path $PWD 'artifacts/arm64') `
             -OutputRoot (Join-Path $PWD 'artifacts/wddm-arm64') `
             -DxvkRevision $env:GITHUB_SHA `
             -MesaRepository 'sunflower2333/mesa' `
@@ -249,6 +262,15 @@ jobs:
           )) {
             if ($provenanceText -notmatch [regex]::Escape($requiredLine)) {
               throw "Combined bundle provenance is missing: $requiredLine"
+            }
+          }
+          foreach ($name in @(
+            'dxvk_wddm_d3d9_smoke_arm64.exe',
+            'dxvk_wddm_d3d10_smoke_arm64.exe',
+            'dxvk_wddm_d3d11_smoke_arm64.exe'
+          )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $PWD "artifacts/wddm-arm64/$name") -PathType Leaf)) {
+              throw "Combined bundle is missing smoke workload: $name"
             }
           }
 

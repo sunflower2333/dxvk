@@ -35,6 +35,9 @@ $env:DXVK_LOG_PATH = $logRoot
 if (-not [string]::IsNullOrWhiteSpace($DeviceLuid)) {
    $env:DXVK_FILTER_DEVICE_LUID = $DeviceLuid.ToLowerInvariant()
 }
+else {
+   Remove-Item Env:DXVK_FILTER_DEVICE_LUID -ErrorAction SilentlyContinue
+}
 
 Push-Location $BundleRoot
 try {

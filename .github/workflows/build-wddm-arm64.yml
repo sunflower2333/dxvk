@@ -42,6 +42,10 @@ jobs:
         shell: pwsh
         run: git submodule update --init --recursive --depth 1
 
+      - name: Validate WDDM integration policy
+        shell: pwsh
+        run: python tests/check-wddm-integration.py
+
       - name: Download D3D8 SDK headers
         shell: pwsh
         run: |

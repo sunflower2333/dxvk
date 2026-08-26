@@ -58,10 +58,10 @@ namespace dxvk {
       auto normalized = normalizeLUID(m_matchDeviceLuid);
 
       if (normalized.empty()) {
-        Logger::warn(str::format(
-          "Ignoring invalid DXVK_FILTER_DEVICE_LUID/dxvk.deviceLuid value: ",
-          m_matchDeviceLuid));
-        m_matchDeviceLuid.clear();
+        Logger::warn(
+            str::format("Invalid DXVK_FILTER_DEVICE_LUID/dxvk.deviceLuid value "
+                        "rejects all adapters: ",
+                        m_matchDeviceLuid));
       } else {
         m_matchDeviceLuid = std::move(normalized);
       }

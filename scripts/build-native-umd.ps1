@@ -72,7 +72,7 @@ $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
 DXVK_COMMIT=$(git rev-parse HEAD)
 ARCH=$arch
 STATUS=DDI development candidate; not registered or installable as the system UMD.
-Development DDIs include restricted SM4 VS/PS, state and Draw; general shader interfaces remain pending.
+Development DDIs include restricted SM4 VS/GS/PS, state and Draw; stream output and general shader interfaces remain pending.
 Development OpenAdapter harness validates runtime identity and retains it across adapter/device lifetime.
 Windowed-blit Present development path uses runtime allocations and synchronized pixel copies; target proof pending.
 Runtime-to-DDI activation, complete required table, sharing and primary/flip Present remain pending.

@@ -32,6 +32,7 @@ struct Device {
   bool topologyBound = false;
   bool indexBound = false;
   Shader* vertexShader = nullptr;
+  Shader* geometryShader = nullptr;
   Shader* pixelShader = nullptr;
   InputLayout* inputLayout = nullptr;
   void error(HRESULT hr) {
@@ -61,6 +62,7 @@ struct Shader {
   Device* owner = nullptr;
   dxvk::umd::ShaderStage stage = dxvk::umd::ShaderStage::Vertex;
   ComPtr<ID3D11VertexShader> vertex;
+  ComPtr<ID3D11GeometryShader> geometry;
   ComPtr<ID3D11PixelShader> pixel;
   std::vector<UINT> code;
   std::vector<dxvk::umd::ShaderSignatureEntry> inputs;
@@ -325,7 +327,7 @@ void APIENTRY generateMips(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW obje
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }
-template<bool Vertex>
+template<dxvk::umd::ShaderStage Stage>
 void APIENTRY setShaderResources(D3D10DDI_HDEVICE h, UINT start, UINT count,
     const D3D10DDI_HSHADERRESOURCEVIEW* objects) {
   auto device = get(h);
@@ -338,7 +340,8 @@ void APIENTRY setShaderResources(D3D10DDI_HDEVICE h, UINT start, UINT count,
     views[i] = view ? view->backend.Get() : nullptr;
   }
   try {
-    if (Vertex) device->context->VSSetShaderResources(start, count, views);
+    if (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetShaderResources(start, count, views);
+    else if (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetShaderResources(start, count, views);
     else device->context->PSSetShaderResources(start, count, views);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
@@ -368,7 +371,7 @@ void APIENTRY destroySampler(D3D10DDI_HDEVICE h, D3D10DDI_HSAMPLER object) {
   if (!sampler || sampler->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
   sampler->~Sampler();
 }
-template<bool Vertex>
+template<dxvk::umd::ShaderStage Stage>
 void APIENTRY setSamplers(D3D10DDI_HDEVICE h, UINT start, UINT count, const D3D10DDI_HSAMPLER* objects) {
   auto device = get(h);
   constexpr UINT slots = D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT;
@@ -380,7 +383,8 @@ void APIENTRY setSamplers(D3D10DDI_HDEVICE h, UINT start, UINT count, const D3D1
     samplers[i] = sampler ? sampler->backend.Get() : nullptr;
   }
   try {
-    if (Vertex) device->context->VSSetSamplers(start, count, samplers);
+    if (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetSamplers(start, count, samplers);
+    else if (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetSamplers(start, count, samplers);
     else device->context->PSSetSamplers(start, count, samplers);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
@@ -689,7 +693,7 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
     for (UINT i = 0; i < signature->NumOutputSignatureEntries; i++) {
       const auto& entry = signature->pOutputSignature[i];
       candidate.outputs.push_back({uint32_t(entry.SystemValue), entry.Register, entry.Mask});
-      candidate.needsLinkage |= stage == dxvk::umd::ShaderStage::Vertex && entry.SystemValue == D3D10_SB_NAME_UNDEFINED;
+      candidate.needsLinkage |= stage != dxvk::umd::ShaderStage::Pixel && entry.SystemValue == D3D10_SB_NAME_UNDEFINED;
     }
     if (stage == dxvk::umd::ShaderStage::Pixel) {
       std::vector<dxvk::umd::ShaderSignatureEntry> resolved;
@@ -697,15 +701,23 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
         device->error(E_INVALIDARG); return;
       }
       candidate.inputs = std::move(resolved);
+    } else if (stage == dxvk::umd::ShaderStage::Geometry) {
+      std::vector<dxvk::umd::ShaderSignatureEntry> resolved;
+      if (!dxvk::umd::resolveGeometryInputs(code, code[1], candidate.inputs.data(), candidate.inputs.size(), resolved)) {
+        device->error(E_INVALIDARG); return;
+      }
+      candidate.inputs = std::move(resolved);
+      candidate.needsLinkage = true;
     }
     auto validationInputs = candidate.inputs;
     auto validationOutputs = candidate.outputs;
     // Validate raw tokens and register structure now. These provisional
     // signature types are discarded and never enter the DXVK compiler.
     // The bound layout supplies actual types when the shader is first drawn.
-    if (stage == dxvk::umd::ShaderStage::Vertex) {
-      for (auto& input : validationInputs)
-        if (!input.systemValue) input.scalar = dxvk::umd::ShaderScalar::Float32;
+    if (stage != dxvk::umd::ShaderStage::Pixel) {
+      if (stage == dxvk::umd::ShaderStage::Vertex)
+        for (auto& input : validationInputs)
+          if (!input.systemValue) input.scalar = dxvk::umd::ShaderScalar::Float32;
       for (auto& output : validationOutputs)
         if (!output.systemValue) output.scalar = dxvk::umd::ShaderScalar::Uint32;
     }
@@ -732,6 +744,10 @@ void APIENTRY createPixelShader(D3D10DDI_HDEVICE h, const UINT* code,
     D3D10DDI_HSHADER out, D3D10DDI_HRTSHADER, const D3D10DDIARG_STAGE_IO_SIGNATURES* sig) {
   createShader(h, code, out, sig, dxvk::umd::ShaderStage::Pixel);
 }
+void APIENTRY createGeometryShader(D3D10DDI_HDEVICE h, const UINT* code,
+    D3D10DDI_HSHADER out, D3D10DDI_HRTSHADER, const D3D10DDIARG_STAGE_IO_SIGNATURES* sig) {
+  createShader(h, code, out, sig, dxvk::umd::ShaderStage::Geometry);
+}
 void APIENTRY destroyShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto object = get(shader);
   if (!object || object->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
@@ -742,6 +758,10 @@ void APIENTRY destroyShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   if (get(h)->pixelShader == object) {
     get(h)->context->PSSetShader(nullptr, nullptr, 0);
     get(h)->pixelShader = nullptr; get(h)->pixelBound = false;
+  }
+  if (get(h)->geometryShader == object) {
+    get(h)->context->GSSetShader(nullptr, nullptr, 0);
+    get(h)->geometryShader = nullptr;
   }
   object->~Shader();
 }
@@ -762,7 +782,17 @@ void APIENTRY setPixelShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   device->pixelShader = object;
   device->pixelBound = object != nullptr;
 }
-template<bool Vertex>
+void APIENTRY setGeometryShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
+  auto device = get(h); auto object = get(shader);
+  if (object && (object->owner != device || object->stage != dxvk::umd::ShaderStage::Geometry
+      || object->code.empty())) { device->error(E_INVALIDARG); return; }
+  try {
+    device->context->GSSetShader(object ? object->geometry.Get() : nullptr, nullptr, 0);
+    device->geometryShader = object;
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+template<dxvk::umd::ShaderStage Stage>
 void APIENTRY setConstantBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
     const D3D10DDI_HRESOURCE* resources) {
   auto device = get(h);
@@ -784,7 +814,8 @@ void APIENTRY setConstantBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
   // Validate every resource before changing state, so an invalid tail cannot
   // leave a partially updated binding range. Null entries explicitly unbind.
   try {
-    if (Vertex) device->context->VSSetConstantBuffers(start, count, buffers);
+    if (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetConstantBuffers(start, count, buffers);
+    else if (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetConstantBuffers(start, count, buffers);
     else device->context->PSSetConstantBuffers(start, count, buffers);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
@@ -1067,15 +1098,41 @@ void APIENTRY setVertexBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
 }
+bool prepareGeometryShader(Device* device) {
+  auto shader = device->geometryShader;
+  if (!shader) return true;
+  std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
+  if (!dxvk::umd::linkVertexOutputs(shader->outputs.data(), shader->outputs.size(),
+      device->pixelShader->inputs.data(), device->pixelShader->inputs.size(), outputs)) {
+    device->error(E_INVALIDARG); return false;
+  }
+  std::array<dxvk::umd::ShaderScalar,32> outputTypes = {};
+  for (const auto& output : outputs) outputTypes[output.registerIndex] = output.scalar;
+  if (!shader->geometry || shader->compiledOutputTypes != outputTypes) {
+    std::vector<unsigned char> bytecode;
+    if (!dxvk::umd::buildShaderContainer(shader->stage, shader->code.data(), shader->code.size(),
+        shader->inputs.data(), shader->inputs.size(), outputs.data(), outputs.size(), bytecode)) {
+      device->error(E_INVALIDARG); return false;
+    }
+    ComPtr<ID3D11GeometryShader> compiled;
+    const HRESULT hr = device->backend->CreateGeometryShader(bytecode.data(), bytecode.size(), nullptr, &compiled);
+    if (FAILED(hr)) { device->error(hr); return false; }
+    shader->geometry = std::move(compiled); shader->compiledOutputTypes = outputTypes;
+  }
+  device->context->GSSetShader(shader->geometry.Get(), nullptr, 0);
+  return true;
+}
 bool prepareVertexShader(Device* device) {
   auto shader = device->vertexShader;
   if (!shader || !device->pixelShader) return false;
   auto layout = device->inputLayout;
   if (shader->needsLayout && (!layout || !layout->backend)) { device->error(E_INVALIDARG); return false; }
   try {
+    if (!prepareGeometryShader(device)) return false;
+    const auto next = device->geometryShader ? device->geometryShader : device->pixelShader;
     std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
     if (!dxvk::umd::linkVertexOutputs(shader->outputs.data(), shader->outputs.size(),
-        device->pixelShader->inputs.data(), device->pixelShader->inputs.size(), outputs)) {
+        next->inputs.data(), next->inputs.size(), outputs)) {
       device->error(E_INVALIDARG); return false;
     }
     std::array<dxvk::umd::ShaderScalar,32> outputTypes = {}, inputTypes = {};
@@ -1240,13 +1297,15 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnCreateShaderResourceView = createShaderView;
   table->pfnDestroyShaderResourceView = destroyShaderView;
   table->pfnGenMips = generateMips;
-  table->pfnVsSetShaderResources = setShaderResources<true>;
-  table->pfnPsSetShaderResources = setShaderResources<false>;
+  table->pfnVsSetShaderResources = setShaderResources<dxvk::umd::ShaderStage::Vertex>;
+  table->pfnGsSetShaderResources = setShaderResources<dxvk::umd::ShaderStage::Geometry>;
+  table->pfnPsSetShaderResources = setShaderResources<dxvk::umd::ShaderStage::Pixel>;
   table->pfnCalcPrivateSamplerSize = samplerSize;
   table->pfnCreateSampler = createSampler;
   table->pfnDestroySampler = destroySampler;
-  table->pfnVsSetSamplers = setSamplers<true>;
-  table->pfnPsSetSamplers = setSamplers<false>;
+  table->pfnVsSetSamplers = setSamplers<dxvk::umd::ShaderStage::Vertex>;
+  table->pfnGsSetSamplers = setSamplers<dxvk::umd::ShaderStage::Geometry>;
+  table->pfnPsSetSamplers = setSamplers<dxvk::umd::ShaderStage::Pixel>;
   table->pfnCalcPrivateRenderTargetViewSize = targetSize;
   table->pfnCreateRenderTargetView = createTarget;
   table->pfnDestroyRenderTargetView = destroyTarget;
@@ -1289,11 +1348,14 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnCalcPrivateShaderSize = shaderSize;
   table->pfnCreateVertexShader = createVertexShader;
   table->pfnCreatePixelShader = createPixelShader;
+  table->pfnCreateGeometryShader = createGeometryShader;
   table->pfnDestroyShader = destroyShader;
   table->pfnVsSetShader = setVertexShader;
   table->pfnPsSetShader = setPixelShader;
-  table->pfnVsSetConstantBuffers = setConstantBuffers<true>;
-  table->pfnPsSetConstantBuffers = setConstantBuffers<false>;
+  table->pfnGsSetShader = setGeometryShader;
+  table->pfnVsSetConstantBuffers = setConstantBuffers<dxvk::umd::ShaderStage::Vertex>;
+  table->pfnGsSetConstantBuffers = setConstantBuffers<dxvk::umd::ShaderStage::Geometry>;
+  table->pfnPsSetConstantBuffers = setConstantBuffers<dxvk::umd::ShaderStage::Pixel>;
   table->pfnSetRenderTargets = setRenderTargets;
   table->pfnSetViewports = setViewports;
   table->pfnSetScissorRects = setScissors;

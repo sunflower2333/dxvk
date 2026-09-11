@@ -339,3 +339,14 @@ temporary API-only diagnostic matrix; its decisive results remain documented.
 No production workaround added. Delivered VKD3D61edc56/paired97e7b009 and
 ordinary-runtime/ARM64X handoff to the new independent agent. Replacement
 DXVK CI pending; no remote commands or hardware workload performed.
+2026-09-12: Added GS shader/create/bind and three GS resource-binding slots,
+actual VS->GS->PS relinking and native union-signature handling. Local ASan/
+UBSan passed69identity/176runtimeidentity/144shaderchecks before the extra
+union cases; final rerun and Windows original/rebuilt WARP+SPIR-V CI pending.
+6dfb092 mip replacement x86/x64 CI34619152294 now PASS,488WARPchecks each,
+debugqueue empty; ARM64 still compiling. No target backend workload changed.
+2026-09-12: Final local GS/union-source ASan/UBSan PASS: identity69,
+runtimeidentity176 and shader147. The first union rerun caught an obsolete
+negative expectation and it was corrected to the Microsoft documented
+unused-input behavior; missing/invalid declarations still fail. Mip6dfb092
+CI34619152294 now ALL5PASS. Committing GS continuation for Windows CI.

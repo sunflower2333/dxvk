@@ -59,7 +59,7 @@ float4 ps_main() : SV_Target {
 inline bool compileLinkageProbeShader(bool vertex, std::vector<uint32_t>& tokens,
     std::vector<dxvk::umd::ShaderSignatureEntry>& inputs,
     std::vector<dxvk::umd::ShaderSignatureEntry>& outputs, bool inspect = false,
-    ID3DBlob** originalContainer = nullptr) {
+    ID3DBlob** originalContainer = nullptr, bool geometry = false) {
   constexpr char source[] = R"(
 cbuffer PixelConstants : register(b0) { float4 pixelColor; };
 struct Varyings {
@@ -86,6 +86,17 @@ Varyings vs_main(float2 position : POSITION) {
 }
 Texture2D<float4> sourceColor : register(t0);
 SamplerState sourceSampler : register(s0);
+cbuffer GeometryConstants : register(b1) { uint4 geometryMask; };
+[maxvertexcount(3)]
+void gs_main(triangle Varyings vertices[3], inout TriangleStream<Varyings> stream) {
+  [unroll] for (uint i = 0; i < 3; i++) {
+    Varyings value = vertices[i];
+    value.fixedBits ^= geometryMask;
+    value.uv *= sourceColor.SampleLevel(sourceSampler, float2(0.5,0.5), 0).xy;
+    stream.Append(value);
+  }
+  stream.RestartStrip();
+}
 float4 ps_main(Varyings value) : SV_Target {
   uint failed = 0;
   if (!all(abs(value.uv - value.position.xy / 64.0) < 0.001)) failed |= 1;
@@ -107,7 +118,8 @@ float4 ps_inspect(Varyings value) : SV_Target {
 }
 )";
   Microsoft::WRL::ComPtr<ID3DBlob> original;
-  if (!compileHlslTokens(source, vertex ? "vs_main" : inspect ? "ps_inspect" : "ps_main", vertex ? "vs_4_0" : "ps_4_0",
+  if (!compileHlslTokens(source, geometry ? "gs_main" : vertex ? "vs_main" : inspect ? "ps_inspect" : "ps_main",
+      geometry ? "gs_4_0" : vertex ? "vs_4_0" : "ps_4_0",
       tokens, &original)) return false;
   Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflected;
   if (FAILED(D3DReflect(original->GetBufferPointer(), original->GetBufferSize(),
@@ -124,7 +136,7 @@ float4 ps_inspect(Varyings value) : SV_Target {
       if (FAILED(hr)) return false;
       // DDI encodes pixel target registers as UNDEFINED. Deliberately omit
       // semantic strings and types, as the Microsoft runtime does.
-      const uint32_t sysval = !vertex && !input ? 0 : uint32_t(entry.SystemValueType);
+      const uint32_t sysval = !vertex && !geometry && !input ? 0 : uint32_t(entry.SystemValueType);
       destination.push_back({sysval,entry.Register,entry.Mask});
     }
   }

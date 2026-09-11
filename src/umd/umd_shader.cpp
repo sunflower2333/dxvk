@@ -120,8 +120,11 @@ bool resolvePixelInputs(const uint32_t* code, size_t words,
   for (size_t i = 0; i < inputCount; i++) {
     auto entry = inputs[i];
     const auto& declaration = declarations[entry.registerIndex];
+    // Runtime signatures are unions shared across shaders. Undeclared
+    // entries do not consume any input and need no upstream producer.
+    if (!declaration.mask) continue;
     if ((entry.systemValue != 0 && entry.systemValue != 1) ||
-        declaration.systemValue != entry.systemValue || !declaration.mask ||
+        declaration.systemValue != entry.systemValue ||
         (declaration.mask & entry.mask) != declaration.mask)
       return false;
     // Native signatures can retain components the compiler does not read.
@@ -174,6 +177,61 @@ bool linkVertexOutputs(const ShaderSignatureEntry* outputs, size_t outputCount,
   return true;
 }
 
+bool resolveGeometryInputs(const uint32_t* code, size_t words,
+    const ShaderSignatureEntry* inputs, size_t inputCount,
+    std::vector<ShaderSignatureEntry>& resolved) {
+  using namespace dxbc_spv;
+  resolved.clear();
+  if (!validEntries(inputs, inputCount)) return false;
+  std::vector<unsigned char> chunk;
+  if (!makeCodeChunk(ShaderStage::Geometry, code, words, chunk)) return false;
+  struct Declaration { uint8_t mask = 0; uint32_t systemValue = 0; } declarations[32];
+  dxbc::Parser parser(util::ByteReader(chunk.data(), chunk.size()));
+  if (!parser.getShaderInfo()) return false;
+  while (parser) {
+    const auto instruction = parser.parseInstruction();
+    if (!instruction) return false;
+    const auto opcode = instruction.getOpToken().getOpCode();
+    if (opcode != dxbc::OpCode::eDclInput && opcode != dxbc::OpCode::eDclInputSiv
+        && opcode != dxbc::OpCode::eDclInputSgv) continue;
+    if (instruction.getDstCount() != 1) return false;
+    const auto& operand = instruction.getDst(0);
+    if (operand.getRegisterType() != dxbc::RegisterType::eInput || operand.getIndexDimensions() != 2
+        || operand.getIndexOperand(0) != uint32_t(-1) || operand.getIndexOperand(1) != uint32_t(-1)
+        || !operand.getIndex(0) || operand.getIndex(0) > 6 || operand.getIndex(1) >= 32) return false;
+    uint32_t systemValue = 0;
+    if (opcode != dxbc::OpCode::eDclInput) {
+      if (instruction.getImmCount() != 1) return false;
+      systemValue = instruction.getImm(0).getImmediate<uint32_t>(0);
+      if (systemValue != 1) return false;
+    }
+    auto& declaration = declarations[operand.getIndex(1)];
+    const uint8_t mask = uint8_t(operand.getWriteMask());
+    if (!mask || (declaration.mask & mask) ||
+        (declaration.mask && declaration.systemValue != systemValue)) return false;
+    declaration.mask |= mask; declaration.systemValue = systemValue;
+  }
+  std::vector<ShaderSignatureEntry> candidate;
+  for (size_t i = 0; i < inputCount; i++) {
+    auto entry = inputs[i];
+    const auto& declaration = declarations[entry.registerIndex];
+    if (!declaration.mask) continue;
+    if ((entry.systemValue != 0 && entry.systemValue != 1) ||
+        declaration.systemValue != entry.systemValue ||
+        (declaration.mask & entry.mask) != declaration.mask) return false;
+    entry.mask = declaration.mask;
+    entry.scalar = entry.systemValue ? ShaderScalar::Float32 : ShaderScalar::Uint32;
+    candidate.push_back(entry);
+  }
+  for (uint32_t reg = 0; reg < 32; reg++) if (declarations[reg].mask) {
+    bool found = false;
+    for (const auto& entry : candidate) if (entry.registerIndex == reg) found = true;
+    if (!found) return false;
+  }
+  resolved = std::move(candidate);
+  return true;
+}
+
 bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
     const ShaderSignatureEntry* inputs, size_t inputCount,
     const ShaderSignatureEntry* outputs, size_t outputCount,
@@ -187,8 +245,19 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   dxbc::Signature input(util::FourCC("ISGN"));
   dxbc::Signature output(util::FourCC("OSGN"));
   switch (stage) {
-    case ShaderStage::Vertex: {
-      for (size_t i = 0; i < inputCount; i++) {
+    case ShaderStage::Vertex:
+    case ShaderStage::Geometry: {
+      if (stage == ShaderStage::Geometry) {
+        std::vector<ShaderSignatureEntry> resolved;
+        if (!resolveGeometryInputs(code, words, inputs, inputCount, resolved)) return false;
+        for (const auto& entry : resolved) {
+          input.add(dxbc::SignatureEntry(entry.systemValue ? "SV_Position" : varyingRegisterSemantic,
+            entry.systemValue ? 0 : entry.registerIndex, entry.registerIndex, 0,
+            uint32_t(entry.mask) | (uint32_t(entry.mask) << 8),
+            entry.systemValue ? dxbc::SignatureSysval::ePosition : dxbc::SignatureSysval::eNone,
+            scalarType(entry.scalar)));
+        }
+      } else for (size_t i = 0; i < inputCount; i++) {
         const auto& entry = inputs[i];
         if (entry.systemValue == 6) {
           if (entry.mask != 1) return false;

@@ -15,7 +15,7 @@ select an adapter and no first-adapter/software fallback exists.
 
 The development D3D10 DDI table currently includes resource creation/destruction
 for buffers and Texture2D, RTV clear/copy, staging and resource Map/Unmap, Flush,
-restricted VS/PS creation/binding/destruction, rasterizer state, up to16viewports,
+restricted VS/GS/PS creation/binding/destruction, rasterizer state, up to16viewports,
 one RGBA8 render target, D3D10 topology state and Draw. Driver-private memory
 belongs to the caller; objects retain an owning-device pointer and backend COM
 references. DDI CPU access and DO_NOT_WAIT bits are translated explicitly to
@@ -27,8 +27,8 @@ by cf492c9 CI34613950771 ALL5PASS. The topology setter accepts UNDEFINED as a
 legal reset and all D3D10 primitive types. Viewports replace the entire binding
 atomically; native null slots retain their indices as zero-area API viewports.
 Zero count unbinds viewport/scissor state even when the clear hint is zero.
-Source ef4b174 CI34615056755 passes all five jobs. This state coverage does not implement
-the still-missing geometry shader or stream-output stages.
+Source ef4b174 CI34615056755 passes all five jobs. Later GS work is described
+below; stream output remains unfinished.
 
 GenMips is wired at source c9e389d through native auto-mip resource flags and
 DXVK's actual GPU mip blits. Ownership, creation flags, MIP range/type and format
@@ -39,9 +39,20 @@ default views and slice0 produce the expected red. The debug layer is active
 with zero messages. The controls bypass every native descriptor helper.
 The strict CPU oracle now generates slice0/mips0-1 and checks all eight
 subresources, including untouched neighboring slices and out-of-view mips.
-Its replacement CI is pending. Existing typeless clear/sample tests still use
+6dfb092 CI34619152294 passes all five jobs, including the strict 488-check
+WARP test on x86/x64 and ARM64 compilation. Existing typeless clear/sample tests still use
 slice1. Production is unchanged; DXVK mip generation on nonzero array slices
 and ordinary runtime activation remain unvalidated on the target.
+
+The next source continuation adds native GS creation/binding and constant
+buffer, SRV and sampler slots. It transports generic VS->GS inputs as raw32,
+keeps position F32, and compiles GS outputs using the active PS interface.
+Changing or removing GS relinks the VS to its actual next stage. Unused entries
+in the runtime's union input signature no longer cause false PS/GS rejection.
+The new WARP fixture compares original and rebuilt VS->GS->PS payloads with a
+GS constant-buffer XOR and texture sample; SPIR-V checks include per-vertex
+GS input arrays. Windows CI is pending. Stream output and additional shader
+system values remain unfinished, and this does not enable runtime registration.
 
 Dynamic IA/constant-buffer/resource Map DDIs share the checked map path.
 Busy and device-loss errors are translated to native DDI codes; failed maps

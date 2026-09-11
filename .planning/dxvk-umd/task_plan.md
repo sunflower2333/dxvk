@@ -6,6 +6,13 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+6dfb092 replacement mip CI34619152294 ALL5PASS; 488 WARP view/mip checks
+pass on x86/x64, shader887 checks pass, ARM64 production compiles successfully.
+Next production slice adds native GS shader/create/bind and GS CB/SRV/sampler
+bindings, with raw32 VS->GS transport and PS-selected GS output types. Validate
+original/rebuilt VS->GS->PS WARP payloads plus final SPIR-V array interfaces.
+Keep stream output, predication, ordinary activation and full feature levels
+explicitly unfinished; no extra remote backend run requested.
 68d6bb4 CI34617903693 API-only controls isolate the runner WARP no-op to
 FirstArraySlice1. Default SRVs and an explicit slice0 SRV generate the expected
 red lower mip; both automatic and explicit mip allocations reproduce slice1
@@ -153,6 +160,15 @@ No remote access until main grants a test window. Preserve existing driver and d
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- GS local run caught obsolete shader check56 expecting any undeclared PS
+  signature entry to fail. Microsoft's documented union contract permits
+  unused entries; replaced it with explicit unused-generic acceptance while
+  keeping declared/missing/mismatched rejection tests. A combined docs patch
+  had a stray context line and applied nothing; corrected separately.
+- Two documentation path searches found no DDI markdown in the regular
+  windows-driver-docs clone; a guessed reference/docs directory and guessed
+  dxbc_compiler.cpp were absent. Use existing WDK compilation and discovered
+  dxbc_io_map.cpp for typed GS contracts; no source was changed by searches.
 - e98896b typed RGBA8 control failed the same old-green mip result despite
   correct queried format/flags/caps/view. Added D3D11 debug layer and InfoQueue;
   the typeless-only hypothesis is explicitly disproved. A documentation patch

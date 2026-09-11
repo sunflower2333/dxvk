@@ -296,3 +296,17 @@ limitation. Strict oracle now selects slice0/mips0-1 while checking all8
 subresources. Production c9e389d is unchanged; nonzero-slice DXVK GPU proof
 remains open. Removed temporary observation-only controls after documenting
 their exact source/run so the normal test PASS cannot imply those cases pass.
+2026-09-11 GS audit: DXVK backend implements geometry shaders, but the native
+bridge currently has only VS/PS and assumes VS outputs link directly to PS.
+GS inputs have two-dimensional declaration indices and no interpolation;
+generic raw32 signatures preserve typed instruction bits, while SV_Position
+stays F32. Compile GS outputs using the active PS types and relink VS to GS
+inputs. GS bindings need the same ownership/atomic-range rules as VS/PS.
+2026-09-12: Microsoft local D3D10DDIARG_STAGE_IO_SIGNATURES explicitly says
+the runtime signature is a union shared by shaders; actual declarations can
+use a subset. Previous PS resolver wrongly rejected wholly undeclared union
+entries. Both PS/GS now skip undeclared entries, but still reject any declared
+input absent from the signature or with conflicting mask/system-value data.
+CreateGeometryShader has the same typed5argument signature as VS/PS and uses
+CalcPrivateShaderSize. Failed creation never gets DestroyShader; candidates
+own and clean up all temporary vectors/COM objects before publication.

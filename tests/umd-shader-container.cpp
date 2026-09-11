@@ -24,7 +24,7 @@ static void checkAt(bool value, unsigned line) {
 
 #ifdef _WIN32
 static void checkReferencePixels(const void* vs, size_t vsBytes, const void* ps, size_t psBytes,
-    const char* semantic, const char* label) {
+    const char* semantic, const char* label, const void* gs = nullptr, size_t gsBytes = 0) {
   using Microsoft::WRL::ComPtr;
   ComPtr<ID3D11Device> device;
   ComPtr<ID3D11DeviceContext> context;
@@ -33,8 +33,10 @@ static void checkReferencePixels(const void* vs, size_t vsBytes, const void* ps,
     D3D11_SDK_VERSION,&device,nullptr,&context)));
   ComPtr<ID3D11VertexShader> vertex;
   ComPtr<ID3D11PixelShader> pixel;
+  ComPtr<ID3D11GeometryShader> geometry;
   check(SUCCEEDED(device->CreateVertexShader(vs,vsBytes,nullptr,&vertex)));
   check(SUCCEEDED(device->CreatePixelShader(ps,psBytes,nullptr,&pixel)));
+  if (gs) check(SUCCEEDED(device->CreateGeometryShader(gs,gsBytes,nullptr,&geometry)));
   D3D11_INPUT_ELEMENT_DESC element = {semantic,0,DXGI_FORMAT_R32G32_FLOAT,0,0,D3D11_INPUT_PER_VERTEX_DATA,0};
   ComPtr<ID3D11InputLayout> layout;
   check(SUCCEEDED(device->CreateInputLayout(&element,1,vs,vsBytes,&layout)));
@@ -74,12 +76,41 @@ static void checkReferencePixels(const void* vs, size_t vsBytes, const void* ps,
   context->VSSetShader(vertex.Get(),nullptr,0); context->PSSetShader(pixel.Get(),nullptr,0);
   ID3D11Buffer* constantBuffers[] = {constant.Get()};
   context->VSSetConstantBuffers(0,1,constantBuffers);
+  if (gs) {
+    const UINT masks[] = {0x11111111,0,0,0};
+    initial.pSysMem = masks;
+    ComPtr<ID3D11Buffer> geometryConstant;
+    check(SUCCEEDED(device->CreateBuffer(&bufferDesc,&initial,&geometryConstant)));
+    ID3D11Buffer* geometryBuffers[] = {geometryConstant.Get()};
+    context->GSSetConstantBuffers(1,1,geometryBuffers);
+    D3D11_TEXTURE2D_DESC sampledDesc = {};
+    sampledDesc.Width = sampledDesc.Height = sampledDesc.MipLevels = sampledDesc.ArraySize = 1;
+    sampledDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; sampledDesc.SampleDesc.Count = 1;
+    sampledDesc.Usage = D3D11_USAGE_IMMUTABLE; sampledDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    const UINT white = 0xffffffff; D3D11_SUBRESOURCE_DATA whiteData = {&white,4,4};
+    ComPtr<ID3D11Texture2D> sampledTexture;
+    ComPtr<ID3D11ShaderResourceView> sampledView;
+    check(SUCCEEDED(device->CreateTexture2D(&sampledDesc,&whiteData,&sampledTexture)));
+    check(SUCCEEDED(device->CreateShaderResourceView(sampledTexture.Get(),nullptr,&sampledView)));
+    ID3D11ShaderResourceView* sampledViews[] = {sampledView.Get()};
+    context->GSSetShaderResources(0,1,sampledViews);
+    D3D11_SAMPLER_DESC samplerDesc = {};
+    samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+    samplerDesc.AddressU = samplerDesc.AddressV = samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+    ComPtr<ID3D11SamplerState> sampler;
+    check(SUCCEEDED(device->CreateSamplerState(&samplerDesc,&sampler)));
+    ID3D11SamplerState* samplers[] = {sampler.Get()};
+    context->GSSetSamplers(0,1,samplers);
+    context->GSSetShader(geometry.Get(),nullptr,0);
+  }
   context->Draw(3,0); context->CopyResource(staging.Get(),target.Get());
   D3D11_MAPPED_SUBRESOURCE mapped = {};
   check(SUCCEEDED(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped)) && mapped.pData && mapped.RowPitch >= 256);
-  const uint32_t expected[] = {0x80000000,0xfedcba98,0xffffffff,1,
+  uint32_t expected[] = {0x80000000,0xfedcba98,0xffffffff,1,
     0x7fc01234,0x80000000,0x7f800000,0xff800000,0x12345678,0x87654321,0,1,
     0x3e480000,0x3c000000,0x41680000,0x3f000000};
+  if (gs) expected[8] ^= 0x11111111;
   unsigned mismatches = 0;
   std::fprintf(stderr,"WARP_LINKAGE_WORDS source=%s",label);
   for (unsigned i = 0; i < 16; ++i) {
@@ -99,7 +130,7 @@ static void checkReferencePixels(const void* vs, size_t vsBytes, const void* ps,
 
 #ifdef VIOGPU_SHADER_SPIRV_TEST
 static void checkSpirvInterface(const std::vector<unsigned char>& binary, bool vertex,
-    const std::vector<ShaderSignatureEntry>& expected) {
+    const std::vector<ShaderSignatureEntry>& expected, bool geometryInput = false) {
   using namespace dxbc_spv;
   auto ir = dxbc::compileShaderToLegalizedIr(binary.data(),binary.size(),{},{});
   check(bool(ir));
@@ -128,10 +159,10 @@ static void checkSpirvInterface(const std::vector<unsigned char>& binary, bool v
       check(length == (opcode == spv::OpTypeFloat ? 3u : 4u) && op[1] < ids.size());
       auto& id = ids[op[1]]; id.kind = opcode; id.width = op[2];
       if (opcode == spv::OpTypeInt) id.signedness = op[3];
-    } else if (opcode == spv::OpTypeVector || opcode == spv::OpTypePointer) {
+    } else if (opcode == spv::OpTypeVector || opcode == spv::OpTypePointer || opcode == spv::OpTypeArray) {
       check(length == 4 && op[1] < ids.size());
       auto& id = ids[op[1]]; id.kind = opcode;
-      id.base = opcode == spv::OpTypeVector ? op[2] : op[3];
+      id.base = opcode == spv::OpTypePointer ? op[3] : op[2];
       if (opcode == spv::OpTypeVector) id.count = op[3];
     } else if (opcode == spv::OpVariable) {
       check(length >= 4 && op[2] < ids.size());
@@ -153,6 +184,10 @@ static void checkSpirvInterface(const std::vector<unsigned char>& binary, bool v
       check(id.type < ids.size() && ids[id.type].kind == spv::OpTypePointer);
       uint32_t type = ids[id.type].base;
       check(type < ids.size());
+      if (geometryInput) {
+        check(ids[type].kind == spv::OpTypeArray);
+        type = ids[type].base; check(type < ids.size());
+      }
       uint32_t components = 1;
       if (ids[type].kind == spv::OpTypeVector) { components = ids[type].count; type = ids[type].base; }
       std::fprintf(stderr,"SPIRV_INTERFACE stage=%s register=%u components=%u mask=%u kind=%u width=%u flat=%u expected=%u\n",
@@ -161,7 +196,7 @@ static void checkSpirvInterface(const std::vector<unsigned char>& binary, bool v
       check(type < ids.size() && ids[type].width == 32);
       const bool raw = entry.scalar == ShaderScalar::Uint32;
       check(ids[type].kind == (raw ? spv::OpTypeInt : spv::OpTypeFloat));
-      if (raw) check(ids[type].signedness == 0 && (vertex || id.flat));
+      if (raw) check(ids[type].signedness == 0 && (vertex || geometryInput || id.flat));
       check(components == unsigned((entry.mask & 1) + ((entry.mask >> 1) & 1) +
         ((entry.mask >> 2) & 1) + ((entry.mask >> 3) & 1)));
     }
@@ -241,7 +276,8 @@ int main() {
   check(bool(pixel) && pixel.validateHash());
   dxbc_spv::dxbc::Signature color(pixel.getOutputSignatureChunk());
   check(color.begin()->getSystemValue() == dxbc_spv::dxbc::SignatureSysval::eTarget);
-  check(!buildShaderContainer(ShaderStage::Pixel, code, 3, &input, 1, &output, 1, binary));
+  ShaderSignatureEntry unusedPixelInput = {0,7,15};
+  check(buildShaderContainer(ShaderStage::Pixel, code, 3, &unusedPixelInput, 1, &output, 1, binary));
   output.systemValue = 1;
   check(!buildShaderContainer(ShaderStage::Pixel, code, 3, nullptr, 0, &output, 1, binary));
 
@@ -298,6 +334,9 @@ int main() {
     check(!resolvePixelInputs(pixelCode,6,&varying,1,resolved) && resolved.empty());
   }
   pixelCode[2] = 0x03001062;
+  ShaderSignatureEntry pixelUnion[] = {{0,3,15},{0,31,15}};
+  check(resolvePixelInputs(pixelCode,6,pixelUnion,2,resolved) && resolved.size() == 1);
+  check(resolved[0].registerIndex == 3 && resolved[0].mask == 3);
   check(!resolvePixelInputs(pixelCode,6,nullptr,0,resolved));
   varying.mask = 1;
   check(!resolvePixelInputs(pixelCode,6,&varying,1,resolved));
@@ -330,6 +369,40 @@ int main() {
   }
   uint32_t duplicateIcb[] = {0x10040,15,0x1835,6,1,2,3,4,0x1835,6,5,6,7,8,0x0100003e};
   check(!buildShaderContainer(ShaderStage::Vertex,duplicateIcb,15,nullptr,0,&immediateOutput,1,binary));
+  // dcl_input_siv v[3][0].xyzw, position; dcl_input v[3][3].xy.
+  uint32_t geometryCode[] = {0x20040,12,0x05000061,0x002010f2,3,0,1,
+    0x0400005f,0x00201032,3,3,0x0100003e};
+  ShaderSignatureEntry geometryInputs[] = {{1,0,15},{0,3,15}};
+  check(resolveGeometryInputs(geometryCode,12,geometryInputs,2,resolved));
+  check(resolved.size() == 2 && resolved[0].scalar == ShaderScalar::Float32 &&
+    resolved[1].scalar == ShaderScalar::Uint32 && resolved[1].mask == 3);
+  ShaderSignatureEntry geometryUnion[] = {{1,0,15},{0,3,15},{0,31,15}};
+  check(resolveGeometryInputs(geometryCode,12,geometryUnion,3,resolved) && resolved.size() == 2);
+  check(linkVertexOutputs(&immediateOutput,1,resolved.data(),1,linked));
+  check(buildShaderContainer(ShaderStage::Geometry,geometryCode,12,geometryInputs,2,
+    &immediateOutput,1,binary));
+  dxbc_spv::dxbc::Container geometryContainer(binary.data(),binary.size());
+  dxbc_spv::dxbc::Signature geometrySignature(geometryContainer.getInputSignatureChunk());
+  auto rawGeometryInput = geometrySignature.findSemantic(0,varyingRegisterSemantic,3);
+  check(rawGeometryInput != geometrySignature.end() &&
+    rawGeometryInput->getScalarType() == dxbc_spv::ir::ScalarType::eU32 &&
+    uint8_t(rawGeometryInput->getUsedComponentMask()) == 3);
+  for (uint32_t vertexCount : {0u,7u,0xffffffffu}) {
+    geometryCode[4] = vertexCount;
+    check(!resolveGeometryInputs(geometryCode,12,geometryInputs,2,resolved) && resolved.empty());
+  }
+  geometryCode[4] = 3; geometryCode[10] = 32;
+  check(!resolveGeometryInputs(geometryCode,12,geometryInputs,2,resolved));
+  geometryCode[10] = 3; geometryCode[6] = 6;
+  check(!resolveGeometryInputs(geometryCode,12,geometryInputs,2,resolved));
+  geometryCode[6] = 1;
+  check(!resolveGeometryInputs(geometryCode,12,geometryInputs,1,resolved));
+  geometryInputs[1].mask = 1;
+  check(!resolveGeometryInputs(geometryCode,12,geometryInputs,2,resolved));
+  geometryInputs[1].mask = 15; geometryInputs[1].systemValue = 1;
+  check(!resolveGeometryInputs(geometryCode,12,geometryInputs,2,resolved));
+  geometryInputs[1].systemValue = 0;
+  check(!resolveGeometryInputs(geometryCode,11,geometryInputs,2,resolved));
 #ifdef _WIN32
   for (bool vertex : {true, false}) {
     std::vector<uint32_t> compiled;
@@ -435,6 +508,28 @@ int main() {
   checkReferencePixels(originalVs->GetBufferPointer(),originalVs->GetBufferSize(),
     originalPs->GetBufferPointer(),originalPs->GetBufferSize(),"POSITION","original");
   checkReferencePixels(rebuiltVs.data(),rebuiltVs.size(),rebuiltPs.data(),rebuiltPs.size(),inputRegisterSemantic,"rebuilt");
+  std::vector<uint32_t> geometryTokens;
+  std::vector<ShaderSignatureEntry> gsi, gso, geometryResolved, geometryLinked;
+  Microsoft::WRL::ComPtr<ID3DBlob> originalGs;
+  check(compileLinkageProbeShader(false,geometryTokens,gsi,gso,true,&originalGs,true));
+  check(resolveGeometryInputs(geometryTokens.data(),geometryTokens.size(),gsi.data(),gsi.size(),geometryResolved));
+  check(linkVertexOutputs(vso.data(),vso.size(),geometryResolved.data(),geometryResolved.size(),linked));
+  check(linkVertexOutputs(gso.data(),gso.size(),resolved.data(),resolved.size(),geometryLinked));
+  std::vector<unsigned char> rebuiltGs;
+  check(buildShaderContainer(ShaderStage::Vertex,linkedVs.data(),linkedVs.size(),vsi.data(),vsi.size(),
+    linked.data(),linked.size(),rebuiltVs));
+  check(buildShaderContainer(ShaderStage::Geometry,geometryTokens.data(),geometryTokens.size(),
+    geometryResolved.data(),geometryResolved.size(),geometryLinked.data(),geometryLinked.size(),rebuiltGs));
+#ifdef VIOGPU_SHADER_SPIRV_TEST
+  checkSpirvInterface(rebuiltVs,true,linked);
+  checkSpirvInterface(rebuiltGs,false,geometryResolved,true);
+  checkSpirvInterface(rebuiltGs,true,geometryLinked);
+#endif
+  checkReferencePixels(originalVs->GetBufferPointer(),originalVs->GetBufferSize(),
+    originalPs->GetBufferPointer(),originalPs->GetBufferSize(),"POSITION","original-gs",
+    originalGs->GetBufferPointer(),originalGs->GetBufferSize());
+  checkReferencePixels(rebuiltVs.data(),rebuiltVs.size(),rebuiltPs.data(),rebuiltPs.size(),inputRegisterSemantic,
+    "rebuilt-gs",rebuiltGs.data(),rebuiltGs.size());
 #endif
   std::printf("shader container validation PASS checks=%u\n", checks);
 }

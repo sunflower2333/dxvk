@@ -1,11 +1,13 @@
 # Native Microsoft runtime activation gaps
 
-Source audit: DXVK68d6bb4 and VKD3D61edc56,2026-09-11. DXVK5b0983d and
+Source audit: DXVK6dfb092 plus GS continuation and VKD3D61edc56,2026-09-12. DXVK5b0983d and
 VKD3D61edc56 pass standalone architecture CI; cf492c9 CI34613950771 and
 ef4b174 CI34615056755 also pass all five jobs. GenMips source c9e389d compiles,
 but the runner's WARP ignores GenerateMips for views starting at array slice1.
 Independent API-only controls in CI34617903693 reproduce it while default
-views and slice0 work. The strict slice0 oracle replacement CI is pending.
+views and slice0 work. The strict slice0 oracle at6dfb092 passes all488WARP
+checks onx64/x86; CI34619152294 passes all5jobs including ARM64. Current GS source
+continuation is not yet Windows-validated.
 Earlier bounded hardware readbacks remain valid
 for their exact tested sources; neither candidate is a registered native
 Direct3D runtime driver. Parent owns a new independent ordinary application
@@ -25,14 +27,12 @@ acceptance tool and all device actions.
 ## DXVK exact present-day omissions
 
 Comparing the current D3D10 table assignments with Microsoft's local
-D3D10DDI_DEVICEFUNCS field list leaves15 fields unset after the current GenMips
+D3D10DDI_DEVICEFUNCS field list leaves10 fields unset after the current GS
 continuation. Two are version-dependent
 vertex pipeline hooks; this is an inventory, not an assertion that every field
 is required for every negotiated version:
 
 ```
-pfnGsSetConstantBuffers pfnGsSetShaderResources pfnGsSetSamplers pfnGsSetShader
-pfnCreateGeometryShader
 pfnCalcPrivateGeometryShaderWithStreamOutput pfnCreateGeometryShaderWithStreamOutput
 pfnSoSetTargets pfnDrawAuto
 pfnSetPredication
@@ -46,6 +46,11 @@ buffer/Texture2D resources, primary/shared descriptors rejected,
 single color target, bounded VS/PS semantics and typed
 resolves. Feature level negotiation must describe this honestly; adding an
 entrypoint symbol or copying D3D10 pointers into a D3D11 table is insufficient.
+GS shader creation/binding and resource slots now reuse DXVK's internal device;
+VS->GS generic inputs preserve raw32 bits and GS->PS types follow the active
+consumer. The runtime union input signature can include undeclared registers;
+these must not require an upstream producer. WARP/SPIR-V verification for this
+continuation is pending. Stream output and further system values remain absent.
 Most translation work can reuse DXVK's internal device, but SetPredication is
 an upstream stub and cannot simply be forwarded as implemented functionality.
 
@@ -130,7 +135,7 @@ views, creation flags, MIP type and filterable format support. Independent
 API-only controls localize the runner's WARP no-op to nonzero first array
 slices, with an active but empty debug queue. The CPU oracle therefore tests
 slice0/mips0-1 and strictly checks all eight subresources for generated pixels
-and isolation; its replacement CI is pending. Production is unchanged, and
+and isolation; all488checks pass onx86/x64 in6dfb092 CI34619152294. Production is unchanged, and
 nonzero-slice DXVK mip generation remains a target validation gap. Other native
 MiscFlags remain rejected; this does not implement shared-resource ownership.
 

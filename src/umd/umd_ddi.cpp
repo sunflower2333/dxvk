@@ -4,6 +4,7 @@
 #include "umd_shader.h"
 #include "umd_query.h"
 #include "umd_allocation.h"
+#include "umd_map.h"
 
 #include <wrl/client.h>
 #include <memory>
@@ -31,7 +32,7 @@ struct Device {
   Shader* vertexShader = nullptr;
   InputLayout* inputLayout = nullptr;
   void error(HRESULT hr) {
-    if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, hr);
+    if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, dxvk::umd::ddiResult(hr));
   }
 };
 struct Resource {
@@ -537,20 +538,21 @@ void APIENTRY mapResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource,
   auto device = get(h);
   if (!out) { device->error(E_INVALIDARG); return; }
   *out = {};
-  if (flags & ~D3D10_DDI_MAP_FLAG_MASK) { device->error(E_INVALIDARG); return; }
   if (!owned(device, get(resource))) return;
-  D3D11_MAPPED_SUBRESOURCE mapped = {};
-  const UINT apiFlags = (flags & D3D10_DDI_MAP_FLAG_DONOTWAIT) ? D3D11_MAP_FLAG_DO_NOT_WAIT : 0;
-  const HRESULT hr = device->context->Map(get(resource)->backend.Get(), subresource,
-    static_cast<D3D11_MAP>(type), apiFlags, &mapped);
-  if (SUCCEEDED(hr)) {
-    out->pData = mapped.pData; out->RowPitch = mapped.RowPitch; out->DepthPitch = mapped.DepthPitch;
-  }
-  device->error(hr);
+  try {
+    device->error(dxvk::umd::mapSubresource(type, flags, out,
+      [&](D3D11_MAP apiType, UINT apiFlags, D3D11_MAPPED_SUBRESOURCE* mapped) {
+        return device->context->Map(get(resource)->backend.Get(), subresource, apiType, apiFlags, mapped);
+      }));
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
 }
 void APIENTRY unmapResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource, UINT subresource) {
   auto device = get(h);
-  if (owned(device, get(resource))) device->context->Unmap(get(resource)->backend.Get(), subresource);
+  if (!owned(device, get(resource))) return;
+  try { device->context->Unmap(get(resource)->backend.Get(), subresource); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
 }
 SIZE_T APIENTRY shaderSize(D3D10DDI_HDEVICE, const UINT*, const D3D10DDIARG_STAGE_IO_SIGNATURES*) {
   return sizeof(Shader);
@@ -1109,6 +1111,13 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnResourceUnmap = unmapResource;
   table->pfnStagingResourceMap = mapResource;
   table->pfnStagingResourceUnmap = unmapResource;
+  table->pfnDynamicIABufferMapDiscard = mapResource;
+  table->pfnDynamicIABufferMapNoOverwrite = mapResource;
+  table->pfnDynamicIABufferUnmap = unmapResource;
+  table->pfnDynamicConstantBufferMapDiscard = mapResource;
+  table->pfnDynamicConstantBufferUnmap = unmapResource;
+  table->pfnDynamicResourceMapDiscard = mapResource;
+  table->pfnDynamicResourceUnmap = unmapResource;
   table->pfnCalcPrivateShaderSize = shaderSize;
   table->pfnCreateVertexShader = createVertexShader;
   table->pfnCreatePixelShader = createPixelShader;

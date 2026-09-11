@@ -1,5 +1,14 @@
 # Progress
 
+2026-09-11: Stable depth b47f955 ALL PASS. Prepared/pushed paired60005
+a27eb3e (ABI,377identity and full contractPASS), CI34598876655 running.
+Standalone three ARM64 binaries downloaded from childCI; paths, SHA256 and
+minimal usage recorded in hardware-probe-b47f955.md and delivered to main.
+New vertex child7b30c07 CI34598775633 running. Continuing Map busy/removal
+status translation and mandatory dynamic buffer/texture Map DDIs; new CPU
+failure tests prevent partial output, and GPU probe uploads its vertex data
+through DynamicIABufferMapDiscard. These additions are outside60005.
+
 2026-09-11: Local vertex-input extension sanitizer checks now PASS:
 identity69, trailer176, shader53. Native layout maps registers with explicit
 R32 float/uint/sint vector formats; generic VS compilation waits for the

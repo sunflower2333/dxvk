@@ -21,6 +21,12 @@ belongs to the caller; objects retain an owning-device pointer and backend COM
 references. DDI CPU access and DO_NOT_WAIT bits are translated explicitly to
 the different D3D11 API bit values.
 
+Dynamic IA/constant-buffer/resource Map DDIs share the checked map path.
+Busy and device-loss errors are translated to native DDI codes; failed maps
+leave output pointers and pitches zero. The GPU probe uploads its positions
+through a dynamic vertex buffer's MapDiscard/Unmap pair. CPU tests cover
+partially written backend failure results and the distinct API/DDI flag values.
+
 ResourceUpdateSubresourceUP and ResourceCopyRegion support buffers and
 single-sample RGBA8/BGRA8 Texture2D subresources, with mip/array/box bounds,
 usage and pitch checks. Empty boxes are no-ops. The device probe verifies an

@@ -168,7 +168,8 @@ int main(int argc, char** argv) {
       || !table.pfnCalcPrivateDepthStencilStateSize || !table.pfnCreateDepthStencilState
       || !table.pfnDestroyDepthStencilState || !table.pfnSetDepthStencilState
       || !table.pfnIaSetVertexBuffers || !table.pfnCalcPrivateElementLayoutSize
-      || !table.pfnCreateElementLayout || !table.pfnDestroyElementLayout || !table.pfnIaSetInputLayout) {
+      || !table.pfnCreateElementLayout || !table.pfnDestroyElementLayout || !table.pfnIaSetInputLayout
+      || !table.pfnDynamicIABufferMapDiscard || !table.pfnDynamicIABufferUnmap) {
     std::fputs("Required development DDI absent; use the probe and DLL from one exact build\n", stderr);
     if (table.pfnDestroyDevice) table.pfnDestroyDevice(device);
     return 15;
@@ -272,11 +273,19 @@ int main(int argc, char** argv) {
   auto index = std::make_unique<ProbeResource>(device, table, indexDesc);
   FLOAT positions[6] = {-1,1,3,1,-1,-3};
   D3D10DDI_MIPINFO vertexMip = {24,1,1,24,1,1};
-  D3D10_DDIARG_SUBRESOURCE_UP vertexData = {positions,24,24};
   D3D10DDIARG_CREATERESOURCE vertexDesc = indexDesc;
-  vertexDesc.pMipInfoList = &vertexMip; vertexDesc.pInitialDataUP = &vertexData;
+  vertexDesc.pMipInfoList = &vertexMip; vertexDesc.pInitialDataUP = nullptr;
   vertexDesc.BindFlags = D3D10_DDI_BIND_VERTEX_BUFFER;
+  vertexDesc.Usage = D3D10_DDI_USAGE_DYNAMIC; vertexDesc.MapFlags = D3D10_DDI_CPU_ACCESS_WRITE;
   auto vertices = std::make_unique<ProbeResource>(device, table, vertexDesc);
+  D3D10DDI_MAPPED_SUBRESOURCE vertexMapping = {};
+  if (SUCCEEDED(lastError)) {
+    table.pfnDynamicIABufferMapDiscard(device, vertices->handle, 0, D3D10_DDI_MAP_WRITE_DISCARD, 0, &vertexMapping);
+    if (SUCCEEDED(lastError) && vertexMapping.pData) {
+      std::memcpy(vertexMapping.pData, positions, sizeof(positions));
+      table.pfnDynamicIABufferUnmap(device, vertices->handle, 0);
+    }
+  }
   D3D10DDIARG_INPUT_ELEMENT_DESC inputElement = {};
   inputElement.Format = DXGI_FORMAT_R32G32_FLOAT;
   inputElement.InputSlotClass = D3D10_DDI_INPUT_PER_VERTEX_DATA;

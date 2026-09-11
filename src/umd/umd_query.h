@@ -1,6 +1,7 @@
 #pragma once
 
 #include "umd_ddi.h"
+#include "umd_result.h"
 #include <d3d11.h>
 #include <array>
 #include <cstddef>
@@ -44,11 +45,8 @@ HRESULT readQueryData(const QueryInfo& info, void* data, UINT size, UINT flags, 
       || (data ? size != info.size : size != 0)) return E_INVALIDARG;
   const UINT apiFlags = (flags & D3D10_DDI_GET_DATA_DO_NOT_FLUSH) ? D3D11_ASYNC_GETDATA_DONOTFLUSH : 0;
   const HRESULT hr = getData(data ? scratch.data() : nullptr, size, apiFlags);
-  if (hr == S_FALSE || hr == DXGI_ERROR_WAS_STILL_DRAWING) return DXGI_DDI_ERR_WASSTILLDRAWING;
-  if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET
-      || hr == DXGI_ERROR_DEVICE_HUNG || hr == DXGI_ERROR_DRIVER_INTERNAL_ERROR)
-    return D3DDDIERR_DEVICEREMOVED;
-  if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  if (hr == S_FALSE) return DXGI_DDI_ERR_WASSTILLDRAWING;
+  if (hr != S_OK) return FAILED(hr) ? ddiResult(hr) : E_FAIL;
   if (data) std::memcpy(data, scratch.data(), size);
   return S_OK;
 }

@@ -21,7 +21,7 @@ umd_development = shared_library('viogpudxvk', 'umd_ddi.cpp', 'umd_adapter.cpp',
 
 umd_ddi_probe = executable('dxvk-umd-ddi-probe', '../../tests/umd-ddi-probe.cpp',
   link_with : [umd_development],
-  dependencies : [cpp.find_library('d3dcompiler')],
+  dependencies : [cpp.find_library('d3dcompiler'), lib_gdi32],
 )
 
 umd_shader_test = executable('dxvk-umd-shader-test',

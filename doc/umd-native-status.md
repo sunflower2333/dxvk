@@ -52,6 +52,10 @@ Two device-only executables are packaged for coordinated testing:
   clears magenta, copies and verifies 4096 pixels.
 - `dxvk-umd-ddi-probe.exe <16 hex digits>` uses real WDK DDI function pointers,
   clears green, draws a red full-screen triangle and verifies all 4096 pixels.
+  Optional `--adapter` opens that exact LUID through KMT, reads the real KMD
+  private reply and creates the device through the new adapter harness. Its
+  runtime callbacks are supplied by the probe; this is still not Microsoft
+  D3D runtime activation. Old KMDs without the identity trailer fail closed.
 
 The argument encodes the eight LUID bytes in memory order; it is not an adapter
 index or a printed 64-bit integer. Neither executable has yet been run on the

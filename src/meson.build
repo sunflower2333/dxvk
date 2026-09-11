@@ -33,6 +33,13 @@ if get_option('enable_d3d8')
   subdir('d3d8')
 endif
 
+if get_option('enable_umd')
+  if platform != 'windows' or not get_option('enable_d3d11')
+    error('Native UMD development requires Windows and the D3D11 core.')
+  endif
+  subdir('umd')
+endif
+
 # Nothing selected
 if not get_option('enable_d3d8') and not get_option('enable_d3d9') and not get_option('enable_dxgi')
   warning('Nothing selected to be built.?')

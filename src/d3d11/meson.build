@@ -41,7 +41,6 @@ d3d11_src = [
   'd3d11_initializer.cpp',
   'd3d11_input_layout.cpp',
   'd3d11_interop.cpp',
-  'd3d11_main.cpp',
   'd3d11_on_12.cpp',
   'd3d11_options.cpp',
   'd3d11_query.cpp',
@@ -79,7 +78,7 @@ else
   d3d11_dxgi_deps = [ dxgi_dep ]
 endif
 
-d3d11_dll = shared_library(dxvk_name_prefix+'d3d11', dxgi_common_src + d3d11_src + d3d10_src,
+d3d11_dll = shared_library(dxvk_name_prefix+'d3d11', dxgi_common_src + d3d11_src + d3d10_src + ['d3d11_main.cpp'],
     glsl_generator.process(d3d11_shaders), d3d11_res,
   dependencies        : d3d11_dxgi_deps + [ dxvk_dep, dxbc_spirv_dep ],
   include_directories : dxvk_include_path,
@@ -89,6 +88,17 @@ d3d11_dll = shared_library(dxvk_name_prefix+'d3d11', dxgi_common_src + d3d11_src
   link_depends        : [ d3d11_link_depends ],
   kwargs              : dxvk_so_version,
 )
+
+if get_option('enable_umd')
+  # Embed implementation without the public runtime exports or the API
+  # factory's fallback adapter selection.
+  d3d11_umd_core = static_library('dxvk-d3d11-umd-core',
+    dxgi_common_src + d3d11_src + d3d10_src,
+    glsl_generator.process(d3d11_shaders),
+    dependencies : d3d11_dxgi_deps + [dxvk_dep, dxbc_spirv_dep],
+    include_directories : dxvk_include_path,
+  )
+endif
 
 d3d11_dep = declare_dependency(
   link_with           : [ d3d11_dll ],

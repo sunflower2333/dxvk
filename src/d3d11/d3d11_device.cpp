@@ -3922,6 +3922,13 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D11DXGIDevice::GetParent(
           REFIID                  riid,
           void**                  ppParent) {
+    if (!ppParent)
+      return E_POINTER;
+    *ppParent = nullptr;
+    // An embedded UMD device has no second DXGI adapter object. The
+    // Windows runtime owns that object and must not be entered recursively.
+    if (!m_dxgiAdapter)
+      return DXGI_ERROR_NOT_FOUND;
     return m_dxgiAdapter->QueryInterface(riid, ppParent);
   }
   
@@ -4023,7 +4030,7 @@ namespace dxvk {
       return DXGI_ERROR_INVALID_CALL;
     
     *pAdapter = m_dxgiAdapter.ref();
-    return S_OK;
+    return m_dxgiAdapter ? S_OK : DXGI_ERROR_NOT_FOUND;
   }
   
   

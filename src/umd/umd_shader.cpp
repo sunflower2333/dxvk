@@ -69,18 +69,33 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   auto chunkBytes = std::move(chunk).extract();
   dxbc::Parser parser(util::ByteReader(chunkBytes.data(), chunkBytes.size()));
   if (!parser.getShaderInfo()) return false;
-  dxbc::Builder builder(dxbc::ShaderType(uint32_t(stage)), 4, 0);
   while (parser) {
     auto instruction = parser.parseInstruction();
     if (!instruction) return false;
-    builder.add(std::move(instruction));
   }
-  dxbc::ContainerInfo info;
-  info.inputSignature = &input;
-  info.outputSignature = &output;
-  info.code = &builder;
+  // Preserve the supplied tokens verbatim. Re-encoding parsed instructions
+  // can canonicalize operands and custom flags; container construction does
+  // not require rewriting the shader program at all.
   util::ByteWriter writer;
-  if (!dxbc::buildContainer(writer, info)) return false;
+  writer.write(util::FourCC("DXBC"));
+  for (unsigned i = 0; i < 4; i++) writer.write(uint32_t(0));
+  writer.write(uint32_t(1));
+  writer.write(uint32_t(0)); // file size, filled below
+  writer.write(uint32_t(3)); // ISGN, OSGN, SHDR
+  for (unsigned i = 0; i < 3; i++) writer.write(uint32_t(0));
+  const uint32_t inputOffset = uint32_t(writer.moveToEnd());
+  if (!input.write(writer)) return false;
+  const uint32_t outputOffset = uint32_t(writer.moveToEnd());
+  if (!output.write(writer)) return false;
+  const uint32_t codeOffset = uint32_t(writer.moveToEnd());
+  if (!writer.write(chunkBytes.size(), chunkBytes.data())) return false;
+  const uint32_t fileSize = uint32_t(writer.moveToEnd());
+  writer.moveTo(24);
+  writer.write(fileSize);
+  writer.moveTo(32);
+  writer.write(inputOffset);
+  writer.write(outputOffset);
+  writer.write(codeOffset);
   container = std::move(writer).extract();
   const auto checksum = dxbc::hashDxbcBinary(container.data(), container.size());
   std::memcpy(container.data() + offsetof(dxbc::FileHeader, hash), checksum.data.data(), checksum.data.size());

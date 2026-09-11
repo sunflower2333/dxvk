@@ -71,9 +71,15 @@ int main() {
     std::vector<uint32_t> compiled;
     check(compileProbeShader(vertex, compiled));
     output.systemValue = vertex ? 1 : 0;
-    check(buildShaderContainer(vertex ? ShaderStage::Vertex : ShaderStage::Pixel,
+    const bool rebuilt = buildShaderContainer(vertex ? ShaderStage::Vertex : ShaderStage::Pixel,
       compiled.data(), compiled.size(), vertex ? &input : nullptr, vertex ? 1 : 0,
-      &output, 1, binary));
+      &output, 1, binary);
+    if (!rebuilt) {
+      std::fprintf(stderr, "reconstruction failed stage=%s words=%zu\n", vertex ? "VS" : "PS", compiled.size());
+      for (uint32_t word : compiled) std::fprintf(stderr, "%08x ", word);
+      std::fputc('\n', stderr);
+    }
+    check(rebuilt);
     dxbc_spv::dxbc::Container real(binary.data(), binary.size());
     check(bool(real) && real.validateHash());
     auto realCode = real.getCodeChunk();

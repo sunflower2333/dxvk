@@ -1,5 +1,10 @@
 # Progress
 
+2026-09-11: Typed e98896b control repeats unchanged green; actual descriptors
+and caps are correct. This is not a typeless-only behavior. Added Microsoft
+debug layer/InfoQueue output for the original creation and GenMips operation;
+fallback is only DXGI_ERROR_SDK_COMPONENT_MISSING. Production unchanged.
+
 2026-09-11: ef4b174 CI34615056755 ALL5PASS. c40dc0d diagnostics show old
 green mip1 untouched, not a rounding error. Read official GenerateMips typed
 format/support contract; changed the mip oracle to an isolated typed RGBA8

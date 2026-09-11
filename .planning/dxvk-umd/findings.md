@@ -1,5 +1,11 @@
 # Findings
 
+- Typed control e98896b also fails old-green mip1. Actual resource format28,
+  MiscFlags1, support3fef3f3, viewfirstMip0/mips2/firstSlice1/slices1 all match
+  the intended call. This disproves a typeless-only explanation. Add official
+  D3D11 debug layer/InfoQueue diagnostics, with fallback only when the SDK
+  debug component is absent; do not change production or relax pixels.
+
 - c40dc0d WARP diagnostics prove the selected array's mip1 remains its old
   green valueff00ff00 after GenerateMips; the base is correctly red and other
   slice remains zero. Oracle resource was typeless. Microsoft GenerateMips

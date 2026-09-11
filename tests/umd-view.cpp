@@ -1,12 +1,14 @@
 #include "../src/umd/umd_view.h"
 #include "../src/umd/umd_state.h"
 #include <d3dcompiler.h>
+#include <d3d11sdklayers.h>
 #include <wrl/client.h>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <vector>
 
 using Microsoft::WRL::ComPtr;
 using namespace dxvk::umd;
@@ -14,6 +16,20 @@ static unsigned checks;
 #define CHECK(c) do { checks++; if (!(c)) { \
   std::fprintf(stderr, "view check %u line %d: %s\n", checks, __LINE__, #c); \
   std::exit(1); } } while (0)
+
+static void debugMessages(ID3D11InfoQueue* queue) {
+  if (!queue) { std::puts("WARP_DEBUG_LAYER unavailable"); return; }
+  const UINT64 count = queue->GetNumStoredMessagesAllowedByRetrievalFilter();
+  for (UINT64 i = 0; i < std::min<UINT64>(count, 16); i++) {
+    SIZE_T size = 0;
+    if (FAILED(queue->GetMessage(i, nullptr, &size))) continue;
+    std::vector<unsigned char> storage(size);
+    auto message = reinterpret_cast<D3D11_MESSAGE*>(storage.data());
+    if (SUCCEEDED(queue->GetMessage(i, message, &size)))
+      std::printf("WARP_DEBUG severity=%u id=%u %s\n", message->Severity, message->ID,
+        message->pDescription ? message->pDescription : "");
+  }
+}
 
 static void pixels(ID3D11Device* device, ID3D11DeviceContext* context,
     ID3D11Texture2D* texture, UINT index, UINT color) {
@@ -116,8 +132,14 @@ int main() {
   // subresource descriptions. This is CPU WARP proof, never target GPU proof.
   ComPtr<ID3D11Device> device;
   ComPtr<ID3D11DeviceContext> context;
-  CHECK(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, nullptr, 0,
-    D3D11_SDK_VERSION, &device, nullptr, &context) == S_OK);
+  HRESULT created = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+    D3D11_CREATE_DEVICE_DEBUG, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, &context);
+  if (created == DXGI_ERROR_SDK_COMPONENT_MISSING)
+    created = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
+      nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, &context);
+  CHECK(created == S_OK);
+  ComPtr<ID3D11InfoQueue> debugQueue;
+  device.As(&debugQueue);
   // Validate native reset/replacement semantics against an independent
   // runtime implementation, including a hole that must retain its index.
   const FLOAT nan = std::numeric_limits<FLOAT>::quiet_NaN();
@@ -211,7 +233,10 @@ int main() {
     actualResource.Format, actualResource.MiscFlags, generationSupport,
     actualGenerationView.Texture2DArray.MostDetailedMip, actualGenerationView.Texture2DArray.MipLevels,
     actualGenerationView.Texture2DArray.FirstArraySlice, actualGenerationView.Texture2DArray.ArraySize);
+  debugMessages(debugQueue.Get());
+  if (debugQueue) debugQueue->ClearStoredMessages();
   context->GenerateMips(generationView.Get());
+  debugMessages(debugQueue.Get());
   std::puts("WARP_VIEW_STAGE generated-mip-array");
   for (UINT i = 0; i < 4; i++) pixels(device.Get(), context.Get(), generatedTexture.Get(), i, i >= 2 ? 0xff0000ff : 0);
 

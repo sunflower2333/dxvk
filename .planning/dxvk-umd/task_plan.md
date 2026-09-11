@@ -6,6 +6,10 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+e98896btypedcontrolCI34616556328sameoldgreenFAIL, despiteformat28/misc1/
+caps3fef3f3/range0,2,1,1. Typeless-onlyhypothesisdisproved. AddedD3D11debug
+layerandInfoQueuebefore/afterGenerateMips; nextdiagnosticCIpending. Keep
+productionc9codeunchangedandallexactpixelsstrict. ef4b174ALL5PASS.
 Diagnosis c40dc0dCI34615967837: selectedslice1/mip1expectedredff0000ff,
 actualoldgreenff00ff00; priorbase/otherslicecorrect. Originaloraclebasewas
 TYPELESS. SplitrequiredmiporacleontypedRGBA8withexplicitMIP_AUTOGENcapcheck,
@@ -123,6 +127,10 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- e98896b typed RGBA8 control failed the same old-green mip result despite
+  correct queried format/flags/caps/view. Added D3D11 debug layer and InfoQueue;
+  the typeless-only hypothesis is explicitly disproved. A documentation patch
+  context mismatch applied no changes; verify exact text before retrying.
 - c9e389d x64/x86 WARP view test both fail check391 at a pixel comparison.
   Added exact subresource/coordinate/value and stage diagnostics; production
   compile succeeded. gh run view --job --log refuses logs while sibling jobs

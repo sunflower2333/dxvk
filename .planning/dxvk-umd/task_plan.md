@@ -6,6 +6,10 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+ef4b174 state-resetCI34615056755 running. FurtherGenMipsmandatorycallback
+sourcecomplete: nativeAUTO_GEN_MIP_MAPflag, correctE_FAIL/E_INVALIDARG,
+ownedSRVrange and realDXVKGPUmipblits. WARPchecks exactmips/arrayisolation;
+no change to targetbackendworkload. GenMipscandidateCIpending.
 cf492c9 closes four actual native initialization slots; CI34613950771ALL5PASS.
 Newnative state-reset continuation implements allD3D10topologysetters,
 16viewportatomicreplacement/nullslots/zerocount andscissorunbinding.

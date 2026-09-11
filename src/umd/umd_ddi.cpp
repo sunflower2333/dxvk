@@ -197,10 +197,11 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
   if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
   auto resource = new (out.pDrvPrivate) Resource();
   resource->owner = device;
+  UINT miscFlags = 0;
   if (!args || !args->pMipInfoList || !args->MipLevels || !args->ArraySize ||
       args->MipLevels > D3D11_REQ_MIP_LEVELS || args->ArraySize > D3D11_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION ||
       args->pPrimaryDesc ||
-      args->MiscFlags || (args->MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK) ||
+      !dxvk::umd::textureMiscFlags(*args, miscFlags) || (args->MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK) ||
       (args->BindFlags & ~(D3D10_DDI_BIND_PIPELINE_MASK | D3D10_DDI_BIND_PRESENT))) {
     device->error(E_INVALIDARG); return;
   }
@@ -245,6 +246,7 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
       desc.Format = args->Format;
       desc.SampleDesc = args->SampleDesc;
       desc.Usage = static_cast<D3D11_USAGE>(args->Usage);
+      desc.MiscFlags = miscFlags;
       desc.BindFlags = args->BindFlags & D3D10_DDI_BIND_PIPELINE_MASK;
       desc.CPUAccessFlags = ((args->MapFlags & D3D10_DDI_CPU_ACCESS_READ) ? D3D11_CPU_ACCESS_READ : 0)
                          | ((args->MapFlags & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
@@ -296,6 +298,32 @@ void APIENTRY destroyShaderView(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW
   auto view = get(object);
   if (!view || view->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
   view->~ShaderView();
+}
+void APIENTRY generateMips(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW object) {
+  auto device = get(h); auto view = get(object);
+  if (!view || view->owner != device || !view->backend) {
+    device->error(E_INVALIDARG); return;
+  }
+  ComPtr<ID3D11Resource> resource;
+  view->backend->GetResource(&resource);
+  ComPtr<ID3D11Texture2D> texture;
+  if (FAILED(resource.As(&texture))) { device->error(E_INVALIDARG); return; }
+  D3D11_TEXTURE2D_DESC desc = {}; texture->GetDesc(&desc);
+  D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc = {}; view->backend->GetDesc(&viewDesc);
+  HRESULT hr = dxvk::umd::mipGenerationStatus(desc, viewDesc);
+  if (FAILED(hr)) { device->error(hr); return; }
+  try {
+    UINT support = 0;
+    hr = device->backend->CheckFormatSupport(viewDesc.Format, &support);
+    if (FAILED(hr)) { device->error(hr); return; }
+    if (!(support & D3D11_FORMAT_SUPPORT_MIP_AUTOGEN)) {
+      device->error(E_INVALIDARG); return;
+    }
+    // DXVK emits mip blits for this exact SRV range with its own GPU hazard
+    // tracking. No CPU readback, unrelated slices or global idle are needed.
+    device->context->GenerateMips(view->backend.Get());
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
 }
 template<bool Vertex>
 void APIENTRY setShaderResources(D3D10DDI_HDEVICE h, UINT start, UINT count,
@@ -1211,6 +1239,7 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnCalcPrivateShaderResourceViewSize = shaderViewSize;
   table->pfnCreateShaderResourceView = createShaderView;
   table->pfnDestroyShaderResourceView = destroyShaderView;
+  table->pfnGenMips = generateMips;
   table->pfnVsSetShaderResources = setShaderResources<true>;
   table->pfnPsSetShaderResources = setShaderResources<false>;
   table->pfnCalcPrivateSamplerSize = samplerSize;

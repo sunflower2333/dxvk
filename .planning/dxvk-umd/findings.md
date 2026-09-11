@@ -1,5 +1,11 @@
 # Findings
 
+- Native GenMips requires D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP, not a guessed
+  D3D10 API flag name. DXVK already emits GPU mip blits for the precise SRV
+  range. Add native flag validation and callback, checking required bind
+  flags and filterable MIP_AUTOGEN support. Missing creation flags produce
+  E_FAIL; invalid MIP kind produces E_INVALIDARG per Microsoft contract.
+
 - ARM64/x64 activation audit: Microsoft documents UserModeDriverNameWoW for
   32-bit UMDs, and UserModeDriverName list positions for D3D versions. Neither
   supplies an x64-on-ARM selector. DriverStore paths have no WOW filesystem

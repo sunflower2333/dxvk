@@ -9,6 +9,35 @@ inline bool viewRange(UINT first, UINT count, UINT total) {
   return count && first < total && count <= total - first;
 }
 
+inline bool textureMiscFlags(const D3D10DDIARG_CREATERESOURCE& args, UINT& flags) {
+  flags = 0;
+  if (args.MiscFlags & ~D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP) return false;
+  if (!(args.MiscFlags & D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP)) return true;
+  constexpr UINT required = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_SHADER_RESOURCE;
+  if (args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
+      || args.Usage != D3D10_DDI_USAGE_DEFAULT || args.MapFlags
+      || args.SampleDesc.Count != 1 || args.SampleDesc.Quality
+      || (args.BindFlags & required) != required) return false;
+  flags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+  return true;
+}
+
+inline HRESULT mipGenerationStatus(const D3D11_TEXTURE2D_DESC& resource,
+    const D3D11_SHADER_RESOURCE_VIEW_DESC& view) {
+  constexpr UINT required = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+  if (!(resource.MiscFlags & D3D11_RESOURCE_MISC_GENERATE_MIPS)
+      || (resource.BindFlags & required) != required) return E_FAIL;
+  if (resource.SampleDesc.Count != 1) return E_INVALIDARG;
+  if (view.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D)
+    return viewRange(view.Texture2D.MostDetailedMip, view.Texture2D.MipLevels,
+      resource.MipLevels) ? S_OK : E_INVALIDARG;
+  if (view.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2DARRAY)
+    return viewRange(view.Texture2DArray.MostDetailedMip, view.Texture2DArray.MipLevels,
+        resource.MipLevels) && viewRange(view.Texture2DArray.FirstArraySlice,
+        view.Texture2DArray.ArraySize, resource.ArraySize) ? S_OK : E_INVALIDARG;
+  return E_INVALIDARG;
+}
+
 inline bool textureShaderView(const D3D10DDIARG_CREATESHADERRESOURCEVIEW& args,
     const D3D11_TEXTURE2D_DESC& resource, D3D11_SHADER_RESOURCE_VIEW_DESC& out) {
   out = {};

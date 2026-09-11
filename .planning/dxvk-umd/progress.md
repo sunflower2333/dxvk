@@ -1,5 +1,12 @@
 # Progress
 
+2026-09-11: ef4b174 CI34615056755 running. Continuing mandatory GenMips DDI
+with native auto-mip creation flag translation, owned resource/view validation
+and existing DXVK GPU mip generation. WARP verifies selected-array isolation
+and exact lower-mip pixels; target GPU workload remains unchanged. New source
+is not yet compiled or published. A guessed workflow filename returned404;
+resolved actual .github/workflows/build-native-umd.yml before retry.
+
 2026-09-11: cf492c9 CI34613950771 ALL5PASS. New continuation implements
 native UNDEFINED and other D3D10 topology setters, full16viewport replacement,
 null-viewport holes and unconditional zero-count viewport/scissor unbinding.

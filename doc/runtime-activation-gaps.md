@@ -22,7 +22,8 @@ acceptance tool and all device actions.
 ## DXVK exact present-day omissions
 
 Comparing the current D3D10 table assignments with Microsoft's local
-D3D10DDI_DEVICEFUNCS field list leaves16 fields unset. Two are version-dependent
+D3D10DDI_DEVICEFUNCS field list leaves15 fields unset after the current GenMips
+continuation. Two are version-dependent
 vertex pipeline hooks; this is an inventory, not an assertion that every field
 is required for every negotiated version:
 
@@ -31,14 +32,14 @@ pfnGsSetConstantBuffers pfnGsSetShaderResources pfnGsSetSamplers pfnGsSetShader
 pfnCreateGeometryShader
 pfnCalcPrivateGeometryShaderWithStreamOutput pfnCreateGeometryShaderWithStreamOutput
 pfnSoSetTargets pfnDrawAuto
-pfnGenMips pfnSetPredication
+pfnSetPredication
 pfnCalcPrivateOpenedResourceSize pfnOpenResource
 pfnSetTextFilterSize
 pfnResetPrimitiveID pfnSetVertexPipelineOutput
 ```
 
 Several rendering restrictions remain even for non-null callbacks: only
-buffer/Texture2D resources, all MiscFlags and primary descriptors rejected,
+buffer/Texture2D resources, primary/shared descriptors rejected,
 single color target, bounded VS/PS semantics and typed
 resolves. Feature level negotiation must describe this honestly; adding an
 entrypoint symbol or copying D3D10 pointers into a D3D11 table is insufficient.
@@ -119,6 +120,12 @@ compacting later indices; zero count clears the whole viewport/scissor state
 even if the runtime clear hint is zero. This does not add geometry shaders or
 claim their draw coverage. Existing Microsoft WARP CI verifies actual state
 getters after replacement, shrink, invalid-input refusal and zero-count reset.
+
+The next mandatory callback, GenMips, now maps the native auto-mip flag to the
+embedded API resource and uses the backend's GPU mip blits. It validates owned
+views, creation flags, MIP type and filterable format support. WARP checks exact
+generated pixels and isolation of a selected array slice. Other native MiscFlags
+remain rejected; this does not implement shared-resource ownership.
 
 1. Build actual adapter/version/CreateDevice wiring and complete the chosen
    runtime table as one coherent candidate. Preserve exact-LUID filtering and

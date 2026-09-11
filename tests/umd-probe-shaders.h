@@ -77,7 +77,9 @@ Varyings vs_main(float2 position : POSITION) {
   value.position = float4(position, 0, 1);
   value.uv = position * float2(0.5,-0.5) + 0.5;
   value.bits = patterns[min((uint)max(position.x,0),2)];
-  value.rawFloats = asfloat(uint4(0x7fc01234,0x80000000,0x7f800000,0xff800000));
+  // Keep the signed zero dynamic: the original Microsoft constant-folded
+  // shader does not preserve the sign of asfloat(0x80000000) here.
+  value.rawFloats = asfloat(uint4(0x7fc01234,value.bits.x,0x7f800000,0xff800000));
   value.fixedBits = uint4(0x12345678,0x87654321,0,1);
   return value;
 }

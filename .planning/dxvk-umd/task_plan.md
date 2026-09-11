@@ -6,6 +6,11 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+e4a3654 fastCI34605452108 originalMicrosoftWARP failed exactlyone of16payload
+words: rawFloats.y expected80000000(-0),actual00000000(+0). This establishes
+an invalid constant-payload expectation independently ofDXVK. Generate that
+signed zero from dynamicICB bits.x, retain strict checks and failure diagnostics,
+then require both original/rebuilt WARP and next bounded target run.
 URGENT: Main'sseven-dxvk9c55-ddi-02failed final4096/4096pixels atLUID582A,
 exit7/238ms;creation/copy/depth-stencilPASS,event1/error0. Shell2028/5780
 retained. Diagnose added linkage before further runtime DDIs. New candidate

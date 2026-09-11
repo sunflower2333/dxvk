@@ -81,6 +81,11 @@ static void checkReferencePixels(const void* vs, size_t vsBytes, const void* ps,
   }
   std::fprintf(stderr," mismatches=%u\n",mismatches);
   context->Unmap(staging.Get(),0);
+  if (mismatches) {
+    ComPtr<ID3DBlob> assembly;
+    if (SUCCEEDED(D3DDisassemble(vs,vsBytes,0,label,&assembly)))
+      std::fwrite(assembly->GetBufferPointer(),1,assembly->GetBufferSize(),stderr);
+  }
   check(!mismatches);
 }
 #endif

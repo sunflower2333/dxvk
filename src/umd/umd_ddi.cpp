@@ -611,8 +611,8 @@ void APIENTRY resourceHazard(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
   // DXVK tracks Vulkan access transitions at the ensuing buffer bind/use.
   // This notification does not require a CPU/GPU synchronization operation.
 }
-void APIENTRY shaderViewHazard(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource,
-    D3D10DDI_HSHADERRESOURCEVIEW object) {
+void APIENTRY shaderViewHazard(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW object,
+    D3D10DDI_HRESOURCE resource) {
   auto device = get(h);
   if (!owned(device, get(resource))) return;
   auto view = get(object);

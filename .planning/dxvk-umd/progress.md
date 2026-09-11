@@ -1,5 +1,12 @@
 # Progress
 
+2026-09-11: Early970f14a WDK compile caught a docs/ABI mismatch: real SRV
+hazard signature is device/view/resource, not the local docs' argument names.
+Fixed production and probe argument order plus mutable clear color array.
+New VKD3D45eb12b validates UAV data/counter handle registry; fixture zero-flag
+spelling normalized to actual field type before replacement CI. No target
+files delivered from these unvalidated sources.
+
 2026-09-11: Implemented native whole-resource staging-busy query through
 embedded DXVK CS/GPU tracking, no remap or GPU idle. Added buffer and SRV
 hazard notifications with ownership/view-resource checks. Target fixture now

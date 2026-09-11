@@ -1,12 +1,20 @@
 # Findings
 
+- VKD3D continuation found UAV creation still dereferenced arbitrary incoming
+  data/counter handles, unlike the newer SRV path. Both now resolve the locked
+  live buffer registry before backend access. New WDK fixture uses pointer1,
+  wrong object kind and removed registry entries and verifies zero backend
+  writes after every rejection; valid counter forwarding remains covered.
+
 - Native ResourceIsStagingBusy queries the whole resource and is legal while
   subresources remain mapped. Implement through embedded DXVK CS sequence and
   GPU access tracking, never Map again or return a constant. Pending buffers
   count busy without requiring submission. Untracked sequence sentinel must
   not be compared as a real sequence. Existing Vulkan barriers own actual
   read/write transitions; hazard DDIs validate native ownership without GPU
-  idle. SRV hazard parameter order is device, resource, view.
+  idle. IMPORTANT: Microsoft's local markdown names the SRV hazard parameters
+  in the wrong order. Real WDK compilation proves the signature is device,
+  view, resource. Corrected implementation and probe to the actual typed ABI.
 - Target1a7cf3b andbc61de9 now PASS with original shells retained. These are
   bounded native callbacks and GPU readback, not Microsoft runtime activation
   or application/visible Present support. Parent owns final host trace closure.

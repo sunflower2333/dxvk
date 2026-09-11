@@ -29,7 +29,9 @@ host0d87/Virgl28a/TURNIPblit, DWM2140/Explorer5972retained. Hostclosurepending.
 Paired97e7b00 pinsbc61de9; CI34610190479 ALL7PASS, finalartifactcheckpending.
 ResourceIsStagingBusy and read-after-write hazards implemented with real
 backendtracking and bounded mapped-resource/actualhazard targetfixture.
-Run WindowsCI before parenthardwarehandoff; source remainsuntested.
+970f14a CI34611474525 early ARM64 compile caught Microsoftmarkdown hazard
+parameter order mismatch and mutable FLOAT clear contract. Actual WDK uses
+device/view/resource; corrected both. Replacement CI before parenthandoff.
 No childremoteactions; native runtime/displayPresent acceptance remains open.
 
 ## Earlier checkpoint sequence
@@ -92,6 +94,11 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- 970f14a CI34611474525 actual WDK signature is device/view/resource for SRV
+  hazards, contrary to local Microsoft markdown's parameter naming. Corrected
+  production and test order; clear callback also requires mutable FLOAT[].
+- VKD3D UAV fixture initially named an unverified zero-flag enum. Replaced it
+  with an explicit cast to the actual field type before replacement CI.
 - Hardware9c55shader path failed4096finalpixels despiteCI final-SPIR-V interface
   checks passing. Interface type agreement is insufficient runtime evidence;
   expose actual values and compare original/rebuilt bytecode onMicrosoftWARP.

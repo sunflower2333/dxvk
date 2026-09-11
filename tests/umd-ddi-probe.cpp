@@ -375,12 +375,12 @@ int main(int argc, char** argv) {
   D3D10DDI_HRENDERTARGETVIEW sampleTarget = {sampleTargetMemory.get()};
   table.pfnCreateRenderTargetView(device, &sampleTargetDesc, sampleTarget, {});
   if (SUCCEEDED(lastError)) {
-    const FLOAT white[4] = {1,1,1,1};
+    FLOAT white[4] = {1,1,1,1};
     table.pfnClearRenderTargetView(device, sampleTarget, white);
   }
   table.pfnDestroyRenderTargetView(device, sampleTarget);
   if (SUCCEEDED(lastError)) {
-    table.pfnShaderResourceViewReadAfterWriteHazard(device, target, sampleView);
+    table.pfnShaderResourceViewReadAfterWriteHazard(device, sampleView, target);
     if (lastError == E_INVALIDARG) lastError = S_OK;
     else lastError = E_FAIL;
   }
@@ -480,7 +480,7 @@ int main(int argc, char** argv) {
     table.pfnPsSetShader(device, pixel);
     table.pfnPsSetConstantBuffers(device, 0, 1, &constant->handle);
     table.pfnVsSetConstantBuffers(device, 0, 1, &constant->handle);
-    table.pfnShaderResourceViewReadAfterWriteHazard(device, sample->handle, sampleView);
+    table.pfnShaderResourceViewReadAfterWriteHazard(device, sampleView, sample->handle);
     table.pfnPsSetShaderResources(device, 0, 1, &sampleView);
     table.pfnPsSetSamplers(device, 0, 1, &sampler);
     const FLOAT factor[4] = {1,1,1,1};

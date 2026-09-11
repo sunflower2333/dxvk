@@ -6,6 +6,11 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+37678fb fastCI34605897766 still fails originalWARP signedzero; emittedVS
+disassembly explicitly containsmov o3.xyzw,l(NaN,0,Inf,-Inf), provingFXC
+folded the selected zero/denormal ICB floats too. Source the signed-zero bits
+from the runtime constant buffer instead, bind it toVS in both real andWARP
+fixtures, then revalidate. Keep full negativezero/NaN/Inf checks intact.
 e4a3654 fastCI34605452108 originalMicrosoftWARP failed exactlyone of16payload
 words: rawFloats.y expected80000000(-0),actual00000000(+0). This establishes
 an invalid constant-payload expectation independently ofDXVK. Generate that

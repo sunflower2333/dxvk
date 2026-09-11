@@ -45,6 +45,11 @@ static void checkReferencePixels(const void* vs, size_t vsBytes, const void* ps,
   D3D11_SUBRESOURCE_DATA initial = {positions,0,0};
   ComPtr<ID3D11Buffer> buffer;
   check(SUCCEEDED(device->CreateBuffer(&bufferDesc,&initial,&buffer)));
+  FLOAT constants[] = {0.5f,0,0,1};
+  bufferDesc.ByteWidth = sizeof(constants); bufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+  initial.pSysMem = constants;
+  ComPtr<ID3D11Buffer> constant;
+  check(SUCCEEDED(device->CreateBuffer(&bufferDesc,&initial,&constant)));
   D3D11_TEXTURE2D_DESC textureDesc = {};
   textureDesc.Width = textureDesc.Height = 64; textureDesc.MipLevels = textureDesc.ArraySize = 1;
   textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; textureDesc.SampleDesc.Count = 1;
@@ -67,6 +72,8 @@ static void checkReferencePixels(const void* vs, size_t vsBytes, const void* ps,
   context->IASetInputLayout(layout.Get()); context->IASetVertexBuffers(0,1,buffers,&stride,&offset);
   context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   context->VSSetShader(vertex.Get(),nullptr,0); context->PSSetShader(pixel.Get(),nullptr,0);
+  ID3D11Buffer* constantBuffers[] = {constant.Get()};
+  context->VSSetConstantBuffers(0,1,constantBuffers);
   context->Draw(3,0); context->CopyResource(staging.Get(),target.Get());
   D3D11_MAPPED_SUBRESOURCE mapped = {};
   check(SUCCEEDED(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped)) && mapped.pData && mapped.RowPitch >= 256);

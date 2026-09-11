@@ -61,6 +61,7 @@ inline bool compileLinkageProbeShader(bool vertex, std::vector<uint32_t>& tokens
     std::vector<dxvk::umd::ShaderSignatureEntry>& outputs, bool inspect = false,
     ID3DBlob** originalContainer = nullptr) {
   constexpr char source[] = R"(
+cbuffer PixelConstants : register(b0) { float4 pixelColor; };
 struct Varyings {
   float4 position : SV_Position;
   float2 uv : TEXCOORD0;
@@ -77,13 +78,12 @@ Varyings vs_main(float2 position : POSITION) {
   value.position = float4(position, 0, 1);
   value.uv = position * float2(0.5,-0.5) + 0.5;
   value.bits = patterns[min((uint)max(position.x,0),2)];
-  // Keep the signed zero dynamic: the original Microsoft constant-folded
-  // shader does not preserve the sign of asfloat(0x80000000) here.
-  value.rawFloats = asfloat(uint4(0x7fc01234,value.bits.x,0x7f800000,0xff800000));
+  // The payload must originate from runtime data: FXC folds a literal or an
+  // immediate array whose float values are all zero/denormal to positive zero.
+  value.rawFloats = asfloat(uint4(0x7fc01234,asuint(pixelColor.z)^0x80000000,0x7f800000,0xff800000));
   value.fixedBits = uint4(0x12345678,0x87654321,0,1);
   return value;
 }
-cbuffer PixelConstants : register(b0) { float4 pixelColor; };
 Texture2D<float4> sourceColor : register(t0);
 SamplerState sourceSampler : register(s0);
 float4 ps_main(Varyings value) : SV_Target {

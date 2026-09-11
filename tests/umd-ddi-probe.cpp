@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
   if (FAILED(hr)) return 4;
   if (!table.pfnResourceUpdateSubresourceUP || !table.pfnResourceCopyRegion
       || !table.pfnCalcPrivateQuerySize || !table.pfnCreateQuery || !table.pfnQueryEnd || !table.pfnQueryGetData
-      || !table.pfnPsSetConstantBuffers || !table.pfnCalcPrivateShaderResourceViewSize
+      || !table.pfnPsSetConstantBuffers || !table.pfnVsSetConstantBuffers || !table.pfnCalcPrivateShaderResourceViewSize
       || !table.pfnCreateShaderResourceView || !table.pfnDestroyShaderResourceView || !table.pfnPsSetShaderResources
       || !table.pfnCalcPrivateSamplerSize || !table.pfnCreateSampler || !table.pfnDestroySampler || !table.pfnPsSetSamplers
       || !table.pfnCalcPrivateBlendStateSize || !table.pfnCreateBlendState || !table.pfnDestroyBlendState
@@ -355,6 +355,7 @@ int main(int argc, char** argv) {
     table.pfnVsSetShader(device, vertex);
     table.pfnPsSetShader(device, pixel);
     table.pfnPsSetConstantBuffers(device, 0, 1, &constant->handle);
+    table.pfnVsSetConstantBuffers(device, 0, 1, &constant->handle);
     table.pfnPsSetShaderResources(device, 0, 1, &sampleView);
     table.pfnPsSetSamplers(device, 0, 1, &sampler);
     const FLOAT factor[4] = {1,1,1,1};

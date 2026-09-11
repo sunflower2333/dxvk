@@ -24,6 +24,7 @@ struct Device {
   bool targetBound = false;
   bool viewportBound = false;
   bool triangleList = false;
+  bool indexBound = false;
   void error(HRESULT hr) {
     if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, hr);
   }
@@ -57,6 +58,10 @@ struct Rasterizer {
   Device* owner = nullptr;
   ComPtr<ID3D11RasterizerState> backend;
 };
+struct BlendState {
+  Device* owner = nullptr;
+  ComPtr<ID3D11BlendState> backend;
+};
 struct Query {
   Device* owner = nullptr;
   ComPtr<ID3D11Query> backend;
@@ -71,6 +76,7 @@ ShaderView* get(D3D10DDI_HSHADERRESOURCEVIEW h) { return static_cast<ShaderView*
 Sampler* get(D3D10DDI_HSAMPLER h) { return static_cast<Sampler*>(h.pDrvPrivate); }
 Shader* get(D3D10DDI_HSHADER h) { return static_cast<Shader*>(h.pDrvPrivate); }
 Rasterizer* get(D3D10DDI_HRASTERIZERSTATE h) { return static_cast<Rasterizer*>(h.pDrvPrivate); }
+BlendState* get(D3D10DDI_HBLENDSTATE h) { return static_cast<BlendState*>(h.pDrvPrivate); }
 Query* get(D3D10DDI_HQUERY h) { return static_cast<Query*>(h.pDrvPrivate); }
 
 bool owned(Device* device, Query* query) {
@@ -624,11 +630,98 @@ void APIENTRY setTopology(D3D10DDI_HDEVICE h, D3D10_DDI_PRIMITIVE_TOPOLOGY topol
   device->context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   device->triangleList = true;
 }
+SIZE_T APIENTRY blendSize(D3D10DDI_HDEVICE, const D3D10_DDI_BLEND_DESC*) { return sizeof(BlendState); }
+void APIENTRY createBlend(D3D10DDI_HDEVICE h, const D3D10_DDI_BLEND_DESC* args,
+    D3D10DDI_HBLENDSTATE out, D3D10DDI_HRTBLENDSTATE) {
+  auto device = get(h);
+  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
+  auto state = new (out.pDrvPrivate) BlendState(); state->owner = device;
+  if (!args) { device->error(E_INVALIDARG); return; }
+  D3D11_BLEND_DESC desc = {};
+  desc.AlphaToCoverageEnable = args->AlphaToCoverageEnable;
+  // Match DXVK's D3D10Device translation: enables and masks are per target,
+  // while factors/equations are shared by the D3D10.0 descriptor.
+  desc.IndependentBlendEnable = TRUE;
+  for (UINT i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; i++) {
+    auto& target = desc.RenderTarget[i];
+    target.BlendEnable = args->BlendEnable[i];
+    target.RenderTargetWriteMask = args->RenderTargetWriteMask[i];
+    target.SrcBlend = static_cast<D3D11_BLEND>(args->SrcBlend);
+    target.DestBlend = static_cast<D3D11_BLEND>(args->DestBlend);
+    target.BlendOp = static_cast<D3D11_BLEND_OP>(args->BlendOp);
+    target.SrcBlendAlpha = static_cast<D3D11_BLEND>(args->SrcBlendAlpha);
+    target.DestBlendAlpha = static_cast<D3D11_BLEND>(args->DestBlendAlpha);
+    target.BlendOpAlpha = static_cast<D3D11_BLEND_OP>(args->BlendOpAlpha);
+  }
+  try { device->error(device->backend->CreateBlendState(&desc, &state->backend)); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY destroyBlend(D3D10DDI_HDEVICE h, D3D10DDI_HBLENDSTATE object) {
+  auto state = get(object);
+  if (!state || state->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  state->~BlendState();
+}
+void APIENTRY setBlend(D3D10DDI_HDEVICE h, D3D10DDI_HBLENDSTATE object, const FLOAT factor[4], UINT sampleMask) {
+  auto device = get(h); auto state = get(object);
+  if (state && (state->owner != device || !state->backend)) { device->error(E_INVALIDARG); return; }
+  try { device->context->OMSetBlendState(state ? state->backend.Get() : nullptr, factor, sampleMask); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY setIndexBuffer(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE object, DXGI_FORMAT format, UINT offset) {
+  auto device = get(h);
+  ComPtr<ID3D11Buffer> buffer;
+  if (object.pDrvPrivate) {
+    auto resource = get(object);
+    if (!owned(device, resource)) return;
+    if ((format != DXGI_FORMAT_R16_UINT && format != DXGI_FORMAT_R32_UINT)
+        || FAILED(resource->backend.As(&buffer))) { device->error(E_INVALIDARG); return; }
+    D3D11_BUFFER_DESC desc = {}; buffer->GetDesc(&desc);
+    if (!(desc.BindFlags & D3D11_BIND_INDEX_BUFFER) || offset > desc.ByteWidth
+        || offset % (format == DXGI_FORMAT_R16_UINT ? 2 : 4)) { device->error(E_INVALIDARG); return; }
+  }
+  try {
+    device->context->IASetIndexBuffer(buffer.Get(), format, offset);
+    device->indexBound = buffer.Get() != nullptr;
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+bool drawReady(Device* device, bool indexed = false) {
+  if (!device->vertexBound || !device->pixelBound || !device->targetBound ||
+      !device->viewportBound || !device->triangleList || (indexed && !device->indexBound)) {
+    device->error(E_INVALIDARG); return false;
+  }
+  return true;
+}
 void APIENTRY draw(D3D10DDI_HDEVICE h, UINT count, UINT start) {
   auto device = get(h);
-  if (!device->vertexBound || !device->pixelBound || !device->targetBound ||
-      !device->viewportBound || !device->triangleList) { device->error(E_INVALIDARG); return; }
-  device->context->Draw(count, start);
+  if (!drawReady(device)) return;
+  try { device->context->Draw(count, start); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY drawIndexed(D3D10DDI_HDEVICE h, UINT count, UINT start, INT base) {
+  auto device = get(h);
+  if (!drawReady(device, true)) return;
+  try { device->context->DrawIndexed(count, start, base); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY drawInstanced(D3D10DDI_HDEVICE h, UINT count, UINT instances, UINT start, UINT firstInstance) {
+  auto device = get(h);
+  if (!drawReady(device)) return;
+  try { device->context->DrawInstanced(count, instances, start, firstInstance); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY drawIndexedInstanced(D3D10DDI_HDEVICE h, UINT count, UINT instances,
+    UINT start, INT base, UINT firstInstance) {
+  auto device = get(h);
+  if (!drawReady(device, true)) return;
+  try { device->context->DrawIndexedInstanced(count, instances, start, base, firstInstance); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
 }
 void APIENTRY flush(D3D10DDI_HDEVICE h) { get(h)->context->Flush(); }
 void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
@@ -734,7 +827,15 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnDestroyRasterizerState = destroyRasterizer;
   table->pfnSetRasterizerState = setRasterizer;
   table->pfnIaSetTopology = setTopology;
+  table->pfnIaSetIndexBuffer = setIndexBuffer;
+  table->pfnCalcPrivateBlendStateSize = blendSize;
+  table->pfnCreateBlendState = createBlend;
+  table->pfnDestroyBlendState = destroyBlend;
+  table->pfnSetBlendState = setBlend;
   table->pfnDraw = draw;
+  table->pfnDrawIndexed = drawIndexed;
+  table->pfnDrawInstanced = drawInstanced;
+  table->pfnDrawIndexedInstanced = drawIndexedInstanced;
   table->pfnFlush = flush;
   table->pfnDestroyDevice = destroyDevice;
   return S_OK;

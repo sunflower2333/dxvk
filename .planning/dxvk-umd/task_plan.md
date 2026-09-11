@@ -8,9 +8,9 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 ## Next Step
 60003 paired7051011/eb27a08 CI34592189757 allPASS, signed artifact10260421279.
 Upload/copy fix1f4595d CI34594094209 allPASS. Native allocation/windowed
-Present, constants, SRV/sampler child9eb4361 CI34595689478 running.
-Paired60004 locally prepared/pins9eb, ABI+identity377+contract allPASS;
-wait for child validation before committing/pushing paired package.
+Present, constants, SRV/sampler child9eb4361 CI34595689478 ALL PASS.
+Paired60004 pins9eb, ABI+identity377+contract allPASS; parent build starting.
+New KMT publication probe6bed28b CI34596463268 running; not in60004.
 Continue remaining mandatory resource/shader/primary/shared DDIs;
 main explicitly asks not to stop at CPU OpenAdapter harness.
 

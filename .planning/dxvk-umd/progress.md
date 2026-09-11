@@ -1,5 +1,21 @@
 # Progress
 
+2026-09-11: Continued required DDIs with D3D10.0 blend states, index buffers
+and indexed/instanced draw variants. The GPU probe now requires additive
+half-red plus half-red blending through an indexed triangle to produce full
+red; texture/CB/blend/draw omissions fail the existing4096pixel criterion.
+Source pending CI. Paired60004/1ab0151 CI34596574202 is independently
+building validated9eb; newer KMT publication probe6bed28b CI34596463268
+remains active, preserving a stable validated package checkpoint.
+
+2026-09-11: Child9eb4361 CI34595689478 ALL PASS onARM64,x64,x86, including
+production native allocation/Present, constant-buffer/SRV/sampler DDIs.
+x64/x86 CPU fixtures report217allocation/present,715adapter,69query and
+57real-HLSL/container/reflection checks. Paired60004 now committed/pushed
+with exact9eb child, production-allocation ABI checker and existing Mesa4ace.
+Newer6bed28b --native-copy probe CI34596463268 is separate and pending;
+it is not in60004 and has not been run on target.
+
 2026-09-11: Implemented optional --native-copy device probe. Harness-owned
 runtime callbacks now use real KMT device/allocation/context and Lock/Unlock;
 production PresentDDI reads DXVK output and writes the actual kernel backing.

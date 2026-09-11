@@ -156,6 +156,17 @@ int main(int argc, char** argv) {
   }
   std::printf("DDI_CREATE hr=%08lx\n", static_cast<unsigned long>(hr));
   if (FAILED(hr)) return 4;
+  if (!table.pfnResourceUpdateSubresourceUP || !table.pfnResourceCopyRegion
+      || !table.pfnCalcPrivateQuerySize || !table.pfnCreateQuery || !table.pfnQueryEnd || !table.pfnQueryGetData
+      || !table.pfnPsSetConstantBuffers || !table.pfnCalcPrivateShaderResourceViewSize
+      || !table.pfnCreateShaderResourceView || !table.pfnDestroyShaderResourceView || !table.pfnPsSetShaderResources
+      || !table.pfnCalcPrivateSamplerSize || !table.pfnCreateSampler || !table.pfnDestroySampler || !table.pfnPsSetSamplers
+      || !table.pfnCalcPrivateBlendStateSize || !table.pfnCreateBlendState || !table.pfnDestroyBlendState
+      || !table.pfnSetBlendState || !table.pfnIaSetIndexBuffer || !table.pfnDrawIndexed) {
+    std::fputs("Required development DDI absent; use the probe and DLL from one exact build\n", stderr);
+    if (table.pfnDestroyDevice) table.pfnDestroyDevice(device);
+    return 15;
+  }
   if (!testBufferTransfers(device, table)) { table.pfnDestroyDevice(device); return 13; }
   D3D10DDIARG_CREATEQUERY eventDesc = {D3D10DDI_QUERY_EVENT, 0};
   auto eventMemory = allocate(table.pfnCalcPrivateQuerySize(device, &eventDesc));
@@ -208,7 +219,7 @@ int main(int argc, char** argv) {
   table.pfnCreatePixelShader(device, ps.data(), pixel, {}, &psSignature);
   table.pfnCreateRasterizerState(device, &rasterDesc, raster, {});
   D3D10DDI_MIPINFO constantMip = {16,1,1,16,1,1};
-  FLOAT pixelColor[4] = {1,0,0,1};
+  FLOAT pixelColor[4] = {0.5f,0,0,1};
   D3D10_DDIARG_SUBRESOURCE_UP constantData = {pixelColor,16,16};
   D3D10DDIARG_CREATERESOURCE constantDesc = {};
   constantDesc.pMipInfoList = &constantMip; constantDesc.pInitialDataUP = &constantData;
@@ -243,22 +254,44 @@ int main(int argc, char** argv) {
   auto samplerMemory = allocate(table.pfnCalcPrivateSamplerSize(device, &samplerDesc));
   D3D10DDI_HSAMPLER sampler = {samplerMemory.get()};
   table.pfnCreateSampler(device, &samplerDesc, sampler, {});
+  uint32_t indices[3] = {0,1,2};
+  D3D10DDI_MIPINFO indexMip = {12,1,1,12,1,1};
+  D3D10_DDIARG_SUBRESOURCE_UP indexData = {indices,12,12};
+  D3D10DDIARG_CREATERESOURCE indexDesc = {};
+  indexDesc.pMipInfoList = &indexMip; indexDesc.pInitialDataUP = &indexData;
+  indexDesc.ResourceDimension = D3D10DDIRESOURCE_BUFFER;
+  indexDesc.Usage = D3D10_DDI_USAGE_IMMUTABLE; indexDesc.BindFlags = D3D10_DDI_BIND_INDEX_BUFFER;
+  indexDesc.MipLevels = 1; indexDesc.ArraySize = 1; indexDesc.SampleDesc.Count = 1;
+  auto index = std::make_unique<ProbeResource>(device, table, indexDesc);
+  D3D10_DDI_BLEND_DESC blendDesc = {};
+  blendDesc.BlendEnable[0] = TRUE; blendDesc.RenderTargetWriteMask[0] = 15;
+  blendDesc.SrcBlend = blendDesc.DestBlend = D3D10_DDI_BLEND_ONE;
+  blendDesc.BlendOp = blendDesc.BlendOpAlpha = D3D10_DDI_BLEND_OP_ADD;
+  blendDesc.SrcBlendAlpha = D3D10_DDI_BLEND_ONE; blendDesc.DestBlendAlpha = D3D10_DDI_BLEND_ZERO;
+  auto blendMemory = allocate(table.pfnCalcPrivateBlendStateSize(device, &blendDesc));
+  D3D10DDI_HBLENDSTATE blend = {blendMemory.get()};
+  table.pfnCreateBlendState(device, &blendDesc, blend, {});
   unsigned mismatches = 4096;
   BOOL eventComplete = FALSE;
   if (SUCCEEDED(lastError)) {
-    FLOAT color[4] = {0,1,0,1};
+    // Half-red destination plus half-red shader output must become full red.
+    // Omitting blending, sampling, constant binding or the draw fails pixels.
+    FLOAT color[4] = {0.5f,0,0,0};
     table.pfnClearRenderTargetView(device, view, color);
     table.pfnVsSetShader(device, vertex);
     table.pfnPsSetShader(device, pixel);
     table.pfnPsSetConstantBuffers(device, 0, 1, &constant->handle);
     table.pfnPsSetShaderResources(device, 0, 1, &sampleView);
     table.pfnPsSetSamplers(device, 0, 1, &sampler);
+    const FLOAT factor[4] = {1,1,1,1};
+    table.pfnSetBlendState(device, blend, factor, 0xffffffff);
     table.pfnSetRasterizerState(device, raster);
     table.pfnSetRenderTargets(device, &view, 1, 0, {});
     D3D10_DDI_VIEWPORT viewport = {0,0,64,64,0,1};
     table.pfnSetViewports(device, 1, 0, &viewport);
     table.pfnIaSetTopology(device, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    table.pfnDraw(device, 3, 0);
+    table.pfnIaSetIndexBuffer(device, index->handle, DXGI_FORMAT_R32_UINT, 0);
+    table.pfnDrawIndexed(device, 3, 0, 0);
     table.pfnResourceCopy(device, staging, target);
     table.pfnQueryEnd(device, event);
     D3D10DDI_MAPPED_SUBRESOURCE mapped = {};
@@ -298,6 +331,8 @@ int main(int argc, char** argv) {
   table.pfnDestroyResource(device, staging);
   table.pfnDestroyResource(device, target);
   table.pfnDestroyQuery(device, event);
+  if (blend.pDrvPrivate) table.pfnDestroyBlendState(device, blend);
+  index.reset();
   if (sampler.pDrvPrivate) table.pfnDestroySampler(device, sampler);
   if (sampleView.pDrvPrivate) table.pfnDestroyShaderResourceView(device, sampleView);
   sample.reset();

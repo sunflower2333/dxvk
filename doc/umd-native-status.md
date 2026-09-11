@@ -37,6 +37,12 @@ subresource validation. The pixel probe samples an immutable white texture
 and multiplies it by the constant-buffer color, so its pixel result requires
 both the descriptor/sampler path and the constant-buffer path to work.
 
+D3D10.0 blend-state conversion follows DXVK's existing per-target enable/mask
+mapping. Index-buffer binding and indexed/instanced draw variants now call the
+embedded context. The device probe uses an index buffer and additive blending:
+a half-red destination plus sampled half-red shader output must become full
+red. Skipping the draw, blend, texture or constant-buffer operation fails pixels.
+
 Event, occlusion, timestamp and timestamp-disjoint query DDIs now use the
 embedded backend's actual query objects. Pending results become the DDI busy
 status, device loss is translated to the DDI removed status, and output is
@@ -84,7 +90,8 @@ Two device-only executables are packaged for coordinated testing:
 - `dxvk-umd-backend-probe.exe <16 hex digits>` creates the private backend,
   clears magenta, copies and verifies 4096 pixels.
 - `dxvk-umd-ddi-probe.exe <16 hex digits>` uses real WDK DDI function pointers,
-  clears green, draws a red full-screen triangle and verifies all 4096 pixels.
+  clears half-red, blends an indexed full-screen triangle and verifies all
+  4096 final red pixels.
   Optional `--adapter` opens that exact LUID through KMT, reads the real KMD
   private reply and creates the device through the new adapter harness. Its
   runtime callbacks are supplied by the probe; this is still not Microsoft

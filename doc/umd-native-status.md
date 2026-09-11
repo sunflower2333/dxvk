@@ -89,6 +89,11 @@ Two device-only executables are packaged for coordinated testing:
   private reply and creates the device through the new adapter harness. Its
   runtime callbacks are supplied by the probe; this is still not Microsoft
   D3D runtime activation. Old KMDs without the identity trailer fail closed.
+  `--native-copy` additionally exercises the production Present DDI through
+  harness callbacks backed by actual KMT device/allocation/context/Lock
+  operations. Its final callback checks all 4096 pixels in the real KMD
+  allocation. It does not call screen Present or activate the Microsoft
+  runtime; the output explicitly labels this allocation-publication evidence.
 
 The argument encodes the eight LUID bytes in memory order; it is not an adapter
 index or a printed 64-bit integer. Neither executable has yet been run on the

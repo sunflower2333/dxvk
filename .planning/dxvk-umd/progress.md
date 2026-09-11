@@ -1,5 +1,19 @@
 # Progress
 
+2026-09-11: Implemented optional --native-copy device probe. Harness-owned
+runtime callbacks now use real KMT device/allocation/context and Lock/Unlock;
+production PresentDDI reads DXVK output and writes the actual kernel backing.
+The final callback verifies4096red pixels without changing screen contents
+or claiming Microsoft runtime/visible Present proof. Source not yet built
+or run on target. Paired60004 remains pinned to earlier9eb until validation.
+
+2026-09-11: Latest child9eb4361 nativeCI34595689478 running; superseded
+73d01e7 CI34595600097 cancelled because it retained the already diagnosed
+const initial-data probe compile failure. Paired parent60004 locally pins9eb
+through depth1 fetch; actual allocation ABI,377identity and full contract
+checks allPASS. Keep it uncommitted until childCI passes. INF still Mesa4ace,
+no KMD implementation changes and no device tests by this agent.
+
 2026-09-11: Native-memory callback fixture217checksPASS on x86 in b40ccb1
 CI34595019708, alongside715adapter and69query checks. Production UMD
 compiled, but later probe object rejected const initial-data arrays because

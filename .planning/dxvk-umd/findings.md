@@ -1,5 +1,12 @@
 # Findings
 
+- Next device-proof extension can use harness-owned callbacks backed by real
+  D3DKMT device/allocation/context/Lock operations. Its Present callback must
+  verify the KMD allocation pixels without claiming actual screen Present or
+  Microsoft runtime activation. This would exercise the production GPU
+  readback-to-allocation publication on target while preserving the desktop;
+  root alone coordinates execution. No such device result exists yet.
+
 - Microsoft DXGI base-DDI contract requires real QueryResidencyCb results
   and backbuffer identity rotation including dependent views. Querying only
   the new CPU-visible presentation copy would not describe the separate

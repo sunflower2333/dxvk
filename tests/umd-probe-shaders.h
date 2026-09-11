@@ -6,11 +6,14 @@
 #include <cstring>
 #include <vector>
 
-inline bool compileProbeShader(bool vertex, std::vector<uint32_t>& tokens) {
+inline bool compileProbeShader(bool vertex, std::vector<uint32_t>& tokens, bool vertexBuffer = false) {
   constexpr char source[] = R"(
 float4 vs_main(uint id : SV_VertexID) : SV_Position {
   float2 xy = float2((id << 1) & 2, id & 2);
   return float4(xy * float2(2,-2) + float2(-1,1), 0, 1);
+}
+float4 vs_buffer(float2 position : POSITION) : SV_Position {
+  return float4(position, 0, 1);
 }
 cbuffer PixelConstants : register(b0) { float4 pixelColor; };
 Texture2D<float4> sourceColor : register(t0);
@@ -21,7 +24,7 @@ float4 ps_main() : SV_Target {
 )";
   Microsoft::WRL::ComPtr<ID3DBlob> shader, errors;
   HRESULT hr = D3DCompile(source, sizeof(source)-1, "umd-probe", nullptr, nullptr,
-    vertex ? "vs_main" : "ps_main", vertex ? "vs_4_0" : "ps_4_0",
+    vertex ? (vertexBuffer ? "vs_buffer" : "vs_main") : "ps_main", vertex ? "vs_4_0" : "ps_4_0",
     D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &shader, &errors);
   if (errors) std::fwrite(errors->GetBufferPointer(), 1, errors->GetBufferSize(), stderr);
   if (FAILED(hr) || !shader || shader->GetBufferSize() < 32) return false;

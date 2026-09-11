@@ -7,14 +7,19 @@
 namespace dxvk::umd {
 
 enum class ShaderStage : uint32_t { Pixel = 0, Vertex = 1 };
+enum class ShaderScalar : uint8_t { Unknown, Float32, Uint32, Sint32 };
 struct ShaderSignatureEntry {
   uint32_t systemValue;
   uint32_t registerIndex;
   uint8_t mask;
+  ShaderScalar scalar = ShaderScalar::Unknown;
 };
+
+inline constexpr const char* inputRegisterSemantic = "VIOGPU_INPUT";
 
 // Initial DDI development profile: SM4.0 VS with optional SV_VertexID and
 // SV_Position output, and PS with no inputs and one float color output.
+// Generic VS inputs need explicit types from the bound vertex input format.
 // User varyings, integer render targets and all other stages are not accepted.
 // DDI signatures do not carry semantic strings or component types: these
 // restricted interfaces have known types, so no arbitrary type is invented.

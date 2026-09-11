@@ -9,9 +9,12 @@
 #include <memory>
 #include <new>
 #include <vector>
+#include <array>
 
 namespace {
 using Microsoft::WRL::ComPtr;
+struct Shader;
+struct InputLayout;
 struct Device {
   std::shared_ptr<const dxvk::umd::AdapterIdentity> adapter;
   ComPtr<ID3D11Device> backend;
@@ -25,6 +28,8 @@ struct Device {
   bool viewportBound = false;
   bool triangleList = false;
   bool indexBound = false;
+  Shader* vertexShader = nullptr;
+  InputLayout* inputLayout = nullptr;
   void error(HRESULT hr) {
     if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, hr);
   }
@@ -53,6 +58,16 @@ struct Shader {
   dxvk::umd::ShaderStage stage = dxvk::umd::ShaderStage::Vertex;
   ComPtr<ID3D11VertexShader> vertex;
   ComPtr<ID3D11PixelShader> pixel;
+  std::vector<UINT> code;
+  std::vector<dxvk::umd::ShaderSignatureEntry> inputs;
+  dxvk::umd::ShaderSignatureEntry output = {};
+  std::array<dxvk::umd::ShaderScalar,32> compiledInputTypes = {};
+  bool needsLayout = false;
+};
+struct InputLayout {
+  Device* owner = nullptr;
+  ComPtr<ID3D11InputLayout> backend;
+  std::array<dxvk::umd::ShaderScalar,32> inputTypes = {};
 };
 struct Rasterizer {
   Device* owner = nullptr;
@@ -83,6 +98,7 @@ RenderTarget* get(D3D10DDI_HRENDERTARGETVIEW h) { return static_cast<RenderTarge
 ShaderView* get(D3D10DDI_HSHADERRESOURCEVIEW h) { return static_cast<ShaderView*>(h.pDrvPrivate); }
 Sampler* get(D3D10DDI_HSAMPLER h) { return static_cast<Sampler*>(h.pDrvPrivate); }
 Shader* get(D3D10DDI_HSHADER h) { return static_cast<Shader*>(h.pDrvPrivate); }
+InputLayout* get(D3D10DDI_HELEMENTLAYOUT h) { return static_cast<InputLayout*>(h.pDrvPrivate); }
 Rasterizer* get(D3D10DDI_HRASTERIZERSTATE h) { return static_cast<Rasterizer*>(h.pDrvPrivate); }
 BlendState* get(D3D10DDI_HBLENDSTATE h) { return static_cast<BlendState*>(h.pDrvPrivate); }
 DepthView* get(D3D10DDI_HDEPTHSTENCILVIEW h) { return static_cast<DepthView*>(h.pDrvPrivate); }
@@ -546,29 +562,39 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
   auto shader = new (out.pDrvPrivate) Shader();
   shader->owner = device;
   shader->stage = stage;
-  if (!code || !signature || signature->NumInputSignatureEntries > 1 ||
+  if (!code || !signature || signature->NumInputSignatureEntries > 32 ||
       signature->NumOutputSignatureEntries != 1 || !signature->pOutputSignature ||
       (signature->NumInputSignatureEntries && !signature->pInputSignature)) {
     device->error(E_INVALIDARG); return;
   }
   static_assert(D3D10_SB_NAME_POSITION == 1 && D3D10_SB_NAME_VERTEX_ID == 6);
-  dxvk::umd::ShaderSignatureEntry input = {};
-  if (signature->NumInputSignatureEntries) {
-    const auto& entry = signature->pInputSignature[0];
-    input = {uint32_t(entry.SystemValue), entry.Register, entry.Mask};
-  }
-  const auto& entry = signature->pOutputSignature[0];
-  dxvk::umd::ShaderSignatureEntry output = {uint32_t(entry.SystemValue), entry.Register, entry.Mask};
   try {
+    Shader candidate; candidate.owner = device; candidate.stage = stage;
+    for (UINT i = 0; i < signature->NumInputSignatureEntries; i++) {
+      const auto& entry = signature->pInputSignature[i];
+      candidate.inputs.push_back({uint32_t(entry.SystemValue), entry.Register, entry.Mask});
+      candidate.needsLayout |= stage == dxvk::umd::ShaderStage::Vertex && entry.SystemValue == D3D10_SB_NAME_UNDEFINED;
+    }
+    const auto& entry = signature->pOutputSignature[0];
+    candidate.output = {uint32_t(entry.SystemValue), entry.Register, entry.Mask};
+    auto validationInputs = candidate.inputs;
+    // Validate raw tokens and register structure now. These provisional
+    // signature types are discarded and never enter the DXVK compiler.
+    // The bound layout supplies actual types when the shader is first drawn.
+    for (auto& input : validationInputs)
+      if (!input.systemValue) input.scalar = dxvk::umd::ShaderScalar::Float32;
     std::vector<unsigned char> bytecode;
-    if (!dxvk::umd::buildShaderContainer(stage, code, code[1], &input,
-        signature->NumInputSignatureEntries, &output, 1, bytecode)) {
+    if (!dxvk::umd::buildShaderContainer(stage, code, code[1], validationInputs.data(),
+        validationInputs.size(), &candidate.output, 1, bytecode)) {
       device->error(E_INVALIDARG); return;
     }
-    if (stage == dxvk::umd::ShaderStage::Vertex)
-      device->error(device->backend->CreateVertexShader(bytecode.data(), bytecode.size(), nullptr, &shader->vertex));
-    else
-      device->error(device->backend->CreatePixelShader(bytecode.data(), bytecode.size(), nullptr, &shader->pixel));
+    HRESULT hr = S_OK;
+    if (candidate.needsLayout) candidate.code.assign(code, code + code[1]);
+    else if (stage == dxvk::umd::ShaderStage::Vertex)
+      hr = device->backend->CreateVertexShader(bytecode.data(), bytecode.size(), nullptr, &candidate.vertex);
+    else hr = device->backend->CreatePixelShader(bytecode.data(), bytecode.size(), nullptr, &candidate.pixel);
+    if (FAILED(hr)) { device->error(hr); return; }
+    *shader = std::move(candidate);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }
@@ -583,13 +609,19 @@ void APIENTRY createPixelShader(D3D10DDI_HDEVICE h, const UINT* code,
 void APIENTRY destroyShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto object = get(shader);
   if (!object || object->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  if (get(h)->vertexShader == object) {
+    get(h)->context->VSSetShader(nullptr, nullptr, 0);
+    get(h)->vertexShader = nullptr; get(h)->vertexBound = false;
+  }
   object->~Shader();
 }
 void APIENTRY setVertexShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto device = get(h);
   auto object = get(shader);
-  if (object && (object->owner != device || !object->vertex)) { device->error(E_INVALIDARG); return; }
+  if (object && (object->owner != device || object->stage != dxvk::umd::ShaderStage::Vertex
+      || (!object->vertex && !object->needsLayout))) { device->error(E_INVALIDARG); return; }
   device->context->VSSetShader(object ? object->vertex.Get() : nullptr, nullptr, 0);
+  device->vertexShader = object;
   device->vertexBound = object != nullptr;
 }
 void APIENTRY setPixelShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
@@ -792,6 +824,140 @@ void APIENTRY setDepthState(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILSTATE obje
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
 }
+bool inputFormat(DXGI_FORMAT format, dxvk::umd::ShaderScalar& scalar, uint8_t& mask) {
+  using Scalar = dxvk::umd::ShaderScalar;
+  switch (format) {
+    case DXGI_FORMAT_R32_FLOAT: scalar = Scalar::Float32; mask = 1; return true;
+    case DXGI_FORMAT_R32G32_FLOAT: scalar = Scalar::Float32; mask = 3; return true;
+    case DXGI_FORMAT_R32G32B32_FLOAT: scalar = Scalar::Float32; mask = 7; return true;
+    case DXGI_FORMAT_R32G32B32A32_FLOAT: scalar = Scalar::Float32; mask = 15; return true;
+    case DXGI_FORMAT_R32_UINT: scalar = Scalar::Uint32; mask = 1; return true;
+    case DXGI_FORMAT_R32G32_UINT: scalar = Scalar::Uint32; mask = 3; return true;
+    case DXGI_FORMAT_R32G32B32_UINT: scalar = Scalar::Uint32; mask = 7; return true;
+    case DXGI_FORMAT_R32G32B32A32_UINT: scalar = Scalar::Uint32; mask = 15; return true;
+    case DXGI_FORMAT_R32_SINT: scalar = Scalar::Sint32; mask = 1; return true;
+    case DXGI_FORMAT_R32G32_SINT: scalar = Scalar::Sint32; mask = 3; return true;
+    case DXGI_FORMAT_R32G32B32_SINT: scalar = Scalar::Sint32; mask = 7; return true;
+    case DXGI_FORMAT_R32G32B32A32_SINT: scalar = Scalar::Sint32; mask = 15; return true;
+    default: return false;
+  }
+}
+SIZE_T APIENTRY layoutSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEELEMENTLAYOUT*) { return sizeof(InputLayout); }
+void APIENTRY createLayout(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEELEMENTLAYOUT* args,
+    D3D10DDI_HELEMENTLAYOUT out, D3D10DDI_HRTELEMENTLAYOUT) {
+  auto device = get(h);
+  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
+  auto layout = new (out.pDrvPrivate) InputLayout(); layout->owner = device;
+  if (!args || args->NumElements > 32 || (args->NumElements && !args->pVertexElements)) {
+    device->error(E_INVALIDARG); return;
+  }
+  try {
+    InputLayout candidate; candidate.owner = device;
+    D3D11_INPUT_ELEMENT_DESC elements[32] = {};
+    dxvk::umd::ShaderSignatureEntry inputs[32] = {};
+    for (UINT i = 0; i < args->NumElements; i++) {
+      const auto& input = args->pVertexElements[i];
+      if (input.InputRegister >= 32 || input.InputSlot >= D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
+          || input.AlignedByteOffset > D3D11_REQ_MULTI_ELEMENT_STRUCTURE_SIZE_IN_BYTES
+          || input.AlignedByteOffset % 4
+          || (input.InputSlotClass != D3D10_DDI_INPUT_PER_VERTEX_DATA && input.InputSlotClass != D3D10_DDI_INPUT_PER_INSTANCE_DATA)
+          || (input.InputSlotClass == D3D10_DDI_INPUT_PER_VERTEX_DATA && input.InstanceDataStepRate)
+          || candidate.inputTypes[input.InputRegister] != dxvk::umd::ShaderScalar::Unknown
+          || !inputFormat(input.Format, inputs[i].scalar, inputs[i].mask)) {
+        device->error(E_INVALIDARG); return;
+      }
+      for (UINT j = 0; j < i; j++)
+        if (elements[j].InputSlot == input.InputSlot
+            && (elements[j].InputSlotClass != static_cast<D3D11_INPUT_CLASSIFICATION>(input.InputSlotClass)
+                || elements[j].InstanceDataStepRate != input.InstanceDataStepRate)) {
+          device->error(E_INVALIDARG); return;
+        }
+      inputs[i].registerIndex = input.InputRegister;
+      candidate.inputTypes[input.InputRegister] = inputs[i].scalar;
+      elements[i] = {dxvk::umd::inputRegisterSemantic, input.InputRegister, input.Format,
+        input.InputSlot, input.AlignedByteOffset, static_cast<D3D11_INPUT_CLASSIFICATION>(input.InputSlotClass),
+        input.InstanceDataStepRate};
+    }
+    // CreateInputLayout only consumes the signature. The minimal code chunk
+    // is never executed; no synthetic shader is substituted for the app VS.
+    const uint32_t code[] = {0x10040,3,0x0100003e};
+    dxvk::umd::ShaderSignatureEntry output = {1,0,15};
+    std::vector<unsigned char> binary;
+    if (!dxvk::umd::buildShaderContainer(dxvk::umd::ShaderStage::Vertex, code, 3,
+        inputs, args->NumElements, &output, 1, binary)) { device->error(E_INVALIDARG); return; }
+    const HRESULT hr = device->backend->CreateInputLayout(elements, args->NumElements,
+      binary.data(), binary.size(), &candidate.backend);
+    if (FAILED(hr)) { device->error(hr); return; }
+    *layout = std::move(candidate);
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY destroyLayout(D3D10DDI_HDEVICE h, D3D10DDI_HELEMENTLAYOUT object) {
+  auto device = get(h); auto layout = get(object);
+  if (!layout || layout->owner != device) { device->error(E_INVALIDARG); return; }
+  if (device->inputLayout == layout) {
+    device->context->IASetInputLayout(nullptr); device->inputLayout = nullptr;
+  }
+  layout->~InputLayout();
+}
+void APIENTRY setLayout(D3D10DDI_HDEVICE h, D3D10DDI_HELEMENTLAYOUT object) {
+  auto device = get(h); auto layout = get(object);
+  if (layout && (layout->owner != device || !layout->backend)) { device->error(E_INVALIDARG); return; }
+  try {
+    device->context->IASetInputLayout(layout ? layout->backend.Get() : nullptr);
+    device->inputLayout = layout;
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY setVertexBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
+    const D3D10DDI_HRESOURCE* objects, const UINT* strides, const UINT* offsets) {
+  auto device = get(h);
+  constexpr UINT slots = D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT;
+  if (start > slots || count > slots - start || (count && (!objects || !strides || !offsets))) {
+    device->error(E_INVALIDARG); return;
+  }
+  ID3D11Buffer* buffers[slots] = {};
+  ComPtr<ID3D11Buffer> references[slots];
+  for (UINT i = 0; i < count; i++) {
+    if (!objects[i].pDrvPrivate) continue;
+    auto resource = get(objects[i]);
+    if (!owned(device, resource)) return;
+    if (FAILED(resource->backend.As(&references[i]))) { device->error(E_INVALIDARG); return; }
+    D3D11_BUFFER_DESC desc = {}; references[i]->GetDesc(&desc);
+    if (!(desc.BindFlags & D3D11_BIND_VERTEX_BUFFER) || offsets[i] > desc.ByteWidth
+        || strides[i] > D3D11_REQ_MULTI_ELEMENT_STRUCTURE_SIZE_IN_BYTES) { device->error(E_INVALIDARG); return; }
+    buffers[i] = references[i].Get();
+  }
+  try { if (count) device->context->IASetVertexBuffers(start, count, buffers, strides, offsets); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+bool prepareVertexShader(Device* device) {
+  auto shader = device->vertexShader;
+  if (!shader || !shader->needsLayout) return shader && shader->vertex;
+  auto layout = device->inputLayout;
+  if (!layout || !layout->backend) { device->error(E_INVALIDARG); return false; }
+  try {
+    if (!shader->vertex || shader->compiledInputTypes != layout->inputTypes) {
+      auto inputs = shader->inputs;
+      for (auto& input : inputs) if (!input.systemValue) {
+        input.scalar = layout->inputTypes[input.registerIndex];
+        if (input.scalar == dxvk::umd::ShaderScalar::Unknown) { device->error(E_INVALIDARG); return false; }
+      }
+      std::vector<unsigned char> bytecode;
+      if (!dxvk::umd::buildShaderContainer(shader->stage, shader->code.data(), shader->code.size(),
+          inputs.data(), inputs.size(), &shader->output, 1, bytecode)) { device->error(E_INVALIDARG); return false; }
+      ComPtr<ID3D11VertexShader> compiled;
+      const HRESULT hr = device->backend->CreateVertexShader(bytecode.data(), bytecode.size(), nullptr, &compiled);
+      if (FAILED(hr)) { device->error(hr); return false; }
+      shader->vertex = std::move(compiled); shader->compiledInputTypes = layout->inputTypes;
+    }
+    device->context->VSSetShader(shader->vertex.Get(), nullptr, 0);
+    return true;
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+  return false;
+}
 void APIENTRY setIndexBuffer(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE object, DXGI_FORMAT format, UINT offset) {
   auto device = get(h);
   ComPtr<ID3D11Buffer> buffer;
@@ -815,7 +981,7 @@ bool drawReady(Device* device, bool indexed = false) {
       !device->viewportBound || !device->triangleList || (indexed && !device->indexBound)) {
     device->error(E_INVALIDARG); return false;
   }
-  return true;
+  return prepareVertexShader(device);
 }
 void APIENTRY draw(D3D10DDI_HDEVICE h, UINT count, UINT start) {
   auto device = get(h);
@@ -960,6 +1126,11 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnSetRasterizerState = setRasterizer;
   table->pfnIaSetTopology = setTopology;
   table->pfnIaSetIndexBuffer = setIndexBuffer;
+  table->pfnIaSetVertexBuffers = setVertexBuffers;
+  table->pfnCalcPrivateElementLayoutSize = layoutSize;
+  table->pfnCreateElementLayout = createLayout;
+  table->pfnDestroyElementLayout = destroyLayout;
+  table->pfnIaSetInputLayout = setLayout;
   table->pfnCalcPrivateBlendStateSize = blendSize;
   table->pfnCreateBlendState = createBlend;
   table->pfnDestroyBlendState = destroyBlend;

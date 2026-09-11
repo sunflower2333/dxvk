@@ -22,7 +22,7 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   if (!code || words < 3 || words > 1024 * 1024 || code[1] != words ||
       code[0] != ((uint32_t(stage) << 16) | 0x40) ||
       outputCount != 1 || !outputs || outputs[0].registerIndex != 0 ||
-      outputs[0].mask != 15 || inputCount > 1 || (inputCount && !inputs))
+      outputs[0].mask != 15 || inputCount > 32 || (inputCount && !inputs))
     return false;
 
   // Bound each instruction before giving it to the upstream parser. The
@@ -43,11 +43,29 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   switch (stage) {
     case ShaderStage::Vertex:
       if (outputs[0].systemValue != 1) return false;
-      if (inputCount) {
-        if (inputs[0].systemValue != 6 || inputs[0].registerIndex != 0 || inputs[0].mask != 1)
-          return false;
-        input.add(dxbc::SignatureEntry("SV_VertexID", 0, 0, 0, 1,
-          dxbc::SignatureSysval::eVertexId, ir::ScalarType::eU32));
+      for (size_t i = 0; i < inputCount; i++) {
+        const auto& entry = inputs[i];
+        if (entry.registerIndex >= 32 || !entry.mask || (entry.mask & ~15)) return false;
+        for (size_t j = 0; j < i; j++)
+          if (inputs[j].registerIndex == entry.registerIndex
+              || (entry.systemValue && inputs[j].systemValue == entry.systemValue)) return false;
+        if (entry.systemValue == 6) {
+          if (entry.mask != 1) return false;
+          input.add(dxbc::SignatureEntry("SV_VertexID", 0, entry.registerIndex, 0, 1,
+            dxbc::SignatureSysval::eVertexId, ir::ScalarType::eU32));
+        } else if (entry.systemValue == 0) {
+          ir::ScalarType type;
+          switch (entry.scalar) {
+            case ShaderScalar::Float32: type = ir::ScalarType::eF32; break;
+            case ShaderScalar::Uint32: type = ir::ScalarType::eU32; break;
+            case ShaderScalar::Sint32: type = ir::ScalarType::eI32; break;
+            default: return false;
+          }
+          // Both native shader and input layout use register-index semantics.
+          // There is no attempt to reconstruct the app's original names.
+          input.add(dxbc::SignatureEntry(inputRegisterSemantic, entry.registerIndex, entry.registerIndex,
+            0, entry.mask, dxbc::SignatureSysval::eNone, type));
+        } else return false;
       }
       output.add(dxbc::SignatureEntry("SV_Position", 0, 0, 0, 15,
         dxbc::SignatureSysval::ePosition, ir::ScalarType::eF32));

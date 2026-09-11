@@ -1,5 +1,18 @@
 # Progress
 
+2026-09-11: Local vertex-input extension sanitizer checks now PASS:
+identity69, trailer176, shader53. Native layout maps registers with explicit
+R32 float/uint/sint vector formats; generic VS compilation waits for the
+bound layout's actual scalar types and caches that variant. Vertex-buffer
+DDI and probe now require real positions. Windows WDK/build validation next.
+
+2026-09-11: Register-based layout/vertex-buffer and typed deferred-VS
+implementation under development. New sanitizer test with nonzero input
+registers caught constructor registerIndex/streamIndex argument inversion
+at check43; corrected against actual upstream signature declaration.
+Depth b47f955 remains the next stable paired checkpoint, independent of
+this uncommitted extension. Main requested standalone probe files/hashes.
+
 2026-09-11: Added Texture2D depth/stencil views (including array and MSAA
 descriptor translation), independent stencil-face enables, depth/stencil
 state and clear DDIs. SetRenderTargets now atomically updates depth even

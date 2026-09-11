@@ -1,5 +1,16 @@
 # Findings
 
+- Input-layout audit: D3D10 DDI supplies InputRegister, while DXVK public
+  CreateInputLayout maps semantic names to that register. Both sides can
+  safely share generated register-index semantics; original names are not
+  needed. Scalar types must come from the bound format. Generic vertex
+  shaders will retain raw tokens until a compatible layout supplies those
+  types, then cache the compiled variant. No first-adapter or public factory.
+- Paired60004 CI34596574202 ALL PASS. Signed artifact10263060497,
+  11537610bytes, SHA256
+  ae0e58217a05efd49530abab9198a8deaa76c15f8b1e80881f13e29c26c716b1.
+  Exact parent1ab0151/child9eb; older Mesa4ace retained, main warned.
+
 - Microsoft native SetRenderTargets requires all color slots and depth to
   update atomically, even NumViews=ClearSlots=0. ClearSlots is only an
   optimization aid. D3D10 depth/stencil descriptors expose FrontEnable and

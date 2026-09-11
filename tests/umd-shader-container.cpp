@@ -50,13 +50,30 @@ int main() {
   }
   code[2] = 0x0100003e;
   check(!buildShaderContainer(ShaderStage::Vertex, code, 3, nullptr, 1, &output, 1, binary));
-  check(!buildShaderContainer(ShaderStage::Vertex, code, 3, &input, 2, &output, 1, binary));
+  ShaderSignatureEntry duplicateInputs[] = {input,input};
+  check(!buildShaderContainer(ShaderStage::Vertex, code, 3, duplicateInputs, 2, &output, 1, binary));
+  check(!buildShaderContainer(ShaderStage::Vertex, code, 3, &input, 33, &output, 1, binary));
   check(!buildShaderContainer(ShaderStage::Vertex, code, 3, &input, 1, nullptr, 1, binary));
   check(!buildShaderContainer(ShaderStage::Vertex, code, 3, &input, 1, &output, 0, binary));
-  for (auto wrong : {ShaderSignatureEntry{0,0,1}, {6,1,1}, {6,0,2}, {6,0,0}})
+  for (auto wrong : {ShaderSignatureEntry{0,0,1}, {6,32,1}, {6,0,2}, {6,0,0}})
     check(!buildShaderContainer(ShaderStage::Vertex, code, 3, &wrong, 1, &output, 1, binary));
   for (auto wrong : {ShaderSignatureEntry{0,0,15}, {1,1,15}, {1,0,1}, {1,0,31}})
     check(!buildShaderContainer(ShaderStage::Vertex, code, 3, &input, 1, &wrong, 1, binary));
+  ShaderSignatureEntry typedInputs[] = {{0,0,3,ShaderScalar::Float32},
+    {0,3,1,ShaderScalar::Uint32}, {0,7,1,ShaderScalar::Sint32}};
+  check(buildShaderContainer(ShaderStage::Vertex, code, 3, typedInputs, 3, &output, 1, binary));
+  dxbc_spv::dxbc::Container typedContainer(binary.data(), binary.size());
+  dxbc_spv::dxbc::Signature typedSignature(typedContainer.getInputSignatureChunk());
+  const dxbc_spv::ir::ScalarType expectedTypes[] = {dxbc_spv::ir::ScalarType::eF32,
+    dxbc_spv::ir::ScalarType::eU32, dxbc_spv::ir::ScalarType::eI32};
+  for (unsigned i = 0; i < 3; i++) {
+    auto entry = typedSignature.findSemantic(0, inputRegisterSemantic, typedInputs[i].registerIndex);
+    check(entry != typedSignature.end());
+    check(entry->getRegisterIndex() == int32_t(typedInputs[i].registerIndex));
+    check(entry->getScalarType() == expectedTypes[i]);
+  }
+  typedInputs[0].scalar = ShaderScalar::Unknown;
+  check(!buildShaderContainer(ShaderStage::Vertex, code, 3, typedInputs, 3, &output, 1, binary));
   code[0] = 0x40; output = {0,0,15};
   check(buildShaderContainer(ShaderStage::Pixel, code, 3, nullptr, 0, &output, 1, binary));
   dxbc_spv::dxbc::Container pixel(binary.data(), binary.size());
@@ -91,6 +108,18 @@ int main() {
     check(SUCCEEDED(reflected->GetDesc(&desc)));
     check(desc.InputParameters == (vertex ? 1u : 0u) && desc.OutputParameters == 1);
   }
+  std::vector<uint32_t> buffered;
+  check(compileProbeShader(true, buffered, true));
+  ShaderSignatureEntry bufferedInput = {0,0,3,ShaderScalar::Float32}, positionOutput = {1,0,15};
+  check(buildShaderContainer(ShaderStage::Vertex, buffered.data(), buffered.size(),
+    &bufferedInput, 1, &positionOutput, 1, binary));
+  Microsoft::WRL::ComPtr<ID3D11ShaderReflection> bufferedReflection;
+  check(SUCCEEDED(D3DReflect(binary.data(), binary.size(), __uuidof(ID3D11ShaderReflection), &bufferedReflection)));
+  D3D11_SIGNATURE_PARAMETER_DESC reflectedInput = {};
+  check(SUCCEEDED(bufferedReflection->GetInputParameterDesc(0, &reflectedInput)));
+  check(reflectedInput.Register == 0 && reflectedInput.Mask == 3
+    && reflectedInput.ComponentType == D3D_REGISTER_COMPONENT_FLOAT32
+    && !std::strcmp(reflectedInput.SemanticName, inputRegisterSemantic));
 #endif
   std::printf("shader container validation PASS checks=%u\n", checks);
 }

@@ -166,7 +166,9 @@ int main(int argc, char** argv) {
       || !table.pfnCalcPrivateDepthStencilViewSize || !table.pfnCreateDepthStencilView
       || !table.pfnDestroyDepthStencilView || !table.pfnClearDepthStencilView || !table.pfnQueryBegin
       || !table.pfnCalcPrivateDepthStencilStateSize || !table.pfnCreateDepthStencilState
-      || !table.pfnDestroyDepthStencilState || !table.pfnSetDepthStencilState) {
+      || !table.pfnDestroyDepthStencilState || !table.pfnSetDepthStencilState
+      || !table.pfnIaSetVertexBuffers || !table.pfnCalcPrivateElementLayoutSize
+      || !table.pfnCreateElementLayout || !table.pfnDestroyElementLayout || !table.pfnIaSetInputLayout) {
     std::fputs("Required development DDI absent; use the probe and DLL from one exact build\n", stderr);
     if (table.pfnDestroyDevice) table.pfnDestroyDevice(device);
     return 15;
@@ -203,8 +205,8 @@ int main(int argc, char** argv) {
   D3D10DDI_HRENDERTARGETVIEW view = {viewMemory.get()};
   table.pfnCreateRenderTargetView(device, &viewDesc, view, {});
   std::vector<uint32_t> vs, ps;
-  if (!compileProbeShader(true, vs) || !compileProbeShader(false, ps)) return 8;
-  D3D10DDIARG_SIGNATURE_ENTRY input = {D3D10_SB_NAME_VERTEX_ID,0,1};
+  if (!compileProbeShader(true, vs, true) || !compileProbeShader(false, ps)) return 8;
+  D3D10DDIARG_SIGNATURE_ENTRY input = {D3D10_SB_NAME_UNDEFINED,0,3};
   D3D10DDIARG_SIGNATURE_ENTRY position = {D3D10_SB_NAME_POSITION,0,15};
   D3D10DDIARG_SIGNATURE_ENTRY colorOutput = {D3D10_SB_NAME_UNDEFINED,0,15};
   D3D10DDIARG_STAGE_IO_SIGNATURES vsSignature = {&input,1,&position,1};
@@ -268,6 +270,20 @@ int main(int argc, char** argv) {
   indexDesc.Usage = D3D10_DDI_USAGE_IMMUTABLE; indexDesc.BindFlags = D3D10_DDI_BIND_INDEX_BUFFER;
   indexDesc.MipLevels = 1; indexDesc.ArraySize = 1; indexDesc.SampleDesc.Count = 1;
   auto index = std::make_unique<ProbeResource>(device, table, indexDesc);
+  FLOAT positions[6] = {-1,1,3,1,-1,-3};
+  D3D10DDI_MIPINFO vertexMip = {24,1,1,24,1,1};
+  D3D10_DDIARG_SUBRESOURCE_UP vertexData = {positions,24,24};
+  D3D10DDIARG_CREATERESOURCE vertexDesc = indexDesc;
+  vertexDesc.pMipInfoList = &vertexMip; vertexDesc.pInitialDataUP = &vertexData;
+  vertexDesc.BindFlags = D3D10_DDI_BIND_VERTEX_BUFFER;
+  auto vertices = std::make_unique<ProbeResource>(device, table, vertexDesc);
+  D3D10DDIARG_INPUT_ELEMENT_DESC inputElement = {};
+  inputElement.Format = DXGI_FORMAT_R32G32_FLOAT;
+  inputElement.InputSlotClass = D3D10_DDI_INPUT_PER_VERTEX_DATA;
+  D3D10DDIARG_CREATEELEMENTLAYOUT layoutDesc = {&inputElement,1};
+  auto layoutMemory = allocate(table.pfnCalcPrivateElementLayoutSize(device, &layoutDesc));
+  D3D10DDI_HELEMENTLAYOUT layout = {layoutMemory.get()};
+  table.pfnCreateElementLayout(device, &layoutDesc, layout, {});
   D3D10_DDI_BLEND_DESC blendDesc = {};
   blendDesc.BlendEnable[0] = TRUE; blendDesc.RenderTargetWriteMask[0] = 15;
   blendDesc.SrcBlend = blendDesc.DestBlend = D3D10_DDI_BLEND_ONE;
@@ -336,6 +352,9 @@ int main(int argc, char** argv) {
     table.pfnSetScissorRects(device, 1, 0, &scissor);
     table.pfnIaSetTopology(device, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     table.pfnIaSetIndexBuffer(device, index->handle, DXGI_FORMAT_R32_UINT, 0);
+    table.pfnIaSetInputLayout(device, layout);
+    const UINT stride = 8, offset = 0;
+    table.pfnIaSetVertexBuffers(device, 0, 1, &vertices->handle, &stride, &offset);
     // Reject by depth, pass both tests, then reject by stencil alone. Exact
     // occlusion counts detect ignored depth/stencil state even when additive
     // color saturation would hide an extra draw in the final red image.
@@ -398,6 +417,9 @@ int main(int argc, char** argv) {
   }
   table.pfnSetRenderTargets(device, nullptr, 0, 1, {});
   table.pfnSetDepthStencilState(device, {}, 0);
+  table.pfnIaSetInputLayout(device, {});
+  if (layout.pDrvPrivate) table.pfnDestroyElementLayout(device, layout);
+  vertices.reset();
   for (auto query : occlusion) if (query.pDrvPrivate) table.pfnDestroyQuery(device, query);
   if (depthState.pDrvPrivate) table.pfnDestroyDepthStencilState(device, depthState);
   if (depthView.pDrvPrivate) table.pfnDestroyDepthStencilView(device, depthView);

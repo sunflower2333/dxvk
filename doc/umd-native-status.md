@@ -61,11 +61,21 @@ The completion helper has CPU failure-path tests; the pixel probe additionally
 requires a completed GPU event. These new GPU query paths have not run on target.
 
 The initial shader interface is deliberately limited to SM4.0 VS with optional
-SV_VertexID and SV_Position output, plus a PS with no inputs and one float
+SV_VertexID, generic vertex inputs and SV_Position output, plus a PS with no inputs and one float
 SV_Target0 output. User varyings, other stages and custom-data instructions
 are rejected. Shader tokens are preserved byte-for-byte in the new DXBC
 container, which carries canonical signatures only for these known types and
 the proper DXBC checksum. General shader interfaces still require implementation.
+
+Native input-layout and vertex-buffer DDIs now map numeric input registers to
+the same generated semantics on both sides of DXVK's API boundary. The initial
+formats are one through four 32-bit float/unsigned/signed components. A generic
+VS retains its original tokens until a bound layout supplies the real input
+scalar types; only then is the executable DXVK shader compiled and cached.
+No provisional type reaches the shader compiler. Missing layout registers
+fail before drawing. The device probe now reads fullscreen positions from
+an actual vertex buffer, and CPU tests check nonzero registers and all three
+scalar types plus reflection of a real compiled vertex-input shader.
 
 ## Validation and evidence limits
 

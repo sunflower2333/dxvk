@@ -1,5 +1,28 @@
 # Progress
 
+2026-09-11: Runtime activation continuation closes four10.0 table slots:
+default constant-buffer update, table relocation and counter capability/query.
+The first reuses actual backend update; relocation keeps no stale table pointer;
+counter result is the embedded DXVK device's real absence of performance
+counters, without device-loss queries. This reduces the inventory20to16 but
+does not expose an incomplete feature level. Existing probe merely exercises
+these initialization operations; no new backend workload count or hardware
+rerun request. Parent's ordinary runtime probe is the next acceptance path.
+
+2026-09-11: DXVK5b0983d CI34612034025 ALL5PASS; exact ARM64 DLL/probe
+downloaded, hash/architecture/source verified and recorded in hardware guide.
+VKD3D61edc56 CI34612036226 ALL4PASS; ARM64 all10manifestentriesPASS and
+standaloneguidewritten. Parent requested handoff then actual runtime wiring.
+Created doc/runtime-activation-gaps.md with current export/negotiation/device,
+resource/fence and Present dependencies. Parent builds a separate system-D3D
+application acceptance tool. No new device actions or predication code.
+
+2026-09-11: Paired97e7b00 finalartifact10268526395 downloaded and all40
+candidate/finaldriver manifest entries match. Exactsource97e7/bc61/Mesa4ace;
+INF stillselectsMesa. Guide records published archivedigest and independently
+verified signed DLL/probe hashes, keeping them distinct from testedstandalone.
+DXVK5b0983d replacementCI34612034025 and VKD3D61edc56CI34612036226running.
+
 2026-09-11: Early970f14a WDK compile caught a docs/ABI mismatch: real SRV
 hazard signature is device/view/resource, not the local docs' argument names.
 Fixed production and probe argument order plus mutable clear color array.

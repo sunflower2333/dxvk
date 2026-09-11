@@ -26,12 +26,20 @@ NextVKD3Dbc61de9 implements native root32constant callbacks, bounds,
 CI34609416636 ALL4PASS. Targetseven-vkd3dbc-constants-05PASS Exit0/1167ms,
 17workloads/17408words including2root32rounds. LUID581B/ICD9AA5/KMD58386,
 host0d87/Virgl28a/TURNIPblit, DWM2140/Explorer5972retained. Hostclosurepending.
-Paired97e7b00 pinsbc61de9; CI34610190479 ALL7PASS, finalartifactcheckpending.
+Paired97e7b00 pinsbc61de9; CI34610190479 ALL7PASS, finalartifact10268526395
+downloaded and all40manifestentriesPASS; existingMesa4ace registration retained.
 ResourceIsStagingBusy and read-after-write hazards implemented with real
 backendtracking and bounded mapped-resource/actualhazard targetfixture.
 970f14a CI34611474525 early ARM64 compile caught Microsoftmarkdown hazard
 parameter order mismatch and mutable FLOAT clear contract. Actual WDK uses
-device/view/resource; corrected both. Replacement CI before parenthandoff.
+device/view/resource; corrected both.5b0983d replacementCI34612034025ALL5PASS.
+VKD3D61edc56 hardens UAVdata/counterregistry handling, CI34612036226ALL4PASS.
+Both exactARM64artifacts downloading for parenthandoff. ParentWindowsis
+stopped pending user's RAMconfigdecision; all remoteoperationsstaywithparent.
+Parent prioritizes actual Microsoft runtime activation over further backend
+cases. Audit complete minimum OpenAdapter10(_2)/OpenAdapter12 gaps and begin
+production wiring. Predication was not edited; upstreamDXVKSetPredicationis
+a stub, so forwarding it would not implement actual conditional rendering.
 No childremoteactions; native runtime/displayPresent acceptance remains open.
 
 ## Earlier checkpoint sequence

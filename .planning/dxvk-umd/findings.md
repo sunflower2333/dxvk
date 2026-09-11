@@ -1,5 +1,16 @@
 # Findings
 
+- Parent redirects the next milestone to ordinary Microsoft D3D11/D3D12
+  runtime activation and owns an independent system-DLL/exact-UMD application
+  acceptance tool. Stop adding backend-only cases. Source audit: DXVK has no
+  OpenAdapter10(_2) exports, no GetSupportedVersions/GetCaps, and20 documented
+  D3D10 table slots remain unset (some version-dependent). D3D11 table absent.
+  D3D12 has no OpenAdapter12/adapter runtime callbacks, native CreateDevice,
+  runtime heap/resource/GPUVA/residency/fences or graphics/Present wiring.
+  Backend Vulkan objects and harness tables cannot substitute for these.
+- DXVK SetPredication only stores state and logs Stub. No predication source
+  edits were made; do not advertise that feature from a simple DDI forwarder.
+
 - VKD3D continuation found UAV creation still dereferenced arbitrary incoming
   data/counter handles, unlike the newer SRV path. Both now resolve the locked
   live buffer registry before backend access. New WDK fixture uses pointer1,

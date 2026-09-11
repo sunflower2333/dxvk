@@ -275,11 +275,27 @@ int main(int argc, char** argv) {
       || !table.pfnDynamicIABufferMapDiscard || !table.pfnDynamicIABufferUnmap
       || !table.pfnResourceResolveSubresource || !table.pfnCheckFormatSupport
       || !table.pfnCheckMultisampleQualityLevels || !table.pfnResourceIsStagingBusy
-      || !table.pfnResourceReadAfterWriteHazard || !table.pfnShaderResourceViewReadAfterWriteHazard) {
+      || !table.pfnResourceReadAfterWriteHazard || !table.pfnShaderResourceViewReadAfterWriteHazard
+      || !table.pfnDefaultConstantBufferUpdateSubresourceUP || !table.pfnRelocateDeviceFuncs
+      || !table.pfnCheckCounterInfo || !table.pfnCheckCounter) {
     std::fputs("Required development DDI absent; use the probe and DLL from one exact build\n", stderr);
     if (table.pfnDestroyDevice) table.pfnDestroyDevice(device);
     return 15;
   }
+  auto relocated = table;
+  table.pfnRelocateDeviceFuncs(device, &relocated);
+  table = relocated;
+  D3D10DDI_COUNTER_INFO counters = {};
+  table.pfnCheckCounterInfo(device, &counters);
+  if (FAILED(lastError) || counters.LastDeviceDependentCounter || counters.NumSimultaneousCounters
+      || counters.NumDetectableParallelUnits) { table.pfnDestroyDevice(device); return 18; }
+  table.pfnCheckCounter(device, D3D10DDI_COUNTER_GPU_IDLE,
+    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+  if (lastError != DXGI_DDI_ERR_UNSUPPORTED) { table.pfnDestroyDevice(device); return 18; }
+  table.pfnCheckCounter(device, D3D10DDI_COUNTER_DEVICE_DEPENDENT_0,
+    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+  if (lastError != E_INVALIDARG) { table.pfnDestroyDevice(device); return 18; }
+  lastError = S_OK;
   if (!testBufferTransfers(device, table)) { table.pfnDestroyDevice(device); return 13; }
   if (!testMultisample(device, table)) { table.pfnDestroyDevice(device); return 17; }
   D3D10DDIARG_CREATEQUERY eventDesc = {D3D10DDI_QUERY_EVENT, 0};
@@ -342,14 +358,15 @@ int main(int argc, char** argv) {
   table.pfnCreateRasterizerState(device, &rasterDesc, raster, {});
   D3D10DDI_MIPINFO constantMip = {16,1,1,16,1,1};
   FLOAT pixelColor[4] = {0.5f,0,0,1};
-  D3D10_DDIARG_SUBRESOURCE_UP constantData = {pixelColor,16,16};
   D3D10DDIARG_CREATERESOURCE constantDesc = {};
-  constantDesc.pMipInfoList = &constantMip; constantDesc.pInitialDataUP = &constantData;
+  constantDesc.pMipInfoList = &constantMip;
   constantDesc.ResourceDimension = D3D10DDIRESOURCE_BUFFER;
   constantDesc.Usage = D3D10_DDI_USAGE_DEFAULT;
   constantDesc.BindFlags = D3D10_DDI_BIND_CONSTANT_BUFFER;
   constantDesc.MipLevels = 1; constantDesc.ArraySize = 1; constantDesc.SampleDesc.Count = 1;
   auto constant = std::make_unique<ProbeResource>(device, table, constantDesc);
+  if (SUCCEEDED(lastError))
+    table.pfnDefaultConstantBufferUpdateSubresourceUP(device, constant->handle, 0, nullptr, pixelColor, 0, 0);
   uint32_t samplePixels[4] = {};
   D3D10DDI_MIPINFO sampleMip = {2,2,1,2,2,1};
   D3D10_DDIARG_SUBRESOURCE_UP sampleData = {samplePixels,8,16};

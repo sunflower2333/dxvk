@@ -153,7 +153,8 @@ buffer/SRV read-after-write notifications validate resource ownership and view
 correspondence; DXVK inserts Vulkan barriers at actual use, with no forced GPU
 idle. The target probe checks a mapped buffer and four simultaneously mapped
 texture subresources, plus clear-to-sample and update-to-index-buffer hazards.
-These new callbacks await Windows CI and target execution.
+Checkpoint5b0983d passed all five CI34612034025 jobs across ARM64/x64/x86.
+Its exact matched ARM64 DLL/probe are ready; target execution remains pending.
 
 `VioGpuDxvkOpenAdapterForTest` now wires the real WDK OpenAdapter, private
 device-size, CreateDevice and CloseAdapter signatures into the development

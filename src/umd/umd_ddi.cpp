@@ -1125,6 +1125,23 @@ void APIENTRY drawIndexedInstanced(D3D10DDI_HDEVICE h, UINT count, UINT instance
   catch (...) { device->error(E_FAIL); }
 }
 void APIENTRY flush(D3D10DDI_HDEVICE h) { get(h)->context->Flush(); }
+void APIENTRY relocateDeviceFunctions(D3D10DDI_HDEVICE h, D3D10DDI_DEVICEFUNCS* functions) {
+  if (!functions) { get(h)->error(E_INVALIDARG); return; }
+  // The runtime has already copied its table. No driver object caches a
+  // pointer to that table, and none of our entrypoints require rebasing.
+}
+void APIENTRY counterInfo(D3D10DDI_HDEVICE h, D3D10DDI_COUNTER_INFO* info) {
+  if (!info) { get(h)->error(E_INVALIDARG); return; }
+  // The embedded DXVK device exposes no performance counters. This is the
+  // cached creation-time capability, independent of later device removal.
+  *info = {};
+}
+void APIENTRY checkCounter(D3D10DDI_HDEVICE h, D3D10DDI_QUERY query,
+    D3D10DDI_COUNTER_TYPE*, UINT*, LPSTR, UINT*, LPSTR, UINT*, LPSTR, UINT*) {
+  // Known optional counters are unsupported; no device-dependent range exists.
+  get(h)->error(query >= D3D10DDI_COUNTER_GPU_IDLE && query <= D3D10DDI_COUNTER_TEXTURE_CACHE_HIT_RATE
+    ? DXGI_DDI_ERR_UNSUPPORTED : E_INVALIDARG);
+}
 void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
   get(h)->error(get(h)->memory.close());
   get(h)->~Device();
@@ -1214,6 +1231,7 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnCheckMultisampleQualityLevels = checkMultisample;
   table->pfnResourceCopyRegion = copyRegion;
   table->pfnResourceUpdateSubresourceUP = updateResource;
+  table->pfnDefaultConstantBufferUpdateSubresourceUP = updateResource;
   table->pfnCalcPrivateQuerySize = querySize;
   table->pfnCreateQuery = createQuery;
   table->pfnDestroyQuery = destroyQuery;
@@ -1265,6 +1283,9 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnDrawInstanced = drawInstanced;
   table->pfnDrawIndexedInstanced = drawIndexedInstanced;
   table->pfnFlush = flush;
+  table->pfnRelocateDeviceFuncs = relocateDeviceFunctions;
+  table->pfnCheckCounterInfo = counterInfo;
+  table->pfnCheckCounter = checkCounter;
   table->pfnDestroyDevice = destroyDevice;
   return S_OK;
 }

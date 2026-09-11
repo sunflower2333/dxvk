@@ -20,6 +20,7 @@ static unsigned checks;
 static void debugMessages(ID3D11InfoQueue* queue) {
   if (!queue) { std::puts("WARP_DEBUG_LAYER unavailable"); return; }
   const UINT64 count = queue->GetNumStoredMessagesAllowedByRetrievalFilter();
+  std::printf("WARP_DEBUG_LAYER messages=%llu\n", static_cast<unsigned long long>(count));
   for (UINT64 i = 0; i < std::min<UINT64>(count, 16); i++) {
     SIZE_T size = 0;
     if (FAILED(queue->GetMessage(i, nullptr, &size))) continue;
@@ -198,17 +199,25 @@ int main() {
   context->ClearRenderTargetView(targetView.Get(), green);
   for (UINT i = 0; i < 4; i++) pixels(device.Get(), context.Get(), texture.Get(), i, i == 3 ? 0xff00ff00 : 0);
 
-  // The Microsoft WARP oracle must use an explicitly supported typed base
-  // format. WARP left a typeless base's lower mip unchanged in the previous
-  // fixture. Keep that resource's separate typeless-view tests intact.
+  // Keep the mip oracle separate from the typeless clear/sampling case.
+  // Request automatic full-chain allocation as documented by CreateTexture2D,
+  // then generate only a strict SRV subrange and verify every untouched mip.
   auto generationResource = resource;
   generationResource.Format = native.Format;
   generationResource.MiscFlags = autoMipFlags;
+  generationResource.MipLevels = 0;
   UINT generationSupport = 0;
   CHECK(device->CheckFormatSupport(generationResource.Format, &generationSupport) == S_OK);
   CHECK(generationSupport & D3D11_FORMAT_SUPPORT_MIP_AUTOGEN);
   ComPtr<ID3D11Texture2D> generatedTexture;
-  CHECK(device->CreateTexture2D(&generationResource, data, &generatedTexture) == S_OK);
+  D3D11_SUBRESOURCE_DATA fullData[8] = {};
+  for (UINT i = 0; i < 8; i++) {
+    const UINT width = 8u >> (i % 4);
+    fullData[i] = {zeros.data(), width * 4, width * width * 4};
+  }
+  CHECK(device->CreateTexture2D(&generationResource, fullData, &generatedTexture) == S_OK);
+  generatedTexture->GetDesc(&generationResource);
+  CHECK(generationResource.MipLevels == 4 && generationResource.ArraySize == 2);
   ComPtr<ID3D11RenderTargetView> oldMipView;
   CHECK(device->CreateRenderTargetView(generatedTexture.Get(), &rtv, &oldMipView) == S_OK);
   context->ClearRenderTargetView(oldMipView.Get(), green);
@@ -238,7 +247,8 @@ int main() {
   context->GenerateMips(generationView.Get());
   debugMessages(debugQueue.Get());
   std::puts("WARP_VIEW_STAGE generated-mip-array");
-  for (UINT i = 0; i < 4; i++) pixels(device.Get(), context.Get(), generatedTexture.Get(), i, i >= 2 ? 0xff0000ff : 0);
+  for (UINT i = 0; i < 8; i++) pixels(device.Get(), context.Get(), generatedTexture.Get(), i,
+    i == 4 || i == 5 ? 0xff0000ff : 0);
 
   // Read relative slice0/mip0 through a view selecting absolute slice1/mip1.
   const char* vertex = "float4 main(uint i:SV_VertexID):SV_Position { return float4((i==1)?3:-1,(i==2)?-3:1,0,1); }";

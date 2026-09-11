@@ -1,5 +1,12 @@
 # Findings
 
+- 4ba6a19 created the debug device and InfoQueue successfully, but neither
+  prior creation nor GenerateMips produced a stored diagnostic. Lower mip
+  remains unchanged. Official CreateTexture2D says MipLevels0 for automatic
+  full-chain allocation. Added that control with queried actual4mips and8
+  initialized subresources, still generating only slice1/mips0-1 and checking
+  all out-of-view mips. No production workaround or support claim yet.
+
 - Typed control e98896b also fails old-green mip1. Actual resource format28,
   MiscFlags1, support3fef3f3, viewfirstMip0/mips2/firstSlice1/slices1 all match
   the intended call. This disproves a typeless-only explanation. Add official

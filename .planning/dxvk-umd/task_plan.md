@@ -6,9 +6,14 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+4ba6a19debuglayerenabledbutnoqueuedmessages; lowerstilloldgreen. Nextcontrol
+usesdocumentedCreateTexture2DMipLevels0/fullchainallocation, queriesactual4mips,
+generatesstrict2mipSRVslice1andchecksevery8subresourceincludingoutsideview.
+Productionunchanged; awaitcontrolCIbeforeconclusion. Ifstillfails, broaden
+WARPAPIbaselineisolationratherthanrepeatidenticalqueries.
 e98896btypedcontrolCI34616556328sameoldgreenFAIL, despiteformat28/misc1/
 caps3fef3f3/range0,2,1,1. Typeless-onlyhypothesisdisproved. AddedD3D11debug
-layerandInfoQueuebefore/afterGenerateMips; nextdiagnosticCIpending. Keep
+layerandInfoQueuebefore/afterGenerateMips;4ba6a19CI34617189692running. Keep
 productionc9codeunchangedandallexactpixelsstrict. ef4b174ALL5PASS.
 Diagnosis c40dc0dCI34615967837: selectedslice1/mip1expectedredff0000ff,
 actualoldgreenff00ff00; priorbase/otherslicecorrect. Originaloraclebasewas

@@ -1,8 +1,10 @@
 # Native Microsoft runtime activation gaps
 
-Source audit: DXVKcf492c9 and VKD3D61edc56,2026-09-11. DXVK5b0983d and
-VKD3D61edc56 pass standalone architecture CI; cf492c9 CI34613950771 also passes
-all five jobs. The current state-reset continuation awaits its own CI.
+Source audit: DXVK4ba6a19 and VKD3D61edc56,2026-09-11. DXVK5b0983d and
+VKD3D61edc56 pass standalone architecture CI; cf492c9 CI34613950771 and
+ef4b174 CI34615056755 also pass all five jobs. GenMips source c9e389d compiles,
+but its WARP mip oracle fails for both typed and typeless base resources.
+Current4ba6a19 debug-layer diagnostics CI34617189692 is pending.
 Earlier bounded hardware readbacks remain valid
 for their exact tested sources; neither candidate is a registered native
 Direct3D runtime driver. Parent owns a new independent ordinary application
@@ -123,8 +125,9 @@ getters after replacement, shrink, invalid-input refusal and zero-count reset.
 
 The next mandatory callback, GenMips, now maps the native auto-mip flag to the
 embedded API resource and uses the backend's GPU mip blits. It validates owned
-views, creation flags, MIP type and filterable format support. WARP checks exact
-generated pixels and isolation of a selected array slice. Other native MiscFlags
+views, creation flags, MIP type and filterable format support. WARP tests exact
+generated pixels and isolation of a selected array slice, but currently leaves
+the lower mip at its old color; diagnosis remains open. Other native MiscFlags
 remain rejected; this does not implement shared-resource ownership.
 
 1. Build actual adapter/version/CreateDevice wiring and complete the chosen

@@ -1,5 +1,10 @@
 # Progress
 
+2026-09-11: 4ba6a19 x86 WARP still old-green with an active empty InfoQueue.
+Next controlled change requests MipLevels0 full-chain allocation per Microsoft
+CreateTexture2D and verifies all8subresources around the selected2mip range.
+Typed/typeless comparison did not identify a cause. Production unchanged.
+
 2026-09-11: Typed e98896b control repeats unchanged green; actual descriptors
 and caps are correct. This is not a typeless-only behavior. Added Microsoft
 debug layer/InfoQueue output for the original creation and GenMips operation;

@@ -27,14 +27,19 @@ by cf492c9 CI34613950771 ALL5PASS. The topology setter accepts UNDEFINED as a
 legal reset and all D3D10 primitive types. Viewports replace the entire binding
 atomically; native null slots retain their indices as zero-area API viewports.
 Zero count unbinds viewport/scissor state even when the clear hint is zero.
-Source ef4b174 CI34615056755 is pending. This state coverage does not implement
+Source ef4b174 CI34615056755 passes all five jobs. This state coverage does not implement
 the still-missing geometry shader or stream-output stages.
 
 GenMips is wired at source c9e389d through native auto-mip resource flags and
 DXVK's actual GPU mip blits. Ownership, creation flags, MIP range/type and format
-support are checked before dispatch. Existing WARP CI tests generated pixels
-and unchanged neighboring array slices; its CI34615423153 remains pending.
-No new target GPU workload or ordinary-runtime activation has been claimed.
+support are checked before dispatch. Production compilation passes, but WARP
+leaves the selected lower mip unchanged in both typeless and typed RGBA8 control
+cases, even with correct queried flags, support and SRV range. This is not a
+typeless-only issue. Current 4ba6a19 CI34617189692 enables D3D11 debug-layer and
+InfoQueue diagnostics to identify the ignored operation; it is pending. All
+original typeless-view checks and exact generated-pixel assertions remain.
+There is no validated mip-generation, new target-workload or ordinary-runtime
+activation claim.
 
 Dynamic IA/constant-buffer/resource Map DDIs share the checked map path.
 Busy and device-loss errors are translated to native DDI codes; failed maps

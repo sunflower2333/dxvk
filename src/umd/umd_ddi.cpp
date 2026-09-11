@@ -5,6 +5,7 @@
 #include "umd_query.h"
 #include "umd_allocation.h"
 #include "umd_map.h"
+#include "umd_view.h"
 
 #include <wrl/client.h>
 #include <memory>
@@ -275,25 +276,17 @@ void APIENTRY createShaderView(D3D10DDI_HDEVICE h,
   auto device = get(h);
   if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
   auto view = new (out.pDrvPrivate) ShaderView(); view->owner = device;
-  if (!args || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
-      || args->Tex2D.FirstArraySlice || args->Tex2D.ArraySize != 1
-      || (args->Format != DXGI_FORMAT_R8G8B8A8_UNORM && args->Format != DXGI_FORMAT_B8G8R8A8_UNORM)) {
+  if (!args || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D) {
     device->error(E_INVALIDARG); return;
   }
   if (!owned(device, get(args->hDrvResource))) return;
   ComPtr<ID3D11Texture2D> texture;
   if (FAILED(get(args->hDrvResource)->backend.As(&texture))) { device->error(E_INVALIDARG); return; }
   D3D11_TEXTURE2D_DESC resource = {}; texture->GetDesc(&resource);
-  if (resource.ArraySize != 1 || resource.SampleDesc.Count != 1
-      || resource.Format != args->Format || !(resource.BindFlags & D3D11_BIND_SHADER_RESOURCE)
-      || args->Tex2D.MostDetailedMip >= resource.MipLevels || !args->Tex2D.MipLevels
-      || args->Tex2D.MipLevels > resource.MipLevels - args->Tex2D.MostDetailedMip) {
+  D3D11_SHADER_RESOURCE_VIEW_DESC desc = {};
+  if (!dxvk::umd::textureShaderView(*args, resource, desc)) {
     device->error(E_INVALIDARG); return;
   }
-  D3D11_SHADER_RESOURCE_VIEW_DESC desc = {};
-  desc.Format = args->Format; desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-  desc.Texture2D.MostDetailedMip = args->Tex2D.MostDetailedMip;
-  desc.Texture2D.MipLevels = args->Tex2D.MipLevels;
   try { device->error(device->backend->CreateShaderResourceView(texture.Get(), &desc, &view->backend)); }
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
@@ -378,15 +371,14 @@ void APIENTRY createTarget(D3D10DDI_HDEVICE h,
     device->error(E_INVALIDARG); return;
   }
   D3D11_RENDER_TARGET_VIEW_DESC desc = {};
-  desc.Format = args->Format;
-  // Array view covers the non-array one-slice case too.
-  desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
-  desc.Texture2DArray.MipSlice = args->Tex2D.MipSlice;
-  desc.Texture2DArray.FirstArraySlice = args->Tex2D.FirstArraySlice;
-  desc.Texture2DArray.ArraySize = args->Tex2D.ArraySize;
+  ComPtr<ID3D11Texture2D> texture;
+  if (FAILED(get(args->hDrvResource)->backend.As(&texture))) { device->error(E_INVALIDARG); return; }
+  D3D11_TEXTURE2D_DESC resource = {}; texture->GetDesc(&resource);
+  if (!dxvk::umd::textureTargetView(*args, resource, desc)) { device->error(E_INVALIDARG); return; }
   target->format = desc.Format;
-  device->error(device->backend->CreateRenderTargetView(
-    get(args->hDrvResource)->backend.Get(), &desc, &target->backend));
+  try { device->error(device->backend->CreateRenderTargetView(texture.Get(), &desc, &target->backend)); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
 }
 void APIENTRY destroyTarget(D3D10DDI_HDEVICE h, D3D10DDI_HRENDERTARGETVIEW target) {
   auto object = get(target);
@@ -453,6 +445,54 @@ void APIENTRY copyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, D3D10DDI_
   auto device = get(h);
   if (owned(device, get(dst)) && owned(device, get(src)))
     device->context->CopyResource(get(dst)->backend.Get(), get(src)->backend.Get());
+}
+
+void APIENTRY resolveResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstIndex,
+    D3D10DDI_HRESOURCE src, UINT srcIndex, DXGI_FORMAT format) {
+  auto device = get(h);
+  if (!owned(device, get(dst)) || !owned(device, get(src))) return;
+  ComPtr<ID3D11Texture2D> destination, source;
+  if (FAILED(get(dst)->backend.As(&destination)) || FAILED(get(src)->backend.As(&source))) {
+    device->error(E_INVALIDARG); return;
+  }
+  D3D11_TEXTURE2D_DESC dstDesc = {}, srcDesc = {};
+  destination->GetDesc(&dstDesc); source->GetDesc(&srcDesc);
+  if (!dxvk::umd::resolveSubresources(dstDesc, dstIndex, srcDesc, srcIndex, format)) {
+    device->error(E_INVALIDARG); return;
+  }
+  try {
+    UINT support = 0;
+    const HRESULT hr = device->backend->CheckFormatSupport(format, &support);
+    if (FAILED(hr)) { device->error(hr); return; }
+    if (!(support & D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE)) {
+      device->error(DXGI_ERROR_UNSUPPORTED); return;
+    }
+    device->context->ResolveSubresource(destination.Get(), dstIndex, source.Get(), srcIndex, format);
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+
+void APIENTRY checkFormat(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT* output) {
+  auto device = get(h);
+  if (!output) { device->error(E_INVALIDARG); return; }
+  *output = 0;
+  try {
+    UINT support = 0;
+    const HRESULT hr = device->backend->CheckFormatSupport(format, &support);
+    if (FAILED(hr)) { device->error(hr == E_INVALIDARG ? E_FAIL : hr); return; }
+    *output = dxvk::umd::nativeFormatCaps(support);
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+
+void APIENTRY checkMultisample(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT count, UINT* output) {
+  auto device = get(h);
+  if (!output) { device->error(E_INVALIDARG); return; }
+  *output = 0;
+  if (!count || count > D3D11_MAX_MULTISAMPLE_SAMPLE_COUNT) return;
+  try { device->error(device->backend->CheckMultisampleQualityLevels(format, count, output)); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
 }
 
 struct SubresourceInfo {
@@ -1132,6 +1172,9 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnDestroyDepthStencilState = destroyDepthState;
   table->pfnSetDepthStencilState = setDepthState;
   table->pfnResourceCopy = copyResource;
+  table->pfnResourceResolveSubresource = resolveResource;
+  table->pfnCheckFormatSupport = checkFormat;
+  table->pfnCheckMultisampleQualityLevels = checkMultisample;
   table->pfnResourceCopyRegion = copyRegion;
   table->pfnResourceUpdateSubresourceUP = updateResource;
   table->pfnCalcPrivateQuerySize = querySize;

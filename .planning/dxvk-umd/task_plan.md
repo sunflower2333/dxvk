@@ -6,6 +6,22 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+b8c73ef CI34606380427 ALL5PASS; both ORIGINAL and REBUILT MicrosoftWARP
+payloads match all16words, shader887checksPASS. Exact two ARM64 files/hashes
+delivered to parent. Targetseven-dxvkb8-ddi-03PASS Exit0/249ms, all4096pixels,
+buffer/depth-stencil/KMTpublicationPASS. DWM2088/Explorer5820retained.
+Current implementation extends native2D SRV/RTV ranges, MSAA views/resolve
+and explicit format-cap translation. New independent WARP range/sampling/
+resolve fixture and bounded native640pixel MSAA workload await Windows CI.
+VKD3D0447a76 CI34606533835 ALL4PASS. Exact standalone EXE/hash delivered;
+targetseven-vkd3d044-ranges-03PASS Exit0/1039ms, all15360words. Paired72cef21
+CI34607682895 has6jobsPASS, signing/build running. Duplicate
+identical push run34607682868 cancelled after verifying same source/workflow.
+Both tests used OS LUID581E/ICD9AA5/KMD58386/hostVirgl28a. Host trace started
+afterDXVK completed, so noGPU-trace claim forDXVK; VKD3D was trace-covered.
+
+## Earlier checkpoint sequence
+
 37678fb fastCI34605897766 still fails originalWARP signedzero; emittedVS
 disassembly explicitly containsmov o3.xyzw,l(NaN,0,Inf,-Inf), provingFXC
 folded the selected zero/denormal ICB floats too. Source the signed-zero bits

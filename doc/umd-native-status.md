@@ -77,8 +77,8 @@ unmatched registers/components fail before drawing. Native register-index
 semantics preserve linkage without guessing application names. Original shader
 tokens remain byte-for-byte intact with the proper DXBC checksum. Packed
 mixed-type registers, other system values/stages and additional
-render targets are still rejected. The linkage extension is newer than the
-target-tested272a067 checkpoint and needs its own CI and device validation.
+render targets are still rejected. Final SPIR-V checks verify scalar types,
+locations and flat decorations; they do not establish correct GPU values.
 
 Immediate constant-buffer blocks and inert comment/debug blocks are accepted
 with their distinct second-dword length encoding and unchanged payloads.
@@ -104,6 +104,42 @@ The Windows CPU test uses real D3DCompile output and checks the reconstructed
 containers with Microsoft's D3DReflect. Windows CI builds ARM64, x64 and x86
 targets and checks PE architecture, exports and absence of public D3D creation
 imports. These checks require no GPU and establish no hardware rendering claim.
+
+The9c55e92 linkage probe failed all4096 final target pixels while creation,
+copy, depth/stencil and event completion passed. Independent Microsoft WARP
+execution reproduced one invalid test expectation: FXC emitted positive zero
+for the source's negative-zero float constant, including when it was selected
+from an immediate array containing only zero/denormal float patterns. The
+replacement probe obtains that bit pattern from runtime VS constants, retains
+the exact NaN/signed-zero/infinity and integer checks, and verifies original
+and rebuilt containers against WARP. Both now match all16 diagnostic words;
+the fast shader fixture passes887checks. The replacement target run
+seven-dxvkb8-ddi-03 passed in249ms:4096correct pixels,64-byte buffer copy,
+depth/stencil and real KMT allocation publication, with original DWM2088 and
+Explorer5820 retained. The host trace started after this DXVK run finished,
+so no correlated GPU-trace claim is made for it. A failed image prints separate UV, raw-float, immediate-array and
+fixed-integer masks, then one bounded diagnostic draw returns their actual
+payload words. WARP/interface agreement and standalone target DDI proof remain
+distinct from Microsoft runtime activation and visible Present acceptance.
+
+The next native resource step translates 2D shader-resource and render-target
+views with nonzero mip/array ranges, typed views of typeless textures, and
+multisampled arrays. The previous SRV restriction to single RGBA8/BGRA8
+textures is removed; the embedded device validates format compatibility.
+MSAA render targets now select the correct native view dimension. Native
+CheckFormatSupport maps API bits explicitly, CheckMultisampleQualityLevels
+queries the selected backend, and ResourceResolveSubresource validates typed
+source/destination ownership, sample counts, subresource bounds and equal
+dimensions before queuing a supported resolve. Typeless resolves remain
+rejected pending a format-family compatibility implementation.
+
+Independent Microsoft WARP tests exercise translated views by clearing only
+slice1/mip1 of a typeless texture array, sampling it using relative coordinates,
+and resolving a selected MSAA slice. The next standalone native probe adds a
+4x MSAA clear/resolve from source slice1 to destination slice1/mip1; all640
+pixels, including untouched neighboring subresources, must match. This source
+step is awaiting Windows CI and target execution; it is not native application
+or runtime activation evidence.
 
 `VioGpuDxvkOpenAdapterForTest` now wires the real WDK OpenAdapter, private
 device-size, CreateDevice and CloseAdapter signatures into the development

@@ -42,3 +42,6 @@ umd_query_test = executable('dxvk-umd-query-test', '../../tests/umd-query.cpp')
 
 umd_allocation_test = executable('dxvk-umd-allocation-test',
   '../../tests/umd-allocation.cpp', 'umd_allocation.cpp')
+
+umd_view_test = executable('dxvk-umd-view-test', '../../tests/umd-view.cpp',
+  dependencies : [cpp.find_library('d3d11'), cpp.find_library('d3dcompiler')])

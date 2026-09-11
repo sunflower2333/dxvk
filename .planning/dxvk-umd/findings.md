@@ -1,5 +1,22 @@
 # Findings
 
+- Independent original-bytecode WARP execution caught a probe defect that
+  final-SPIR-V interface checks could not: FXC emitted rawFloats.y=+0 for the
+  expected-0 source.37678fbdisassembly confirms literal0 inoutputo3, even
+  when selected from a zero/denormal-only ICB. RuntimeVSconstant input fixes
+  the source expectation without weakening any payload checks. b8c73ef
+  fastCI34606380427 passes887checks; original and rebuilt WARP both match
+  all16words. Target replacement remains pending;9c55is not a linkage pass.
+
+- Parent delegated VKD3D after sourceb2c510d. Paired743acf9CI34604382308
+  ALL7PASS and downloaded signed manifests match; retainsMesa4ace, so main
+  keeps newer installedMesa. b2c510d target14workloads/14336readbacksPASS
+  in1015ms, parenthost26343lines/zero loss-fault,context41:5retired18/18;
+  Explorer3/3 and2028/5780retained. New0447a76 implements full prevalidated
+  multirange descriptor copies; local15workloads/15360CPUVulkanwordsPASS,
+  WindowsCI34606533835running. This child owns both independent engines,
+  never remote operations or main scripts/plans.
+
 - Critical shader-signature bug discovered by full SPIR-V CI: SignatureEntry
   constructor stores the supplied component mask verbatim. ISGN low byte is
   declared components; high byte is components read. Previously only low bits

@@ -59,6 +59,89 @@ static bool testBufferTransfers(D3D10DDI_HDEVICE device, const D3D10DDI_DEVICEFU
   return !mismatches && SUCCEEDED(lastError);
 }
 
+static bool testMultisample(D3D10DDI_HDEVICE device, const D3D10DDI_DEVICEFUNCS& functions) {
+  constexpr DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  UINT support = 0, levels = 0;
+  functions.pfnCheckFormatSupport(device, format, &support);
+  const UINT required = D3D10_DDI_FORMAT_SUPPORT_RENDERTARGET
+    | D3D10_DDI_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET | D3D10_DDI_FORMAT_SUPPORT_MULTISAMPLE_LOAD;
+  if (FAILED(lastError) || (support & required) != required) return false;
+  functions.pfnCheckMultisampleQualityLevels(device, format, 1, &levels);
+  if (FAILED(lastError) || levels != 1) return false;
+  functions.pfnCheckMultisampleQualityLevels(device, format, 0, &levels);
+  if (FAILED(lastError) || levels) return false;
+  functions.pfnCheckMultisampleQualityLevels(device, format, 33, &levels);
+  if (FAILED(lastError) || levels) return false;
+  functions.pfnCheckMultisampleQualityLevels(device, format, 4, &levels);
+  if (FAILED(lastError) || !levels) return false;
+
+  D3D10DDI_MIPINFO msMip = {8,8,1,8,8,1};
+  D3D10DDIARG_CREATERESOURCE desc = {};
+  desc.pMipInfoList = &msMip; desc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+  desc.Usage = D3D10_DDI_USAGE_DEFAULT; desc.Format = format;
+  desc.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_SHADER_RESOURCE;
+  desc.MipLevels = 1; desc.ArraySize = 2; desc.SampleDesc.Count = 4;
+  ProbeResource source(device, functions, desc);
+  if (!source.memory || FAILED(lastError)) return false;
+  D3D10DDIARG_CREATESHADERRESOURCEVIEW srv = {};
+  srv.hDrvResource = source.handle; srv.Format = format; srv.ResourceDimension = desc.ResourceDimension;
+  srv.Tex2D.FirstArraySlice = 1; srv.Tex2D.ArraySize = 1; srv.Tex2D.MipLevels = 1;
+  auto srvMemory = allocate(functions.pfnCalcPrivateShaderResourceViewSize(device, &srv));
+  if (!srvMemory) return false;
+  D3D10DDI_HSHADERRESOURCEVIEW shaderView = {srvMemory.get()};
+  functions.pfnCreateShaderResourceView(device, &srv, shaderView, {});
+  functions.pfnDestroyShaderResourceView(device, shaderView);
+  if (FAILED(lastError)) return false;
+  D3D10DDIARG_CREATERENDERTARGETVIEW viewDesc = {};
+  viewDesc.hDrvResource = source.handle; viewDesc.Format = format;
+  viewDesc.ResourceDimension = desc.ResourceDimension; viewDesc.Tex2D.ArraySize = 1;
+  auto viewMemory = allocate(functions.pfnCalcPrivateRenderTargetViewSize(device, &viewDesc));
+  if (!viewMemory) return false;
+  D3D10DDI_HRENDERTARGETVIEW view = {viewMemory.get()};
+  FLOAT colors[2][4] = {{0,0,1,1}, {1,0,0,1}};
+  for (UINT i = 0; i < 2; i++) {
+    viewDesc.Tex2D.FirstArraySlice = i;
+    functions.pfnCreateRenderTargetView(device, &viewDesc, view, {});
+    if (SUCCEEDED(lastError)) functions.pfnClearRenderTargetView(device, view, colors[i]);
+    functions.pfnDestroyRenderTargetView(device, view);
+    if (FAILED(lastError)) return false;
+  }
+  std::array<UINT,256> zeros = {};
+  D3D10DDI_MIPINFO mips[2] = {{16,16,1,16,16,1},{8,8,1,8,8,1}};
+  D3D10_DDIARG_SUBRESOURCE_UP initial[4] = {{zeros.data(),64,1024}, {zeros.data(),32,256},
+    {zeros.data(),64,1024}, {zeros.data(),32,256}};
+  desc.pMipInfoList = mips; desc.pInitialDataUP = initial;
+  desc.MipLevels = 2; desc.SampleDesc.Count = 1; desc.BindFlags = 0;
+  ProbeResource resolved(device, functions, desc);
+  desc.Usage = D3D10_DDI_USAGE_STAGING; desc.MapFlags = D3D10_DDI_CPU_ACCESS_READ;
+  desc.pInitialDataUP = nullptr;
+  ProbeResource staging(device, functions, desc);
+  if (!resolved.memory || !staging.memory || FAILED(lastError)) return false;
+  functions.pfnResourceResolveSubresource(device, resolved.handle, 3, source.handle, 1, format);
+  if (FAILED(lastError)) return false;
+  // Invalid late range must not alter the valid destination or queue work.
+  functions.pfnResourceResolveSubresource(device, resolved.handle, 4, source.handle, 0, format);
+  if (lastError != E_INVALIDARG) return false;
+  lastError = S_OK;
+  functions.pfnResourceCopy(device, staging.handle, resolved.handle);
+  if (FAILED(lastError)) return false;
+  UINT mismatches = 0, pixelCount = 0;
+  for (UINT i = 0; i < 4; i++) {
+    D3D10DDI_MAPPED_SUBRESOURCE map = {};
+    functions.pfnStagingResourceMap(device, staging.handle, i, D3D10_DDI_MAP_READ, 0, &map);
+    if (FAILED(lastError) || !map.pData) return false;
+    const UINT size = i & 1 ? 8 : 16;
+    const UINT expected = i == 3 ? 0xff0000ff : 0;
+    for (UINT y = 0; y < size; y++) {
+      const auto row = reinterpret_cast<const UINT*>(static_cast<const char*>(map.pData) + y * map.RowPitch);
+      for (UINT x = 0; x < size; x++) { pixelCount++; mismatches += row[x] != expected; }
+    }
+    functions.pfnStagingResourceUnmap(device, staging.handle, i);
+  }
+  std::printf("DDI_MSAA_RESOLVE samples=4 src_slice=1 dst_slice=1 dst_mip=1 pixels=%u mismatches=%u\n", pixelCount, mismatches);
+  return !mismatches && SUCCEEDED(lastError);
+}
+
 // Explicit development harness: this callback reads the real KMD's private
 // data, but is not supplied by the Microsoft D3D runtime. No runtime handle
 // is ever cast to a KMT handle.
@@ -169,12 +252,15 @@ int main(int argc, char** argv) {
       || !table.pfnDestroyDepthStencilState || !table.pfnSetDepthStencilState
       || !table.pfnIaSetVertexBuffers || !table.pfnCalcPrivateElementLayoutSize
       || !table.pfnCreateElementLayout || !table.pfnDestroyElementLayout || !table.pfnIaSetInputLayout
-      || !table.pfnDynamicIABufferMapDiscard || !table.pfnDynamicIABufferUnmap) {
+      || !table.pfnDynamicIABufferMapDiscard || !table.pfnDynamicIABufferUnmap
+      || !table.pfnResourceResolveSubresource || !table.pfnCheckFormatSupport
+      || !table.pfnCheckMultisampleQualityLevels) {
     std::fputs("Required development DDI absent; use the probe and DLL from one exact build\n", stderr);
     if (table.pfnDestroyDevice) table.pfnDestroyDevice(device);
     return 15;
   }
   if (!testBufferTransfers(device, table)) { table.pfnDestroyDevice(device); return 13; }
+  if (!testMultisample(device, table)) { table.pfnDestroyDevice(device); return 17; }
   D3D10DDIARG_CREATEQUERY eventDesc = {D3D10DDI_QUERY_EVENT, 0};
   auto eventMemory = allocate(table.pfnCalcPrivateQuerySize(device, &eventDesc));
   if (!eventMemory) { table.pfnDestroyDevice(device); return 12; }

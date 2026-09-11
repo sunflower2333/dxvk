@@ -1,8 +1,11 @@
 # Native runtime adapter identity proposal
 
-This is a proposed private contract and a tested decoder only. The current KMD
-does not produce it, and the native DXVK UMD is not registered with Windows.
-No KMD implementation is changed in this branch.
+This private contract has a tested decoder and a coordinated KMD producer.
+Producer commits `12bbe0c` and `1f99078` passed full ARM64 WDK validation;
+`33f94fa` adds a test feeding actual extracted KMD replies to this decoder.
+Integration into the paired development candidate is separate from installed
+device validation. The native DXVK UMD is not registered with Windows.
+No KMD implementation lives in this DXVK child repository.
 
 `D3D10DDIARG_OPENADAPTER.hRTAdapter` is an opaque runtime handle used only with
 runtime callbacks. It is not a KMT adapter handle and cannot be converted to
@@ -11,9 +14,9 @@ that exact runtime adapter. Its buffer is output-only, so placing a request
 header in that buffer is not a valid query discriminator.
 
 The documented identity source is `DXGK_START_INFO.AdapterLuid`, supplied to
-`DxgkDdiStartDevice` since Windows 8. A future coordinated KMD change must
-capture it for the successful adapter start, invalidate it on stop/removal,
-and return it only while the adapter is ready. A GPU reset generation is not
+`DxgkDdiStartDevice` since Windows 8. The coordinated KMD producer captures it
+for the successful adapter start, invalidates it on stop/failed start,
+and returns it only while the adapter is ready. A GPU reset generation is not
 an adapter LUID. No generated identifier or hardware-ID match can replace it.
 
 ## Proposed compatible reply
@@ -38,7 +41,7 @@ width. Offsets below are relative to the start of the full reply.
 | 152 | 4 | Node mask 1 for the current single-node adapter |
 | 156 | 4 | Reserved, zero |
 
-The future UMD must zero a 160-byte buffer, call `pfnQueryAdapterInfoCb` using
+The UMD zeros a 160-byte buffer and calls `pfnQueryAdapterInfoCb` using
 the original `hRTAdapter`, validate the complete prefix/trailer and nonzero
 LUID, then require exactly one Vulkan physical device with `deviceLUIDValid`,
 the identical 8 bytes and `VK_DRIVER_ID_MESA_TURNIP`. No adapter-index fallback
@@ -53,8 +56,9 @@ mock callback replies only, checks the exact opaque runtime handle, verifies
 the output buffer is zeroed and propagates callback errors. The development
 `VioGpuDxvkOpenAdapterForTest` harness wires the callback into real WDK
 adapter/device structures and retains identity across device lifetime.
-It does not export OpenAdapter10 or register with Windows. Implementing the
-KMD producer requires a coordinated ABI review and lifecycle validation.
+It does not export OpenAdapter10 or register with Windows. The paired
+production-code regression exercises both the KMD reply and this decoder;
+actual installed runtime and lifecycle validation remain pending.
 
 ## Microsoft references
 

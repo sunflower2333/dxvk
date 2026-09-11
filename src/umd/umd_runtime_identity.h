@@ -5,7 +5,7 @@
 
 namespace dxvk::umd {
 
-// Proposed, not produced by the current KMD. See doc/umd-identity-proposal.md.
+// Requires the paired KMD identity producer. See doc/umd-identity-proposal.md.
 // The original 128-byte v0 reply remains unchanged; a separately versioned
 // optional trailer carries the kernel-supplied runtime adapter LUID.
 constexpr size_t RuntimeIdentityReplySize = 160;

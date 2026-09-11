@@ -59,13 +59,15 @@ Two device-only executables are packaged for coordinated testing:
 
 The argument encodes the eight LUID bytes in memory order; it is not an adapter
 index or a printed 64-bit integer. Neither executable has yet been run on the
-target device. The runtime identity callback consumer is tested with mocks;
-the current KMD does not produce its proposed optional identity trailer.
+target device. The runtime callback and adapter lifecycle tests use mocks.
+The coordinated KMD producer has separately passed ARM64 WDK compilation
+and 377 production-reply/real-decoder CPU checks; see the identity contract
+document for commits. This does not establish installed-device validation.
 
 ## Required follow-up
 
-1. Coordinate the KMD LUID producer in `umd-identity-proposal.md`, preserving
-   the existing 128-byte adapter-info prefix and validating stop/restart/reset.
+1. Complete paired package and device validation of the KMD LUID producer in
+   `umd-identity-proposal.md`, including real stop/restart/reset transitions.
 2. Expand shaders, resources, state, queries, hazards and remaining mandatory
    D3D10/10.1/11 DDIs before publishing any runtime callback table or caps.
 3. Bind backend allocations to Windows kernel allocation/resource ownership,

@@ -21,6 +21,8 @@ Linkage8f7bce4 CI34601912517 compiledARM64 but x64/x86 SPIR-V checks failed.
 Fixed ISGN read-use masks and added bounded immediate arrays in87697ea;
 replacementCI34602941896 running. Local130shader checksPASS. Do not deliver
 8f7bce4 merely because its ARM64 cross-build passed.
+61bc32b fixes the fast-CI static-library filename through Meson introspection;
+full replacementCI34603295333 is running. No production code delta from87697ea.
 Continue remaining mandatory resource/shader/primary/shared DDIs;
 main explicitly asks not to stop at CPU OpenAdapter harness.
 
@@ -37,6 +39,9 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- Fast61bc32b CI34603295333 found the actual library but mixed Meson's /MD
+  runtime with plain cl's default static runtime (LNK2038). Pin both sides to
+  /MD. Production Meson targets already use a matched runtime; no UMD changes.
 - New fast87697ea shaderCI34602941896 compiled its compiler library but
   failed LNK1181 on a guessed dxbc_spv.lib filename. Resolve its exact static
   library through meson introspect --targets instead. Architecture jobs link

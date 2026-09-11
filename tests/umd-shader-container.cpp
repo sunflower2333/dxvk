@@ -6,6 +6,7 @@
 #include <cstring>
 #ifdef _WIN32
 #include "umd-probe-shaders.h"
+#include <d3d11.h>
 #include <d3d11shader.h>
 #endif
 #ifdef VIOGPU_SHADER_SPIRV_TEST
@@ -20,6 +21,69 @@ static void checkAt(bool value, unsigned line) {
   if (!value) { std::fprintf(stderr,"failed check %u line=%u\n",checks,line); std::abort(); }
 }
 #define check(...) checkAt((__VA_ARGS__), __LINE__)
+
+#ifdef _WIN32
+static void checkReferencePixels(const void* vs, size_t vsBytes, const void* ps, size_t psBytes,
+    const char* semantic, const char* label) {
+  using Microsoft::WRL::ComPtr;
+  ComPtr<ID3D11Device> device;
+  ComPtr<ID3D11DeviceContext> context;
+  const D3D_FEATURE_LEVEL requested = D3D_FEATURE_LEVEL_11_0;
+  check(SUCCEEDED(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,&requested,1,
+    D3D11_SDK_VERSION,&device,nullptr,&context)));
+  ComPtr<ID3D11VertexShader> vertex;
+  ComPtr<ID3D11PixelShader> pixel;
+  check(SUCCEEDED(device->CreateVertexShader(vs,vsBytes,nullptr,&vertex)));
+  check(SUCCEEDED(device->CreatePixelShader(ps,psBytes,nullptr,&pixel)));
+  D3D11_INPUT_ELEMENT_DESC element = {semantic,0,DXGI_FORMAT_R32G32_FLOAT,0,0,D3D11_INPUT_PER_VERTEX_DATA,0};
+  ComPtr<ID3D11InputLayout> layout;
+  check(SUCCEEDED(device->CreateInputLayout(&element,1,vs,vsBytes,&layout)));
+  FLOAT positions[] = {-1,1,3,1,-1,-3};
+  D3D11_BUFFER_DESC bufferDesc = {};
+  bufferDesc.ByteWidth = sizeof(positions); bufferDesc.Usage = D3D11_USAGE_IMMUTABLE;
+  bufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+  D3D11_SUBRESOURCE_DATA initial = {positions,0,0};
+  ComPtr<ID3D11Buffer> buffer;
+  check(SUCCEEDED(device->CreateBuffer(&bufferDesc,&initial,&buffer)));
+  D3D11_TEXTURE2D_DESC textureDesc = {};
+  textureDesc.Width = textureDesc.Height = 64; textureDesc.MipLevels = textureDesc.ArraySize = 1;
+  textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; textureDesc.SampleDesc.Count = 1;
+  textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+  ComPtr<ID3D11Texture2D> target, staging;
+  check(SUCCEEDED(device->CreateTexture2D(&textureDesc,nullptr,&target)));
+  textureDesc.BindFlags = 0; textureDesc.Usage = D3D11_USAGE_STAGING; textureDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  check(SUCCEEDED(device->CreateTexture2D(&textureDesc,nullptr,&staging)));
+  ComPtr<ID3D11RenderTargetView> view;
+  check(SUCCEEDED(device->CreateRenderTargetView(target.Get(),nullptr,&view)));
+  D3D11_RASTERIZER_DESC rasterDesc = {};
+  rasterDesc.FillMode = D3D11_FILL_SOLID; rasterDesc.CullMode = D3D11_CULL_NONE; rasterDesc.DepthClipEnable = TRUE;
+  ComPtr<ID3D11RasterizerState> raster;
+  check(SUCCEEDED(device->CreateRasterizerState(&rasterDesc,&raster)));
+  D3D11_VIEWPORT viewport = {0,0,64,64,0,1};
+  ID3D11RenderTargetView* views[] = {view.Get()};
+  ID3D11Buffer* buffers[] = {buffer.Get()}; const UINT stride = 8, offset = 0;
+  context->OMSetRenderTargets(1,views,nullptr);
+  context->RSSetState(raster.Get()); context->RSSetViewports(1,&viewport);
+  context->IASetInputLayout(layout.Get()); context->IASetVertexBuffers(0,1,buffers,&stride,&offset);
+  context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  context->VSSetShader(vertex.Get(),nullptr,0); context->PSSetShader(pixel.Get(),nullptr,0);
+  context->Draw(3,0); context->CopyResource(staging.Get(),target.Get());
+  D3D11_MAPPED_SUBRESOURCE mapped = {};
+  check(SUCCEEDED(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped)) && mapped.pData && mapped.RowPitch >= 256);
+  const uint32_t expected[] = {0x80000000,0xfedcba98,0xffffffff,1,
+    0x7fc01234,0x80000000,0x7f800000,0xff800000,0x12345678,0x87654321,0,1,
+    0x3e480000,0x3c000000,0x41680000,0x3f000000};
+  unsigned mismatches = 0;
+  std::fprintf(stderr,"WARP_LINKAGE_WORDS source=%s",label);
+  for (unsigned i = 0; i < 16; ++i) {
+    uint32_t word; std::memcpy(&word,static_cast<unsigned char*>(mapped.pData)+i*4,4);
+    std::fprintf(stderr," %08x",word); mismatches += word != expected[i];
+  }
+  std::fprintf(stderr," mismatches=%u\n",mismatches);
+  context->Unmap(staging.Get(),0);
+  check(!mismatches);
+}
+#endif
 
 #ifdef VIOGPU_SHADER_SPIRV_TEST
 static void checkSpirvInterface(const std::vector<unsigned char>& binary, bool vertex,
@@ -303,7 +367,7 @@ int main() {
     flatCount += entry.scalar == ShaderScalar::Uint32;
     interpolatedCount += entry.scalar == ShaderScalar::Float32;
   }
-  check(flatCount == 2 && interpolatedCount == 1);
+  check(flatCount == 3 && interpolatedCount == 1);
   for (auto& entry : vsi) if (!entry.systemValue) entry.scalar = ShaderScalar::Float32;
   for (bool vertex : {true,false}) {
     const auto& tokens = vertex ? linkedVs : linkedPs;
@@ -324,7 +388,7 @@ int main() {
         reflectedFlat++;
       }
     }
-    check(reflectedFlat == 2);
+    check(reflectedFlat == 3);
 #ifdef VIOGPU_SHADER_SPIRV_TEST
     checkSpirvInterface(binary,vertex,vertex ? linked : resolved);
 #endif
@@ -344,6 +408,21 @@ int main() {
 #ifdef VIOGPU_SHADER_SPIRV_TEST
   checkSpirvInterface(binary,true,{});
 #endif
+  // Execute both the original Microsoft bytecode and the rebuilt DDI
+  // containers on WARP. This distinguishes an invalid test expectation or
+  // container reconstruction from the embedded Vulkan compiler/driver path.
+  Microsoft::WRL::ComPtr<ID3DBlob> originalVs, originalPs;
+  check(compileLinkageProbeShader(true,linkedVs,vsi,vso,true,&originalVs));
+  check(compileLinkageProbeShader(false,linkedPs,psi,pso,true,&originalPs));
+  check(resolvePixelInputs(linkedPs.data(),linkedPs.size(),psi.data(),psi.size(),resolved));
+  check(linkVertexOutputs(vso.data(),vso.size(),resolved.data(),resolved.size(),linked));
+  for (auto& entry : vsi) if (!entry.systemValue) entry.scalar = ShaderScalar::Float32;
+  std::vector<unsigned char> rebuiltVs, rebuiltPs;
+  check(buildShaderContainer(ShaderStage::Vertex,linkedVs.data(),linkedVs.size(),vsi.data(),vsi.size(),linked.data(),linked.size(),rebuiltVs));
+  check(buildShaderContainer(ShaderStage::Pixel,linkedPs.data(),linkedPs.size(),resolved.data(),resolved.size(),pso.data(),pso.size(),rebuiltPs));
+  checkReferencePixels(originalVs->GetBufferPointer(),originalVs->GetBufferSize(),
+    originalPs->GetBufferPointer(),originalPs->GetBufferSize(),"POSITION","original");
+  checkReferencePixels(rebuiltVs.data(),rebuiltVs.size(),rebuiltPs.data(),rebuiltPs.size(),inputRegisterSemantic,"rebuilt");
 #endif
   std::printf("shader container validation PASS checks=%u\n", checks);
 }

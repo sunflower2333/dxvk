@@ -62,7 +62,7 @@ jobs:
           cl /nologo /std:c++17 /EHsc /O1 /MD /DVIOGPU_SHADER_SPIRV_TEST /Isubprojects/dxbc-spirv `
             tests/umd-shader-container.cpp src/umd/umd_shader.cpp `
             $shaderLibrary `
-            d3dcompiler.lib /Fe:shader-cpu-test.exe
+            d3dcompiler.lib d3d11.lib /Fe:shader-cpu-test.exe
           if ($LASTEXITCODE) { throw 'Shader CPU test compile failed' }
           ./shader-cpu-test.exe
           if ($LASTEXITCODE) { throw 'Shader CPU test failed' }

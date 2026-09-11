@@ -345,6 +345,7 @@ int main(int argc, char** argv) {
   }
   UINT64 visibleSamples[3] = {~UINT64(0),~UINT64(0),~UINT64(0)};
   unsigned mismatches = 4096;
+  unsigned linkageFailures[16] = {}, unknownFailures = 0;
   BOOL eventComplete = FALSE;
   if (SUCCEEDED(lastError)) {
     // Half-red destination plus half-red shader output must become full red.
@@ -394,8 +395,16 @@ int main(int argc, char** argv) {
       mismatches = 0;
       const unsigned char expected[4] = {255,0,0,255};
       for (unsigned y = 0; y < 64; y++)
-        for (unsigned x = 0; x < 64; x++)
-          mismatches += std::memcmp(static_cast<unsigned char*>(mapped.pData) + y*mapped.RowPitch + x*4, expected, 4) != 0;
+        for (unsigned x = 0; x < 64; x++) {
+          const auto* value = static_cast<unsigned char*>(mapped.pData) + y*mapped.RowPitch + x*4;
+          if (std::memcmp(value, expected, 4)) {
+            if (!mismatches) std::printf("DDI_FIRST_PIXEL x=%u y=%u rgba=%u,%u,%u,%u\n",x,y,value[0],value[1],value[2],value[3]);
+            mismatches++;
+            if (value[0] == 128 && value[1] > 0 && value[1] < 16 && !value[2] && value[3] == 255)
+              linkageFailures[value[1]]++;
+            else unknownFailures++;
+          }
+        }
       table.pfnStagingResourceUnmap(device, staging, 0);
     }
     if (SUCCEEDED(lastError)) {
@@ -421,6 +430,44 @@ int main(int argc, char** argv) {
   std::printf("DDI_DEPTH_STENCIL %s depth_rejected=%llu visible=%llu stencil_rejected=%llu\n",
     depthStencilPass ? "PASS" : "FAIL", static_cast<unsigned long long>(visibleSamples[0]),
     static_cast<unsigned long long>(visibleSamples[1]), static_cast<unsigned long long>(visibleSamples[2]));
+  if (mismatches && SUCCEEDED(lastError)) {
+    std::printf("DDI_LINKAGE_FAILURES bits=UV:1,raw_float:2,immediate_array:4,fixed_integer:8 unknown=%u",unknownFailures);
+    for (unsigned i = 1; i < 16; ++i) if (linkageFailures[i]) std::printf(" mask%u=%u",i,linkageFailures[i]);
+    std::puts("");
+    // One bounded diagnostic draw exposes actual payload words. No state from
+    // this follow-up can turn the failed acceptance image into a pass.
+    std::vector<uint32_t> inspectTokens;
+    std::vector<dxvk::umd::ShaderSignatureEntry> inspectInputs, inspectOutputs;
+    if (compileLinkageProbeShader(false,inspectTokens,inspectInputs,inspectOutputs,true)) {
+      auto ii = nativeSignature(inspectInputs), io = nativeSignature(inspectOutputs);
+      D3D10DDIARG_STAGE_IO_SIGNATURES signature = {ii.data(),UINT(ii.size()),io.data(),UINT(io.size())};
+      auto inspectMemory = allocate(table.pfnCalcPrivateShaderSize(device,inspectTokens.data(),&signature));
+      D3D10DDI_HSHADER inspectShader = {inspectMemory.get()};
+      if (inspectMemory) {
+        table.pfnCreatePixelShader(device,inspectTokens.data(),inspectShader,{},&signature);
+        table.pfnPsSetShader(device,inspectShader);
+        table.pfnSetRenderTargets(device,&view,1,0,{});
+        table.pfnSetDepthStencilState(device,{},0);
+        const FLOAT factor[4] = {1,1,1,1};
+        table.pfnSetBlendState(device,{},factor,0xffffffff);
+        table.pfnDrawIndexed(device,3,0,0);
+        table.pfnResourceCopy(device,staging,target);
+        D3D10DDI_MAPPED_SUBRESOURCE inspected = {};
+        table.pfnStagingResourceMap(device,staging,0,D3D10_DDI_MAP_READ,0,&inspected);
+        if (SUCCEEDED(lastError) && inspected.pData && inspected.RowPitch >= 256) {
+          std::printf("DDI_LINKAGE_WORDS order=immediate[4],raw_float[4],fixed_integer[4],uv_x_at12,uv_y_at13,pos_x_at14,pos_y_at15");
+          for (unsigned i = 0; i < 16; ++i) {
+            uint32_t word; std::memcpy(&word,static_cast<unsigned char*>(inspected.pData)+i*4,4);
+            std::printf(" %08x",word);
+          }
+          std::puts("");
+          table.pfnStagingResourceUnmap(device,staging,0);
+        }
+        table.pfnPsSetShader(device,pixel);
+        table.pfnDestroyShader(device,inspectShader);
+      }
+    }
+  }
   if (nativeCopy && SUCCEEDED(lastError) && eventComplete && !mismatches && depthStencilPass) {
     if (!dxgiFunctions.pfnPresent) lastError = E_NOTIMPL;
     else {

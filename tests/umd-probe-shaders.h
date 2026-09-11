@@ -58,13 +58,15 @@ float4 ps_main() : SV_Target {
 
 inline bool compileLinkageProbeShader(bool vertex, std::vector<uint32_t>& tokens,
     std::vector<dxvk::umd::ShaderSignatureEntry>& inputs,
-    std::vector<dxvk::umd::ShaderSignatureEntry>& outputs) {
+    std::vector<dxvk::umd::ShaderSignatureEntry>& outputs, bool inspect = false,
+    ID3DBlob** originalContainer = nullptr) {
   constexpr char source[] = R"(
 struct Varyings {
   float4 position : SV_Position;
   float2 uv : TEXCOORD0;
   nointerpolation uint4 bits : TEXCOORD1;
   nointerpolation float4 rawFloats : TEXCOORD2;
+  nointerpolation uint4 fixedBits : TEXCOORD3;
 };
 Varyings vs_main(float2 position : POSITION) {
   static const uint4 patterns[3] = {
@@ -76,20 +78,34 @@ Varyings vs_main(float2 position : POSITION) {
   value.uv = position * float2(0.5,-0.5) + 0.5;
   value.bits = patterns[min((uint)max(position.x,0),2)];
   value.rawFloats = asfloat(uint4(0x7fc01234,0x80000000,0x7f800000,0xff800000));
+  value.fixedBits = uint4(0x12345678,0x87654321,0,1);
   return value;
 }
 cbuffer PixelConstants : register(b0) { float4 pixelColor; };
 Texture2D<float4> sourceColor : register(t0);
 SamplerState sourceSampler : register(s0);
 float4 ps_main(Varyings value) : SV_Target {
-  bool valid = all(value.bits == uint4(0x80000000,0xfedcba98,0xffffffff,1)) &&
-    all(asuint(value.rawFloats) == uint4(0x7fc01234,0x80000000,0x7f800000,0xff800000)) &&
-    all(abs(value.uv - value.position.xy / 64.0) < 0.001);
-  return valid ? pixelColor * sourceColor.SampleLevel(sourceSampler, value.uv, 0) : float4(0,1,0,1);
+  uint failed = 0;
+  if (!all(abs(value.uv - value.position.xy / 64.0) < 0.001)) failed |= 1;
+  if (!all(asuint(value.rawFloats) == uint4(0x7fc01234,0x80000000,0x7f800000,0xff800000))) failed |= 2;
+  if (!all(value.bits == uint4(0x80000000,0xfedcba98,0xffffffff,1))) failed |= 4;
+  if (!all(value.fixedBits == uint4(0x12345678,0x87654321,0,1))) failed |= 8;
+  return failed ? float4(0,float(failed)/255.0,0,1) :
+    pixelColor * sourceColor.SampleLevel(sourceSampler, value.uv, 0);
+}
+float4 ps_inspect(Varyings value) : SV_Target {
+  uint selector = (uint)value.position.x & 15;
+  uint word;
+  if (selector < 4) word = value.bits[selector];
+  else if (selector < 8) word = asuint(value.rawFloats)[selector-4];
+  else if (selector < 12) word = value.fixedBits[selector-8];
+  else if (selector < 14) word = asuint(value.uv)[selector-12];
+  else word = asuint(value.position.xy)[selector-14];
+  return float4(word & 255,(word >> 8) & 255,(word >> 16) & 255,word >> 24)/255.0;
 }
 )";
   Microsoft::WRL::ComPtr<ID3DBlob> original;
-  if (!compileHlslTokens(source, vertex ? "vs_main" : "ps_main", vertex ? "vs_4_0" : "ps_4_0",
+  if (!compileHlslTokens(source, vertex ? "vs_main" : inspect ? "ps_inspect" : "ps_main", vertex ? "vs_4_0" : "ps_4_0",
       tokens, &original)) return false;
   Microsoft::WRL::ComPtr<ID3D11ShaderReflection> reflected;
   if (FAILED(D3DReflect(original->GetBufferPointer(), original->GetBufferSize(),
@@ -110,6 +126,7 @@ float4 ps_main(Varyings value) : SV_Target {
       destination.push_back({sysval,entry.Register,entry.Mask});
     }
   }
+  if (originalContainer) *originalContainer = original.Detach();
   return true;
 }
 

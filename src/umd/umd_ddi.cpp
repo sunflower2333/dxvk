@@ -595,6 +595,17 @@ void APIENTRY setViewports(D3D10DDI_HDEVICE h, UINT count, UINT clear, const D3D
     device->viewportBound = count != 0;
   }
 }
+void APIENTRY setScissors(D3D10DDI_HDEVICE h, UINT count, UINT clear, const D3D10_DDI_RECT* input) {
+  auto device = get(h);
+  constexpr UINT slots = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+  if (count > slots || clear > slots - count || (count && !input)) { device->error(E_INVALIDARG); return; }
+  D3D11_RECT rects[slots] = {};
+  for (UINT i = 0; i < count; i++)
+    rects[i] = {input[i].left, input[i].top, input[i].right, input[i].bottom};
+  try { if (count || clear) device->context->RSSetScissorRects(count, rects); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
 SIZE_T APIENTRY rasterizerSize(D3D10DDI_HDEVICE, const D3D10_DDI_RASTERIZER_DESC*) { return sizeof(Rasterizer); }
 void APIENTRY createRasterizer(D3D10DDI_HDEVICE h, const D3D10_DDI_RASTERIZER_DESC* args,
     D3D10DDI_HRASTERIZERSTATE out, D3D10DDI_HRTRASTERIZERSTATE) {
@@ -822,6 +833,7 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnPsSetConstantBuffers = setConstantBuffers<false>;
   table->pfnSetRenderTargets = setRenderTargets;
   table->pfnSetViewports = setViewports;
+  table->pfnSetScissorRects = setScissors;
   table->pfnCalcPrivateRasterizerStateSize = rasterizerSize;
   table->pfnCreateRasterizerState = createRasterizer;
   table->pfnDestroyRasterizerState = destroyRasterizer;

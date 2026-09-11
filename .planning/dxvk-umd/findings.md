@@ -1,5 +1,11 @@
 # Findings
 
+- Blend/indexed draw implementation follows DXVK D3D10Device's existing
+  D3D11 blend translation, preserving per-target enables/write masks.
+  The development GPU pixel criterion now depends on actual additive
+  blending (half-red clear plus sampled half-red output), alongside real
+  indexing, constant buffers and texture sampling. No target result yet.
+
 - Next device-proof extension can use harness-owned callbacks backed by real
   D3DKMT device/allocation/context/Lock operations. Its Present callback must
   verify the KMD allocation pixels without claiming actual screen Present or

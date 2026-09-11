@@ -42,6 +42,8 @@ mapping. Index-buffer binding and indexed/instanced draw variants now call the
 embedded context. The device probe uses an index buffer and additive blending:
 a half-red destination plus sampled half-red shader output must become full
 red. Skipping the draw, blend, texture or constant-buffer operation fails pixels.
+Scissor rectangles also route to the backend with explicit slot clearing;
+the pixel probe enables scissoring and sets its full-target rectangle.
 
 Event, occlusion, timestamp and timestamp-disjoint query DDIs now use the
 embedded backend's actual query objects. Pending results become the DDI busy

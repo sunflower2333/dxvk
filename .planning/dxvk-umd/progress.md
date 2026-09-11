@@ -1,5 +1,9 @@
 # Progress
 
+2026-09-11: Added SetScissorRects with count/clear bounds and translated
+signed rectangles. Probe enables scissoring and requires its bound64x64
+rectangle, alongside new indexed/additive-blend pixel path. CI pending.
+
 2026-09-11: Continued required DDIs with D3D10.0 blend states, index buffers
 and indexed/instanced draw variants. The GPU probe now requires additive
 half-red plus half-red blending through an indexed triangle to produce full

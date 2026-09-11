@@ -162,7 +162,7 @@ int main(int argc, char** argv) {
       || !table.pfnCreateShaderResourceView || !table.pfnDestroyShaderResourceView || !table.pfnPsSetShaderResources
       || !table.pfnCalcPrivateSamplerSize || !table.pfnCreateSampler || !table.pfnDestroySampler || !table.pfnPsSetSamplers
       || !table.pfnCalcPrivateBlendStateSize || !table.pfnCreateBlendState || !table.pfnDestroyBlendState
-      || !table.pfnSetBlendState || !table.pfnIaSetIndexBuffer || !table.pfnDrawIndexed) {
+      || !table.pfnSetBlendState || !table.pfnIaSetIndexBuffer || !table.pfnDrawIndexed || !table.pfnSetScissorRects) {
     std::fputs("Required development DDI absent; use the probe and DLL from one exact build\n", stderr);
     if (table.pfnDestroyDevice) table.pfnDestroyDevice(device);
     return 15;
@@ -211,6 +211,7 @@ int main(int argc, char** argv) {
   rasterDesc.FillMode = D3D10_DDI_FILL_SOLID;
   rasterDesc.CullMode = D3D10_DDI_CULL_NONE;
   rasterDesc.DepthClipEnable = TRUE;
+  rasterDesc.ScissorEnable = TRUE;
   auto rasterMemory = allocate(table.pfnCalcPrivateRasterizerStateSize(device, &rasterDesc));
   if (!vsMemory || !psMemory || !rasterMemory) return 9;
   D3D10DDI_HSHADER vertex = {vsMemory.get()}, pixel = {psMemory.get()};
@@ -289,6 +290,8 @@ int main(int argc, char** argv) {
     table.pfnSetRenderTargets(device, &view, 1, 0, {});
     D3D10_DDI_VIEWPORT viewport = {0,0,64,64,0,1};
     table.pfnSetViewports(device, 1, 0, &viewport);
+    const D3D10_DDI_RECT scissor = {0,0,64,64};
+    table.pfnSetScissorRects(device, 1, 0, &scissor);
     table.pfnIaSetTopology(device, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     table.pfnIaSetIndexBuffer(device, index->handle, DXGI_FORMAT_R32_UINT, 0);
     table.pfnDrawIndexed(device, 3, 0, 0);

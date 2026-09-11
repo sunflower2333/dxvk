@@ -1,5 +1,12 @@
 # Findings
 
+- The next diagnostic uses five direct-system-D3D11 controls inside the same
+  CPU fixture: single/array resources, default versus selected-array SRVs,
+  full automatic versus explicit mip count. It bypasses every UMD helper,
+  runs before the state tests and prints first lower-mip values. Existing
+  mandatory full-image mip checks remain strict, so observations cannot turn
+  a failed native-range expectation into an apparent test pass.
+
 - 4ba6a19 created the debug device and InfoQueue successfully, but neither
   prior creation nor GenerateMips produced a stored diagnostic. Lower mip
   remains unchanged. Official CreateTexture2D says MipLevels0 for automatic

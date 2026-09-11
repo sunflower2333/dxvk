@@ -6,6 +6,10 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+AddedfiveAPI-onlyWARPcontrols(default/selectedSRV,single/array,auto/explicit
+mipcount)beforeexistingnativehelper/statework. Allresourcecreateschecked,
+printsselectedlowerpixel; originalfull-imageassertionsstillgateCI. This
+broaderisolationfollowsrepeatedempty-debugno-op, notnewbackendfeaturework.
 4ba6a19debuglayerenabledbutnoqueuedmessages; lowerstilloldgreen. Nextcontrol
 usesdocumentedCreateTexture2DMipLevels0/fullchainallocation, queriesactual4mips,
 generatesstrict2mipSRVslice1andchecksevery8subresourceincludingoutsideview.

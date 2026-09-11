@@ -1,5 +1,10 @@
 # Progress
 
+2026-09-11: Added API-only WARP control matrix to the existing CPU fixture;
+it does not use UMD translation helpers and runs before state changes. Tests
+default/selected SRVs and full/explicit mips to locate the ignored operation
+in one run. All mandatory full-image checks remain unchanged and gating.
+
 2026-09-11: 4ba6a19 x86 WARP still old-green with an active empty InfoQueue.
 Next controlled change requests MipLevels0 full-chain allocation per Microsoft
 CreateTexture2D and verifies all8subresources around the selected2mip range.

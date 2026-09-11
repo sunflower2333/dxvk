@@ -56,6 +56,52 @@ static void pixels(ID3D11Device* device, ID3D11DeviceContext* context,
   context->Unmap(staging.Get(), index);
 }
 
+static void diagnoseMips(ID3D11Device* device, ID3D11DeviceContext* context) {
+  struct Case { UINT arrays, mips, first, count; bool defaultView; };
+  const Case cases[] = {{1, 0, 0, 1, true}, {2, 0, 0, 2, true},
+    {2, 0, 1, 1, false}, {2, 2, 1, 1, false}, {2, 0, 0, 1, false}};
+  for (const auto& test : cases) {
+    // API-only controls deliberately avoid every native DDI descriptor helper.
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = desc.Height = 8; desc.MipLevels = test.mips; desc.ArraySize = test.arrays;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+    ComPtr<ID3D11Texture2D> texture;
+    CHECK(device->CreateTexture2D(&desc, nullptr, &texture) == S_OK);
+    texture->GetDesc(&desc);
+    const FLOAT red[4] = {1, 0, 0, 1}, green[4] = {0, 1, 0, 1};
+    for (UINT mip = 0; mip < desc.MipLevels; mip++) {
+      D3D11_RENDER_TARGET_VIEW_DESC target = {};
+      target.Format = desc.Format; target.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
+      target.Texture2DArray.MipSlice = mip; target.Texture2DArray.ArraySize = test.arrays;
+      ComPtr<ID3D11RenderTargetView> view;
+      CHECK(device->CreateRenderTargetView(texture.Get(), &target, &view) == S_OK);
+      context->ClearRenderTargetView(view.Get(), mip ? green : red);
+    }
+    D3D11_SHADER_RESOURCE_VIEW_DESC sampled = {};
+    sampled.Format = desc.Format; sampled.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+    sampled.Texture2DArray.MipLevels = desc.MipLevels;
+    sampled.Texture2DArray.FirstArraySlice = test.first;
+    sampled.Texture2DArray.ArraySize = test.count;
+    ComPtr<ID3D11ShaderResourceView> view;
+    CHECK(device->CreateShaderResourceView(texture.Get(), test.defaultView ? nullptr : &sampled, &view) == S_OK);
+    context->GenerateMips(view.Get());
+    desc.BindFlags = desc.MiscFlags = 0; desc.Usage = D3D11_USAGE_STAGING;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    ComPtr<ID3D11Texture2D> readback;
+    CHECK(device->CreateTexture2D(&desc, nullptr, &readback) == S_OK);
+    context->CopyResource(readback.Get(), texture.Get());
+    const UINT index = test.first * desc.MipLevels + 1;
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    CHECK(context->Map(readback.Get(), index, D3D11_MAP_READ, 0, &mapped) == S_OK);
+    std::printf("WARP_MIP_CONTROL arrays=%u requested_mips=%u actual_mips=%u first=%u count=%u default_view=%u actual=%08x expected=ff0000ff\n",
+      test.arrays, test.mips, desc.MipLevels, test.first, test.count, unsigned(test.defaultView),
+      *static_cast<const UINT*>(mapped.pData));
+    context->Unmap(readback.Get(), index);
+  }
+}
+
 int main() {
   D3D11_TEXTURE2D_DESC resource = {};
   resource.Width = resource.Height = 8;
@@ -141,6 +187,8 @@ int main() {
   CHECK(created == S_OK);
   ComPtr<ID3D11InfoQueue> debugQueue;
   device.As(&debugQueue);
+  diagnoseMips(device.Get(), context.Get());
+  context->ClearState();
   // Validate native reset/replacement semantics against an independent
   // runtime implementation, including a hole that must retain its index.
   const FLOAT nan = std::numeric_limits<FLOAT>::quiet_NaN();

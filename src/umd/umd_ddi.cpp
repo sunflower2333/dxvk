@@ -30,6 +30,7 @@ struct Device {
   bool triangleList = false;
   bool indexBound = false;
   Shader* vertexShader = nullptr;
+  Shader* pixelShader = nullptr;
   InputLayout* inputLayout = nullptr;
   void error(HRESULT hr) {
     if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, dxvk::umd::ddiResult(hr));
@@ -61,9 +62,11 @@ struct Shader {
   ComPtr<ID3D11PixelShader> pixel;
   std::vector<UINT> code;
   std::vector<dxvk::umd::ShaderSignatureEntry> inputs;
-  dxvk::umd::ShaderSignatureEntry output = {};
+  std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
   std::array<dxvk::umd::ShaderScalar,32> compiledInputTypes = {};
+  std::array<dxvk::umd::ShaderScalar,32> compiledOutputTypes = {};
   bool needsLayout = false;
+  bool needsLinkage = false;
 };
 struct InputLayout {
   Device* owner = nullptr;
@@ -565,7 +568,7 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
   shader->owner = device;
   shader->stage = stage;
   if (!code || !signature || signature->NumInputSignatureEntries > 32 ||
-      signature->NumOutputSignatureEntries != 1 || !signature->pOutputSignature ||
+      !signature->NumOutputSignatureEntries || signature->NumOutputSignatureEntries > 32 || !signature->pOutputSignature ||
       (signature->NumInputSignatureEntries && !signature->pInputSignature)) {
     device->error(E_INVALIDARG); return;
   }
@@ -577,21 +580,36 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
       candidate.inputs.push_back({uint32_t(entry.SystemValue), entry.Register, entry.Mask});
       candidate.needsLayout |= stage == dxvk::umd::ShaderStage::Vertex && entry.SystemValue == D3D10_SB_NAME_UNDEFINED;
     }
-    const auto& entry = signature->pOutputSignature[0];
-    candidate.output = {uint32_t(entry.SystemValue), entry.Register, entry.Mask};
+    for (UINT i = 0; i < signature->NumOutputSignatureEntries; i++) {
+      const auto& entry = signature->pOutputSignature[i];
+      candidate.outputs.push_back({uint32_t(entry.SystemValue), entry.Register, entry.Mask});
+      candidate.needsLinkage |= stage == dxvk::umd::ShaderStage::Vertex && entry.SystemValue == D3D10_SB_NAME_UNDEFINED;
+    }
+    if (stage == dxvk::umd::ShaderStage::Pixel) {
+      std::vector<dxvk::umd::ShaderSignatureEntry> resolved;
+      if (!dxvk::umd::resolvePixelInputs(code, code[1], candidate.inputs.data(), candidate.inputs.size(), resolved)) {
+        device->error(E_INVALIDARG); return;
+      }
+      candidate.inputs = std::move(resolved);
+    }
     auto validationInputs = candidate.inputs;
+    auto validationOutputs = candidate.outputs;
     // Validate raw tokens and register structure now. These provisional
     // signature types are discarded and never enter the DXVK compiler.
     // The bound layout supplies actual types when the shader is first drawn.
-    for (auto& input : validationInputs)
-      if (!input.systemValue) input.scalar = dxvk::umd::ShaderScalar::Float32;
+    if (stage == dxvk::umd::ShaderStage::Vertex) {
+      for (auto& input : validationInputs)
+        if (!input.systemValue) input.scalar = dxvk::umd::ShaderScalar::Float32;
+      for (auto& output : validationOutputs)
+        if (!output.systemValue) output.scalar = dxvk::umd::ShaderScalar::Uint32;
+    }
     std::vector<unsigned char> bytecode;
     if (!dxvk::umd::buildShaderContainer(stage, code, code[1], validationInputs.data(),
-        validationInputs.size(), &candidate.output, 1, bytecode)) {
+        validationInputs.size(), validationOutputs.data(), validationOutputs.size(), bytecode)) {
       device->error(E_INVALIDARG); return;
     }
     HRESULT hr = S_OK;
-    if (candidate.needsLayout) candidate.code.assign(code, code + code[1]);
+    if (candidate.needsLayout || candidate.needsLinkage) candidate.code.assign(code, code + code[1]);
     else if (stage == dxvk::umd::ShaderStage::Vertex)
       hr = device->backend->CreateVertexShader(bytecode.data(), bytecode.size(), nullptr, &candidate.vertex);
     else hr = device->backend->CreatePixelShader(bytecode.data(), bytecode.size(), nullptr, &candidate.pixel);
@@ -615,13 +633,17 @@ void APIENTRY destroyShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
     get(h)->context->VSSetShader(nullptr, nullptr, 0);
     get(h)->vertexShader = nullptr; get(h)->vertexBound = false;
   }
+  if (get(h)->pixelShader == object) {
+    get(h)->context->PSSetShader(nullptr, nullptr, 0);
+    get(h)->pixelShader = nullptr; get(h)->pixelBound = false;
+  }
   object->~Shader();
 }
 void APIENTRY setVertexShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto device = get(h);
   auto object = get(shader);
   if (object && (object->owner != device || object->stage != dxvk::umd::ShaderStage::Vertex
-      || (!object->vertex && !object->needsLayout))) { device->error(E_INVALIDARG); return; }
+      || (!object->vertex && !object->needsLayout && !object->needsLinkage))) { device->error(E_INVALIDARG); return; }
   device->context->VSSetShader(object ? object->vertex.Get() : nullptr, nullptr, 0);
   device->vertexShader = object;
   device->vertexBound = object != nullptr;
@@ -631,6 +653,7 @@ void APIENTRY setPixelShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto object = get(shader);
   if (object && (object->owner != device || !object->pixel)) { device->error(E_INVALIDARG); return; }
   device->context->PSSetShader(object ? object->pixel.Get() : nullptr, nullptr, 0);
+  device->pixelShader = object;
   device->pixelBound = object != nullptr;
 }
 template<bool Vertex>
@@ -936,23 +959,33 @@ void APIENTRY setVertexBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
 }
 bool prepareVertexShader(Device* device) {
   auto shader = device->vertexShader;
-  if (!shader || !shader->needsLayout) return shader && shader->vertex;
+  if (!shader || !device->pixelShader) return false;
   auto layout = device->inputLayout;
-  if (!layout || !layout->backend) { device->error(E_INVALIDARG); return false; }
+  if (shader->needsLayout && (!layout || !layout->backend)) { device->error(E_INVALIDARG); return false; }
   try {
-    if (!shader->vertex || shader->compiledInputTypes != layout->inputTypes) {
+    std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
+    if (!dxvk::umd::linkVertexOutputs(shader->outputs.data(), shader->outputs.size(),
+        device->pixelShader->inputs.data(), device->pixelShader->inputs.size(), outputs)) {
+      device->error(E_INVALIDARG); return false;
+    }
+    std::array<dxvk::umd::ShaderScalar,32> outputTypes = {}, inputTypes = {};
+    for (const auto& output : outputs) outputTypes[output.registerIndex] = output.scalar;
+    if (shader->needsLayout) inputTypes = layout->inputTypes;
+    if (!shader->vertex || shader->compiledInputTypes != inputTypes ||
+        (shader->needsLinkage && shader->compiledOutputTypes != outputTypes)) {
       auto inputs = shader->inputs;
       for (auto& input : inputs) if (!input.systemValue) {
-        input.scalar = layout->inputTypes[input.registerIndex];
+        input.scalar = inputTypes[input.registerIndex];
         if (input.scalar == dxvk::umd::ShaderScalar::Unknown) { device->error(E_INVALIDARG); return false; }
       }
       std::vector<unsigned char> bytecode;
       if (!dxvk::umd::buildShaderContainer(shader->stage, shader->code.data(), shader->code.size(),
-          inputs.data(), inputs.size(), &shader->output, 1, bytecode)) { device->error(E_INVALIDARG); return false; }
+          inputs.data(), inputs.size(), outputs.data(), outputs.size(), bytecode)) { device->error(E_INVALIDARG); return false; }
       ComPtr<ID3D11VertexShader> compiled;
       const HRESULT hr = device->backend->CreateVertexShader(bytecode.data(), bytecode.size(), nullptr, &compiled);
       if (FAILED(hr)) { device->error(hr); return false; }
-      shader->vertex = std::move(compiled); shader->compiledInputTypes = layout->inputTypes;
+      shader->vertex = std::move(compiled); shader->compiledInputTypes = inputTypes;
+      shader->compiledOutputTypes = outputTypes;
     }
     device->context->VSSetShader(shader->vertex.Get(), nullptr, 0);
     return true;

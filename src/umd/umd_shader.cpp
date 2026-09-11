@@ -12,19 +12,15 @@ util::md5::Digest hashDxbcBinary(const void* data, size_t size);
 }
 
 namespace dxvk::umd {
+namespace {
+using namespace dxbc_spv;
 
-bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
-    const ShaderSignatureEntry* inputs, size_t inputCount,
-    const ShaderSignatureEntry* outputs, size_t outputCount,
-    std::vector<unsigned char>& container) {
-  using namespace dxbc_spv;
-  container.clear();
+bool makeCodeChunk(ShaderStage stage, const uint32_t* code, size_t words,
+    std::vector<unsigned char>& bytes) {
+  bytes.clear();
   if (!code || words < 3 || words > 1024 * 1024 || code[1] != words ||
-      code[0] != ((uint32_t(stage) << 16) | 0x40) ||
-      outputCount != 1 || !outputs || outputs[0].registerIndex != 0 ||
-      outputs[0].mask != 15 || inputCount > 32 || (inputCount && !inputs))
+      code[0] != ((uint32_t(stage) << 16) | 0x40))
     return false;
-
   // Bound each instruction before giving it to the upstream parser. The
   // parser accepts unknown opcodes with an empty layout, so it is not by
   // itself an SM4 bytecode validator. Custom-data/ICB reconstruction remains
@@ -37,54 +33,203 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
       return false;
     offset += count;
   }
+  util::ByteWriter chunk;
+  chunk.write(util::FourCC("SHDR"));
+  chunk.write(uint32_t(words * sizeof(uint32_t)));
+  for (size_t i = 0; i < words; i++) chunk.write(code[i]);
+  bytes = std::move(chunk).extract();
+  return true;
+}
+
+bool validEntries(const ShaderSignatureEntry* entries, size_t count) {
+  if (count > 32 || (count && !entries)) return false;
+  for (size_t i = 0; i < count; i++) {
+    const auto& entry = entries[i];
+    if (entry.registerIndex >= 32 || !entry.mask || (entry.mask & ~15)) return false;
+    for (size_t j = 0; j < i; j++)
+      if (entries[j].registerIndex == entry.registerIndex ||
+          (entry.systemValue && entries[j].systemValue == entry.systemValue)) return false;
+  }
+  return true;
+}
+
+ir::ScalarType scalarType(ShaderScalar scalar) {
+  switch (scalar) {
+    case ShaderScalar::Float32: return ir::ScalarType::eF32;
+    case ShaderScalar::Uint32: return ir::ScalarType::eU32;
+    case ShaderScalar::Sint32: return ir::ScalarType::eI32;
+    default: return ir::ScalarType::eUnknown;
+  }
+}
+}
+
+bool resolvePixelInputs(const uint32_t* code, size_t words,
+    const ShaderSignatureEntry* inputs, size_t inputCount,
+    std::vector<ShaderSignatureEntry>& resolved) {
+  using namespace dxbc_spv;
+  resolved.clear();
+  if (!validEntries(inputs, inputCount)) return false;
+  std::vector<unsigned char> chunk;
+  if (!makeCodeChunk(ShaderStage::Pixel, code, words, chunk)) return false;
+  struct Declaration {
+    uint8_t mask = 0;
+    uint32_t systemValue = 0;
+    ShaderScalar scalar = ShaderScalar::Unknown;
+  } declarations[32];
+  dxbc::Parser parser(util::ByteReader(chunk.data(), chunk.size()));
+  if (!parser.getShaderInfo()) return false;
+  while (parser) {
+    const auto instruction = parser.parseInstruction();
+    if (!instruction) return false;
+    const auto token = instruction.getOpToken();
+    const auto opcode = token.getOpCode();
+    if (opcode != dxbc::OpCode::eDclInputPs && opcode != dxbc::OpCode::eDclInputPsSiv
+        && opcode != dxbc::OpCode::eDclInputPsSgv) continue;
+    if (instruction.getDstCount() != 1) return false;
+    const auto& operand = instruction.getDst(0);
+    if (operand.getRegisterType() != dxbc::RegisterType::eInput || operand.getIndexDimensions() != 1
+        || operand.getIndexOperand(0) != uint32_t(-1) || operand.getIndex(0) >= 32) return false;
+    uint32_t systemValue = 0;
+    if (opcode != dxbc::OpCode::eDclInputPs) {
+      if (instruction.getImmCount() != 1) return false;
+      systemValue = instruction.getImm(0).getImmediate<uint32_t>(0);
+      if (systemValue != 1) return false;
+    }
+    const auto interpolation = token.getInterpolationMode();
+    if (interpolation < dxbc::InterpolationMode::eConstant ||
+        interpolation > dxbc::InterpolationMode::eLinearNoPerspectiveSample) return false;
+    const ShaderScalar scalar = systemValue || interpolation != dxbc::InterpolationMode::eConstant
+      ? ShaderScalar::Float32 : ShaderScalar::Uint32;
+    const uint8_t mask = uint8_t(operand.getWriteMask());
+    auto& declaration = declarations[operand.getIndex(0)];
+    if (!mask || (declaration.mask & mask) || (declaration.mask &&
+        (declaration.systemValue != systemValue || declaration.scalar != scalar))) return false;
+    declaration.mask |= mask; declaration.systemValue = systemValue; declaration.scalar = scalar;
+  }
+  std::vector<ShaderSignatureEntry> candidate;
+  for (size_t i = 0; i < inputCount; i++) {
+    auto entry = inputs[i];
+    const auto& declaration = declarations[entry.registerIndex];
+    if ((entry.systemValue != 0 && entry.systemValue != 1) ||
+        declaration.systemValue != entry.systemValue || !declaration.mask ||
+        (declaration.mask & entry.mask) != declaration.mask)
+      return false;
+    // Native signatures can retain components the compiler does not read.
+    // Only declared components require a producer and a Vulkan interface.
+    entry.mask = declaration.mask;
+    entry.scalar = declaration.scalar;
+    candidate.push_back(entry);
+  }
+  // Do not allow the upstream compiler's implicit float fallback for an
+  // input declaration absent from the native signature.
+  for (uint32_t reg = 0; reg < 32; reg++) if (declarations[reg].mask) {
+    uint8_t mask = 0;
+    for (const auto& entry : candidate) if (entry.registerIndex == reg) mask = entry.mask;
+    if ((mask & declarations[reg].mask) != declarations[reg].mask) return false;
+  }
+  resolved = std::move(candidate);
+  return true;
+}
+
+bool linkVertexOutputs(const ShaderSignatureEntry* outputs, size_t outputCount,
+    const ShaderSignatureEntry* inputs, size_t inputCount,
+    std::vector<ShaderSignatureEntry>& linked) {
+  linked.clear();
+  if (!outputCount || !validEntries(outputs, outputCount) || !validEntries(inputs, inputCount)) return false;
+  std::vector<ShaderSignatureEntry> candidate;
+  bool position = false;
+  for (size_t i = 0; i < outputCount; i++) {
+    auto output = outputs[i];
+    if (output.systemValue == 1) {
+      if (output.mask != 15) return false;
+      position = true; output.scalar = ShaderScalar::Float32;
+    } else if (output.systemValue == 0) output.scalar = ShaderScalar::Uint32;
+    else return false;
+    candidate.push_back(output);
+  }
+  if (!position) return false;
+  for (size_t i = 0; i < inputCount; i++) {
+    const auto& input = inputs[i];
+    if ((input.systemValue != 0 && input.systemValue != 1) ||
+        (input.scalar != ShaderScalar::Float32 && input.scalar != ShaderScalar::Uint32) ||
+        (input.systemValue == 1 && input.scalar != ShaderScalar::Float32)) return false;
+    bool found = false;
+    for (auto& output : candidate) if (output.registerIndex == input.registerIndex) {
+      if (output.systemValue != input.systemValue || (output.mask & input.mask) != input.mask) return false;
+      output.scalar = input.scalar; found = true;
+    }
+    if (!found) return false;
+  }
+  linked = std::move(candidate);
+  return true;
+}
+
+bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
+    const ShaderSignatureEntry* inputs, size_t inputCount,
+    const ShaderSignatureEntry* outputs, size_t outputCount,
+    std::vector<unsigned char>& container) {
+  using namespace dxbc_spv;
+  container.clear();
+  if (!outputCount || !validEntries(inputs, inputCount) || !validEntries(outputs, outputCount)) return false;
+  std::vector<unsigned char> chunkBytes;
+  if (!makeCodeChunk(stage, code, words, chunkBytes)) return false;
 
   dxbc::Signature input(util::FourCC("ISGN"));
   dxbc::Signature output(util::FourCC("OSGN"));
   switch (stage) {
-    case ShaderStage::Vertex:
-      if (outputs[0].systemValue != 1) return false;
+    case ShaderStage::Vertex: {
       for (size_t i = 0; i < inputCount; i++) {
         const auto& entry = inputs[i];
-        if (entry.registerIndex >= 32 || !entry.mask || (entry.mask & ~15)) return false;
-        for (size_t j = 0; j < i; j++)
-          if (inputs[j].registerIndex == entry.registerIndex
-              || (entry.systemValue && inputs[j].systemValue == entry.systemValue)) return false;
         if (entry.systemValue == 6) {
           if (entry.mask != 1) return false;
           input.add(dxbc::SignatureEntry("SV_VertexID", 0, entry.registerIndex, 0, 1,
             dxbc::SignatureSysval::eVertexId, ir::ScalarType::eU32));
         } else if (entry.systemValue == 0) {
-          ir::ScalarType type;
-          switch (entry.scalar) {
-            case ShaderScalar::Float32: type = ir::ScalarType::eF32; break;
-            case ShaderScalar::Uint32: type = ir::ScalarType::eU32; break;
-            case ShaderScalar::Sint32: type = ir::ScalarType::eI32; break;
-            default: return false;
-          }
+          const auto type = scalarType(entry.scalar);
+          if (type == ir::ScalarType::eUnknown) return false;
           // Both native shader and input layout use register-index semantics.
           // There is no attempt to reconstruct the app's original names.
           input.add(dxbc::SignatureEntry(inputRegisterSemantic, entry.registerIndex, entry.registerIndex,
             0, entry.mask, dxbc::SignatureSysval::eNone, type));
         } else return false;
       }
-      output.add(dxbc::SignatureEntry("SV_Position", 0, 0, 0, 15,
-        dxbc::SignatureSysval::ePosition, ir::ScalarType::eF32));
+      bool position = false;
+      for (size_t i = 0; i < outputCount; i++) {
+        const auto& entry = outputs[i];
+        if (entry.systemValue == 1) {
+          if (entry.mask != 15) return false;
+          position = true;
+          output.add(dxbc::SignatureEntry("SV_Position", 0, entry.registerIndex, 0, 15,
+            dxbc::SignatureSysval::ePosition, ir::ScalarType::eF32));
+        } else if (entry.systemValue == 0 &&
+            (entry.scalar == ShaderScalar::Float32 || entry.scalar == ShaderScalar::Uint32)) {
+          output.add(dxbc::SignatureEntry(varyingRegisterSemantic, entry.registerIndex,
+            entry.registerIndex, 0, entry.mask, dxbc::SignatureSysval::eNone, scalarType(entry.scalar)));
+        } else return false;
+      }
+      if (!position) return false;
       break;
-    case ShaderStage::Pixel:
-      if (inputCount || outputs[0].systemValue != 0) return false;
+    }
+    case ShaderStage::Pixel: {
+      if (outputCount != 1 || outputs[0].systemValue != 0 || outputs[0].registerIndex != 0
+          || outputs[0].mask != 15) return false;
+      std::vector<ShaderSignatureEntry> resolved;
+      if (!resolvePixelInputs(code, words, inputs, inputCount, resolved)) return false;
+      for (const auto& entry : resolved) {
+        input.add(dxbc::SignatureEntry(entry.systemValue ? "SV_Position" : varyingRegisterSemantic,
+          entry.systemValue ? 0 : entry.registerIndex, entry.registerIndex, 0, entry.mask,
+          entry.systemValue ? dxbc::SignatureSysval::ePosition : dxbc::SignatureSysval::eNone,
+          scalarType(entry.scalar)));
+      }
       output.add(dxbc::SignatureEntry("SV_Target", 0, 0, 0, 15,
         dxbc::SignatureSysval::eTarget, ir::ScalarType::eF32));
       break;
+    }
     default:
       return false;
   }
 
   // Parser expects a chunk header; the DDI supplies the chunk payload only.
-  util::ByteWriter chunk;
-  chunk.write(util::FourCC("SHDR"));
-  chunk.write(uint32_t(words * sizeof(uint32_t)));
-  for (size_t i = 0; i < words; i++) chunk.write(code[i]);
-  auto chunkBytes = std::move(chunk).extract();
   dxbc::Parser parser(util::ByteReader(chunkBytes.data(), chunkBytes.size()));
   if (!parser.getShaderInfo()) return false;
   while (parser) {

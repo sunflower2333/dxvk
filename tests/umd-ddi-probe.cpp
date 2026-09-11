@@ -206,12 +206,19 @@ int main(int argc, char** argv) {
   D3D10DDI_HRENDERTARGETVIEW view = {viewMemory.get()};
   table.pfnCreateRenderTargetView(device, &viewDesc, view, {});
   std::vector<uint32_t> vs, ps;
-  if (!compileProbeShader(true, vs, true) || !compileProbeShader(false, ps)) return 8;
-  D3D10DDIARG_SIGNATURE_ENTRY input = {D3D10_SB_NAME_UNDEFINED,0,3};
-  D3D10DDIARG_SIGNATURE_ENTRY position = {D3D10_SB_NAME_POSITION,0,15};
-  D3D10DDIARG_SIGNATURE_ENTRY colorOutput = {D3D10_SB_NAME_UNDEFINED,0,15};
-  D3D10DDIARG_STAGE_IO_SIGNATURES vsSignature = {&input,1,&position,1};
-  D3D10DDIARG_STAGE_IO_SIGNATURES psSignature = {nullptr,0,&colorOutput,1};
+  std::vector<dxvk::umd::ShaderSignatureEntry> vsInputs, vsOutputs, psInputs, psOutputs;
+  if (!compileLinkageProbeShader(true, vs, vsInputs, vsOutputs) ||
+      !compileLinkageProbeShader(false, ps, psInputs, psOutputs)) return 8;
+  auto nativeSignature = [](const std::vector<dxvk::umd::ShaderSignatureEntry>& entries) {
+    std::vector<D3D10DDIARG_SIGNATURE_ENTRY> result;
+    for (const auto& entry : entries)
+      result.push_back({static_cast<D3D10_SB_NAME>(entry.systemValue), entry.registerIndex, entry.mask});
+    return result;
+  };
+  auto vi = nativeSignature(vsInputs), vo = nativeSignature(vsOutputs);
+  auto pi = nativeSignature(psInputs), po = nativeSignature(psOutputs);
+  D3D10DDIARG_STAGE_IO_SIGNATURES vsSignature = {vi.data(),UINT(vi.size()),vo.data(),UINT(vo.size())};
+  D3D10DDIARG_STAGE_IO_SIGNATURES psSignature = {pi.data(),UINT(pi.size()),po.data(),UINT(po.size())};
   auto vsMemory = allocate(table.pfnCalcPrivateShaderSize(device, vs.data(), &vsSignature));
   auto psMemory = allocate(table.pfnCalcPrivateShaderSize(device, ps.data(), &psSignature));
   D3D10_DDI_RASTERIZER_DESC rasterDesc = {};

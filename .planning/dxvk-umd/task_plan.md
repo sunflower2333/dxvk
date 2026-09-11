@@ -6,16 +6,17 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-60003 paired7051011/eb27a08 CI34592189757 allPASS, signed artifact10260421279.
-Upload/copy fix1f4595d CI34594094209 allPASS. Native allocation/windowed
-Present, constants, SRV/sampler child9eb4361 CI34595689478 ALL PASS.
-Paired60004 pins9eb, ABI+identity377+contract allPASS; parent build starting.
-New KMT publication probe6bed28b CI34596463268 ALL PASS; not in60004.
-Blend/indexed b0ea010 CI34597013994 and scissor b9b6a03 CI34597241207
-ALL PASS. Depth/stencil b47f955 CI34597997951 running.
-Paired60004 ALL PASS artifact10263060497; parent informed.
-Next add register-based input layouts and vertex buffers; derive input
-scalar types from the actual bound layout before compiling generic VS.
+Paired60004/1ab0151/9eb4361 CI34596574202 ALL PASS artifact10263060497.
+Depth b47f955 CI34597997951 ALL PASS and includes --native-copy/blend/scissor.
+Standalone ARM64 files/hashes/usage delivered to main in hardware-probe-b47f955.md.
+Paired60005/a27eb3e/b47f955 CI34598876655 ALL PASS, signed artifact10264495517.
+Keep its older Mesa4ace separate from newer active desktop GPU fixes.
+Typed native input layouts/vertex buffers7b30c07 CI34598775633 ALL PASS;
+dynamic maps/error translation272a067 CI34599288562 ALL PASS.
+Main ran standalone272a067 with LUID2A58000000000000: backend/DDI/native-copy
+ALL PASS. Real KMT backing and GPU pixels verified; Microsoft runtime and
+display Present remain unproven. No unchanged probe rerun needed.
+Continue general SM4 VS/PS varying linkage with independently checked types.
 Continue remaining mandatory resource/shader/primary/shared DDIs;
 main explicitly asks not to stop at CPU OpenAdapter harness.
 
@@ -23,7 +24,7 @@ main explicitly asks not to stop at CPU OpenAdapter harness.
 - [complete] Implement internal exact-LUID DXVK backend factory (runtime proof pending).
 - [in_progress] Implement native DDI resource/shader/draw/readback coverage.
 - [in_progress] Build and validate with personal-fork GitHub CI on supported architectures.
-- [pending] Coordinate real-device offscreen runtime proof with main.
+- [complete] Coordinate real-device standalone backend/DDI/KMT-backing proof with main.
 - [pending] Complete sharing, synchronization, presentation and full native acceptance.
 
 ## Constraints
@@ -32,6 +33,15 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- General linkage intentionally permits SV_Position at nonzero registers;
+  old test35 still asserted that it must fail. Updated that obsolete case to
+  reject register32 and added positive nonzero-position linkage coverage.
+  Current local identity69/trailer176/shader102 sanitizer checksPASS.
+- Resume inspection guessed native-umd.yml; actual workflow will be located
+  with rg before reading. Paired60005 success was independently reverified.
+- Native input-register test caught swapped registerIndex/streamIndex at
+  shader check43; fixed exact constructor order. Local shader53PASS and
+  Windows real-HLSL/reflection74PASS on x86; full target builds pending.
 - b40ccb1 CI34595019708 passed217native allocation/present callback tests and
   compiled the production UMD, then caught const input arrays incompatible
   with WDK's mutable pSysMem. Made probe arrays mutable and moved production

@@ -1,5 +1,11 @@
 # Progress
 
+2026-09-11: Typed vertex inputs7b30c07 CI34598775633 ALL PASS. Dynamic
+maps/error translation272a067 CI34599288562 ALL PASS on ARM64/x64/x86;
+x64 logs confirm715adapter,100query/map,217allocation/present and74real
+HLSL/reflection checks. All production DDIs/probes compiled. No target run.
+Paired60005/a27eb3e/b47f955 passed Mesa/DXVK; KMD job103264521935 running.
+
 2026-09-11: Stable depth b47f955 ALL PASS. Prepared/pushed paired60005
 a27eb3e (ABI,377identity and full contractPASS), CI34598876655 running.
 Standalone three ARM64 binaries downloaded from childCI; paths, SHA256 and
@@ -43,6 +49,29 @@ One read guessed tests/umd-ddi.cpp; actual file is umd-ddi-probe.cpp.
 2026-09-11: Added SetScissorRects with count/clear bounds and translated
 signed rectangles. Probe enables scissoring and requires its bound64x64
 rectangle, alongside new indexed/additive-blend pixel path. CI pending.
+
+2026-09-11: Implemented generic VS/PS register linkage, typed producer variants
+and pixel declaration-derived interpolation/raw32 types. Added real-HLSL
+probe with interpolated UV validation plus flat unsigned and NaN/-0/Inf bit
+payloads. Local identity69/trailer176/shader102 sanitizersPASS; Windows HLSL,
+SPIR-V generation and new target execution still pending. New code is not
+part of parent-tested272a067 and has not been installed.
+
+2026-09-11: Parent reported real272a067 hardware ALL PASS on58386, current
+LUID2A58000000000000, process-local56bd30c Turnip ICD9AA5. Backend exit0/224ms,
+4096magenta/0mismatch. Native DDI exit0/195ms: actual adapter query/create0,
+64byte copy0mismatch, depth0/4096/0, KMT backing4096pixels0mismatch,
+4096finalred/event1/error0. DWM2028/Explorer5780 retained with no new
+appfault/timeout. Exact three probe hashes matched. Parent's host-trace
+summary remains pending. Native runtime/application/display Present still
+unproven; no unchanged backend rerun is needed. This agent made no remote calls.
+
+2026-09-11: Resume: paired60005/a27eb3e/b47f955 run34598876655 ALL PASS
+reverified via gh. Signed final artifact10264495517,11542329bytes, SHA256
+7557f872ba8c6b38c97eb52f138a2efc93c2e69f3427edc43be65d667f8614e7.
+Parent will test standalone272a067 after GLES with LUID2A58000000000000;
+this agent continues local shader linkage/DDIs. Full native D3D9/11 runtime,
+applications and visible Present remain mandatory and unproven.
 
 2026-09-11: Continued required DDIs with D3D10.0 blend states, index buffers
 and indexed/instanced draw variants. The GPU probe now requires additive

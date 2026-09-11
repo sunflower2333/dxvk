@@ -35,6 +35,8 @@ does not call display Present or activate the Microsoft D3D runtime.
 This checkpoint has not run on the target device. Parent owns remote execution.
 
 Paired package 60005 pins this exact child under driver parent
-a27eb3e80f13c13593fb38573f23328769829b74, CI 34598876655 (pending).
+a27eb3e80f13c13593fb38573f23328769829b74, CI 34598876655 (all jobs passed).
+Signed final artifact `droidvm-arm64-drivers`, ID10264495517,11542329bytes,
+SHA256 `7557f872ba8c6b38c97eb52f138a2efc93c2e69f3427edc43be65d667f8614e7`.
 Its older Mesa 4ace9df is unrelated to the standalone probe: preserve the
 newer active desktop Mesa when preparing hardware testing.

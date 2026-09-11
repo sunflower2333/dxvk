@@ -16,13 +16,25 @@ struct ShaderSignatureEntry {
 };
 
 inline constexpr const char* inputRegisterSemantic = "VIOGPU_INPUT";
+inline constexpr const char* varyingRegisterSemantic = "VIOGPU_VARYING";
 
-// Initial DDI development profile: SM4.0 VS with optional SV_VertexID and
-// SV_Position output, and PS with no inputs and one float color output.
-// Generic VS inputs need explicit types from the bound vertex input format.
-// User varyings, integer render targets and all other stages are not accepted.
-// DDI signatures do not carry semantic strings or component types: these
-// restricted interfaces have known types, so no arbitrary type is invented.
+// Native signatures lack scalar types. Pixel declarations supply enough
+// information for interpolated F32 or bit-preserving flat U32 interfaces.
+// A register with conflicting interpolation/types is rejected for now.
+bool resolvePixelInputs(const uint32_t* code, size_t words,
+  const ShaderSignatureEntry* inputs, size_t inputCount,
+  std::vector<ShaderSignatureEntry>& resolved);
+
+// Match producer outputs to the active PS by register/mask, including
+// SV_Position. Unconsumed generic outputs use a raw32 interface.
+bool linkVertexOutputs(const ShaderSignatureEntry* outputs, size_t outputCount,
+  const ShaderSignatureEntry* inputs, size_t inputCount,
+  std::vector<ShaderSignatureEntry>& linked);
+
+// SM4.0 VS/PS development profile. Vertex input types come from the bound
+// layout, generic outputs from linkVertexOutputs, and pixel input types from
+// resolvePixelInputs. PS has one float target0. Other stages, integer targets
+// and additional system values are not accepted. Tokens remain unchanged.
 bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   const ShaderSignatureEntry* inputs, size_t inputCount,
   const ShaderSignatureEntry* outputs, size_t outputCount,

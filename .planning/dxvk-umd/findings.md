@@ -1,5 +1,46 @@
 # Findings
 
+- Linkage implementation will normalize generic VS outputs and PS inputs by
+  register/mask. Pixel dcl_input_ps interpolation selects F32 for interpolated
+  data or raw U32 for flat data; both stages must agree. Reject incomplete or
+  conflicting declarations instead of silently assuming float. Current scope
+  keeps one compatible type per register and a float target0; packed mixed
+  interpolation, additional system values/MRT/stages remain explicit gates.
+- Local inspection confirmed actual workflow build-native-umd.yml and test
+  script scripts/test-native-umd.sh. Missing guessed header/script paths were
+  resolved from rg results; no source or build mutation resulted.
+
+- Paired60005/a27eb3e/b47f955 run34598876655 independently reverified ALL PASS.
+  Signed artifact10264495517,11542329bytes, SHA256
+  7557f872ba8c6b38c97eb52f138a2efc93c2e69f3427edc43be65d667f8614e7.
+  Main plans to test newer standalone272a067 with LUID2A58000000000000 after
+  GLES; full native D3D9/11 runtime/application/Present acceptance is mandatory
+  beyond standalone/KMT-backing checks. No device operations by this agent.
+
+- Confirmed dxbc IoMap::convertScalar emits ConsumeAs for non-bool values;
+  LowerConsumePass::handleConsume lowers equal-width values to Cast (not
+  numeric Convert). This is source support for a raw32-bit flat-varying
+  linkage scheme; mixed payload and SPIR-V execution tests are still needed.
+- Shared-open next-step audit: current Mesa Resource.cpp::OpenResource
+  validates exactly one80-byte VIOGPU allocation record, reconstructs a
+  GPU cache, and borrows hAllocation with null originating runtime resource.
+  DestroyResource deallocates only creator-owned allocations. DXVK's current
+  RuntimeAllocation has only owning state, so importing handles requires
+  explicit borrowed lifetime plus synchronized refresh/publication; setting
+  shared flags or just adopting the integer handle would be incomplete.
+
+- Next shader-linkage research: dxbc IoMap::determineInterpolationMode
+  reads dcl_input_ps opcode interpolation bits. IoMap declares variables
+  by signature type and uses convertScalar at both I/O loads and stores.
+  A possible native solution is F32 for interpolated values and a shared
+  raw U32 interface for flat values, with producer variants matched to the
+  bound pixel shader. Verify convertScalar is bit-preserving at32bits and
+  test mixed float/int/NaN payloads before enabling arbitrary varyings.
+- Previous requested checkpoint60005/b47f955 covers
+  --native-copy/blend/scissor/depth. Typed vertex layouts7b30c07 independently
+  passed all architectures in CI34598775633, including74real-HLSL checks.
+  Dynamic maps272a067 CI34599288562 is separate and ALL PASS.
+
 - Input-layout audit: D3D10 DDI supplies InputRegister, while DXVK public
   CreateInputLayout maps semantic names to that register. Both sides can
   safely share generated register-index semantics; original names are not

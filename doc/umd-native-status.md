@@ -30,7 +30,8 @@ partially written backend failure results and the distinct API/DDI flag values.
 ResourceUpdateSubresourceUP and ResourceCopyRegion support buffers and
 single-sample RGBA8/BGRA8 Texture2D subresources, with mip/array/box bounds,
 usage and pitch checks. Empty boxes are no-ops. The device probe verifies an
-offset buffer update/copy byte-for-byte before drawing; target execution is pending.
+offset buffer update/copy byte-for-byte before drawing; checkpoint272a067
+passed that check on the target.
 
 VS/PS constant-buffer binding supports owned buffers, explicit null unbinding
 and bounded slot ranges. The pixel probe now obtains its red color from a real
@@ -57,21 +58,27 @@ enables. Render targets and depth bind atomically even when all color slots
 are cleared. The device probe uses a D24S8 attachment and requires occlusion
 counts of 0, 4096 and 0 for depth rejection, a passing draw and stencil
 rejection. These checks prevent additive color saturation from hiding an
-incorrect extra draw. The new GPU depth/stencil paths await target validation.
+incorrect extra draw. Checkpoint272a067 passed these target depth/stencil checks.
 
 Event, occlusion, timestamp and timestamp-disjoint query DDIs now use the
 embedded backend's actual query objects. Pending results become the DDI busy
 status, device loss is translated to the DDI removed status, and output is
 copied only on completion. Predicate/statistics queries are still rejected.
 The completion helper has CPU failure-path tests; the pixel probe additionally
-requires a completed GPU event. These new GPU query paths have not run on target.
+requires a completed GPU event. Checkpoint272a067 passed the event/occlusion
+checks on target; timestamps still need dedicated hardware validation.
 
-The initial shader interface is deliberately limited to SM4.0 VS with optional
-SV_VertexID, generic vertex inputs and SV_Position output, plus a PS with no inputs and one float
-SV_Target0 output. User varyings, other stages and custom-data instructions
-are rejected. Shader tokens are preserved byte-for-byte in the new DXBC
-container, which carries canonical signatures only for these known types and
-the proper DXBC checksum. General shader interfaces still require implementation.
+The shader interface supports SM4.0 VS with optional SV_VertexID, generic
+vertex inputs and SV_Position output, plus generic VS/PS varyings and PS
+SV_Position input with one float SV_Target0 output. Pixel input declarations
+select F32 for interpolated values and a bit-preserving U32 interface for flat
+values. The active pixel shader determines the matching vertex output variant;
+unmatched registers/components fail before drawing. Native register-index
+semantics preserve linkage without guessing application names. Original shader
+tokens remain byte-for-byte intact with the proper DXBC checksum. Packed
+mixed-type registers, other system values/stages, custom data and additional
+render targets are still rejected. The linkage extension is newer than the
+target-tested272a067 checkpoint and needs its own CI and device validation.
 
 Native input-layout and vertex-buffer DDIs now map numeric input registers to
 the same generated semantics on both sides of DXVK's API boundary. The initial
@@ -108,7 +115,8 @@ allocations. Present synchronously maps a GPU readback, locks and fills that
 allocation, unlocks it, and calls PresentCb on a callback-created context with
 the original opaque DXGI context. An incomplete allocation or failed copy
 cannot reach PresentCb. This correctness path copies pixels; it is not zero
-copy and has no target execution proof. Shared opens, primaries, flips and
+copy. Checkpoint272a067 has real target proof of backing publication through
+the harness callback; actual display Present remains unproven. Shared opens, primaries, flips and
 explicit destinations remain rejected; the rest of the DXGI table is pending.
 
 Two device-only executables are packaged for coordinated testing:
@@ -129,8 +137,15 @@ Two device-only executables are packaged for coordinated testing:
   runtime; the output explicitly labels this allocation-publication evidence.
 
 The argument encodes the eight LUID bytes in memory order; it is not an adapter
-index or a printed 64-bit integer. Neither executable has yet been run on the
-target device. The runtime callback and adapter lifecycle tests use mocks.
+index or a printed 64-bit integer. Both executables at272a067 passed on target:
+the backend verified4096magenta pixels, and the DDI/native-copy probe verified
+the64-byte copy, occlusion0/4096/0,4096red pixels/event1 and4096pixels in
+the actual KMT allocation backing, all with zero mismatches and exit0.
+The matched58386 KMD and process-local56bd30c Turnip used LUID2A58000000000000;
+existing DWM/Explorer processes remained live with no new appfault/timeout.
+The CPU lifecycle tests use mocks; the target probe uses real KMT-backed
+callbacks supplied by the harness, so Microsoft runtime activation and
+native application/display acceptance remain separate unfinished requirements.
 The coordinated KMD producer has separately passed ARM64 WDK compilation
 and 377 production-reply/real-decoder CPU checks; see the identity contract
 document for commits. This does not establish installed-device validation.

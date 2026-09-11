@@ -27,6 +27,7 @@ umd_ddi_probe = executable('dxvk-umd-ddi-probe', '../../tests/umd-ddi-probe.cpp'
 umd_shader_test = executable('dxvk-umd-shader-test',
   '../../tests/umd-shader-container.cpp', 'umd_shader.cpp',
   dependencies : [dxbc_spirv_dep, cpp.find_library('d3dcompiler')],
+  cpp_args : ['-DVIOGPU_SHADER_SPIRV_TEST'],
 )
 
 umd_identity_query_test = executable('dxvk-umd-identity-query-test',

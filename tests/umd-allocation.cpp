@@ -49,7 +49,7 @@ static HRESULT APIENTRY lock(HANDLE device, D3DDDICB_LOCK* args) {
   calls.push_back('L');
   CHECK(device == &deviceCookie && args && args->hAllocation == 123);
   CHECK(args->Flags.LockEntire && args->Flags.WriteOnly && !args->Flags.ReadOnly);
-  CHECK(!args->Flags.Discard && !args->Flags.IgnoreSync && !args->Flags.DoNotWait);
+  CHECK(!args->Flags.Discard && !args->Flags.IgnoreSync && !args->Flags.DonotWait);
   CHECK(!args->NumPages && !args->pPages && !args->pData);
   args->pData = nullLock ? nullptr : backing;
   if (changedLock) args->hAllocation = 124;

@@ -56,7 +56,17 @@ only the D3D10.0 table and compatible runtime builds, and rejects unsupported
 flags rather than silently ignoring threading restrictions. Devices retain
 adapter identity after the adapter handle is closed. The CPU lifecycle test
 uses mocked runtime/backend callbacks, including failure paths; this is not
-Windows runtime activation. No OpenAdapter10 export or DXGI table is supplied.
+Windows runtime activation. No OpenAdapter10 export is supplied.
+
+The development adapter now optionally supplies a windowed-blit DXGI Present
+entry when the real allocation/context/Present callbacks are provided. Single
+RGBA8/BGRA8 present-source textures own runtime-associated CPU-visible kernel
+allocations. Present synchronously maps a GPU readback, locks and fills that
+allocation, unlocks it, and calls PresentCb on a callback-created context with
+the original opaque DXGI context. An incomplete allocation or failed copy
+cannot reach PresentCb. This correctness path copies pixels; it is not zero
+copy and has no target execution proof. Shared opens, primaries, flips and
+explicit destinations remain rejected; the rest of the DXGI table is pending.
 
 Two device-only executables are packaged for coordinated testing:
 

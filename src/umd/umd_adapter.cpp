@@ -25,6 +25,8 @@ HRESULT APIENTRY createDevice(D3D10DDI_HADAPTER adapter, D3D10DDIARG_CREATEDEVIC
   if (!supported(args->Interface, args->Version, args->Flags)) return DXGI_ERROR_UNSUPPORTED;
   if (!args->pDeviceFuncs) return E_INVALIDARG;
   *args->pDeviceFuncs = {};
+  if (args->DXGIBaseDDI.pDXGIDDIBaseFunctions)
+    *args->DXGIBaseDDI.pDXGIDDIBaseFunctions = {};
   if (!args->hDrvDevice.pDrvPrivate || !args->hRTDevice.handle || !args->pKTCallbacks
       || !args->hRTCoreLayer.handle || !args->pUMCallbacks || !args->pUMCallbacks->pfnSetErrorCb)
     return E_INVALIDARG;

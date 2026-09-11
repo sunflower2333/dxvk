@@ -1,5 +1,22 @@
 # Progress
 
+2026-09-11: Added native present-source allocation ownership, synchronized
+GPU readback/kernel Lock+Unlock publication and real DXGI PresentCb plumbing.
+Only development windowed blits are enabled; shared/opened resources,
+primaries and flips remain rejected. New CPU fixture checks trusted bounds,
+padding, callback ordering/failures, stale-publication refusal and ownership.
+Source review checked actual SDK callback signatures and UINT_PTR DXGI
+handles. New CI pending; no device execution. Previous828b535 failed signed
+WDK-box narrowing; fix1f4595d is running replacementCI34594094204.
+
+2026-09-11:60003 pairedCI34592189757 now allPASS at7051011; signed package
+artifact10260421279,11528743bytes, SHA256
+5c5acc14f9fa612dc67360d6ceb7e276cfeff28c27feaf9aec2de6bd28f3d8af.
+Logs confirm DXVK DLL/two probes, Mesa DLL, KMD SYS/CAT signed and packaged.
+Query childbc31fb9 CI34592884124 allPASS on all three architectures.
+Latest828b535 build still running. Main informed of identity and old Mesa4ace
+pin, so this package must not silently replace newer active Mesa GPU fixes.
+
 2026-09-11: Implemented bounded ResourceUpdateSubresourceUP/CopyRegion for
 buffer and RGBA8/BGRA8 Texture2D subresources. GPU probe now performs an
 offset buffer update/copy and checks all64bytes before draw. Query commit

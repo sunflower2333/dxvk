@@ -6,10 +6,10 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-Child11d889d CI34591067184 allPASS. eb27a08 only updates producer docs and
-comments. Producer12bbe0c/1f99078/33f94fa integrated in parent7051011, fixed
-child eb27a08,60003, pairedCI34592189757 (regressionPASS, Mesa+DXVK building).
-Continue mandatory query/resource/draw/Present DDIs after this checkpoint;
+Parent7051011/child eb27a08 version60003 pairedCI34592189757 allPASS,
+signed artifact10260421279. Query childbc31fb9 CI34592884124 allPASS.
+Upload/copy child828b535 CI34593487334 architecture builds still running.
+Continue mandatory native allocation/resource/draw/Present DDIs;
 main explicitly asks not to stop at CPU OpenAdapter harness.
 
 ## Phases
@@ -25,6 +25,9 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- Upload/copy828b535 CI34593487334 found WDK D3D10_DDI_BOX uses signed LONG,
+  while D3D11_BOX uses UINT. Reject negative coordinates before explicit
+  conversion; no potentially wrapped signed box can reach the backend.
 - Initial patch context for src/meson.build mismatched; no partial edits were
   applied. Corrected the context and applied successfully.
 - Two guessed filenames were absent; used rg results to locate actual files.

@@ -3,6 +3,7 @@
 #include "umd_adapter.h"
 #include "umd_shader.h"
 #include "umd_query.h"
+#include "umd_allocation.h"
 
 #include <wrl/client.h>
 #include <memory>
@@ -17,6 +18,7 @@ struct Device {
   ComPtr<ID3D11DeviceContext> context;
   D3D10DDI_HRTCORELAYER runtime;
   D3D10DDI_CORELAYER_DEVICECALLBACKS callbacks;
+  dxvk::umd::RuntimeMemory memory;
   bool vertexBound = false;
   bool pixelBound = false;
   bool targetBound = false;
@@ -29,6 +31,8 @@ struct Device {
 struct Resource {
   Device* owner = nullptr;
   ComPtr<ID3D11Resource> backend;
+  ComPtr<ID3D11Texture2D> presentReadback;
+  dxvk::umd::RuntimeAllocation allocation;
 };
 struct RenderTarget {
   Device* owner = nullptr;
@@ -140,17 +144,27 @@ SIZE_T APIENTRY resourceSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERESOURCE*
 }
 void APIENTRY createResource(D3D10DDI_HDEVICE h,
     const D3D10DDIARG_CREATERESOURCE* args, D3D10DDI_HRESOURCE out,
-    D3D10DDI_HRTRESOURCE) {
+    D3D10DDI_HRTRESOURCE runtime) {
   auto device = get(h);
   if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
   auto resource = new (out.pDrvPrivate) Resource();
   resource->owner = device;
   if (!args || !args->pMipInfoList || !args->MipLevels || !args->ArraySize ||
       args->MipLevels > D3D11_REQ_MIP_LEVELS || args->ArraySize > D3D11_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION ||
-      args->pPrimaryDesc || (args->BindFlags & D3D10_DDI_BIND_PRESENT) ||
+      args->pPrimaryDesc ||
       args->MiscFlags || (args->MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK) ||
-      (args->BindFlags & ~D3D10_DDI_BIND_PIPELINE_MASK)) {
+      (args->BindFlags & ~(D3D10_DDI_BIND_PIPELINE_MASK | D3D10_DDI_BIND_PRESENT))) {
     device->error(E_INVALIDARG); return;
+  }
+  const bool presentable = (args->BindFlags & D3D10_DDI_BIND_PRESENT) != 0;
+  if (presentable && (!device->memory.available() || !runtime.handle
+      || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
+      || args->MipLevels != 1 || args->ArraySize != 1
+      || args->SampleDesc.Count != 1 || args->SampleDesc.Quality
+      || args->Usage != D3D10_DDI_USAGE_DEFAULT || args->MapFlags
+      || !(args->BindFlags & D3D10_DDI_BIND_RENDER_TARGET)
+      || (args->Format != DXGI_FORMAT_R8G8B8A8_UNORM && args->Format != DXGI_FORMAT_B8G8R8A8_UNORM))) {
+    device->error(DXGI_ERROR_UNSUPPORTED); return;
   }
   try {
     std::vector<D3D11_SUBRESOURCE_DATA> initial;
@@ -168,7 +182,7 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
       D3D11_BUFFER_DESC desc = {};
       desc.ByteWidth = args->pMipInfoList[0].TexelWidth;
       desc.Usage = static_cast<D3D11_USAGE>(args->Usage);
-      desc.BindFlags = args->BindFlags;
+      desc.BindFlags = args->BindFlags & D3D10_DDI_BIND_PIPELINE_MASK;
       desc.CPUAccessFlags = ((args->MapFlags & D3D10_DDI_CPU_ACCESS_READ) ? D3D11_CPU_ACCESS_READ : 0)
                          | ((args->MapFlags & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
       ComPtr<ID3D11Buffer> buffer;
@@ -183,12 +197,17 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
       desc.Format = args->Format;
       desc.SampleDesc = args->SampleDesc;
       desc.Usage = static_cast<D3D11_USAGE>(args->Usage);
-      desc.BindFlags = args->BindFlags;
+      desc.BindFlags = args->BindFlags & D3D10_DDI_BIND_PIPELINE_MASK;
       desc.CPUAccessFlags = ((args->MapFlags & D3D10_DDI_CPU_ACCESS_READ) ? D3D11_CPU_ACCESS_READ : 0)
                          | ((args->MapFlags & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
       ComPtr<ID3D11Texture2D> texture;
       hr = device->backend->CreateTexture2D(&desc, data, &texture);
       resource->backend = texture;
+    }
+    if (SUCCEEDED(hr) && presentable) {
+      hr = device->memory.allocate(resource->allocation, runtime.handle,
+        args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight, args->Format);
+      if (FAILED(hr)) resource->backend.Reset();
     }
     device->error(hr);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
@@ -197,6 +216,7 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
 void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
   auto object = get(resource);
   if (!object || object->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  get(h)->error(object->allocation.release());
   object->~Resource();
 }
 SIZE_T APIENTRY targetSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERENDERTARGETVIEW*) {
@@ -414,7 +434,8 @@ void APIENTRY setRenderTargets(D3D10DDI_HDEVICE h, const D3D10DDI_HRENDERTARGETV
     if (!owned(device, object)) return;
     // The initial PS profile has float output. Integer targets need typed
     // output variants and are intentionally outside this development slice.
-    if (object->format != DXGI_FORMAT_R8G8B8A8_UNORM) { device->error(E_INVALIDARG); return; }
+    if (object->format != DXGI_FORMAT_R8G8B8A8_UNORM &&
+        object->format != DXGI_FORMAT_B8G8R8A8_UNORM) { device->error(E_INVALIDARG); return; }
     target = object->backend.Get();
   }
   if (count || clear) {
@@ -475,7 +496,48 @@ void APIENTRY draw(D3D10DDI_HDEVICE h, UINT count, UINT start) {
   device->context->Draw(count, start);
 }
 void APIENTRY flush(D3D10DDI_HDEVICE h) { get(h)->context->Flush(); }
-void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) { get(h)->~Device(); }
+void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
+  get(h)->error(get(h)->memory.close());
+  get(h)->~Device();
+}
+
+HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
+  if (!args || !args->hDevice || !args->hSurfaceToPresent)
+    return E_INVALIDARG;
+  auto device = reinterpret_cast<Device*>(args->hDevice);
+  auto resource = reinterpret_cast<Resource*>(args->hSurfaceToPresent);
+  if (resource->owner != device || !resource->backend || !resource->allocation.handle()
+      || args->SrcSubResourceIndex || args->DstSubResourceIndex
+      || args->hDstResource || !args->pDXGIContext || args->Flags.Value != 1)
+    return E_INVALIDARG;
+  try {
+    ComPtr<ID3D11Texture2D> source;
+    HRESULT hr = resource->backend.As(&source);
+    if (FAILED(hr)) return hr;
+    if (!resource->presentReadback) {
+      D3D11_TEXTURE2D_DESC desc = {}; source->GetDesc(&desc);
+      desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0;
+      desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ; desc.MiscFlags = 0;
+      hr = device->backend->CreateTexture2D(&desc, nullptr, &resource->presentReadback);
+      if (FAILED(hr)) return hr;
+    }
+    device->context->CopyResource(resource->presentReadback.Get(), source.Get());
+    D3D11_MAPPED_SUBRESOURCE map = {};
+    // Synchronous Map is the GPU completion barrier before any guest CPU
+    // publication. Correctness checkpoint; this is not a zero-copy path.
+    hr = device->context->Map(resource->presentReadback.Get(), 0, D3D11_MAP_READ, 0, &map);
+    if (FAILED(hr)) return hr;
+    struct Unmap {
+      ID3D11DeviceContext* context;
+      ID3D11Resource* resource;
+      ~Unmap() { context->Unmap(resource, 0); }
+    } unmap = {device->context.Get(), resource->presentReadback.Get()};
+    hr = device->memory.upload(resource->allocation, map.pData, map.RowPitch);
+    if (FAILED(hr)) return hr;
+    return device->memory.present(resource->allocation, *args);
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
+}
 }
 
 extern "C" SIZE_T APIENTRY VioGpuDxvkPrivateDeviceSize() { return sizeof(Device); }
@@ -535,6 +597,16 @@ HRESULT dxvk::umd::createAdapterDevice(
     const std::shared_ptr<const AdapterIdentity>& identity, D3D10DDIARG_CREATEDEVICE* args) {
   const HRESULT hr = VioGpuDxvkCreateDdiTestDevice(&identity->luid, args->hDrvDevice,
     args->hRTCoreLayer, args->pUMCallbacks, args->pDeviceFuncs);
-  if (SUCCEEDED(hr)) get(args->hDrvDevice)->adapter = identity;
+  if (SUCCEEDED(hr)) {
+    auto device = get(args->hDrvDevice);
+    device->adapter = identity;
+    device->memory.initialize(args->hRTDevice.handle, *args->pKTCallbacks,
+      args->DXGIBaseDDI.pDXGIBaseCallbacks);
+    if (args->DXGIBaseDDI.pDXGIDDIBaseFunctions) {
+      *args->DXGIBaseDDI.pDXGIDDIBaseFunctions = {};
+      if (device->memory.available())
+        args->DXGIBaseDDI.pDXGIDDIBaseFunctions->pfnPresent = present;
+    }
+  }
   return hr;
 }

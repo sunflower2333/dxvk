@@ -34,7 +34,7 @@ endian = 'little'
 "@ | Set-Content native-umd-cross.ini
 meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Denable_umd=true -Denable_d3d8=false -Denable_d3d9=false -Denable_d3d10=false
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
-ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe
+ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 if ($arch -ne 'arm64') {
@@ -44,6 +44,8 @@ if ($arch -ne 'arm64') {
     if ($LASTEXITCODE) { throw 'Adapter lifecycle test failed' }
     & build-umd/src/umd/dxvk-umd-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'query-test.txt')
     if ($LASTEXITCODE) { throw 'Query completion test failed' }
+    & build-umd/src/umd/dxvk-umd-allocation-test.exe | Tee-Object (Join-Path $OutputDirectory 'allocation-test.txt')
+    if ($LASTEXITCODE) { throw 'Runtime allocation/presentation test failed' }
 }
 ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe src/umd/viogpudxvk.dll src/umd/dxvk-umd-ddi-probe.exe src/umd/dxvk-umd-shader-test.exe
 if ($LASTEXITCODE) { throw 'DXVK UMD development build failed' }
@@ -70,6 +72,7 @@ ARCH=$arch
 STATUS=DDI development candidate; not registered or installable as the system UMD.
 Development DDIs include restricted SM4 VS/PS, state and Draw; general shader interfaces remain pending.
 Development OpenAdapter harness validates runtime identity and retains it across adapter/device lifetime.
-Runtime-to-DDI activation, complete required table, sharing and Present remain pending.
+Windowed-blit Present development path uses runtime allocations and synchronized pixel copies; target proof pending.
+Runtime-to-DDI activation, complete required table, sharing and primary/flip Present remain pending.
 "@ | Set-Content (Join-Path $OutputDirectory 'STATUS.txt')
 Get-ChildItem $OutputDirectory -File | Where-Object Extension -in '.dll','.exe' | Get-FileHash | Format-List

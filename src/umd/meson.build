@@ -11,7 +11,7 @@ umd_backend_probe = executable('dxvk-umd-backend-probe',
   include_directories : dxvk_include_path,
 )
 
-umd_development = shared_library('viogpudxvk', 'umd_ddi.cpp', 'umd_adapter.cpp', 'umd_shader.cpp', 'umd_runtime_query.cpp', 'umd_log.cpp',
+umd_development = shared_library('viogpudxvk', 'umd_ddi.cpp', 'umd_adapter.cpp', 'umd_shader.cpp', 'umd_runtime_query.cpp', 'umd_log.cpp', 'umd_allocation.cpp',
   link_with : [umd_backend],
   dependencies : [dxvk_dep, dxbc_spirv_dep, lib_gdi32, lib_dxgi],
   include_directories : dxvk_include_path,
@@ -38,3 +38,6 @@ umd_adapter_test = executable('dxvk-umd-adapter-test',
 )
 
 umd_query_test = executable('dxvk-umd-query-test', '../../tests/umd-query.cpp')
+
+umd_allocation_test = executable('dxvk-umd-allocation-test',
+  '../../tests/umd-allocation.cpp', 'umd_allocation.cpp')

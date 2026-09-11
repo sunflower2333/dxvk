@@ -1,5 +1,15 @@
 # Findings
 
+- Added native runtime allocation ownership and synchronous windowed-blit
+  Present plumbing under the development adapter entry point. The runtime's
+  original device/resource/DXGI handles are forwarded only to their own
+  callbacks. CPU-visible BGRA8/RGBA8 present sources are synchronized through
+  backend Map, kernel Lock/Unlock, then PresentCb with a real callback-created
+  context. Primary/flip/shared-open paths remain rejected. New callback tests
+  check failure sequencing, stale-frame refusal, row padding and cleanup;
+  compilation and runtime validation are pending. SDK DXGI handles are
+  UINT_PTR, unlike the D3D10DDI pointer-wrapper structs; explicitly converted.
+
 - Present/shared-resource audit: DXVK D3D11CommonTexture::ExportImageInfo
   uses D3DKMT_ESCAPE_UPDATE_RESOURCE_WINE and a legacy Proton metadata
   fallback. Enabling its public shared MiscFlags is not a native VIOGPU

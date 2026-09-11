@@ -1,5 +1,11 @@
 # Progress
 
+2026-09-11: Upload/copy signed-box fix1f4595d CI34594094209 allPASS.
+Native allocationfdce901 CI34594671352 caught fixture field spelling:
+D3DDDICB_LOCKFLAGS.DonotWait (implementation compiled). Corrected fixture.
+Added VS/PS constant-buffer binding and changed real-HLSL pixel probe to
+read its color from an actual constant buffer; target runtime still pending.
+
 2026-09-11: Added native present-source allocation ownership, synchronized
 GPU readback/kernel Lock+Unlock publication and real DXGI PresentCb plumbing.
 Only development windowed blits are enabled; shared/opened resources,

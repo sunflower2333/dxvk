@@ -423,6 +423,33 @@ void APIENTRY setPixelShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   device->context->PSSetShader(object ? object->pixel.Get() : nullptr, nullptr, 0);
   device->pixelBound = object != nullptr;
 }
+template<bool Vertex>
+void APIENTRY setConstantBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
+    const D3D10DDI_HRESOURCE* resources) {
+  auto device = get(h);
+  constexpr UINT slots = D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT;
+  if (start > slots || count > slots - start || (count && !resources)) {
+    device->error(E_INVALIDARG); return;
+  }
+  ComPtr<ID3D11Buffer> ownedBuffers[slots];
+  ID3D11Buffer* buffers[slots] = {};
+  for (UINT i = 0; i < count; i++) {
+    if (!resources[i].pDrvPrivate) continue;
+    auto resource = get(resources[i]);
+    if (!owned(device, resource)) return;
+    if (FAILED(resource->backend.As(&ownedBuffers[i]))) { device->error(E_INVALIDARG); return; }
+    D3D11_BUFFER_DESC desc = {}; ownedBuffers[i]->GetDesc(&desc);
+    if (!(desc.BindFlags & D3D11_BIND_CONSTANT_BUFFER)) { device->error(E_INVALIDARG); return; }
+    buffers[i] = ownedBuffers[i].Get();
+  }
+  // Validate every resource before changing state, so an invalid tail cannot
+  // leave a partially updated binding range. Null entries explicitly unbind.
+  try {
+    if (Vertex) device->context->VSSetConstantBuffers(start, count, buffers);
+    else device->context->PSSetConstantBuffers(start, count, buffers);
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
 void APIENTRY setRenderTargets(D3D10DDI_HDEVICE h, const D3D10DDI_HRENDERTARGETVIEW* targets,
     UINT count, UINT clear, D3D10DDI_HDEPTHSTENCILVIEW depth) {
   auto device = get(h);
@@ -580,6 +607,8 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnDestroyShader = destroyShader;
   table->pfnVsSetShader = setVertexShader;
   table->pfnPsSetShader = setPixelShader;
+  table->pfnVsSetConstantBuffers = setConstantBuffers<true>;
+  table->pfnPsSetConstantBuffers = setConstantBuffers<false>;
   table->pfnSetRenderTargets = setRenderTargets;
   table->pfnSetViewports = setViewports;
   table->pfnCalcPrivateRasterizerStateSize = rasterizerSize;

@@ -195,6 +195,16 @@ int main(int argc, char** argv) {
   table.pfnCreateVertexShader(device, vs.data(), vertex, {}, &vsSignature);
   table.pfnCreatePixelShader(device, ps.data(), pixel, {}, &psSignature);
   table.pfnCreateRasterizerState(device, &rasterDesc, raster, {});
+  D3D10DDI_MIPINFO constantMip = {16,1,1,16,1,1};
+  const FLOAT pixelColor[4] = {1,0,0,1};
+  D3D10_DDIARG_SUBRESOURCE_UP constantData = {pixelColor,16,16};
+  D3D10DDIARG_CREATERESOURCE constantDesc = {};
+  constantDesc.pMipInfoList = &constantMip; constantDesc.pInitialDataUP = &constantData;
+  constantDesc.ResourceDimension = D3D10DDIRESOURCE_BUFFER;
+  constantDesc.Usage = D3D10_DDI_USAGE_DEFAULT;
+  constantDesc.BindFlags = D3D10_DDI_BIND_CONSTANT_BUFFER;
+  constantDesc.MipLevels = 1; constantDesc.ArraySize = 1; constantDesc.SampleDesc.Count = 1;
+  auto constant = std::make_unique<ProbeResource>(device, table, constantDesc);
   unsigned mismatches = 4096;
   BOOL eventComplete = FALSE;
   if (SUCCEEDED(lastError)) {
@@ -202,6 +212,7 @@ int main(int argc, char** argv) {
     table.pfnClearRenderTargetView(device, view, color);
     table.pfnVsSetShader(device, vertex);
     table.pfnPsSetShader(device, pixel);
+    table.pfnPsSetConstantBuffers(device, 0, 1, &constant->handle);
     table.pfnSetRasterizerState(device, raster);
     table.pfnSetRenderTargets(device, &view, 1, 0, {});
     D3D10_DDI_VIEWPORT viewport = {0,0,64,64,0,1};
@@ -237,6 +248,7 @@ int main(int argc, char** argv) {
   table.pfnDestroyResource(device, staging);
   table.pfnDestroyResource(device, target);
   table.pfnDestroyQuery(device, event);
+  constant.reset();
   table.pfnDestroyDevice(device);
   const bool pass = !mismatches && eventComplete && SUCCEEDED(lastError);
   std::printf("DDI_DRAW_PIXELS %s pixels=4096 mismatches=%u event=%d error=%08lx\n",

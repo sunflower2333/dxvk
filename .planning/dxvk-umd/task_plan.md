@@ -25,6 +25,11 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- Native allocation CI34594671352 compiled implementation but its fixture
+  used DoNotWait, absent from D3DDDICB_LOCKFLAGS. Confirm exact SDK spelling
+  before correcting the test. Upload/copy fix1f4595d CI34594094209 allPASS.
+- Constant-buffer patch had a documentation-context typo; the atomic patch
+  applied no files. Corrected the exact documentation line before reapplying.
 - Upload/copy828b535 CI34593487334 found WDK D3D10_DDI_BOX uses signed LONG,
   while D3D11_BOX uses UINT. Reject negative coordinates before explicit
   conversion; no potentially wrapped signed box can reach the backend.

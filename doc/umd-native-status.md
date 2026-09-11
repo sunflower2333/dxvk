@@ -26,6 +26,11 @@ single-sample RGBA8/BGRA8 Texture2D subresources, with mip/array/box bounds,
 usage and pitch checks. Empty boxes are no-ops. The device probe verifies an
 offset buffer update/copy byte-for-byte before drawing; target execution is pending.
 
+VS/PS constant-buffer binding supports owned buffers, explicit null unbinding
+and bounded slot ranges. The pixel probe now obtains its red color from a real
+constant buffer rather than a shader literal; Windows CPU CI still independently
+compiles and reflects the reconstructed shader container.
+
 Event, occlusion, timestamp and timestamp-disjoint query DDIs now use the
 embedded backend's actual query objects. Pending results become the DDI busy
 status, device loss is translated to the DDI removed status, and output is

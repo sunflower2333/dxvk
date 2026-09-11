@@ -12,7 +12,8 @@ float4 vs_main(uint id : SV_VertexID) : SV_Position {
   float2 xy = float2((id << 1) & 2, id & 2);
   return float4(xy * float2(2,-2) + float2(-1,1), 0, 1);
 }
-float4 ps_main() : SV_Target { return float4(1,0,0,1); }
+cbuffer PixelConstants : register(b0) { float4 pixelColor; };
+float4 ps_main() : SV_Target { return pixelColor; }
 )";
   Microsoft::WRL::ComPtr<ID3DBlob> shader, errors;
   HRESULT hr = D3DCompile(source, sizeof(source)-1, "umd-probe", nullptr, nullptr,

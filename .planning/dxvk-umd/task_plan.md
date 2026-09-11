@@ -6,6 +6,11 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+Diagnosis c40dc0dCI34615967837: selectedslice1/mip1expectedredff0000ff,
+actualoldgreenff00ff00; priorbase/otherslicecorrect. Originaloraclebasewas
+TYPELESS. SplitrequiredmiporacleontypedRGBA8withexplicitMIP_AUTOGENcapcheck,
+preserveoriginaltypelessviewtestsandallexactpixelchecks. ControlCIpending;
+do notclaimrootcauseuntiltypedcontrolruns. ef4b174ALL5PASS confirmed.
 URGENT: c9e389dCI34615423153 x86/x64 compilePASS butWARPviewcheck391
 pixelmismatch. Addedsubresource/coordinate/expected/actualdiagnostics;
 localizebeforechangingproductionorclaimingMipvalidation. ARM64buildpending.

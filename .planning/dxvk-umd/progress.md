@@ -1,5 +1,12 @@
 # Progress
 
+2026-09-11: ef4b174 CI34615056755 ALL5PASS. c40dc0d diagnostics show old
+green mip1 untouched, not a rounding error. Read official GenerateMips typed
+format/support contract; changed the mip oracle to an isolated typed RGBA8
+resource with queried MIP_AUTOGEN, preserving old typeless clear/sample tests
+and exact all-pixel assertions. Input descriptor/cap fields are now logged.
+Typed control result pending; production c9e389d GenMips code unchanged.
+
 2026-09-11: c9e389dCI34615423153 x64/x86 compile production and test but
 WARP view fixture fails check391 pixels. Prior ef4b174 x64/x86 bothPASS.
 Added first mismatch subresource/coordinate/expected/actual and stage labels

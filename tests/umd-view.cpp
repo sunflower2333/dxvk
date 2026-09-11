@@ -53,7 +53,7 @@ int main() {
   mipResource.MiscFlags = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP;
   UINT mipFlags = 0;
   CHECK(textureMiscFlags(mipResource, mipFlags) && mipFlags == D3D11_RESOURCE_MISC_GENERATE_MIPS);
-  resource.MiscFlags = mipFlags;
+  const UINT autoMipFlags = mipFlags;
   auto invalidMip = mipResource; invalidMip.ResourceDimension = D3D10DDIRESOURCE_BUFFER;
   CHECK(!textureMiscFlags(invalidMip, mipFlags) && mipFlags == 0);
   invalidMip = mipResource; invalidMip.BindFlags = D3D10_DDI_BIND_SHADER_RESOURCE;
@@ -72,13 +72,14 @@ int main() {
   D3D11_SHADER_RESOURCE_VIEW_DESC srv = {};
   CHECK(textureShaderView(native, resource, srv));
   CHECK(srv.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2DARRAY);
-  CHECK(mipGenerationStatus(resource, srv) == S_OK);
+  auto automaticMip = resource; automaticMip.MiscFlags = autoMipFlags;
+  CHECK(mipGenerationStatus(automaticMip, srv) == S_OK);
   auto missingMipFlag = resource; missingMipFlag.MiscFlags = 0;
   CHECK(mipGenerationStatus(missingMipFlag, srv) == E_FAIL);
   auto invalidMipView = srv; invalidMipView.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DMS;
-  CHECK(mipGenerationStatus(resource, invalidMipView) == E_INVALIDARG);
+  CHECK(mipGenerationStatus(automaticMip, invalidMipView) == E_INVALIDARG);
   invalidMipView = srv; invalidMipView.Texture2DArray.ArraySize = UINT(-1);
-  CHECK(mipGenerationStatus(resource, invalidMipView) == E_INVALIDARG);
+  CHECK(mipGenerationStatus(automaticMip, invalidMipView) == E_INVALIDARG);
   auto bad = native; bad.Tex2D.ArraySize = UINT(-1);
   CHECK(!textureShaderView(bad, resource, srv));
   bad = native; bad.Tex2D.FirstArraySlice = UINT(-1);
@@ -175,26 +176,44 @@ int main() {
   context->ClearRenderTargetView(targetView.Get(), green);
   for (UINT i = 0; i < 4; i++) pixels(device.Get(), context.Get(), texture.Get(), i, i == 3 ? 0xff00ff00 : 0);
 
-  // Generate only slice1 from its selected top mip. Slice0 must remain zero,
-  // and the old green mip1 must become the new base mip's red value.
+  // The Microsoft WARP oracle must use an explicitly supported typed base
+  // format. WARP left a typeless base's lower mip unchanged in the previous
+  // fixture. Keep that resource's separate typeless-view tests intact.
+  auto generationResource = resource;
+  generationResource.Format = native.Format;
+  generationResource.MiscFlags = autoMipFlags;
+  UINT generationSupport = 0;
+  CHECK(device->CheckFormatSupport(generationResource.Format, &generationSupport) == S_OK);
+  CHECK(generationSupport & D3D11_FORMAT_SUPPORT_MIP_AUTOGEN);
+  ComPtr<ID3D11Texture2D> generatedTexture;
+  CHECK(device->CreateTexture2D(&generationResource, data, &generatedTexture) == S_OK);
+  ComPtr<ID3D11RenderTargetView> oldMipView;
+  CHECK(device->CreateRenderTargetView(generatedTexture.Get(), &rtv, &oldMipView) == S_OK);
+  context->ClearRenderTargetView(oldMipView.Get(), green);
+  // Generate only slice1. Slice0 must remain zero and the old green mip1
+  // must become the selected base mip's red value, checked pixel for pixel.
   auto baseTarget = nativeTarget; baseTarget.Tex2D.MipSlice = 0;
   D3D11_RENDER_TARGET_VIEW_DESC baseDesc = {};
-  CHECK(textureTargetView(baseTarget, resource, baseDesc));
+  CHECK(textureTargetView(baseTarget, generationResource, baseDesc));
   ComPtr<ID3D11RenderTargetView> baseView;
-  CHECK(device->CreateRenderTargetView(texture.Get(), &baseDesc, &baseView) == S_OK);
+  CHECK(device->CreateRenderTargetView(generatedTexture.Get(), &baseDesc, &baseView) == S_OK);
   const FLOAT red[4] = {1, 0, 0, 1};
   context->ClearRenderTargetView(baseView.Get(), red);
   auto generation = native; generation.Tex2D.MostDetailedMip = 0; generation.Tex2D.MipLevels = 2;
   D3D11_SHADER_RESOURCE_VIEW_DESC generationDesc = {};
-  CHECK(textureShaderView(generation, resource, generationDesc));
-  CHECK(mipGenerationStatus(resource, generationDesc) == S_OK);
+  CHECK(textureShaderView(generation, generationResource, generationDesc));
+  CHECK(mipGenerationStatus(generationResource, generationDesc) == S_OK);
   ComPtr<ID3D11ShaderResourceView> generationView;
-  CHECK(device->CreateShaderResourceView(texture.Get(), &generationDesc, &generationView) == S_OK);
+  CHECK(device->CreateShaderResourceView(generatedTexture.Get(), &generationDesc, &generationView) == S_OK);
+  D3D11_TEXTURE2D_DESC actualResource = {}; generatedTexture->GetDesc(&actualResource);
+  D3D11_SHADER_RESOURCE_VIEW_DESC actualGenerationView = {}; generationView->GetDesc(&actualGenerationView);
+  std::printf("WARP_MIP_INPUT format=%u misc=%u support=%x first_mip=%u mips=%u first_slice=%u slices=%u\n",
+    actualResource.Format, actualResource.MiscFlags, generationSupport,
+    actualGenerationView.Texture2DArray.MostDetailedMip, actualGenerationView.Texture2DArray.MipLevels,
+    actualGenerationView.Texture2DArray.FirstArraySlice, actualGenerationView.Texture2DArray.ArraySize);
   context->GenerateMips(generationView.Get());
   std::puts("WARP_VIEW_STAGE generated-mip-array");
-  for (UINT i = 0; i < 4; i++) pixels(device.Get(), context.Get(), texture.Get(), i, i >= 2 ? 0xff0000ff : 0);
-  // Preserve the following independent sampling case's original expectation.
-  context->ClearRenderTargetView(targetView.Get(), green);
+  for (UINT i = 0; i < 4; i++) pixels(device.Get(), context.Get(), generatedTexture.Get(), i, i >= 2 ? 0xff0000ff : 0);
 
   // Read relative slice0/mip0 through a view selecting absolute slice1/mip1.
   const char* vertex = "float4 main(uint i:SV_VertexID):SV_Position { return float4((i==1)?3:-1,(i==2)?-3:1,0,1); }";

@@ -1,5 +1,14 @@
 # Findings
 
+- c40dc0d WARP diagnostics prove the selected array's mip1 remains its old
+  green valueff00ff00 after GenerateMips; the base is correctly red and other
+  slice remains zero. Oracle resource was typeless. Microsoft GenerateMips
+  documents typed supported formats and silent failure for unsupported ones.
+  Split mip generation onto a separate typed RGBA8 base with an explicit
+  MIP_AUTOGEN cap check, preserving every original typeless-view test and
+  every exact mip pixel assertion. This control is pending; typeless base
+  behavior is a WARP observation, not a newly claimed DXVK limitation.
+
 - Native GenMips requires D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP, not a guessed
   D3D10 API flag name. DXVK already emits GPU mip blits for the precise SRV
   range. Add native flag validation and callback, checking required bind

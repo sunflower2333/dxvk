@@ -44,19 +44,18 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-      - name: Compile real HLSL, rebuild DDI shader containers and reflect them
+      - name: Compile real HLSL and verify reconstructed DXBC and SPIR-V interfaces
         shell: pwsh
         run: |
-          cl /nologo /std:c++17 /EHsc /O1 /Isubprojects/dxbc-spirv `
+          python -m pip install meson ninja
+          if ($LASTEXITCODE) { throw 'Shader build dependency installation failed' }
+          meson setup build-shader subprojects/dxbc-spirv --buildtype release -Denable_sm3=false
+          if ($LASTEXITCODE) { throw 'Shader compiler configure failed' }
+          ninja -C build-shader
+          if ($LASTEXITCODE) { throw 'Shader compiler library build failed' }
+          cl /nologo /std:c++17 /EHsc /O1 /DVIOGPU_SHADER_SPIRV_TEST /Isubprojects/dxbc-spirv `
             tests/umd-shader-container.cpp src/umd/umd_shader.cpp `
-            subprojects/dxbc-spirv/dxbc/dxbc_container.cpp `
-            subprojects/dxbc-spirv/dxbc/dxbc_parser.cpp `
-            subprojects/dxbc-spirv/dxbc/dxbc_signature.cpp `
-            subprojects/dxbc-spirv/dxbc/dxbc_types.cpp `
-            subprojects/dxbc-spirv/ir/ir.cpp `
-            subprojects/dxbc-spirv/util/util_swizzle.cpp `
-            subprojects/dxbc-spirv/util/util_log.cpp `
-            subprojects/dxbc-spirv/util/util_md5.cpp `
+            build-shader/dxbc_spv.lib `
             d3dcompiler.lib /Fe:shader-cpu-test.exe
           if ($LASTEXITCODE) { throw 'Shader CPU test compile failed' }
           ./shader-cpu-test.exe

@@ -1,5 +1,32 @@
 # Findings
 
+- Critical shader-signature bug discovered by full SPIR-V CI: SignatureEntry
+  constructor stores the supplied component mask verbatim. ISGN low byte is
+  declared components; high byte is components read. Previously only low bits
+  were written. IoMap::declareIoSignatureVars therefore removed all typed
+  inputs and generated implicit float fallback variables. Set both bytes for
+  every input, preserving output's inverse used-mask convention. This matters
+  for typed vertex inputs as well as new flat PS linkage; plain reflection of
+  ComponentType alone was insufficient evidence. Fix needs newCI/runtime proof.
+
+- Native format-query audit found a significant boundary: D3D10's
+  NOT_SUPPORTED bit is legal only for Microsoft's listed optional formats,
+  not a generic marker for every unfinished DXVK format. SHADER_SAMPLE means
+  any-filter sampling, and sampleCount1 always returns one quality level.
+  Do not copy backend D3D11 capability bits or Mesa's broad unsupported-format
+  behavior into a new native table; restrict responses to implemented paths.
+- Windows fast8f7bce4 real-HLSL/reflection job103271026075 passed148checks.
+  Full architecture/SPIR-V jobs remain active. Local extra syntax check
+  initially lacked the pinned nested SPIRV-Headers; populated only that
+  existing dependency recursively with --depth1 (no source pin changes).
+
+- Parent's final seven-api-round-01 trace for272:84873lines, zero loss,
+  GPUfault0 and dmesgGPUfault/timeout before0/after0; all observed submissions
+  retired, pending0. DXVK timed lifetimes39:14=1/1 and39:16=3/3; these are
+  host submission observations, not hardware-busy/utilization measurements.
+  Post-API Explorer sweep3/3 retained2028/5780 and Application108540 unchanged.
+  Shared evidence is chat/2026-09-11-seven-workstreams-acceptance.md.
+
 - Linkage implementation will normalize generic VS outputs and PS inputs by
   register/mask. Pixel dcl_input_ps interpolation selects F32 for interpolated
   data or raw U32 for flat data; both stages must agree. Reject incomplete or

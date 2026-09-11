@@ -23,14 +23,24 @@ bool makeCodeChunk(ShaderStage stage, const uint32_t* code, size_t words,
     return false;
   // Bound each instruction before giving it to the upstream parser. The
   // parser accepts unknown opcodes with an empty layout, so it is not by
-  // itself an SM4 bytecode validator. Custom-data/ICB reconstruction remains
-  // outside this initial profile.
+  // itself an SM4 bytecode validator. Custom-data lengths are stored in
+  // the second dword, unlike ordinary opcode lengths. Preserve their bytes.
+  bool hasImmediateConstants = false;
   for (size_t offset = 2; offset < words;) {
     const uint32_t opcode = code[offset] & 0x7ff;
-    const uint32_t count = (code[offset] >> 24) & 0x7f;
-    if (opcode > uint32_t(dxbc::OpCode::eDclGlobalFlags) ||
-        opcode == uint32_t(dxbc::OpCode::eCustomData) || !count || count > words - offset)
-      return false;
+    uint32_t count = (code[offset] >> 24) & 0x7f;
+    if (opcode > uint32_t(dxbc::OpCode::eDclGlobalFlags)) return false;
+    if (opcode == uint32_t(dxbc::OpCode::eCustomData)) {
+      if (words - offset < 2) return false;
+      count = code[offset + 1];
+      if (count < 2 || count > words - offset) return false;
+      const auto type = dxbc::CustomDataType(code[offset] >> 11);
+      if (type == dxbc::CustomDataType::eDclIcb) {
+        if (hasImmediateConstants || count < 6 || (count - 2) % 4) return false;
+        hasImmediateConstants = true;
+      } else if (type != dxbc::CustomDataType::eComment && type != dxbc::CustomDataType::eDebugInfo)
+        return false;
+    } else if (!count || count > words - offset) return false;
     offset += count;
   }
   util::ByteWriter chunk;
@@ -182,7 +192,7 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
         const auto& entry = inputs[i];
         if (entry.systemValue == 6) {
           if (entry.mask != 1) return false;
-          input.add(dxbc::SignatureEntry("SV_VertexID", 0, entry.registerIndex, 0, 1,
+          input.add(dxbc::SignatureEntry("SV_VertexID", 0, entry.registerIndex, 0, 0x101,
             dxbc::SignatureSysval::eVertexId, ir::ScalarType::eU32));
         } else if (entry.systemValue == 0) {
           const auto type = scalarType(entry.scalar);
@@ -190,7 +200,7 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
           // Both native shader and input layout use register-index semantics.
           // There is no attempt to reconstruct the app's original names.
           input.add(dxbc::SignatureEntry(inputRegisterSemantic, entry.registerIndex, entry.registerIndex,
-            0, entry.mask, dxbc::SignatureSysval::eNone, type));
+            0, uint32_t(entry.mask) | (uint32_t(entry.mask) << 8), dxbc::SignatureSysval::eNone, type));
         } else return false;
       }
       bool position = false;
@@ -217,7 +227,8 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
       if (!resolvePixelInputs(code, words, inputs, inputCount, resolved)) return false;
       for (const auto& entry : resolved) {
         input.add(dxbc::SignatureEntry(entry.systemValue ? "SV_Position" : varyingRegisterSemantic,
-          entry.systemValue ? 0 : entry.registerIndex, entry.registerIndex, 0, entry.mask,
+          entry.systemValue ? 0 : entry.registerIndex, entry.registerIndex, 0,
+          uint32_t(entry.mask) | (uint32_t(entry.mask) << 8),
           entry.systemValue ? dxbc::SignatureSysval::ePosition : dxbc::SignatureSysval::eNone,
           scalarType(entry.scalar)));
       }

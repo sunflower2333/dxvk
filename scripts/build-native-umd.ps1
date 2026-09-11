@@ -34,7 +34,7 @@ endian = 'little'
 "@ | Set-Content native-umd-cross.ini
 meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Denable_umd=true -Denable_d3d8=false -Denable_d3d9=false -Denable_d3d10=false
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
-ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe
+ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe src/umd/dxvk-umd-shader-test.exe
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
 ninja -C build-umd src/umd/viogpudxvk.dll.p/umd_ddi.cpp.obj src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
 if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
@@ -48,13 +48,11 @@ if ($arch -ne 'arm64') {
     if ($LASTEXITCODE) { throw 'Query completion test failed' }
     & build-umd/src/umd/dxvk-umd-allocation-test.exe | Tee-Object (Join-Path $OutputDirectory 'allocation-test.txt')
     if ($LASTEXITCODE) { throw 'Runtime allocation/presentation test failed' }
-}
-ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe src/umd/viogpudxvk.dll src/umd/dxvk-umd-ddi-probe.exe src/umd/dxvk-umd-shader-test.exe
-if ($LASTEXITCODE) { throw 'DXVK UMD development build failed' }
-if ($arch -ne 'arm64') {
     & build-umd/src/umd/dxvk-umd-shader-test.exe | Tee-Object (Join-Path $OutputDirectory 'shader-test.txt')
     if ($LASTEXITCODE) { throw 'Native shader reconstruction test failed' }
 }
+ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe src/umd/viogpudxvk.dll src/umd/dxvk-umd-ddi-probe.exe
+if ($LASTEXITCODE) { throw 'DXVK UMD development build failed' }
 foreach ($name in @('viogpudxvk.dll', 'dxvk-umd-backend-probe.exe', 'dxvk-umd-ddi-probe.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
     $imports = & dumpbin /imports $path | Out-String

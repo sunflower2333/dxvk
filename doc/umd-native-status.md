@@ -76,9 +76,15 @@ values. The active pixel shader determines the matching vertex output variant;
 unmatched registers/components fail before drawing. Native register-index
 semantics preserve linkage without guessing application names. Original shader
 tokens remain byte-for-byte intact with the proper DXBC checksum. Packed
-mixed-type registers, other system values/stages, custom data and additional
+mixed-type registers, other system values/stages and additional
 render targets are still rejected. The linkage extension is newer than the
 target-tested272a067 checkpoint and needs its own CI and device validation.
+
+Immediate constant-buffer blocks and inert comment/debug blocks are accepted
+with their distinct second-dword length encoding and unchanged payloads.
+Duplicate, empty, truncated or non-vec4-aligned immediate buffers and unknown
+custom-data classes fail before compilation. The linked GPU probe also reads
+its flat integer payload from a dynamically indexed immediate lookup table.
 
 Native input-layout and vertex-buffer DDIs now map numeric input registers to
 the same generated semantics on both sides of DXVK's API boundary. The initial

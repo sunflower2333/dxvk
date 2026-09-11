@@ -67,10 +67,14 @@ struct Varyings {
   nointerpolation float4 rawFloats : TEXCOORD2;
 };
 Varyings vs_main(float2 position : POSITION) {
+  static const uint4 patterns[3] = {
+    uint4(0x80000000,0xfedcba98,0xffffffff,1),
+    uint4(4,3,2,1), uint4(8,7,6,5)
+  };
   Varyings value;
   value.position = float4(position, 0, 1);
   value.uv = position * float2(0.5,-0.5) + 0.5;
-  value.bits = uint4(0x80000000,0xfedcba98,0xffffffff,1);
+  value.bits = patterns[min((uint)max(position.x,0),2)];
   value.rawFloats = asfloat(uint4(0x7fc01234,0x80000000,0x7f800000,0xff800000));
   return value;
 }
@@ -107,4 +111,16 @@ float4 ps_main(Varyings value) : SV_Target {
     }
   }
   return true;
+}
+
+inline bool compileImmediateProbeShader(std::vector<uint32_t>& tokens) {
+  constexpr char source[] = R"(
+float4 vs_main(uint id : SV_VertexID) : SV_Position {
+  static const float4 positions[3] = {
+    float4(-1,1,0,1), float4(3,1,0,1), float4(-1,-3,0,1)
+  };
+  return positions[id % 3];
+}
+)";
+  return compileHlslTokens(source,"vs_main","vs_4_0",tokens);
 }

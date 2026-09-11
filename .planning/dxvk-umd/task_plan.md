@@ -17,6 +17,8 @@ Main ran standalone272a067 with LUID2A58000000000000: backend/DDI/native-copy
 ALL PASS. Real KMT backing and GPU pixels verified; Microsoft runtime and
 display Present remain unproven. No unchanged probe rerun needed.
 Continue general SM4 VS/PS varying linkage with independently checked types.
+New linkage8f7bce4 CI34601912517 running: local102shader checksPASS;
+Windows real-HLSL and final SPIR-V interface checks remain pending.
 Continue remaining mandatory resource/shader/primary/shared DDIs;
 main explicitly asks not to stop at CPU OpenAdapter harness.
 
@@ -33,6 +35,11 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- Full8f7bce4 x64 SPIR-V check558 failed after148HLSL/reflection checks passed.
+  Source review found rebuilt ISGN component masks omitted the high-byte
+  read-use bits. dxbc IoMap masked typed inputs tozero then used its implicit
+  float fallback. Set input read-use masks explicitly; output mask semantics
+  remain unchanged. New CPU checks and earlier full-SPIR-V CI gate added.
 - General linkage intentionally permits SV_Position at nonzero registers;
   old test35 still asserted that it must fail. Updated that obsolete case to
   reject register32 and added positive nonzero-position linkage coverage.

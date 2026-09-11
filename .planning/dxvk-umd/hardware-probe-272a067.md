@@ -23,7 +23,11 @@ Backend exit0/224ms verified4096magenta pixels; native DDI exit0/195ms
 verified64-byte copy, occlusion0/4096/0,4096red pixels/event1/error0 and
 actual KMT allocation publication4096pixels. All mismatches0 and exact
 binary hashes matched. DWM2028/Explorer5780 retained, no new appfault or
-timeout. Host retire/fault trace summary is pending from parent.
+timeout. Parent's host trace seven-api-round-01 reports84873lines/zero loss,
+GPUfault0, all observed submissions retired/pending0, dmesgGPUfault/timeout
+before0/after0. DXVK timed context lifetimes39:14=1/1 and39:16=3/3 retired;
+these are host observations, not GPU utilization measurements. Post-API
+Explorer sweep3/3 retained2028/5780 and Application108540 unchanged.
 These are standalone/backend/DDI/backing results, not Microsoft runtime
 activation, native application acceptance or display Present evidence.
 

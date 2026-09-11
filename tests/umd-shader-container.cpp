@@ -15,7 +15,11 @@
 
 using namespace dxvk::umd;
 static unsigned checks;
-static void check(bool value) { checks++; if (!value) { std::fprintf(stderr, "failed check %u\n", checks); std::abort(); } }
+static void checkAt(bool value, unsigned line) {
+  checks++;
+  if (!value) { std::fprintf(stderr,"failed check %u line=%u\n",checks,line); std::abort(); }
+}
+#define check(...) checkAt((__VA_ARGS__), __LINE__)
 
 #ifdef VIOGPU_SHADER_SPIRV_TEST
 static void checkSpirvInterface(const std::vector<unsigned char>& binary, bool vertex,
@@ -75,6 +79,9 @@ static void checkSpirvInterface(const std::vector<unsigned char>& binary, bool v
       check(type < ids.size());
       uint32_t components = 1;
       if (ids[type].kind == spv::OpTypeVector) { components = ids[type].count; type = ids[type].base; }
+      std::fprintf(stderr,"SPIRV_INTERFACE stage=%s register=%u components=%u mask=%u kind=%u width=%u flat=%u expected=%u\n",
+        vertex ? "VS" : "PS",entry.registerIndex,components,unsigned(entry.mask),unsigned(ids[type].kind),
+        ids[type].width,unsigned(id.flat),unsigned(entry.scalar));
       check(type < ids.size() && ids[type].width == 32);
       const bool raw = entry.scalar == ShaderScalar::Uint32;
       check(ids[type].kind == (raw ? spv::OpTypeInt : spv::OpTypeFloat));
@@ -82,6 +89,8 @@ static void checkSpirvInterface(const std::vector<unsigned char>& binary, bool v
       check(components == unsigned((entry.mask & 1) + ((entry.mask >> 1) & 1) +
         ((entry.mask >> 2) & 1) + ((entry.mask >> 3) & 1)));
     }
+    if (matches != 1) std::fprintf(stderr,"SPIRV_INTERFACE stage=%s register=%u matches=%u\n",
+      vertex ? "VS" : "PS",entry.registerIndex,matches);
     check(matches == 1);
   }
 }
@@ -103,6 +112,7 @@ int main() {
   check(signature.begin() != signature.end());
   check(signature.begin()->getScalarType() == dxbc_spv::ir::ScalarType::eU32);
   check(signature.begin()->getSystemValue() == dxbc_spv::dxbc::SignatureSysval::eVertexId);
+  check(uint8_t(signature.begin()->getUsedComponentMask()) == 1);
   for (size_t n = 0; n < 3; n++)
     check(!buildShaderContainer(ShaderStage::Vertex, code, n, &input, 1, &output, 1, binary) && binary.empty());
   check(!buildShaderContainer(ShaderStage::Vertex, nullptr, 3, &input, 1, &output, 1, binary));
@@ -145,6 +155,7 @@ int main() {
     check(entry != typedSignature.end());
     check(entry->getRegisterIndex() == int32_t(typedInputs[i].registerIndex));
     check(entry->getScalarType() == expectedTypes[i]);
+    check(uint8_t(entry->getUsedComponentMask()) == typedInputs[i].mask);
   }
   typedInputs[0].scalar = ShaderScalar::Unknown;
   check(!buildShaderContainer(ShaderStage::Vertex, code, 3, typedInputs, 3, &output, 1, binary));
@@ -204,6 +215,7 @@ int main() {
     auto entry = varyingSignature.findSemantic(0,varyingRegisterSemantic,3);
     check(entry != varyingSignature.end() && entry->getRegisterIndex() == 3 &&
       entry->getScalarType() == (mode == 1 ? dxbc_spv::ir::ScalarType::eU32 : dxbc_spv::ir::ScalarType::eF32));
+    check(uint8_t(entry->getUsedComponentMask()) == 3);
   }
   for (uint32_t mode : {0u,8u,15u}) {
     pixelCode[2] = 0x03000062 | (mode << 11);
@@ -221,6 +233,27 @@ int main() {
   check(!resolvePixelInputs(pixelCode,5,&varying,1,resolved));
   uint32_t conflicting[] = {0x40,9,0x03001062,0x00101012,3,0x03000862,0x00101022,3,0x0100003e};
   check(!resolvePixelInputs(conflicting,9,&varying,1,resolved));
+  uint32_t immediate[] = {0x10040,9,0x1835,6,0x7fc01234,0x80000000,0x7f800000,0xff800000,0x0100003e};
+  ShaderSignatureEntry immediateOutput = {1,0,15};
+  check(buildShaderContainer(ShaderStage::Vertex,immediate,9,nullptr,0,&immediateOutput,1,binary));
+  dxbc_spv::dxbc::Container immediateContainer(binary.data(),binary.size());
+  check(immediateContainer.validateHash() && !std::memcmp(immediateContainer.getCodeChunk().getData(8),
+    immediate,sizeof(immediate)));
+  for (uint32_t length : {0u,1u,2u,3u,5u,7u,8u,0xffffffffu}) {
+    immediate[3] = length;
+    check(!buildShaderContainer(ShaderStage::Vertex,immediate,9,nullptr,0,&immediateOutput,1,binary));
+  }
+  immediate[3] = 6;
+  for (uint32_t type : {2u,4u,5u,0x1fffffu}) {
+    immediate[2] = (type << 11) | 0x35;
+    check(!buildShaderContainer(ShaderStage::Vertex,immediate,9,nullptr,0,&immediateOutput,1,binary));
+  }
+  for (uint32_t type : {0u,1u}) {
+    immediate[2] = (type << 11) | 0x35;
+    check(buildShaderContainer(ShaderStage::Vertex,immediate,9,nullptr,0,&immediateOutput,1,binary));
+  }
+  uint32_t duplicateIcb[] = {0x10040,15,0x1835,6,1,2,3,4,0x1835,6,5,6,7,8,0x0100003e};
+  check(!buildShaderContainer(ShaderStage::Vertex,duplicateIcb,15,nullptr,0,&immediateOutput,1,binary));
 #ifdef _WIN32
   for (bool vertex : {true, false}) {
     std::vector<uint32_t> compiled;
@@ -296,6 +329,21 @@ int main() {
     checkSpirvInterface(binary,vertex,vertex ? linked : resolved);
 #endif
   }
+  std::vector<uint32_t> immediateTokens;
+  check(compileImmediateProbeShader(immediateTokens));
+  bool hasIcb = false;
+  for (size_t i = 2; i < immediateTokens.size();) {
+    if ((immediateTokens[i] & 0x7ff) == 0x35) {
+      hasIcb |= (immediateTokens[i] >> 11) == 3;
+      i += immediateTokens[i+1];
+    } else i += (immediateTokens[i] >> 24) & 0x7f;
+  }
+  check(hasIcb);
+  check(buildShaderContainer(ShaderStage::Vertex,immediateTokens.data(),immediateTokens.size(),
+    &input,1,&immediateOutput,1,binary));
+#ifdef VIOGPU_SHADER_SPIRV_TEST
+  checkSpirvInterface(binary,true,{});
+#endif
 #endif
   std::printf("shader container validation PASS checks=%u\n", checks);
 }

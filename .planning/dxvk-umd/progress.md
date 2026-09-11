@@ -50,6 +50,14 @@ One read guessed tests/umd-ddi.cpp; actual file is umd-ddi-probe.cpp.
 signed rectangles. Probe enables scissoring and requires its bound64x64
 rectangle, alongside new indexed/additive-blend pixel path. CI pending.
 
+2026-09-11: Following8f7bce4, added bounded immediate-constant-buffer and inert
+comment/debug block preservation. The ordinary-opcode length field must not
+be used for these blocks: their second dword carries full length. Added
+truncation/alignment/duplicate/unknown-class tests, real-HLSL dynamic lookup
+and GPU-probe lookup-table usage. Local shader119PASS; new WindowsCI pending.
+An initial patch context missed the word 'itself'; no files were changed until
+the exact-context retry succeeded.
+
 2026-09-11: Implemented generic VS/PS register linkage, typed producer variants
 and pixel declaration-derived interpolation/raw32 types. Added real-HLSL
 probe with interpolated UV validation plus flat unsigned and NaN/-0/Inf bit

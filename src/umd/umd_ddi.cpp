@@ -238,6 +238,85 @@ void APIENTRY copyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, D3D10DDI_
   if (owned(device, get(dst)) && owned(device, get(src)))
     device->context->CopyResource(get(dst)->backend.Get(), get(src)->backend.Get());
 }
+
+struct SubresourceInfo {
+  UINT width = 0, height = 1;
+  D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
+  DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+  D3D11_USAGE usage = D3D11_USAGE_DEFAULT;
+  UINT bindings = 0;
+};
+bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
+  resource->backend->GetType(&info.dimension);
+  if (info.dimension == D3D11_RESOURCE_DIMENSION_BUFFER) {
+    if (index) return false;
+    ComPtr<ID3D11Buffer> buffer;
+    if (FAILED(resource->backend.As(&buffer))) return false;
+    D3D11_BUFFER_DESC desc = {}; buffer->GetDesc(&desc);
+    info.width = desc.ByteWidth; info.usage = desc.Usage; info.bindings = desc.BindFlags;
+    return true;
+  }
+  if (info.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
+    ComPtr<ID3D11Texture2D> texture;
+    if (FAILED(resource->backend.As(&texture))) return false;
+    D3D11_TEXTURE2D_DESC desc = {}; texture->GetDesc(&desc);
+    if (!desc.MipLevels || index / desc.MipLevels >= desc.ArraySize || desc.SampleDesc.Count != 1)
+      return false;
+    const UINT mip = index % desc.MipLevels;
+    info.width = desc.Width >> mip; if (!info.width) info.width = 1;
+    info.height = desc.Height >> mip; if (!info.height) info.height = 1;
+    info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
+    return info.format == DXGI_FORMAT_R8G8B8A8_UNORM || info.format == DXGI_FORMAT_B8G8R8A8_UNORM;
+  }
+  return false;
+}
+bool subresourceBox(const SubresourceInfo& info, const D3D10_DDI_BOX* input, D3D11_BOX& box) {
+  box = input ? D3D11_BOX{input->left, input->top, input->front, input->right, input->bottom, input->back}
+              : D3D11_BOX{0, 0, 0, info.width, info.height, 1};
+  return box.left <= box.right && box.top <= box.bottom && box.front <= box.back
+      && box.right <= info.width && box.bottom <= info.height && box.back <= 1;
+}
+void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstIndex,
+    UINT x, UINT y, UINT z, D3D10DDI_HRESOURCE src, UINT srcIndex, const D3D10_DDI_BOX* input) {
+  auto device = get(h);
+  if (!owned(device, get(dst)) || !owned(device, get(src))) return;
+  SubresourceInfo source, destination; D3D11_BOX box;
+  if (!subresourceInfo(get(src), srcIndex, source) || !subresourceInfo(get(dst), dstIndex, destination)
+      || source.dimension != destination.dimension || source.format != destination.format
+      || destination.usage == D3D11_USAGE_IMMUTABLE || !subresourceBox(source, input, box)) {
+    device->error(E_INVALIDARG); return;
+  }
+  if (box.left == box.right || box.top == box.bottom || box.front == box.back) return;
+  if ((get(src)->backend.Get() == get(dst)->backend.Get() && srcIndex == dstIndex)
+      || x > destination.width || box.right - box.left > destination.width - x
+      || y > destination.height || box.bottom - box.top > destination.height - y || z) {
+    device->error(E_INVALIDARG); return;
+  }
+  try {
+    device->context->CopySubresourceRegion(get(dst)->backend.Get(), dstIndex, x, y, z,
+      get(src)->backend.Get(), srcIndex, input ? &box : nullptr);
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY updateResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT index,
+    const D3D10_DDI_BOX* input, const void* source, UINT rowPitch, UINT depthPitch) {
+  auto device = get(h);
+  if (!owned(device, get(dst))) return;
+  SubresourceInfo destination; D3D11_BOX box;
+  if (!subresourceInfo(get(dst), index, destination) || destination.usage != D3D11_USAGE_DEFAULT
+      || !subresourceBox(destination, input, box)
+      || (input && (destination.bindings & D3D11_BIND_CONSTANT_BUFFER))) {
+    device->error(E_INVALIDARG); return;
+  }
+  if (box.left == box.right || box.top == box.bottom || box.front == box.back) return;
+  if (!source || (destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D
+      && rowPitch < (box.right - box.left) * 4)) { device->error(E_INVALIDARG); return; }
+  try {
+    device->context->UpdateSubresource(get(dst)->backend.Get(), index, input ? &box : nullptr,
+      source, rowPitch, depthPitch);
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
 void APIENTRY mapResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource,
     UINT subresource, D3D10_DDI_MAP type, UINT flags, D3D10DDI_MAPPED_SUBRESOURCE* out) {
   auto device = get(h);
@@ -418,6 +497,8 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnDestroyRenderTargetView = destroyTarget;
   table->pfnClearRenderTargetView = clearTarget;
   table->pfnResourceCopy = copyResource;
+  table->pfnResourceCopyRegion = copyRegion;
+  table->pfnResourceUpdateSubresourceUP = updateResource;
   table->pfnCalcPrivateQuerySize = querySize;
   table->pfnCreateQuery = createQuery;
   table->pfnDestroyQuery = destroyQuery;

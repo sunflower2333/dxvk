@@ -5,11 +5,58 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <array>
 
 static HRESULT lastError = S_OK;
 static void APIENTRY setError(D3D10DDI_HRTCORELAYER, HRESULT error) { lastError = error; }
 using Memory = std::unique_ptr<void, decltype(&std::free)>;
 static Memory allocate(size_t size) { return Memory(std::calloc(1, size), &std::free); }
+
+struct ProbeResource {
+  D3D10DDI_HDEVICE device;
+  const D3D10DDI_DEVICEFUNCS& functions;
+  Memory memory;
+  D3D10DDI_HRESOURCE handle;
+  ProbeResource(D3D10DDI_HDEVICE device, const D3D10DDI_DEVICEFUNCS& functions,
+      const D3D10DDIARG_CREATERESOURCE& desc)
+  : device(device), functions(functions),
+    memory(allocate(functions.pfnCalcPrivateResourceSize(device, &desc))), handle{memory.get()} {
+    if (handle.pDrvPrivate) functions.pfnCreateResource(device, &desc, handle, {});
+  }
+  ~ProbeResource() { if (handle.pDrvPrivate) functions.pfnDestroyResource(device, handle); }
+  ProbeResource(const ProbeResource&) = delete;
+  ProbeResource& operator=(const ProbeResource&) = delete;
+};
+
+static bool testBufferTransfers(D3D10DDI_HDEVICE device, const D3D10DDI_DEVICEFUNCS& functions) {
+  std::array<unsigned char, 64> zeros = {};
+  D3D10DDI_MIPINFO mip = {64,1,1,64,1,1};
+  D3D10_DDIARG_SUBRESOURCE_UP initial = {zeros.data(),64,64};
+  D3D10DDIARG_CREATERESOURCE desc = {};
+  desc.pMipInfoList = &mip; desc.pInitialDataUP = &initial;
+  desc.ResourceDimension = D3D10DDIRESOURCE_BUFFER; desc.Usage = D3D10_DDI_USAGE_DEFAULT;
+  desc.SampleDesc.Count = 1; desc.MipLevels = 1; desc.ArraySize = 1;
+  ProbeResource source(device, functions, desc);
+  desc.Usage = D3D10_DDI_USAGE_STAGING; desc.MapFlags = D3D10_DDI_CPU_ACCESS_READ;
+  ProbeResource destination(device, functions, desc);
+  if (!source.memory || !destination.memory || FAILED(lastError)) return false;
+  std::array<unsigned char, 16> pattern;
+  for (size_t i = 0; i < pattern.size(); i++) pattern[i] = static_cast<unsigned char>(0x70+i);
+  D3D10_DDI_BOX box = {4,0,0,20,1,1};
+  functions.pfnResourceUpdateSubresourceUP(device, source.handle, 0, &box, pattern.data(), 0, 0);
+  functions.pfnResourceCopyRegion(device, destination.handle, 0, 8, 0, 0, source.handle, 0, &box);
+  if (FAILED(lastError)) return false;
+  D3D10DDI_MAPPED_SUBRESOURCE mapped = {};
+  functions.pfnStagingResourceMap(device, destination.handle, 0, D3D10_DDI_MAP_READ, 0, &mapped);
+  if (FAILED(lastError) || !mapped.pData) return false;
+  unsigned mismatches = 0;
+  auto bytes = static_cast<const unsigned char*>(mapped.pData);
+  for (size_t i = 0; i < zeros.size(); i++)
+    mismatches += bytes[i] != (i >= 8 && i < 24 ? pattern[i-8] : 0);
+  functions.pfnStagingResourceUnmap(device, destination.handle, 0);
+  std::printf("DDI_BUFFER_COPY bytes=64 mismatches=%u\n", mismatches);
+  return !mismatches && SUCCEEDED(lastError);
+}
 
 // Explicit development harness: this callback reads the real KMD's private
 // data, but is not supplied by the Microsoft D3D runtime. No runtime handle
@@ -98,6 +145,7 @@ int main(int argc, char** argv) {
   }
   std::printf("DDI_CREATE hr=%08lx\n", static_cast<unsigned long>(hr));
   if (FAILED(hr)) return 4;
+  if (!testBufferTransfers(device, table)) { table.pfnDestroyDevice(device); return 13; }
   D3D10DDIARG_CREATEQUERY eventDesc = {D3D10DDI_QUERY_EVENT, 0};
   auto eventMemory = allocate(table.pfnCalcPrivateQuerySize(device, &eventDesc));
   if (!eventMemory) { table.pfnDestroyDevice(device); return 12; }

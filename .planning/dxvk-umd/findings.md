@@ -1,5 +1,16 @@
 # Findings
 
+- Present/shared-resource audit: DXVK D3D11CommonTexture::ExportImageInfo
+  uses D3DKMT_ESCAPE_UPDATE_RESOURCE_WINE and a legacy Proton metadata
+  fallback. Enabling its public shared MiscFlags is not a native VIOGPU
+  ownership implementation. The current Mesa Resource.cpp uses runtime
+  Allocate/Deallocate/Lock callbacks with VIOGPU private allocation data and
+  explicit GPU-cache/shared-backing transfer; DxgiFns.cpp passes real kernel
+  allocations to PresentCb. A native DXVK bridge must implement that owning
+  allocation path (or validated external-memory import), not reuse Wine's
+  metadata escape. Existing DXVK VkInterop can wrap VkImage on its own
+  device, but that alone supplies neither runtime allocation nor fences.
+
 - Microsoft QueryGetData DDI returns void and reports unfinished work via
   SetErrorCb(DXGI_DDI_ERR_WASSTILLDRAWING). Backend GetData returnsS_FALSE;
   treating that as ordinary success would expose incomplete query data.

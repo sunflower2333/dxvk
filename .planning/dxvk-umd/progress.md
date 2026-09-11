@@ -1,5 +1,12 @@
 # Progress
 
+2026-09-11: Implemented bounded ResourceUpdateSubresourceUP/CopyRegion for
+buffer and RGBA8/BGRA8 Texture2D subresources. GPU probe now performs an
+offset buffer update/copy and checks all64bytes before draw. Query commit
+bc31fb9 CI34592884124 ARM64PASS, x64/x86 still running. Main reports user's
+backup completed and existingVM now6GiB; only main resumes device actions,
+this agent stays isolated/local/CI until a coordinated window is granted.
+
 2026-09-11: Continued mandatory DDIs with four actual backend query types,
 begin/end/ownership, busy/removal status translation and no partial output
 publication. Added CPU completion-helper failure tests and required a real

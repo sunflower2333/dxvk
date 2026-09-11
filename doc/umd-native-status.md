@@ -21,6 +21,11 @@ belongs to the caller; objects retain an owning-device pointer and backend COM
 references. DDI CPU access and DO_NOT_WAIT bits are translated explicitly to
 the different D3D11 API bit values.
 
+ResourceUpdateSubresourceUP and ResourceCopyRegion support buffers and
+single-sample RGBA8/BGRA8 Texture2D subresources, with mip/array/box bounds,
+usage and pitch checks. Empty boxes are no-ops. The device probe verifies an
+offset buffer update/copy byte-for-byte before drawing; target execution is pending.
+
 Event, occlusion, timestamp and timestamp-disjoint query DDIs now use the
 embedded backend's actual query objects. Pending results become the DDI busy
 status, device loss is translated to the DDI removed status, and output is

@@ -162,7 +162,11 @@ int main(int argc, char** argv) {
       || !table.pfnCreateShaderResourceView || !table.pfnDestroyShaderResourceView || !table.pfnPsSetShaderResources
       || !table.pfnCalcPrivateSamplerSize || !table.pfnCreateSampler || !table.pfnDestroySampler || !table.pfnPsSetSamplers
       || !table.pfnCalcPrivateBlendStateSize || !table.pfnCreateBlendState || !table.pfnDestroyBlendState
-      || !table.pfnSetBlendState || !table.pfnIaSetIndexBuffer || !table.pfnDrawIndexed || !table.pfnSetScissorRects) {
+      || !table.pfnSetBlendState || !table.pfnIaSetIndexBuffer || !table.pfnDrawIndexed || !table.pfnSetScissorRects
+      || !table.pfnCalcPrivateDepthStencilViewSize || !table.pfnCreateDepthStencilView
+      || !table.pfnDestroyDepthStencilView || !table.pfnClearDepthStencilView || !table.pfnQueryBegin
+      || !table.pfnCalcPrivateDepthStencilStateSize || !table.pfnCreateDepthStencilState
+      || !table.pfnDestroyDepthStencilState || !table.pfnSetDepthStencilState) {
     std::fputs("Required development DDI absent; use the probe and DLL from one exact build\n", stderr);
     if (table.pfnDestroyDevice) table.pfnDestroyDevice(device);
     return 15;
@@ -272,6 +276,42 @@ int main(int argc, char** argv) {
   auto blendMemory = allocate(table.pfnCalcPrivateBlendStateSize(device, &blendDesc));
   D3D10DDI_HBLENDSTATE blend = {blendMemory.get()};
   table.pfnCreateBlendState(device, &blendDesc, blend, {});
+  D3D10DDIARG_CREATERESOURCE depthResourceDesc = {};
+  D3D10DDI_MIPINFO depthMip = {64,64,1,64,64,1};
+  depthResourceDesc.pMipInfoList = &depthMip;
+  depthResourceDesc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+  depthResourceDesc.Usage = D3D10_DDI_USAGE_DEFAULT;
+  depthResourceDesc.BindFlags = D3D10_DDI_BIND_DEPTH_STENCIL;
+  depthResourceDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+  depthResourceDesc.MipLevels = 1; depthResourceDesc.ArraySize = 1; depthResourceDesc.SampleDesc.Count = 1;
+  auto depthResource = std::make_unique<ProbeResource>(device, table, depthResourceDesc);
+  D3D10DDIARG_CREATEDEPTHSTENCILVIEW depthViewDesc = {};
+  depthViewDesc.hDrvResource = depthResource->handle; depthViewDesc.Format = depthResourceDesc.Format;
+  depthViewDesc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D; depthViewDesc.Tex2D.ArraySize = 1;
+  auto depthViewMemory = allocate(table.pfnCalcPrivateDepthStencilViewSize(device, &depthViewDesc));
+  D3D10DDI_HDEPTHSTENCILVIEW depthView = {depthViewMemory.get()};
+  table.pfnCreateDepthStencilView(device, &depthViewDesc, depthView, {});
+  D3D10_DDI_DEPTH_STENCIL_DESC depthStateDesc = {};
+  depthStateDesc.DepthEnable = TRUE; depthStateDesc.DepthWriteMask = D3D10_DDI_DEPTH_WRITE_MASK_ALL;
+  depthStateDesc.DepthFunc = D3D10_DDI_COMPARISON_LESS;
+  depthStateDesc.StencilEnable = depthStateDesc.FrontEnable = depthStateDesc.BackEnable = TRUE;
+  depthStateDesc.StencilReadMask = depthStateDesc.StencilWriteMask = 0xff;
+  depthStateDesc.FrontFace.StencilFunc = D3D10_DDI_COMPARISON_EQUAL;
+  depthStateDesc.FrontFace.StencilFailOp = depthStateDesc.FrontFace.StencilDepthFailOp
+    = depthStateDesc.FrontFace.StencilPassOp = D3D10_DDI_STENCIL_OP_KEEP;
+  depthStateDesc.BackFace = depthStateDesc.FrontFace;
+  auto depthStateMemory = allocate(table.pfnCalcPrivateDepthStencilStateSize(device, &depthStateDesc));
+  D3D10DDI_HDEPTHSTENCILSTATE depthState = {depthStateMemory.get()};
+  table.pfnCreateDepthStencilState(device, &depthStateDesc, depthState, {});
+  D3D10DDIARG_CREATEQUERY occlusionDesc = {}; occlusionDesc.Query = D3D10DDI_QUERY_OCCLUSION;
+  std::array<Memory,3> occlusionMemory = {allocate(table.pfnCalcPrivateQuerySize(device, &occlusionDesc)),
+    allocate(table.pfnCalcPrivateQuerySize(device, &occlusionDesc)), allocate(table.pfnCalcPrivateQuerySize(device, &occlusionDesc))};
+  D3D10DDI_HQUERY occlusion[3] = {};
+  for (unsigned i = 0; i < 3; i++) {
+    occlusion[i].pDrvPrivate = occlusionMemory[i].get();
+    table.pfnCreateQuery(device, &occlusionDesc, occlusion[i], {});
+  }
+  UINT64 visibleSamples[3] = {~UINT64(0),~UINT64(0),~UINT64(0)};
   unsigned mismatches = 4096;
   BOOL eventComplete = FALSE;
   if (SUCCEEDED(lastError)) {
@@ -287,14 +327,30 @@ int main(int argc, char** argv) {
     const FLOAT factor[4] = {1,1,1,1};
     table.pfnSetBlendState(device, blend, factor, 0xffffffff);
     table.pfnSetRasterizerState(device, raster);
-    table.pfnSetRenderTargets(device, &view, 1, 0, {});
+    table.pfnSetRenderTargets(device, &view, 1, 0, depthView);
+    table.pfnSetDepthStencilState(device, depthState, 1);
+    table.pfnClearDepthStencilView(device, depthView, D3D10_DDI_CLEAR_DEPTH | D3D10_DDI_CLEAR_STENCIL, 0, 1);
     D3D10_DDI_VIEWPORT viewport = {0,0,64,64,0,1};
     table.pfnSetViewports(device, 1, 0, &viewport);
     const D3D10_DDI_RECT scissor = {0,0,64,64};
     table.pfnSetScissorRects(device, 1, 0, &scissor);
     table.pfnIaSetTopology(device, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     table.pfnIaSetIndexBuffer(device, index->handle, DXGI_FORMAT_R32_UINT, 0);
+    // Reject by depth, pass both tests, then reject by stencil alone. Exact
+    // occlusion counts detect ignored depth/stencil state even when additive
+    // color saturation would hide an extra draw in the final red image.
+    table.pfnQueryBegin(device, occlusion[0]);
     table.pfnDrawIndexed(device, 3, 0, 0);
+    table.pfnQueryEnd(device, occlusion[0]);
+    table.pfnClearDepthStencilView(device, depthView, D3D10_DDI_CLEAR_DEPTH, 1, 0);
+    table.pfnQueryBegin(device, occlusion[1]);
+    table.pfnDrawIndexed(device, 3, 0, 0);
+    table.pfnQueryEnd(device, occlusion[1]);
+    table.pfnClearDepthStencilView(device, depthView, D3D10_DDI_CLEAR_DEPTH, 1, 0);
+    table.pfnSetDepthStencilState(device, depthState, 0);
+    table.pfnQueryBegin(device, occlusion[2]);
+    table.pfnDrawIndexed(device, 3, 0, 0);
+    table.pfnQueryEnd(device, occlusion[2]);
     table.pfnResourceCopy(device, staging, target);
     table.pfnQueryEnd(device, event);
     D3D10DDI_MAPPED_SUBRESOURCE mapped = {};
@@ -316,8 +372,21 @@ int main(int argc, char** argv) {
         Sleep(1);
       } while (GetTickCount64() < deadline);
     }
+    for (unsigned i = 0; i < 3 && SUCCEEDED(lastError); i++) {
+      const ULONGLONG deadline = GetTickCount64() + 5000;
+      do {
+        lastError = S_OK;
+        table.pfnQueryGetData(device, occlusion[i], &visibleSamples[i], sizeof(visibleSamples[i]), 0);
+        if (lastError != DXGI_DDI_ERR_WASSTILLDRAWING) break;
+        Sleep(1);
+      } while (GetTickCount64() < deadline);
+    }
   }
-  if (nativeCopy && SUCCEEDED(lastError) && eventComplete && !mismatches) {
+  const bool depthStencilPass = visibleSamples[0] == 0 && visibleSamples[1] == 4096 && visibleSamples[2] == 0;
+  std::printf("DDI_DEPTH_STENCIL %s depth_rejected=%llu visible=%llu stencil_rejected=%llu\n",
+    depthStencilPass ? "PASS" : "FAIL", static_cast<unsigned long long>(visibleSamples[0]),
+    static_cast<unsigned long long>(visibleSamples[1]), static_cast<unsigned long long>(visibleSamples[2]));
+  if (nativeCopy && SUCCEEDED(lastError) && eventComplete && !mismatches && depthStencilPass) {
     if (!dxgiFunctions.pfnPresent) lastError = E_NOTIMPL;
     else {
       DXGI_DDI_ARG_PRESENT args = {};
@@ -327,6 +396,12 @@ int main(int argc, char** argv) {
       lastError = dxgiFunctions.pfnPresent(&args);
     }
   }
+  table.pfnSetRenderTargets(device, nullptr, 0, 1, {});
+  table.pfnSetDepthStencilState(device, {}, 0);
+  for (auto query : occlusion) if (query.pDrvPrivate) table.pfnDestroyQuery(device, query);
+  if (depthState.pDrvPrivate) table.pfnDestroyDepthStencilState(device, depthState);
+  if (depthView.pDrvPrivate) table.pfnDestroyDepthStencilView(device, depthView);
+  depthResource.reset();
   table.pfnDestroyRasterizerState(device, raster);
   table.pfnDestroyShader(device, pixel);
   table.pfnDestroyShader(device, vertex);
@@ -343,7 +418,7 @@ int main(int argc, char** argv) {
   table.pfnDestroyDevice(device);
   const HRESULT closed = publication.close();
   if (FAILED(closed)) lastError = closed;
-  const bool pass = !mismatches && eventComplete && SUCCEEDED(lastError)
+  const bool pass = !mismatches && eventComplete && depthStencilPass && SUCCEEDED(lastError)
       && (!nativeCopy || publication.verified());
   std::printf("DDI_DRAW_PIXELS %s pixels=4096 mismatches=%u event=%d error=%08lx\n",
     pass ? "PASS" : "FAIL", mismatches, eventComplete, static_cast<unsigned long>(lastError));

@@ -62,6 +62,14 @@ struct BlendState {
   Device* owner = nullptr;
   ComPtr<ID3D11BlendState> backend;
 };
+struct DepthView {
+  Device* owner = nullptr;
+  ComPtr<ID3D11DepthStencilView> backend;
+};
+struct DepthState {
+  Device* owner = nullptr;
+  ComPtr<ID3D11DepthStencilState> backend;
+};
 struct Query {
   Device* owner = nullptr;
   ComPtr<ID3D11Query> backend;
@@ -77,6 +85,8 @@ Sampler* get(D3D10DDI_HSAMPLER h) { return static_cast<Sampler*>(h.pDrvPrivate);
 Shader* get(D3D10DDI_HSHADER h) { return static_cast<Shader*>(h.pDrvPrivate); }
 Rasterizer* get(D3D10DDI_HRASTERIZERSTATE h) { return static_cast<Rasterizer*>(h.pDrvPrivate); }
 BlendState* get(D3D10DDI_HBLENDSTATE h) { return static_cast<BlendState*>(h.pDrvPrivate); }
+DepthView* get(D3D10DDI_HDEPTHSTENCILVIEW h) { return static_cast<DepthView*>(h.pDrvPrivate); }
+DepthState* get(D3D10DDI_HDEPTHSTENCILSTATE h) { return static_cast<DepthState*>(h.pDrvPrivate); }
 Query* get(D3D10DDI_HQUERY h) { return static_cast<Query*>(h.pDrvPrivate); }
 
 bool owned(Device* device, Query* query) {
@@ -367,6 +377,58 @@ void APIENTRY clearTarget(D3D10DDI_HDEVICE h, D3D10DDI_HRENDERTARGETVIEW target,
   auto device = get(h);
   if (owned(device, get(target))) device->context->ClearRenderTargetView(get(target)->backend.Get(), color);
 }
+SIZE_T APIENTRY depthViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEDEPTHSTENCILVIEW*) {
+  return sizeof(DepthView);
+}
+void APIENTRY createDepthView(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEDEPTHSTENCILVIEW* args,
+    D3D10DDI_HDEPTHSTENCILVIEW out, D3D10DDI_HRTDEPTHSTENCILVIEW) {
+  auto device = get(h);
+  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
+  auto view = new (out.pDrvPrivate) DepthView(); view->owner = device;
+  if (!args || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
+      || !owned(device, get(args->hDrvResource))) { device->error(E_INVALIDARG); return; }
+  ComPtr<ID3D11Texture2D> texture;
+  if (FAILED(get(args->hDrvResource)->backend.As(&texture))) { device->error(E_INVALIDARG); return; }
+  D3D11_TEXTURE2D_DESC resource = {}; texture->GetDesc(&resource);
+  if (!(resource.BindFlags & D3D11_BIND_DEPTH_STENCIL)
+      || args->Tex2D.MipSlice >= resource.MipLevels || !args->Tex2D.ArraySize
+      || args->Tex2D.FirstArraySlice >= resource.ArraySize
+      || args->Tex2D.ArraySize > resource.ArraySize - args->Tex2D.FirstArraySlice) {
+    device->error(E_INVALIDARG); return;
+  }
+  D3D11_DEPTH_STENCIL_VIEW_DESC desc = {}; desc.Format = args->Format;
+  if (resource.SampleDesc.Count > 1) {
+    desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DMSARRAY;
+    desc.Texture2DMSArray.FirstArraySlice = args->Tex2D.FirstArraySlice;
+    desc.Texture2DMSArray.ArraySize = args->Tex2D.ArraySize;
+  } else {
+    desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DARRAY;
+    desc.Texture2DArray.MipSlice = args->Tex2D.MipSlice;
+    desc.Texture2DArray.FirstArraySlice = args->Tex2D.FirstArraySlice;
+    desc.Texture2DArray.ArraySize = args->Tex2D.ArraySize;
+  }
+  try { device->error(device->backend->CreateDepthStencilView(texture.Get(), &desc, &view->backend)); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY destroyDepthView(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILVIEW object) {
+  auto view = get(object);
+  if (!view || view->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  view->~DepthView();
+}
+void APIENTRY clearDepthView(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILVIEW object,
+    UINT flags, FLOAT depth, UINT8 stencil) {
+  auto device = get(h); auto view = get(object);
+  if (!view || view->owner != device || !view->backend
+      || (flags & ~(D3D10_DDI_CLEAR_DEPTH | D3D10_DDI_CLEAR_STENCIL))) {
+    device->error(E_INVALIDARG); return;
+  }
+  const UINT apiFlags = ((flags & D3D10_DDI_CLEAR_DEPTH) ? D3D11_CLEAR_DEPTH : 0)
+                      | ((flags & D3D10_DDI_CLEAR_STENCIL) ? D3D11_CLEAR_STENCIL : 0);
+  try { if (apiFlags) device->context->ClearDepthStencilView(view->backend.Get(), apiFlags, depth, stencil); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
 void APIENTRY copyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, D3D10DDI_HRESOURCE src) {
   auto device = get(h);
   if (owned(device, get(dst)) && owned(device, get(src)))
@@ -568,7 +630,9 @@ void APIENTRY setRenderTargets(D3D10DDI_HDEVICE h, const D3D10DDI_HRENDERTARGETV
     UINT count, UINT clear, D3D10DDI_HDEPTHSTENCILVIEW depth) {
   auto device = get(h);
   if (count > 1 || clear > D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT - count ||
-      depth.pDrvPrivate || (count && !targets)) { device->error(E_INVALIDARG); return; }
+      (count && !targets)) { device->error(E_INVALIDARG); return; }
+  auto depthView = get(depth);
+  if (depthView && (depthView->owner != device || !depthView->backend)) { device->error(E_INVALIDARG); return; }
   ID3D11RenderTargetView* target = nullptr;
   if (count && targets[0].pDrvPrivate) {
     auto object = get(targets[0]);
@@ -579,10 +643,14 @@ void APIENTRY setRenderTargets(D3D10DDI_HDEVICE h, const D3D10DDI_HRENDERTARGETV
         object->format != DXGI_FORMAT_B8G8R8A8_UNORM) { device->error(E_INVALIDARG); return; }
     target = object->backend.Get();
   }
-  if (count || clear) {
-    device->context->OMSetRenderTargets(count, count ? &target : nullptr, nullptr);
+  // ClearSlots is an optimization aid. A zero-color-target call must still
+  // bind/unbind the depth view atomically and clear all color targets.
+  try {
+    device->context->OMSetRenderTargets(count, count ? &target : nullptr,
+      depthView ? depthView->backend.Get() : nullptr);
     device->targetBound = target != nullptr;
-  }
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
 }
 void APIENTRY setViewports(D3D10DDI_HDEVICE h, UINT count, UINT clear, const D3D10_DDI_VIEWPORT* views) {
   auto device = get(h);
@@ -677,6 +745,50 @@ void APIENTRY setBlend(D3D10DDI_HDEVICE h, D3D10DDI_HBLENDSTATE object, const FL
   auto device = get(h); auto state = get(object);
   if (state && (state->owner != device || !state->backend)) { device->error(E_INVALIDARG); return; }
   try { device->context->OMSetBlendState(state ? state->backend.Get() : nullptr, factor, sampleMask); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+SIZE_T APIENTRY depthStateSize(D3D10DDI_HDEVICE, const D3D10_DDI_DEPTH_STENCIL_DESC*) { return sizeof(DepthState); }
+void APIENTRY createDepthState(D3D10DDI_HDEVICE h, const D3D10_DDI_DEPTH_STENCIL_DESC* args,
+    D3D10DDI_HDEPTHSTENCILSTATE out, D3D10DDI_HRTDEPTHSTENCILSTATE) {
+  auto device = get(h);
+  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
+  auto state = new (out.pDrvPrivate) DepthState(); state->owner = device;
+  if (!args || (args->StencilEnable && !args->FrontEnable && !args->BackEnable)) {
+    device->error(E_INVALIDARG); return;
+  }
+  D3D11_DEPTH_STENCIL_DESC desc = {};
+  desc.DepthEnable = args->DepthEnable;
+  desc.DepthWriteMask = static_cast<D3D11_DEPTH_WRITE_MASK>(args->DepthWriteMask);
+  desc.DepthFunc = static_cast<D3D11_COMPARISON_FUNC>(args->DepthFunc);
+  desc.StencilEnable = args->StencilEnable;
+  desc.StencilReadMask = args->StencilReadMask; desc.StencilWriteMask = args->StencilWriteMask;
+  auto face = [](const D3D10_DDI_DEPTH_STENCILOP_DESC& input, bool enabled) {
+    // The native DDI has per-face enables, unlike the public D3D11 API.
+    // A disabled face must not compare or modify stencil contents.
+    if (!enabled) return D3D11_DEPTH_STENCILOP_DESC {
+      D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_KEEP, D3D11_COMPARISON_ALWAYS};
+    return D3D11_DEPTH_STENCILOP_DESC {
+      static_cast<D3D11_STENCIL_OP>(input.StencilFailOp),
+      static_cast<D3D11_STENCIL_OP>(input.StencilDepthFailOp),
+      static_cast<D3D11_STENCIL_OP>(input.StencilPassOp),
+      static_cast<D3D11_COMPARISON_FUNC>(input.StencilFunc)};
+  };
+  desc.FrontFace = face(args->FrontFace, args->StencilEnable && args->FrontEnable);
+  desc.BackFace = face(args->BackFace, args->StencilEnable && args->BackEnable);
+  try { device->error(device->backend->CreateDepthStencilState(&desc, &state->backend)); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY destroyDepthState(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILSTATE object) {
+  auto state = get(object);
+  if (!state || state->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  state->~DepthState();
+}
+void APIENTRY setDepthState(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILSTATE object, UINT stencil) {
+  auto device = get(h); auto state = get(object);
+  if (state && (state->owner != device || !state->backend)) { device->error(E_INVALIDARG); return; }
+  try { device->context->OMSetDepthStencilState(state ? state->backend.Get() : nullptr, stencil); }
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
 }
@@ -810,6 +922,14 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnCreateRenderTargetView = createTarget;
   table->pfnDestroyRenderTargetView = destroyTarget;
   table->pfnClearRenderTargetView = clearTarget;
+  table->pfnCalcPrivateDepthStencilViewSize = depthViewSize;
+  table->pfnCreateDepthStencilView = createDepthView;
+  table->pfnDestroyDepthStencilView = destroyDepthView;
+  table->pfnClearDepthStencilView = clearDepthView;
+  table->pfnCalcPrivateDepthStencilStateSize = depthStateSize;
+  table->pfnCreateDepthStencilState = createDepthState;
+  table->pfnDestroyDepthStencilState = destroyDepthState;
+  table->pfnSetDepthStencilState = setDepthState;
   table->pfnResourceCopy = copyResource;
   table->pfnResourceCopyRegion = copyRegion;
   table->pfnResourceUpdateSubresourceUP = updateResource;

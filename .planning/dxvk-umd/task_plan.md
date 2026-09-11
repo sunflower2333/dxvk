@@ -10,7 +10,9 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 Upload/copy fix1f4595d CI34594094209 allPASS. Native allocation/windowed
 Present, constants, SRV/sampler child9eb4361 CI34595689478 ALL PASS.
 Paired60004 pins9eb, ABI+identity377+contract allPASS; parent build starting.
-New KMT publication probe6bed28b CI34596463268 running; not in60004.
+New KMT publication probe6bed28b CI34596463268 ALL PASS; not in60004.
+Blend/indexed b0ea010 CI34597013994 and scissor b9b6a03 CI34597241207
+running; next implement depth/stencil views, state and occlusion probe.
 Continue remaining mandatory resource/shader/primary/shared DDIs;
 main explicitly asks not to stop at CPU OpenAdapter harness.
 

@@ -1,5 +1,11 @@
 # Findings
 
+- Microsoft native SetRenderTargets requires all color slots and depth to
+  update atomically, even NumViews=ClearSlots=0. ClearSlots is only an
+  optimization aid. D3D10 depth/stencil descriptors expose FrontEnable and
+  BackEnable absent in D3D11 API descriptors; disabled faces must translate
+  to ALWAYS/KEEP operations. Native implementation now handles both.
+
 - Blend/indexed draw implementation follows DXVK D3D10Device's existing
   D3D11 blend translation, preserving per-target enables/write masks.
   The development GPU pixel criterion now depends on actual additive

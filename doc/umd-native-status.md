@@ -45,6 +45,14 @@ red. Skipping the draw, blend, texture or constant-buffer operation fails pixels
 Scissor rectangles also route to the backend with explicit slot clearing;
 the pixel probe enables scissoring and sets its full-target rectangle.
 
+Depth/stencil state and Texture2D views now translate to DXVK, including
+array/MSAA view descriptors and the native DDI's separate front/back stencil
+enables. Render targets and depth bind atomically even when all color slots
+are cleared. The device probe uses a D24S8 attachment and requires occlusion
+counts of 0, 4096 and 0 for depth rejection, a passing draw and stencil
+rejection. These checks prevent additive color saturation from hiding an
+incorrect extra draw. The new GPU depth/stencil paths await target validation.
+
 Event, occlusion, timestamp and timestamp-disjoint query DDIs now use the
 embedded backend's actual query objects. Pending results become the DDI busy
 status, device loss is translated to the DDI removed status, and output is
@@ -93,7 +101,7 @@ Two device-only executables are packaged for coordinated testing:
   clears magenta, copies and verifies 4096 pixels.
 - `dxvk-umd-ddi-probe.exe <16 hex digits>` uses real WDK DDI function pointers,
   clears half-red, blends an indexed full-screen triangle and verifies all
-  4096 final red pixels.
+  4096 final red pixels plus the depth/stencil occlusion counts above.
   Optional `--adapter` opens that exact LUID through KMT, reads the real KMD
   private reply and creates the device through the new adapter harness. Its
   runtime callbacks are supplied by the probe; this is still not Microsoft

@@ -1,5 +1,23 @@
 # Progress
 
+2026-09-11: Added Texture2D depth/stencil views (including array and MSAA
+descriptor translation), independent stencil-face enables, depth/stencil
+state and clear DDIs. SetRenderTargets now atomically updates depth even
+for zero color targets, as Microsoft specifies. Probe requires exact
+occlusion sample counts0/4096/0 for depth rejection/pass/stencil rejection;
+additive saturation alone could hide wrongly accepted draws. Pending CI.
+Blend b0ea010 and scissor b9b6a03 CI both ALL PASS on three architectures.
+Paired60004 has reached Sign+package. Correct documentation path is
+doc/umd-native-status.md; a guessed doc/viogpu-umd.md read was absent.
+
+2026-09-11: Resumed own DXVK assignment after compaction. Child6bed28b
+CI34596463268 ALL PASS across three architectures; --native-copy still
+has no target execution. Paired60004 CI34596574202 passed regression and
+Mesa; KMD/sign/catalog job103256746352 is running. Blend/indexed b0ea010
+passed x86; latest scissor b9b6a03 architecture jobs remain active. Next
+bounded implementation is depth/stencil views/state and tested occlusion.
+One read guessed tests/umd-ddi.cpp; actual file is umd-ddi-probe.cpp.
+
 2026-09-11: Added SetScissorRects with count/clear bounds and translated
 signed rectangles. Probe enables scissoring and requires its bound64x64
 rectangle, alongside new indexed/additive-blend pixel path. CI pending.

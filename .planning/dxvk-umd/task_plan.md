@@ -25,6 +25,10 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- b40ccb1 CI34595019708 passed217native allocation/present callback tests and
+  compiled the production UMD, then caught const input arrays incompatible
+  with WDK's mutable pSysMem. Made probe arrays mutable and moved production
+  DDI/probe object compilation before the expensive backend build.
 - New paired allocation ABI checker initially resolved shared/ at repository
   root instead of viogpu/. Corrected the parent path; temporary test outputs
   were automatically removed by TemporaryDirectory.

@@ -196,7 +196,7 @@ int main(int argc, char** argv) {
   table.pfnCreatePixelShader(device, ps.data(), pixel, {}, &psSignature);
   table.pfnCreateRasterizerState(device, &rasterDesc, raster, {});
   D3D10DDI_MIPINFO constantMip = {16,1,1,16,1,1};
-  const FLOAT pixelColor[4] = {1,0,0,1};
+  FLOAT pixelColor[4] = {1,0,0,1};
   D3D10_DDIARG_SUBRESOURCE_UP constantData = {pixelColor,16,16};
   D3D10DDIARG_CREATERESOURCE constantDesc = {};
   constantDesc.pMipInfoList = &constantMip; constantDesc.pInitialDataUP = &constantData;
@@ -205,7 +205,7 @@ int main(int argc, char** argv) {
   constantDesc.BindFlags = D3D10_DDI_BIND_CONSTANT_BUFFER;
   constantDesc.MipLevels = 1; constantDesc.ArraySize = 1; constantDesc.SampleDesc.Count = 1;
   auto constant = std::make_unique<ProbeResource>(device, table, constantDesc);
-  const uint32_t whitePixels[4] = {0xffffffff,0xffffffff,0xffffffff,0xffffffff};
+  uint32_t whitePixels[4] = {0xffffffff,0xffffffff,0xffffffff,0xffffffff};
   D3D10DDI_MIPINFO sampleMip = {2,2,1,2,2,1};
   D3D10_DDIARG_SUBRESOURCE_UP sampleData = {whitePixels,8,16};
   D3D10DDIARG_CREATERESOURCE sampleDesc = {};

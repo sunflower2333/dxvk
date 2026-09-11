@@ -1,5 +1,11 @@
 # Progress
 
+2026-09-11: Native-memory callback fixture217checksPASS on x86 in b40ccb1
+CI34595019708, alongside715adapter and69query checks. Production UMD
+compiled, but later probe object rejected const initial-data arrays because
+WDK pSysMem is mutable. Corrected both probe arrays; future CI compiles DDI
+and probe objects early to catch such issues before the full backend build.
+
 2026-09-11: Added single Texture2D SRV and VS/PS sampler/resource bindings.
 Pixel shader now samples an immutable white texture and multiplies it by
 the bound constant-buffer color. New build pending. Paired checker compares

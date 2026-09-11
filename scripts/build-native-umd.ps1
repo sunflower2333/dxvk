@@ -36,6 +36,8 @@ meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Den
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
 ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
+ninja -C build-umd src/umd/viogpudxvk.dll.p/umd_ddi.cpp.obj src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
+if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 if ($arch -ne 'arm64') {
     & build-umd/src/umd/dxvk-umd-identity-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-query-test.txt')

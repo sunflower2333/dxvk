@@ -53,9 +53,15 @@ jobs:
           if ($LASTEXITCODE) { throw 'Shader compiler configure failed' }
           ninja -C build-shader
           if ($LASTEXITCODE) { throw 'Shader compiler library build failed' }
+          $shaderTargets = meson introspect build-shader --targets | ConvertFrom-Json
+          if ($LASTEXITCODE) { throw 'Shader compiler target discovery failed' }
+          $shaderLibraries = @($shaderTargets | Where-Object { $_.name -eq 'dxbc_spv' -and $_.type -eq 'static library' })
+          if ($shaderLibraries.Count -ne 1 -or $shaderLibraries[0].filename.Count -ne 1) { throw 'Unexpected shader compiler target layout' }
+          $shaderLibrary = $shaderLibraries[0].filename[0]
+          if (-not (Test-Path $shaderLibrary)) { throw 'Shader compiler library is missing' }
           cl /nologo /std:c++17 /EHsc /O1 /DVIOGPU_SHADER_SPIRV_TEST /Isubprojects/dxbc-spirv `
             tests/umd-shader-container.cpp src/umd/umd_shader.cpp `
-            build-shader/dxbc_spv.lib `
+            $shaderLibrary `
             d3dcompiler.lib /Fe:shader-cpu-test.exe
           if ($LASTEXITCODE) { throw 'Shader CPU test compile failed' }
           ./shader-cpu-test.exe

@@ -17,8 +17,10 @@ Main ran standalone272a067 with LUID2A58000000000000: backend/DDI/native-copy
 ALL PASS. Real KMT backing and GPU pixels verified; Microsoft runtime and
 display Present remain unproven. No unchanged probe rerun needed.
 Continue general SM4 VS/PS varying linkage with independently checked types.
-New linkage8f7bce4 CI34601912517 running: local102shader checksPASS;
-Windows real-HLSL and final SPIR-V interface checks remain pending.
+Linkage8f7bce4 CI34601912517 compiledARM64 but x64/x86 SPIR-V checks failed.
+Fixed ISGN read-use masks and added bounded immediate arrays in87697ea;
+replacementCI34602941896 running. Local130shader checksPASS. Do not deliver
+8f7bce4 merely because its ARM64 cross-build passed.
 Continue remaining mandatory resource/shader/primary/shared DDIs;
 main explicitly asks not to stop at CPU OpenAdapter harness.
 
@@ -35,6 +37,10 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- New fast87697ea shaderCI34602941896 compiled its compiler library but
+  failed LNK1181 on a guessed dxbc_spv.lib filename. Resolve its exact static
+  library through meson introspect --targets instead. Architecture jobs link
+  the library through Meson already and are independent of this script error.
 - Full8f7bce4 x64 SPIR-V check558 failed after148HLSL/reflection checks passed.
   Source review found rebuilt ISGN component masks omitted the high-byte
   read-use bits. dxbc IoMap masked typed inputs tozero then used its implicit

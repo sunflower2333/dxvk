@@ -24,3 +24,8 @@ and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 - Initial patch context for src/meson.build mismatched; no partial edits were
   applied. Corrected the context and applied successfully.
 - Two guessed filenames were absent; used rg results to locate actual files.
+- CI34585824018 failed: x64 MSVC target used invalid x64_x64 alias; x86/ARM64
+  backend library compiled, but probe omitted dxbc-spirv include dependency.
+  Fixed both before the next run. Identity sanitizer test passed69 cases.
+- Submodule add with --depth=1 did not fetch its nondefault branch. Explicit
+  depth1 branch fetch/checkout recovered it; completed .gitmodules separately.

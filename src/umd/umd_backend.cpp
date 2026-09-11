@@ -1,10 +1,29 @@
 #include "umd_backend.h"
+#include "umd_api.h"
 #include "../dxvk/dxvk_instance.h"
 
 #include <cstring>
 #include <new>
 
 namespace dxvk::umd {
+
+HRESULT createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
+                     ID3D11Device** device, ID3D11DeviceContext** context) noexcept {
+  if (!device || !context)
+    return E_POINTER;
+  *device = nullptr;
+  *context = nullptr;
+  AdapterLuid requested;
+  static_assert(sizeof(luid) == sizeof(requested));
+  std::memcpy(requested.data(), &luid, sizeof(luid));
+  std::unique_ptr<Backend> backend;
+  HRESULT hr = Backend::create(requested, level, backend);
+  if (FAILED(hr))
+    return hr;
+  *device = backend->d3d.ref();
+  *context = backend->context.ref();
+  return S_OK;
+}
 
 HRESULT Backend::create(const AdapterLuid& luid,
                        D3D_FEATURE_LEVEL level,

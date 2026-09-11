@@ -1,0 +1,4 @@
+LIBRARY viogpudxvk
+EXPORTS
+  VioGpuDxvkPrivateDeviceSize
+  VioGpuDxvkCreateDdiTestDevice

@@ -288,3 +288,11 @@
 - Native D3D9 cannot call DXVK's existing API factory unchanged: that path
   enumerates displays with first-adapter fallback and owns an implicit
   swapchain. A separate exact-adapter D3D9 DDI bridge remains required.
+2026-09-11 continuation: CI34617903693 x64 job103324299501 API-only WARP
+controls produce red for one-slice/default, two-slice/default and explicit
+slice0 views, but retain green for explicit slice1 views with both auto4mips
+and explicit2mips. This bypasses native descriptors and localizes the runner
+limitation. Strict oracle now selects slice0/mips0-1 while checking all8
+subresources. Production c9e389d is unchanged; nonzero-slice DXVK GPU proof
+remains open. Removed temporary observation-only controls after documenting
+their exact source/run so the normal test PASS cannot imply those cases pass.

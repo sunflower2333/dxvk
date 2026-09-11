@@ -32,14 +32,16 @@ the still-missing geometry shader or stream-output stages.
 
 GenMips is wired at source c9e389d through native auto-mip resource flags and
 DXVK's actual GPU mip blits. Ownership, creation flags, MIP range/type and format
-support are checked before dispatch. Production compilation passes, but WARP
-leaves the selected lower mip unchanged in both typeless and typed RGBA8 control
-cases, even with correct queried flags, support and SRV range. This is not a
-typeless-only issue. Current 4ba6a19 CI34617189692 enables D3D11 debug-layer and
-InfoQueue diagnostics to identify the ignored operation; it is pending. All
-original typeless-view checks and exact generated-pixel assertions remain.
-There is no validated mip-generation, new target-workload or ordinary-runtime
-activation claim.
+support are checked before dispatch. Production compilation passes. Independent
+API-only controls at 68d6bb4, CI34617903693, localize the Windows runner's WARP
+failure to views starting at array slice1: its lower mip stays green, while
+default views and slice0 produce the expected red. The debug layer is active
+with zero messages. The controls bypass every native descriptor helper.
+The strict CPU oracle now generates slice0/mips0-1 and checks all eight
+subresources, including untouched neighboring slices and out-of-view mips.
+Its replacement CI is pending. Existing typeless clear/sample tests still use
+slice1. Production is unchanged; DXVK mip generation on nonzero array slices
+and ordinary runtime activation remain unvalidated on the target.
 
 Dynamic IA/constant-buffer/resource Map DDIs share the checked map path.
 Busy and device-loss errors are translated to native DDI codes; failed maps

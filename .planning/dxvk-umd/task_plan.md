@@ -6,6 +6,23 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+68d6bb4 CI34617903693 API-only controls isolate the runner WARP no-op to
+FirstArraySlice1. Default SRVs and an explicit slice0 SRV generate the expected
+red lower mip; both automatic and explicit mip allocations reproduce slice1
+failure without any native helper. Production c9e389d remains unchanged.
+The strict WARP oracle now selects slice0/mips0-1 and checks all8subresources,
+preserving neighboring-slice and outside-view mip isolation. Follow replacement
+CI to completion, then continue actual native DDI/runtime activation work.
+Nonzero-slice DXVK mip generation still needs actual GPU validation; no repeat
+of an unchanged backend workload is requested. Existing frozen hardware
+artifacts remain unchanged.
+
+VKD3D engine61edc56 and paired97e7b009 are handed off to the independent
+/root/vkd3d_native_runtime agent. No further VKD3D source/pin edits here.
+Preserve its existing documentation changes and old Mesa4ace package; that
+package must not replace parent's newer GL5f60c4d/Mesa668d598 desktop stack.
+
+## Recent checkpoints (historical)
 AddedfiveAPI-onlyWARPcontrols(default/selectedSRV,single/array,auto/explicit
 mipcount)beforeexistingnativehelper/statework. Allresourcecreateschecked,
 printsselectedlowerpixel; originalfull-imageassertionsstillgateCI. This
@@ -130,9 +147,9 @@ main explicitly asks not to stop at CPU OpenAdapter harness.
 - [pending] Complete sharing, synchronization, presentation and full native acceptance.
 
 ## Constraints
-Own this independent DXVK checkout and the explicitly delegated independent
-vkd3d-native-umd-20260911/viogpu-vkd3d-umd-20260911 checkouts. No remote access until main grants a test
-window. Preserve existing driver and desktop. Parent owns all shared worktree
+Own this independent DXVK checkout. VKD3D continuation now belongs to the
+separate vkd3d-native-runtime agent; preserve its existing docs and pins.
+No remote access until main grants a test window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors

@@ -331,3 +331,11 @@ including57Windows real-HLSL checks and mocked runtime callback consumer.
 All3architecture artifacts uploaded successfully. Parent801fde5 paired
 CI34589164956 has passed regressions and Mesa compile/link and is now building
 its exact pinned DXVK prior to the KMD/sign/catalog job. No hardware tests.
+2026-09-11 resume: Read source/plans, confirmed clean68d6bb4 and completed
+x86/x64 failures in CI34617903693; ARM64 compilation still running. Replaced
+strict mip oracle's selected slice1 with slice0 and retained every exact pixel
+assertion, original typeless slice1 tests and outside-view mip checks. Removed
+temporary API-only diagnostic matrix; its decisive results remain documented.
+No production workaround added. Delivered VKD3D61edc56/paired97e7b009 and
+ordinary-runtime/ARM64X handoff to the new independent agent. Replacement
+DXVK CI pending; no remote commands or hardware workload performed.

@@ -1,4 +1,5 @@
 LIBRARY viogpudxvk
 EXPORTS
   VioGpuDxvkPrivateDeviceSize
+  VioGpuDxvkQueryRuntimeAdapterLuid
   VioGpuDxvkCreateDdiTestDevice

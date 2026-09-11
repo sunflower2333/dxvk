@@ -34,12 +34,14 @@ endian = 'little'
 "@ | Set-Content native-umd-cross.ini
 meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Denable_umd=true -Denable_d3d8=false -Denable_d3d9=false -Denable_d3d10=false
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
-ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe src/umd/viogpudxvk.dll src/umd/dxvk-umd-ddi-probe.exe src/umd/dxvk-umd-shader-test.exe
+ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe src/umd/viogpudxvk.dll src/umd/dxvk-umd-ddi-probe.exe src/umd/dxvk-umd-shader-test.exe src/umd/dxvk-umd-identity-query-test.exe
 if ($LASTEXITCODE) { throw 'DXVK UMD development build failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 if ($arch -ne 'arm64') {
     & build-umd/src/umd/dxvk-umd-shader-test.exe | Tee-Object (Join-Path $OutputDirectory 'shader-test.txt')
     if ($LASTEXITCODE) { throw 'Native shader reconstruction test failed' }
+    & build-umd/src/umd/dxvk-umd-identity-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-query-test.txt')
+    if ($LASTEXITCODE) { throw 'Runtime identity callback consumer test failed' }
 }
 foreach ($name in @('viogpudxvk.dll', 'dxvk-umd-backend-probe.exe', 'dxvk-umd-ddi-probe.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name

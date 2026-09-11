@@ -11,7 +11,7 @@ umd_backend_probe = executable('dxvk-umd-backend-probe',
   include_directories : dxvk_include_path,
 )
 
-umd_development = shared_library('viogpudxvk', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_log.cpp',
+umd_development = shared_library('viogpudxvk', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_runtime_query.cpp', 'umd_log.cpp',
   link_with : [umd_backend],
   dependencies : [dxvk_dep, dxbc_spirv_dep, lib_gdi32, lib_dxgi],
   include_directories : dxvk_include_path,
@@ -27,4 +27,8 @@ umd_ddi_probe = executable('dxvk-umd-ddi-probe', '../../tests/umd-ddi-probe.cpp'
 umd_shader_test = executable('dxvk-umd-shader-test',
   '../../tests/umd-shader-container.cpp', 'umd_shader.cpp',
   dependencies : [dxbc_spirv_dep, cpp.find_library('d3dcompiler')],
+)
+
+umd_identity_query_test = executable('dxvk-umd-identity-query-test',
+  '../../tests/umd-runtime-query.cpp', 'umd_runtime_query.cpp',
 )

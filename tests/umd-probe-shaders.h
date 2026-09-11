@@ -13,7 +13,11 @@ float4 vs_main(uint id : SV_VertexID) : SV_Position {
   return float4(xy * float2(2,-2) + float2(-1,1), 0, 1);
 }
 cbuffer PixelConstants : register(b0) { float4 pixelColor; };
-float4 ps_main() : SV_Target { return pixelColor; }
+Texture2D<float4> sourceColor : register(t0);
+SamplerState sourceSampler : register(s0);
+float4 ps_main() : SV_Target {
+  return pixelColor * sourceColor.SampleLevel(sourceSampler, float2(0.5,0.5), 0);
+}
 )";
   Microsoft::WRL::ComPtr<ID3DBlob> shader, errors;
   HRESULT hr = D3DCompile(source, sizeof(source)-1, "umd-probe", nullptr, nullptr,

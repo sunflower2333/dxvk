@@ -1,5 +1,12 @@
 # Findings
 
+- Microsoft DXGI base-DDI contract requires real QueryResidencyCb results
+  and backbuffer identity rotation including dependent views. Querying only
+  the new CPU-visible presentation copy would not describe the separate
+  Vulkan rendering cache's allocation, so do not advertise full residency
+  support from that one handle. Shared resources and runtime-visible GPU
+  allocation ownership still need unified integration.
+
 - Added native runtime allocation ownership and synchronous windowed-blit
   Present plumbing under the development adapter entry point. The runtime's
   original device/resource/DXGI handles are forwarded only to their own

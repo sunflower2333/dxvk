@@ -1,5 +1,12 @@
 # Progress
 
+2026-09-11: Added single Texture2D SRV and VS/PS sampler/resource bindings.
+Pixel shader now samples an immutable white texture and multiplies it by
+the bound constant-buffer color. New build pending. Paired checker compares
+actual extracted child allocation declaration to actual KMD header; local
+size/16fields/defaults/formats checkPASS. Parent checker remains uncommitted
+until latest child passes and60004 pin is prepared; no KMD edits.
+
 2026-09-11: Upload/copy signed-box fix1f4595d CI34594094209 allPASS.
 Native allocationfdce901 CI34594671352 caught fixture field spelling:
 D3DDDICB_LOCKFLAGS.DonotWait (implementation compiled). Corrected fixture.

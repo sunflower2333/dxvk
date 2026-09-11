@@ -39,6 +39,14 @@ struct RenderTarget {
   ComPtr<ID3D11RenderTargetView> backend;
   DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
 };
+struct ShaderView {
+  Device* owner = nullptr;
+  ComPtr<ID3D11ShaderResourceView> backend;
+};
+struct Sampler {
+  Device* owner = nullptr;
+  ComPtr<ID3D11SamplerState> backend;
+};
 struct Shader {
   Device* owner = nullptr;
   dxvk::umd::ShaderStage stage = dxvk::umd::ShaderStage::Vertex;
@@ -59,6 +67,8 @@ struct Query {
 Device* get(D3D10DDI_HDEVICE h) { return static_cast<Device*>(h.pDrvPrivate); }
 Resource* get(D3D10DDI_HRESOURCE h) { return static_cast<Resource*>(h.pDrvPrivate); }
 RenderTarget* get(D3D10DDI_HRENDERTARGETVIEW h) { return static_cast<RenderTarget*>(h.pDrvPrivate); }
+ShaderView* get(D3D10DDI_HSHADERRESOURCEVIEW h) { return static_cast<ShaderView*>(h.pDrvPrivate); }
+Sampler* get(D3D10DDI_HSAMPLER h) { return static_cast<Sampler*>(h.pDrvPrivate); }
 Shader* get(D3D10DDI_HSHADER h) { return static_cast<Shader*>(h.pDrvPrivate); }
 Rasterizer* get(D3D10DDI_HRASTERIZERSTATE h) { return static_cast<Rasterizer*>(h.pDrvPrivate); }
 Query* get(D3D10DDI_HQUERY h) { return static_cast<Query*>(h.pDrvPrivate); }
@@ -218,6 +228,104 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
   if (!object || object->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
   get(h)->error(object->allocation.release());
   object->~Resource();
+}
+
+SIZE_T APIENTRY shaderViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATESHADERRESOURCEVIEW*) {
+  return sizeof(ShaderView);
+}
+void APIENTRY createShaderView(D3D10DDI_HDEVICE h,
+    const D3D10DDIARG_CREATESHADERRESOURCEVIEW* args,
+    D3D10DDI_HSHADERRESOURCEVIEW out, D3D10DDI_HRTSHADERRESOURCEVIEW) {
+  auto device = get(h);
+  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
+  auto view = new (out.pDrvPrivate) ShaderView(); view->owner = device;
+  if (!args || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
+      || args->Tex2D.FirstArraySlice || args->Tex2D.ArraySize != 1
+      || (args->Format != DXGI_FORMAT_R8G8B8A8_UNORM && args->Format != DXGI_FORMAT_B8G8R8A8_UNORM)) {
+    device->error(E_INVALIDARG); return;
+  }
+  if (!owned(device, get(args->hDrvResource))) return;
+  ComPtr<ID3D11Texture2D> texture;
+  if (FAILED(get(args->hDrvResource)->backend.As(&texture))) { device->error(E_INVALIDARG); return; }
+  D3D11_TEXTURE2D_DESC resource = {}; texture->GetDesc(&resource);
+  if (resource.ArraySize != 1 || resource.SampleDesc.Count != 1
+      || resource.Format != args->Format || !(resource.BindFlags & D3D11_BIND_SHADER_RESOURCE)
+      || args->Tex2D.MostDetailedMip >= resource.MipLevels || !args->Tex2D.MipLevels
+      || args->Tex2D.MipLevels > resource.MipLevels - args->Tex2D.MostDetailedMip) {
+    device->error(E_INVALIDARG); return;
+  }
+  D3D11_SHADER_RESOURCE_VIEW_DESC desc = {};
+  desc.Format = args->Format; desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+  desc.Texture2D.MostDetailedMip = args->Tex2D.MostDetailedMip;
+  desc.Texture2D.MipLevels = args->Tex2D.MipLevels;
+  try { device->error(device->backend->CreateShaderResourceView(texture.Get(), &desc, &view->backend)); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY destroyShaderView(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW object) {
+  auto view = get(object);
+  if (!view || view->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  view->~ShaderView();
+}
+template<bool Vertex>
+void APIENTRY setShaderResources(D3D10DDI_HDEVICE h, UINT start, UINT count,
+    const D3D10DDI_HSHADERRESOURCEVIEW* objects) {
+  auto device = get(h);
+  constexpr UINT slots = D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT;
+  if (start > slots || count > slots - start || (count && !objects)) { device->error(E_INVALIDARG); return; }
+  ID3D11ShaderResourceView* views[slots] = {};
+  for (UINT i = 0; i < count; i++) {
+    auto view = get(objects[i]);
+    if (view && (view->owner != device || !view->backend)) { device->error(E_INVALIDARG); return; }
+    views[i] = view ? view->backend.Get() : nullptr;
+  }
+  try {
+    if (Vertex) device->context->VSSetShaderResources(start, count, views);
+    else device->context->PSSetShaderResources(start, count, views);
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+SIZE_T APIENTRY samplerSize(D3D10DDI_HDEVICE, const D3D10_DDI_SAMPLER_DESC*) { return sizeof(Sampler); }
+void APIENTRY createSampler(D3D10DDI_HDEVICE h, const D3D10_DDI_SAMPLER_DESC* args,
+    D3D10DDI_HSAMPLER out, D3D10DDI_HRTSAMPLER) {
+  auto device = get(h);
+  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
+  auto sampler = new (out.pDrvPrivate) Sampler(); sampler->owner = device;
+  if (!args) { device->error(E_INVALIDARG); return; }
+  D3D11_SAMPLER_DESC desc = {};
+  desc.Filter = static_cast<D3D11_FILTER>(args->Filter);
+  desc.AddressU = static_cast<D3D11_TEXTURE_ADDRESS_MODE>(args->AddressU);
+  desc.AddressV = static_cast<D3D11_TEXTURE_ADDRESS_MODE>(args->AddressV);
+  desc.AddressW = static_cast<D3D11_TEXTURE_ADDRESS_MODE>(args->AddressW);
+  desc.MipLODBias = args->MipLODBias; desc.MaxAnisotropy = args->MaxAnisotropy;
+  desc.ComparisonFunc = static_cast<D3D11_COMPARISON_FUNC>(args->ComparisonFunc);
+  for (unsigned i = 0; i < 4; i++) desc.BorderColor[i] = args->BorderColor[i];
+  desc.MinLOD = args->MinLOD; desc.MaxLOD = args->MaxLOD;
+  try { device->error(device->backend->CreateSamplerState(&desc, &sampler->backend)); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY destroySampler(D3D10DDI_HDEVICE h, D3D10DDI_HSAMPLER object) {
+  auto sampler = get(object);
+  if (!sampler || sampler->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  sampler->~Sampler();
+}
+template<bool Vertex>
+void APIENTRY setSamplers(D3D10DDI_HDEVICE h, UINT start, UINT count, const D3D10DDI_HSAMPLER* objects) {
+  auto device = get(h);
+  constexpr UINT slots = D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT;
+  if (start > slots || count > slots - start || (count && !objects)) { device->error(E_INVALIDARG); return; }
+  ID3D11SamplerState* samplers[slots] = {};
+  for (UINT i = 0; i < count; i++) {
+    auto sampler = get(objects[i]);
+    if (sampler && (sampler->owner != device || !sampler->backend)) { device->error(E_INVALIDARG); return; }
+    samplers[i] = sampler ? sampler->backend.Get() : nullptr;
+  }
+  try {
+    if (Vertex) device->context->VSSetSamplers(start, count, samplers);
+    else device->context->PSSetSamplers(start, count, samplers);
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
 }
 SIZE_T APIENTRY targetSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERENDERTARGETVIEW*) {
   return sizeof(RenderTarget);
@@ -584,6 +692,16 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnCalcPrivateResourceSize = resourceSize;
   table->pfnCreateResource = createResource;
   table->pfnDestroyResource = destroyResource;
+  table->pfnCalcPrivateShaderResourceViewSize = shaderViewSize;
+  table->pfnCreateShaderResourceView = createShaderView;
+  table->pfnDestroyShaderResourceView = destroyShaderView;
+  table->pfnVsSetShaderResources = setShaderResources<true>;
+  table->pfnPsSetShaderResources = setShaderResources<false>;
+  table->pfnCalcPrivateSamplerSize = samplerSize;
+  table->pfnCreateSampler = createSampler;
+  table->pfnDestroySampler = destroySampler;
+  table->pfnVsSetSamplers = setSamplers<true>;
+  table->pfnPsSetSamplers = setSamplers<false>;
   table->pfnCalcPrivateRenderTargetViewSize = targetSize;
   table->pfnCreateRenderTargetView = createTarget;
   table->pfnDestroyRenderTargetView = destroyTarget;

@@ -6,10 +6,10 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-Parent7051011/child eb27a08 version60003 pairedCI34592189757 allPASS,
-signed artifact10260421279. Query childbc31fb9 CI34592884124 allPASS.
-Upload/copy child828b535 CI34593487334 architecture builds still running.
-Continue mandatory native allocation/resource/draw/Present DDIs;
+60003 paired7051011/eb27a08 CI34592189757 allPASS, signed artifact10260421279.
+Upload/copy fix1f4595d CI34594094209 allPASS. Native allocation/windowed
+Present and constant-buffer childb40ccb1 CI34595019708 still building.
+Continue SRV/sampler DDIs and paired60004 with actual allocation-ABI check;
 main explicitly asks not to stop at CPU OpenAdapter harness.
 
 ## Phases
@@ -25,6 +25,9 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- New paired allocation ABI checker initially resolved shared/ at repository
+  root instead of viogpu/. Corrected the parent path; temporary test outputs
+  were automatically removed by TemporaryDirectory.
 - Native allocation CI34594671352 compiled implementation but its fixture
   used DoNotWait, absent from D3DDDICB_LOCKFLAGS. Confirm exact SDK spelling
   before correcting the test. Upload/copy fix1f4595d CI34594094209 allPASS.

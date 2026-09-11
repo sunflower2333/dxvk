@@ -31,6 +31,12 @@ and bounded slot ranges. The pixel probe now obtains its red color from a real
 constant buffer rather than a shader literal; Windows CPU CI still independently
 compiles and reflects the reconstructed shader container.
 
+Single-sample RGBA8/BGRA8 Texture2D shader-resource views and VS/PS sampler
+bindings now route to the embedded DXVK objects, with ownership, slot and
+subresource validation. The pixel probe samples an immutable white texture
+and multiplies it by the constant-buffer color, so its pixel result requires
+both the descriptor/sampler path and the constant-buffer path to work.
+
 Event, occlusion, timestamp and timestamp-disjoint query DDIs now use the
 embedded backend's actual query objects. Pending results become the DDI busy
 status, device loss is translated to the DDI removed status, and output is

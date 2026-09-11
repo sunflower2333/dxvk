@@ -6,10 +6,13 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-ef4b174 state-resetCI34615056755 running. FurtherGenMipsmandatorycallback
-sourcecomplete: nativeAUTO_GEN_MIP_MAPflag, correctE_FAIL/E_INVALIDARG,
+URGENT: c9e389dCI34615423153 x86/x64 compilePASS butWARPviewcheck391
+pixelmismatch. Addedsubresource/coordinate/expected/actualdiagnostics;
+localizebeforechangingproductionorclaimingMipvalidation. ARM64buildpending.
+ef4b174 state-resetCI34615056755 running. GenMipsc9e389dCI34615423153running:
+nativeAUTO_GEN_MIP_MAPflag, correctE_FAIL/E_INVALIDARG,
 ownedSRVrange and realDXVKGPUmipblits. WARPchecks exactmips/arrayisolation;
-no change to targetbackendworkload. GenMipscandidateCIpending.
+no change to targetbackendworkload. Follow bothCI before sourcehandoff.
 cf492c9 closes four actual native initialization slots; CI34613950771ALL5PASS.
 Newnative state-reset continuation implements allD3D10topologysetters,
 16viewportatomicreplacement/nullslots/zerocount andscissorunbinding.
@@ -115,6 +118,11 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- c9e389d x64/x86 WARP view test both fail check391 at a pixel comparison.
+  Added exact subresource/coordinate/value and stage diagnostics; production
+  compile succeeded. gh run view --job --log refuses logs while sibling jobs
+  remain active; GitHub actions/jobs/{id}/logs endpoint provides completed
+  job logs immediately. Do not weaken pixel checks or advertise this source.
 - Resume searches guessed obsolete docs/INF/shader paths and a zsh glob had
   no matches. Actual docs are workspace windows-driver-docs, INF is
   viogpu/viogpuwddm/viogpuwddm.inx, shader is umd_shader.cpp. Discover before

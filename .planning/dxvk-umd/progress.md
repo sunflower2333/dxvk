@@ -1,5 +1,16 @@
 # Progress
 
+2026-09-11: c9e389dCI34615423153 x64/x86 compile production and test but
+WARP view fixture fails check391 pixels. Prior ef4b174 x64/x86 bothPASS.
+Added first mismatch subresource/coordinate/expected/actual and stage labels
+to identify whether mip generation or subsequent shared-fixture state failed.
+No relaxed assertion or production fix based on an unlocalized assumption.
+
+2026-09-11: c9e389d GenMips push completed; NativeCI34615423153 running.
+State-reset ef4b174 CI34615056755 remains active. Synchronized public
+umd-native-status with the code and ordinary-runtime/ARM64X acceptance gates.
+No device operations and no candidate runtime registration performed.
+
 2026-09-11: ef4b174 CI34615056755 running. Continuing mandatory GenMips DDI
 with native auto-mip creation flag translation, owned resource/view validation
 and existing DXVK GPU mip generation. WARP verifies selected-array isolation

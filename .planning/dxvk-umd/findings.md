@@ -13,10 +13,15 @@
   both engine and Vulkan dependencies must match the calling ABI. OpenCL
   agent confirmed its Registry64 multi-vendor behavior must not be inferred
   for D3D. Full contract and official URLs saved in runtime-activation-gaps.md.
-- Current native table rejects UNDEFINED topology during runtime reset and
-  accepts only one viewport. Microsoft specifies an atomic complete viewport
+- Before ef4b174, the native table rejected UNDEFINED topology during runtime
+  reset and accepted only one viewport. Microsoft specifies an atomic complete viewport
   replacement; zero count also unbinds even when the clear hint is zero.
   These are runtime initialization gaps, not additional benchmark coverage.
+- The next resource coverage gap includes typed buffer SRVs/RTVs. Local
+  Microsoft/Mesa source confirms native Buffer.FirstElement and NumElements;
+  current CreateShaderResourceView rejects every non-Texture2D resource even
+  though buffer creation accepts shader-resource binds. No source edits for
+  that next task have been made, and no support is claimed.
 
 - Parent redirects the next milestone to ordinary Microsoft D3D11/D3D12
   runtime activation and owns an independent system-DLL/exact-UMD application

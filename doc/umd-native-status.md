@@ -15,11 +15,26 @@ select an adapter and no first-adapter/software fallback exists.
 
 The development D3D10 DDI table currently includes resource creation/destruction
 for buffers and Texture2D, RTV clear/copy, staging and resource Map/Unmap, Flush,
-restricted VS/PS creation/binding/destruction, rasterizer state, one viewport,
-one RGBA8 render target, triangle-list topology and Draw. Driver-private memory
+restricted VS/PS creation/binding/destruction, rasterizer state, up to16viewports,
+one RGBA8 render target, D3D10 topology state and Draw. Driver-private memory
 belongs to the caller; objects retain an owning-device pointer and backend COM
 references. DDI CPU access and DO_NOT_WAIT bits are translated explicitly to
 the different D3D11 API bit values.
+
+Runtime initialization now supplies default constant-buffer updates, table
+relocation and accurate zero-performance-counter capability responses, validated
+by cf492c9 CI34613950771 ALL5PASS. The topology setter accepts UNDEFINED as a
+legal reset and all D3D10 primitive types. Viewports replace the entire binding
+atomically; native null slots retain their indices as zero-area API viewports.
+Zero count unbinds viewport/scissor state even when the clear hint is zero.
+Source ef4b174 CI34615056755 is pending. This state coverage does not implement
+the still-missing geometry shader or stream-output stages.
+
+GenMips is wired at source c9e389d through native auto-mip resource flags and
+DXVK's actual GPU mip blits. Ownership, creation flags, MIP range/type and format
+support are checked before dispatch. Existing WARP CI tests generated pixels
+and unchanged neighboring array slices; its CI34615423153 remains pending.
+No new target GPU workload or ordinary-runtime activation has been claimed.
 
 Dynamic IA/constant-buffer/resource Map DDIs share the checked map path.
 Busy and device-loss errors are translated to native DDI codes; failed maps
@@ -208,6 +223,12 @@ and 377 production-reply/real-decoder CPU checks; see the identity contract
 document for commits. This does not establish installed-device validation.
 
 ## Required follow-up
+
+The current native adapter/version/table and ARM64/x64/x86 registration gates
+are detailed in [runtime-activation-gaps.md](runtime-activation-gaps.md). The
+parent's independent f6da604 ordinary-runtime probe, using the actual system
+D3D/DXGI modules and exact loaded UMD/hash, is the next activation acceptance
+path. Separate architecture builds cannot prove native or emulated UMD loading.
 
 1. Complete paired package and device validation of the KMD LUID producer in
    `umd-identity-proposal.md`, including real stop/restart/reset transitions.

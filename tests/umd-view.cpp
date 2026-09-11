@@ -29,7 +29,12 @@ static void pixels(ID3D11Device* device, ID3D11DeviceContext* context,
   const UINT height = std::max(1u, desc.Height >> (index % desc.MipLevels));
   for (UINT y = 0; y < height; y++) {
     const auto row = reinterpret_cast<const UINT*>(static_cast<const char*>(map.pData) + y * map.RowPitch);
-    for (UINT x = 0; x < width; x++) CHECK(row[x] == color);
+    for (UINT x = 0; x < width; x++) {
+      if (row[x] != color)
+        std::fprintf(stderr, "WARP_VIEW_PIXEL subresource=%u size=%ux%u x=%u y=%u expected=%08x actual=%08x\n",
+          index, width, height, x, y, color, row[x]);
+      CHECK(row[x] == color);
+    }
   }
   context->Unmap(staging.Get(), index);
 }
@@ -186,6 +191,7 @@ int main() {
   ComPtr<ID3D11ShaderResourceView> generationView;
   CHECK(device->CreateShaderResourceView(texture.Get(), &generationDesc, &generationView) == S_OK);
   context->GenerateMips(generationView.Get());
+  std::puts("WARP_VIEW_STAGE generated-mip-array");
   for (UINT i = 0; i < 4; i++) pixels(device.Get(), context.Get(), texture.Get(), i, i >= 2 ? 0xff0000ff : 0);
   // Preserve the following independent sampling case's original expectation.
   context->ClearRenderTargetView(targetView.Get(), green);
@@ -212,6 +218,7 @@ int main() {
   context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   D3D11_VIEWPORT viewport = {0,0,4,4,0,1}; context->RSSetViewports(1, &viewport);
   context->Draw(3, 0);
+  std::puts("WARP_VIEW_STAGE sample-generated-resource");
   pixels(device.Get(), context.Get(), output.Get(), 0, 0xff00ff00);
   context->ClearState();
 

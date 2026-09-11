@@ -1,5 +1,6 @@
 #include "umd_ddi.h"
 #include "umd_api.h"
+#include "umd_adapter.h"
 #include "umd_shader.h"
 
 #include <wrl/client.h>
@@ -10,6 +11,7 @@
 namespace {
 using Microsoft::WRL::ComPtr;
 struct Device {
+  std::shared_ptr<const dxvk::umd::AdapterIdentity> adapter;
   ComPtr<ID3D11Device> backend;
   ComPtr<ID3D11DeviceContext> context;
   D3D10DDI_HRTCORELAYER runtime;
@@ -367,4 +369,12 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnFlush = flush;
   table->pfnDestroyDevice = destroyDevice;
   return S_OK;
+}
+
+HRESULT dxvk::umd::createAdapterDevice(
+    const std::shared_ptr<const AdapterIdentity>& identity, D3D10DDIARG_CREATEDEVICE* args) {
+  const HRESULT hr = VioGpuDxvkCreateDdiTestDevice(&identity->luid, args->hDrvDevice,
+    args->hRTCoreLayer, args->pUMCallbacks, args->pDeviceFuncs);
+  if (SUCCEEDED(hr)) get(args->hDrvDevice)->adapter = identity;
+  return hr;
 }

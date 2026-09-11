@@ -50,9 +50,11 @@ handle casts; adversarial tests include all truncated reply lengths and an
 old-KMD reply with a zero trailer. `umd_runtime_query.cpp` implements the
 callback consumer as a development export. Its Windows CPU test supplies
 mock callback replies only, checks the exact opaque runtime handle, verifies
-the output buffer is zeroed and propagates callback errors. Wiring it to
-OpenAdapter and implementing the KMD producer require a coordinated ABI
-review and lifecycle validation.
+the output buffer is zeroed and propagates callback errors. The development
+`VioGpuDxvkOpenAdapterForTest` harness wires the callback into real WDK
+adapter/device structures and retains identity across device lifetime.
+It does not export OpenAdapter10 or register with Windows. Implementing the
+KMD producer requires a coordinated ABI review and lifecycle validation.
 
 ## Microsoft references
 

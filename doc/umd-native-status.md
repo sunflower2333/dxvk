@@ -37,6 +37,15 @@ containers with Microsoft's D3DReflect. Windows CI builds ARM64, x64 and x86
 targets and checks PE architecture, exports and absence of public D3D creation
 imports. These checks require no GPU and establish no hardware rendering claim.
 
+`VioGpuDxvkOpenAdapterForTest` now wires the real WDK OpenAdapter, private
+device-size, CreateDevice and CloseAdapter signatures into the development
+table. It queries the original runtime handle for the exact LUID, accepts
+only the D3D10.0 table and compatible runtime builds, and rejects unsupported
+flags rather than silently ignoring threading restrictions. Devices retain
+adapter identity after the adapter handle is closed. The CPU lifecycle test
+uses mocked runtime/backend callbacks, including failure paths; this is not
+Windows runtime activation. No OpenAdapter10 export or DXGI table is supplied.
+
 Two device-only executables are packaged for coordinated testing:
 
 - `dxvk-umd-backend-probe.exe <16 hex digits>` creates the private backend,

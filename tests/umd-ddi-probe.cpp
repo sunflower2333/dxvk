@@ -1,4 +1,5 @@
 #include "../src/umd/umd_ddi.h"
+#include "umd-probe-shaders.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -52,27 +53,58 @@ int main(int argc, char** argv) {
   if (!viewMemory) return 6;
   D3D10DDI_HRENDERTARGETVIEW view = {viewMemory.get()};
   table.pfnCreateRenderTargetView(device, &viewDesc, view, {});
+  std::vector<uint32_t> vs, ps;
+  if (!compileProbeShader(true, vs) || !compileProbeShader(false, ps)) return 8;
+  D3D10DDIARG_SIGNATURE_ENTRY input = {D3D10_SB_NAME_VERTEX_ID,0,1};
+  D3D10DDIARG_SIGNATURE_ENTRY position = {D3D10_SB_NAME_POSITION,0,15};
+  D3D10DDIARG_SIGNATURE_ENTRY colorOutput = {D3D10_SB_NAME_UNDEFINED,0,15};
+  D3D10DDIARG_STAGE_IO_SIGNATURES vsSignature = {&input,1,&position,1};
+  D3D10DDIARG_STAGE_IO_SIGNATURES psSignature = {nullptr,0,&colorOutput,1};
+  auto vsMemory = allocate(table.pfnCalcPrivateShaderSize(device, vs.data(), &vsSignature));
+  auto psMemory = allocate(table.pfnCalcPrivateShaderSize(device, ps.data(), &psSignature));
+  D3D10_DDI_RASTERIZER_DESC rasterDesc = {};
+  rasterDesc.FillMode = D3D10_DDI_FILL_SOLID;
+  rasterDesc.CullMode = D3D10_DDI_CULL_NONE;
+  rasterDesc.DepthClipEnable = TRUE;
+  auto rasterMemory = allocate(table.pfnCalcPrivateRasterizerStateSize(device, &rasterDesc));
+  if (!vsMemory || !psMemory || !rasterMemory) return 9;
+  D3D10DDI_HSHADER vertex = {vsMemory.get()}, pixel = {psMemory.get()};
+  D3D10DDI_HRASTERIZERSTATE raster = {rasterMemory.get()};
+  table.pfnCreateVertexShader(device, vs.data(), vertex, {}, &vsSignature);
+  table.pfnCreatePixelShader(device, ps.data(), pixel, {}, &psSignature);
+  table.pfnCreateRasterizerState(device, &rasterDesc, raster, {});
   unsigned mismatches = 4096;
   if (SUCCEEDED(lastError)) {
     FLOAT color[4] = {0,1,0,1};
     table.pfnClearRenderTargetView(device, view, color);
+    table.pfnVsSetShader(device, vertex);
+    table.pfnPsSetShader(device, pixel);
+    table.pfnSetRasterizerState(device, raster);
+    table.pfnSetRenderTargets(device, &view, 1, 0, {});
+    D3D10_DDI_VIEWPORT viewport = {0,0,64,64,0,1};
+    table.pfnSetViewports(device, 1, 0, &viewport);
+    table.pfnIaSetTopology(device, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    table.pfnDraw(device, 3, 0);
     table.pfnResourceCopy(device, staging, target);
     D3D10DDI_MAPPED_SUBRESOURCE mapped = {};
     table.pfnStagingResourceMap(device, staging, 0, D3D10_DDI_MAP_READ, 0, &mapped);
     if (SUCCEEDED(lastError) && mapped.pData && mapped.RowPitch >= 256) {
       mismatches = 0;
-      const unsigned char expected[4] = {0,255,0,255};
+      const unsigned char expected[4] = {255,0,0,255};
       for (unsigned y = 0; y < 64; y++)
         for (unsigned x = 0; x < 64; x++)
           mismatches += std::memcmp(static_cast<unsigned char*>(mapped.pData) + y*mapped.RowPitch + x*4, expected, 4) != 0;
       table.pfnStagingResourceUnmap(device, staging, 0);
     }
   }
+  table.pfnDestroyRasterizerState(device, raster);
+  table.pfnDestroyShader(device, pixel);
+  table.pfnDestroyShader(device, vertex);
   table.pfnDestroyRenderTargetView(device, view);
   table.pfnDestroyResource(device, staging);
   table.pfnDestroyResource(device, target);
   table.pfnDestroyDevice(device);
-  std::printf("DDI_PIXELS %s pixels=4096 mismatches=%u error=%08lx\n",
+  std::printf("DDI_DRAW_PIXELS %s pixels=4096 mismatches=%u error=%08lx\n",
     !mismatches && SUCCEEDED(lastError) ? "PASS" : "FAIL", mismatches, static_cast<unsigned long>(lastError));
   return !mismatches && SUCCEEDED(lastError) ? 0 : 7;
 }

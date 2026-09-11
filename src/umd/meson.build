@@ -36,3 +36,5 @@ umd_identity_query_test = executable('dxvk-umd-identity-query-test',
 umd_adapter_test = executable('dxvk-umd-adapter-test',
   '../../tests/umd-adapter.cpp', 'umd_adapter.cpp', 'umd_runtime_query.cpp',
 )
+
+umd_query_test = executable('dxvk-umd-query-test', '../../tests/umd-query.cpp')

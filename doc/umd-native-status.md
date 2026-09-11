@@ -21,6 +21,13 @@ belongs to the caller; objects retain an owning-device pointer and backend COM
 references. DDI CPU access and DO_NOT_WAIT bits are translated explicitly to
 the different D3D11 API bit values.
 
+Event, occlusion, timestamp and timestamp-disjoint query DDIs now use the
+embedded backend's actual query objects. Pending results become the DDI busy
+status, device loss is translated to the DDI removed status, and output is
+copied only on completion. Predicate/statistics queries are still rejected.
+The completion helper has CPU failure-path tests; the pixel probe additionally
+requires a completed GPU event. These new GPU query paths have not run on target.
+
 The initial shader interface is deliberately limited to SM4.0 VS with optional
 SV_VertexID and SV_Position output, plus a PS with no inputs and one float
 SV_Target0 output. User varyings, other stages and custom-data instructions

@@ -6,9 +6,11 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-Child a9c69c0 CI34589123522 allPASS. Parent801fde5 CI34589164956 passed
-Mesa+DXVK and is in KMD/sign/package. Implement and validate development
-OpenAdapter lifecycle with real WDK types; parent owns the KMD LUID producer.
+Child11d889d CI34591067184 allPASS. eb27a08 only updates producer docs and
+comments. Producer12bbe0c/1f99078/33f94fa integrated in parent7051011, fixed
+child eb27a08,60003, pairedCI34592189757 (regressionPASS, Mesa+DXVK building).
+Continue mandatory query/resource/draw/Present DDIs after this checkpoint;
+main explicitly asks not to stop at CPU OpenAdapter harness.
 
 ## Phases
 - [complete] Implement internal exact-LUID DXVK backend factory (runtime proof pending).
@@ -47,3 +49,11 @@ and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 - Superseded child7a373289 CI34588590093 and parentc025e63 CI34588644705 were
   cancelled after replacement runs started, because they retain the already
   diagnosed real-shader reconstruction failure. Not an observation timeout.
+- Producer header was initially resolved relative to checkout root; rg showed
+  its actual location isviogpu/shared/viogpu_adapter_identity.h. Read-only
+  review completed at the correct path; no producer files modified.
+- Parent total contract checker retained baseline epoch-version and two-file
+  package rules, incompatible with this branch's existing explicit60003 and
+  five-file package. Narrow checker integration validates exact reserved
+  source version and exact five files; full contract nowPASS. Check-only
+  follow-up does not change7051011 binaries and avoids duplicate full CI.

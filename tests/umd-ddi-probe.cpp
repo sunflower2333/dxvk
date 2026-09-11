@@ -98,6 +98,11 @@ int main(int argc, char** argv) {
   }
   std::printf("DDI_CREATE hr=%08lx\n", static_cast<unsigned long>(hr));
   if (FAILED(hr)) return 4;
+  D3D10DDIARG_CREATEQUERY eventDesc = {D3D10DDI_QUERY_EVENT, 0};
+  auto eventMemory = allocate(table.pfnCalcPrivateQuerySize(device, &eventDesc));
+  if (!eventMemory) { table.pfnDestroyDevice(device); return 12; }
+  D3D10DDI_HQUERY event = {eventMemory.get()};
+  table.pfnCreateQuery(device, &eventDesc, event, {});
   D3D10DDI_MIPINFO mip = {64,64,1,64,64,1};
   D3D10DDIARG_CREATERESOURCE desc = {};
   desc.pMipInfoList = &mip;
@@ -143,6 +148,7 @@ int main(int argc, char** argv) {
   table.pfnCreatePixelShader(device, ps.data(), pixel, {}, &psSignature);
   table.pfnCreateRasterizerState(device, &rasterDesc, raster, {});
   unsigned mismatches = 4096;
+  BOOL eventComplete = FALSE;
   if (SUCCEEDED(lastError)) {
     FLOAT color[4] = {0,1,0,1};
     table.pfnClearRenderTargetView(device, view, color);
@@ -155,6 +161,7 @@ int main(int argc, char** argv) {
     table.pfnIaSetTopology(device, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     table.pfnDraw(device, 3, 0);
     table.pfnResourceCopy(device, staging, target);
+    table.pfnQueryEnd(device, event);
     D3D10DDI_MAPPED_SUBRESOURCE mapped = {};
     table.pfnStagingResourceMap(device, staging, 0, D3D10_DDI_MAP_READ, 0, &mapped);
     if (SUCCEEDED(lastError) && mapped.pData && mapped.RowPitch >= 256) {
@@ -165,6 +172,15 @@ int main(int argc, char** argv) {
           mismatches += std::memcmp(static_cast<unsigned char*>(mapped.pData) + y*mapped.RowPitch + x*4, expected, 4) != 0;
       table.pfnStagingResourceUnmap(device, staging, 0);
     }
+    if (SUCCEEDED(lastError)) {
+      const ULONGLONG deadline = GetTickCount64() + 5000;
+      do {
+        lastError = S_OK;
+        table.pfnQueryGetData(device, event, &eventComplete, sizeof(eventComplete), 0);
+        if (lastError != DXGI_DDI_ERR_WASSTILLDRAWING) break;
+        Sleep(1);
+      } while (GetTickCount64() < deadline);
+    }
   }
   table.pfnDestroyRasterizerState(device, raster);
   table.pfnDestroyShader(device, pixel);
@@ -172,8 +188,10 @@ int main(int argc, char** argv) {
   table.pfnDestroyRenderTargetView(device, view);
   table.pfnDestroyResource(device, staging);
   table.pfnDestroyResource(device, target);
+  table.pfnDestroyQuery(device, event);
   table.pfnDestroyDevice(device);
-  std::printf("DDI_DRAW_PIXELS %s pixels=4096 mismatches=%u error=%08lx\n",
-    !mismatches && SUCCEEDED(lastError) ? "PASS" : "FAIL", mismatches, static_cast<unsigned long>(lastError));
-  return !mismatches && SUCCEEDED(lastError) ? 0 : 7;
+  const bool pass = !mismatches && eventComplete && SUCCEEDED(lastError);
+  std::printf("DDI_DRAW_PIXELS %s pixels=4096 mismatches=%u event=%d error=%08lx\n",
+    pass ? "PASS" : "FAIL", mismatches, eventComplete, static_cast<unsigned long>(lastError));
+  return pass ? 0 : 7;
 }

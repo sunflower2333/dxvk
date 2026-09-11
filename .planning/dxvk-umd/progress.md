@@ -1,5 +1,34 @@
 # Progress
 
+2026-09-11: Continued mandatory DDIs with four actual backend query types,
+begin/end/ownership, busy/removal status translation and no partial output
+publication. Added CPU completion-helper failure tests and required a real
+GPU event in the4096pixel device probe. New Windows CI pending; no GPU run.
+
+2026-09-11: Producer WDK34591724161 allPASS at1f99078; main authorized
+cherry-pick12bbe0c/1f99078/33f94fa. Integrated as c481d57/cd77ed9/f09ee0f.
+Local paired377checksPASS with actual decoder; parent7051011 pins child
+eb27a08 (docs/comments-only over allPASS11d889d), version60003, starts
+paired34592189757. RegressionPASS, Mesa+DXVK pending. Follow-up checker
+now verifies explicit development source version and exact five package
+files; full contractPASS. Main requires continuing mandatory native DDIs.
+
+2026-09-11: child31f0215 CI34590877589 allPASS acrossARM64,x64,x86;
+x64/x86 executed715adapter lifecycle checks plus runtime-query consumer
+and57real-HLSL checks. All3artifacts uploaded.11d889d KMT-mode CI remains
+active. Parent12bbe0c producer failed its newMSVC/WX fixture before KMD
+compilation (SAL redefinitions); main owns the fix and explicitly requests
+holding cherry-pick until it passes. Own paired parent is prepared with
+11d889d pin/version60003 but remains uncommitted and unpushed.
+
+2026-09-11: New child31f0215 adapter lifecycle and11d889d optional --adapter
+KMT probe are pushed. Native CI handles34590877589 and34591067184 have
+passed sanitizer and real-HLSL CPU jobs; architecture builds remain active.
+Read-only reviewed parent's in-progress KMD producer: all160-byte fields,
+legacy128-byte preservation, atomic64-bit LUID and stop/reset refusal agree
+with this consumer. Parent will provide a reviewed commit; no cherry-pick
+or device operations yet. Old CI watcher62752 completed and was drained.
+
 2026-09-11: Paired801fde5 CI34589164956 ALL PASS. Logs confirm60002,
 both DXVK probes,viogpudxvk.dll,Mesa viogpud3d.dll,KMD sys and cat signed;
 final droidvm-arm64-drivers artifact uploaded (11522740bytes). Existing INF

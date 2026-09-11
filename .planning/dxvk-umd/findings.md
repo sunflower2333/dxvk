@@ -1,8 +1,15 @@
 # Findings
 
+- Microsoft QueryGetData DDI returns void and reports unfinished work via
+  SetErrorCb(DXGI_DDI_ERR_WASSTILLDRAWING). Backend GetData returnsS_FALSE;
+  treating that as ordinary success would expose incomplete query data.
+  Added scratch-buffer publication only onS_OK, explicit pending/device-loss
+  translation, DO_NOT_FLUSH handling, and real event/occlusion/timestamp/
+  disjoint query objects. Predicate/statistics queries remain unsupported.
+
 - Microsoft D3D10 OpenAdapter/CreateDevice structures carry independent
   adapter, runtime device and core-layer handles. D3D10.0 interface version
-  is10.1 and minimum runtime build4; native D3D11 tables must not be cast to
+  is0x000a0001 and minimum runtime build4; native D3D11 tables must not be cast to
   D3D10. Reject unsupported flags, including threading restrictions that
   DXVK does not yet honor here. Adapter identity lifetime must outlive its
   handle when devices retain it. Added development-only OpenAdapter harness

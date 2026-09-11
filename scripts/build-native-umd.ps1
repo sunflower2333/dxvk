@@ -34,7 +34,7 @@ endian = 'little'
 "@ | Set-Content native-umd-cross.ini
 meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Denable_umd=true -Denable_d3d8=false -Denable_d3d9=false -Denable_d3d10=false
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
-ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe
+ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 if ($arch -ne 'arm64') {
@@ -42,6 +42,8 @@ if ($arch -ne 'arm64') {
     if ($LASTEXITCODE) { throw 'Runtime identity callback consumer test failed' }
     & build-umd/src/umd/dxvk-umd-adapter-test.exe | Tee-Object (Join-Path $OutputDirectory 'adapter-test.txt')
     if ($LASTEXITCODE) { throw 'Adapter lifecycle test failed' }
+    & build-umd/src/umd/dxvk-umd-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'query-test.txt')
+    if ($LASTEXITCODE) { throw 'Query completion test failed' }
 }
 ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe src/umd/viogpudxvk.dll src/umd/dxvk-umd-ddi-probe.exe src/umd/dxvk-umd-shader-test.exe
 if ($LASTEXITCODE) { throw 'DXVK UMD development build failed' }

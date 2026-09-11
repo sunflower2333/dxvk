@@ -2,6 +2,7 @@
 #include "umd_api.h"
 #include "umd_adapter.h"
 #include "umd_shader.h"
+#include "umd_query.h"
 
 #include <wrl/client.h>
 #include <memory>
@@ -44,11 +45,80 @@ struct Rasterizer {
   Device* owner = nullptr;
   ComPtr<ID3D11RasterizerState> backend;
 };
+struct Query {
+  Device* owner = nullptr;
+  ComPtr<ID3D11Query> backend;
+  dxvk::umd::QueryInfo info;
+  bool begun = false;
+  bool issued = false;
+};
 Device* get(D3D10DDI_HDEVICE h) { return static_cast<Device*>(h.pDrvPrivate); }
 Resource* get(D3D10DDI_HRESOURCE h) { return static_cast<Resource*>(h.pDrvPrivate); }
 RenderTarget* get(D3D10DDI_HRENDERTARGETVIEW h) { return static_cast<RenderTarget*>(h.pDrvPrivate); }
 Shader* get(D3D10DDI_HSHADER h) { return static_cast<Shader*>(h.pDrvPrivate); }
 Rasterizer* get(D3D10DDI_HRASTERIZERSTATE h) { return static_cast<Rasterizer*>(h.pDrvPrivate); }
+Query* get(D3D10DDI_HQUERY h) { return static_cast<Query*>(h.pDrvPrivate); }
+
+bool owned(Device* device, Query* query) {
+  if (!query || query->owner != device || !query->backend) {
+    device->error(E_INVALIDARG);
+    return false;
+  }
+  return true;
+}
+
+SIZE_T APIENTRY querySize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEQUERY*) { return sizeof(Query); }
+void APIENTRY createQuery(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEQUERY* args,
+    D3D10DDI_HQUERY out, D3D10DDI_HRTQUERY) {
+  auto device = get(h);
+  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
+  auto query = new (out.pDrvPrivate) Query();
+  query->owner = device;
+  if (!args || !dxvk::umd::queryInfo(args->Query, args->MiscFlags, query->info)) {
+    device->error(E_INVALIDARG); return;
+  }
+  D3D11_QUERY_DESC desc = {query->info.type, 0};
+  try { device->error(device->backend->CreateQuery(&desc, &query->backend)); }
+  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+  catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY destroyQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
+  auto query = get(object);
+  if (!query || query->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  query->~Query();
+}
+void APIENTRY beginQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
+  auto device = get(h); auto query = get(object);
+  if (!owned(device, query)) return;
+  if (!query->info.beginRequired || query->begun) { device->error(E_INVALIDARG); return; }
+  try {
+    device->context->Begin(query->backend.Get());
+    query->begun = true; query->issued = false;
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY endQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
+  auto device = get(h); auto query = get(object);
+  if (!owned(device, query)) return;
+  if (query->info.beginRequired && !query->begun) { device->error(E_INVALIDARG); return; }
+  try {
+    device->context->End(query->backend.Get());
+    query->begun = false; query->issued = true;
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY getQueryData(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object, void* data, UINT size, UINT flags) {
+  auto device = get(h); auto query = get(object);
+  if (!owned(device, query)) return;
+  if (!query->issued) { device->error(E_INVALIDARG); return; }
+  try {
+    device->error(dxvk::umd::readQueryData(query->info, data, size, flags,
+      [&](void* output, UINT outputSize, UINT apiFlags) {
+        return device->context->GetData(query->backend.Get(), output, outputSize, apiFlags);
+      }));
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
 
 bool owned(Device* device, Resource* resource) {
   if (!resource || resource->owner != device || !resource->backend) {
@@ -348,6 +418,12 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnDestroyRenderTargetView = destroyTarget;
   table->pfnClearRenderTargetView = clearTarget;
   table->pfnResourceCopy = copyResource;
+  table->pfnCalcPrivateQuerySize = querySize;
+  table->pfnCreateQuery = createQuery;
+  table->pfnDestroyQuery = destroyQuery;
+  table->pfnQueryBegin = beginQuery;
+  table->pfnQueryEnd = endQuery;
+  table->pfnQueryGetData = getQueryData;
   table->pfnResourceMap = mapResource;
   table->pfnResourceUnmap = unmapResource;
   table->pfnStagingResourceMap = mapResource;

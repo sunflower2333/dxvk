@@ -1,13 +1,14 @@
 # Native Microsoft runtime activation gaps
 
-Source audit: DXVK6dfb092 plus GS continuation and VKD3D61edc56,2026-09-12. DXVK5b0983d and
+Source audit: DXVK7c0b9e3 and VKD3D61edc56,2026-09-12. DXVK5b0983d and
 VKD3D61edc56 pass standalone architecture CI; cf492c9 CI34613950771 and
 ef4b174 CI34615056755 also pass all five jobs. GenMips source c9e389d compiles,
 but the runner's WARP ignores GenerateMips for views starting at array slice1.
 Independent API-only controls in CI34617903693 reproduce it while default
 views and slice0 work. The strict slice0 oracle at6dfb092 passes all488WARP
-checks onx64/x86; CI34619152294 passes all5jobs including ARM64. Current GS source
-continuation is not yet Windows-validated.
+checks onx64/x86; CI34619152294 passes all5jobs including ARM64. GS7c0b9e3
+CI34620365858 also passes all5jobs, including original/rebuilt GS WARP pixels,
+2257shader checks and all3production architectures. Target GS proof is pending.
 Earlier bounded hardware readbacks remain valid
 for their exact tested sources; neither candidate is a registered native
 Direct3D runtime driver. Parent owns a new independent ordinary application
@@ -49,8 +50,8 @@ entrypoint symbol or copying D3D10 pointers into a D3D11 table is insufficient.
 GS shader creation/binding and resource slots now reuse DXVK's internal device;
 VS->GS generic inputs preserve raw32 bits and GS->PS types follow the active
 consumer. The runtime union input signature can include undeclared registers;
-these must not require an upstream producer. WARP/SPIR-V verification for this
-continuation is pending. Stream output and further system values remain absent.
+these must not require an upstream producer. WARP/SPIR-V verification passes
+at7c0b9e3 CI34620365858. Stream output and further system values remain absent.
 Most translation work can reuse DXVK's internal device, but SetPredication is
 an upstream stub and cannot simply be forwarded as implemented functionality.
 

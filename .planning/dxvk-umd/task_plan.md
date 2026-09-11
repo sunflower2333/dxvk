@@ -6,10 +6,19 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+GS7c0b9e3 CI34620365858 ALL5PASS. Both original/rebuilt GS16payloadwords
+match including actual XOR/sample processing. Source closes native GS/create/bind and
+GS CB/SRV/sampler slots, with real DXVK stage compilation and linkage.
+Local147shader ASan/UBSan, Windows2257 WARP/SPIR-V and three architecture
+production gates pass. Exact ARM64artifact10272751005 is materialized under
+probe-7c0b9e3-arm64; source-checkpoint-7c0b9e3.md records hashes and limits.
+Next finish native SO declaration/gap/stride and buffer-counter semantics,
+then remaining sharing/mandatory-table and real OpenAdapter/version activation.
+No new backend GPU run is requested; ordinary runtime/display acceptance is open.
 6dfb092 replacement mip CI34619152294 ALL5PASS; 488 WARP view/mip checks
 pass on x86/x64, shader887 checks pass, ARM64 production compiles successfully.
-Next production slice adds native GS shader/create/bind and GS CB/SRV/sampler
-bindings, with raw32 VS->GS transport and PS-selected GS output types. Validate
+Current production adds native GS shader/create/bind and GS CB/SRV/sampler
+bindings, with raw32 VS->GS transport and PS-selected GS output types. Validated
 original/rebuilt VS->GS->PS WARP payloads plus final SPIR-V array interfaces.
 Keep stream output, predication, ordinary activation and full feature levels
 explicitly unfinished; no extra remote backend run requested.

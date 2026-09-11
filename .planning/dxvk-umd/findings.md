@@ -310,3 +310,19 @@ input absent from the signature or with conflicting mask/system-value data.
 CreateGeometryShader has the same typed5argument signature as VS/PS and uses
 CalcPrivateShaderSize. Failed creation never gets DestroyShader; candidates
 own and clean up all temporary vectors/COM objects before publication.
+2026-09-12 remaining DDI audit: Native SO declarations give OutputSlot,
+RegisterIndex and xyzw RegisterMask, with one StreamOutputStrideInBytes.
+DXVK CreateGeometryShaderWithStreamOutput takes semantic/range declarations,
+requires extTransformFeedback, and DrawAuto consumes the actual SO counter
+attached to IA vertex buffer0. Preserve these contracts rather than substitute
+CPU vertex counts. SetTextFilterSize is a real 1-bit monochrome convolution
+sampler contract (default1x1,1..7), not an empty state acknowledgement.
+No SO/text-filter code was changed during the GS CI wait.
+2026-09-12 SO follow-up: Local Mesa's native GS+SO entry accepts null shader
+code and resolves passthrough against bound VS later. Native RegisterIndex
+UINT_MAX is a declaration gap, masks must be contiguous, and the explicit
+stride applies when all outputs use slot0. Multi-buffer packing derives
+per-slot strides. SOSetTargets must clear all higher slots regardless of its
+clear hint and preserve offsets/append semantics. A future full SO change
+must allow no-PS/no-color-target capture and runtime-owned counters; merely
+forwarding DrawAuto behind current drawReady would still reject that path.

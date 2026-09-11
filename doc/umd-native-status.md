@@ -44,15 +44,17 @@ WARP test on x86/x64 and ARM64 compilation. Existing typeless clear/sample tests
 slice1. Production is unchanged; DXVK mip generation on nonzero array slices
 and ordinary runtime activation remain unvalidated on the target.
 
-The next source continuation adds native GS creation/binding and constant
+Source 7c0b9e3 adds native GS creation/binding and constant
 buffer, SRV and sampler slots. It transports generic VS->GS inputs as raw32,
 keeps position F32, and compiles GS outputs using the active PS interface.
 Changing or removing GS relinks the VS to its actual next stage. Unused entries
 in the runtime's union input signature no longer cause false PS/GS rejection.
 The new WARP fixture compares original and rebuilt VS->GS->PS payloads with a
 GS constant-buffer XOR and texture sample; SPIR-V checks include per-vertex
-GS input arrays. Windows CI is pending. Stream output and additional shader
-system values remain unfinished, and this does not enable runtime registration.
+GS input arrays. CI34620365858 passes all five jobs: ARM64/x64/x86 production
+builds, x64/x86 WARP and 2,257 shader checks, plus Linux memory checks.
+The actual GS native DDI has not run on the target. Stream output and additional
+shader system values remain unfinished, and this does not enable registration.
 
 Dynamic IA/constant-buffer/resource Map DDIs share the checked map path.
 Busy and device-loss errors are translated to native DDI codes; failed maps

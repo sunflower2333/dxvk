@@ -350,3 +350,16 @@ runtimeidentity176 and shader147. The first union rerun caught an obsolete
 negative expectation and it was corrected to the Microsoft documented
 unused-input behavior; missing/invalid declarations still fail. Mip6dfb092
 CI34619152294 now ALL5PASS. Committing GS continuation for Windows CI.
+2026-09-12: GS7c0b9e3 CI34620365858 fast shader CPU PASS2257checks.
+Original and rebuilt VS->PS and VS->GS->PS each match all16payloadwords;
+the GS fixture correctly changes fixedBits.x from12345678to03254769 via
+the bound b1 XOR mask while preserving NaN/-0/Inf and sampled/interpolated UV.
+Per-vertex GS input and producer/consumer final-SPIR-V types pass. Identity
+job also passes; all three full production build jobs remain in progress.
+2026-09-12: GS7c0b9e3 CI34620365858 completed ALL5PASS. ARM64/x64/x86
+compile/link, PE/import/export checks and artifact upload all pass. x64/x86
+execute2257shader/WARP and488view/mip checks. Downloaded only the GitHub
+ARM64artifact10272751005 into probe-7c0b9e3-arm64, verified STATUSsource/arch
+and DLL/probe hashes. Existing frozen artifacts and VKD3D source/pins unchanged.
+No device actions, new backend GPU run or runtime-activation claim. Final docs
+checkpoint describes the remaining SO/shared/negotiation/presentation work.

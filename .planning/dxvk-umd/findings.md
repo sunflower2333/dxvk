@@ -1,5 +1,17 @@
 # Findings
 
+- ARM64/x64 activation audit: Microsoft documents UserModeDriverNameWoW for
+  32-bit UMDs, and UserModeDriverName list positions for D3D versions. Neither
+  supplies an x64-on-ARM selector. DriverStore paths have no WOW filesystem
+  redirection. Arm64X provides a documented shared path with native/EC views;
+  both engine and Vulkan dependencies must match the calling ABI. OpenCL
+  agent confirmed its Registry64 multi-vendor behavior must not be inferred
+  for D3D. Full contract and official URLs saved in runtime-activation-gaps.md.
+- Current native table rejects UNDEFINED topology during runtime reset and
+  accepts only one viewport. Microsoft specifies an atomic complete viewport
+  replacement; zero count also unbinds even when the clear hint is zero.
+  These are runtime initialization gaps, not additional benchmark coverage.
+
 - Parent redirects the next milestone to ordinary Microsoft D3D11/D3D12
   runtime activation and owns an independent system-DLL/exact-UMD application
   acceptance tool. Stop adding backend-only cases. Source audit: DXVK has no

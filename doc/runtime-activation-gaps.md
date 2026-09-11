@@ -1,7 +1,9 @@
 # Native Microsoft runtime activation gaps
 
-Source audit: DXVK5b0983d and VKD3D61edc56,2026-09-11. These candidates pass
-standalone architecture CI. Earlier bounded hardware readbacks remain valid
+Source audit: DXVKcf492c9 and VKD3D61edc56,2026-09-11. DXVK5b0983d and
+VKD3D61edc56 pass standalone architecture CI; cf492c9 CI34613950771 also passes
+all five jobs. The current state-reset continuation awaits its own CI.
+Earlier bounded hardware readbacks remain valid
 for their exact tested sources; neither candidate is a registered native
 Direct3D runtime driver. Parent owns a new independent ordinary application
 acceptance tool and all device actions.
@@ -20,26 +22,24 @@ acceptance tool and all device actions.
 ## DXVK exact present-day omissions
 
 Comparing the current D3D10 table assignments with Microsoft's local
-D3D10DDI_DEVICEFUNCS field list leaves20 fields unset. Two are version-dependent
+D3D10DDI_DEVICEFUNCS field list leaves16 fields unset. Two are version-dependent
 vertex pipeline hooks; this is an inventory, not an assertion that every field
 is required for every negotiated version:
 
 ```
-pfnDefaultConstantBufferUpdateSubresourceUP
 pfnGsSetConstantBuffers pfnGsSetShaderResources pfnGsSetSamplers pfnGsSetShader
 pfnCreateGeometryShader
 pfnCalcPrivateGeometryShaderWithStreamOutput pfnCreateGeometryShaderWithStreamOutput
 pfnSoSetTargets pfnDrawAuto
 pfnGenMips pfnSetPredication
-pfnRelocateDeviceFuncs
 pfnCalcPrivateOpenedResourceSize pfnOpenResource
-pfnCheckCounterInfo pfnCheckCounter pfnSetTextFilterSize
+pfnSetTextFilterSize
 pfnResetPrimitiveID pfnSetVertexPipelineOutput
 ```
 
 Several rendering restrictions remain even for non-null callbacks: only
 buffer/Texture2D resources, all MiscFlags and primary descriptors rejected,
-single color target, triangle-list pipeline, bounded VS/PS semantics and typed
+single color target, bounded VS/PS semantics and typed
 resolves. Feature level negotiation must describe this honestly; adding an
 entrypoint symbol or copying D3D10 pointers into a D3D11 table is insufficient.
 Most translation work can reuse DXVK's internal device, but SetPredication is
@@ -50,14 +50,75 @@ DXVK's Wine metadata escapes do not meet the Windows KMD contract. The
 Microsoft OpenResource contract says DestroyResource is not called after any
 OpenResource error, so failure cleanup belongs inside OpenResource itself.
 
+## Windows on Arm architecture and registration contract
+
+Microsoft's WDDM64-bit guidance explicitly requires a separate32-bit UMD;
+WOW64 does not translate the opaque driver-private allocation structures.
+UserModeDriverNameWoW selects that32-bit driver. It is not an x64-on-Arm64
+selection key. The same KMD serves all processes, so shared private structures
+must use fixed-width fields and verified alignment across all three builds.
+
+Microsoft's D3D11 INF guidance defines the third UserModeDriverName entry as
+the D3D11 DDI. These list positions select D3D interfaces, not CPU architectures.
+WDDM2.1 run-from-DriverStore guidance uses absolute %13% paths and explicitly
+says filesystem WOW64 redirection does not apply there. Therefore placing two
+same-name native/x64 DLLs in folders does not itself select the correct one.
+
+Microsoft's Arm64X documentation says native ARM64 and x64/ARM64EC processes
+can load the same physical DLL through its respective ABI view. Windows11 on
+Arm has no separate System32 folder for pure x64 system binaries. An Arm64X
+front DLL is thus the documented single-path solution for this project; it can
+dispatch to separate architecture-specific implementation DLLs. This is an
+architecture design, not proof that a D3D UMD has been activated.
+
+| Process on Windows11 ARM64 | Planned registered module and implementation |
+| --- | --- |
+| Native ARM64 | UserModeDriverName D3D slot -> Arm64X native view -> ARM64 engine, ARM64 Vulkan loader/ICD and actual imported CRT dependencies |
+| Emulated x64 / ARM64EC | Same registered path -> Arm64X EC view -> x64 engine and x64 Vulkan loader/ICD/dependencies |
+| Emulated x86 | UserModeDriverNameWoW D3D slot -> separate x86 UMD and x86 Vulkan loader/ICD/dependencies |
+
+Do not invent an emulated-x64 registration value. No reviewed Microsoft D3D
+source here establishes one. OpenCL's shared Registry64 vendor list is a
+different loader contract and cannot establish D3D selection behavior.
+
+The future front DLL must preserve the actual WDK signatures/calling convention,
+original runtime handles/callbacks, per-process engine lifetime and exact adapter
+identity. Resolve implementation and Vulkan dependencies by validated absolute
+package paths. A plain export forwarder does not automatically establish that
+dependency search path; the OpenGL agent has already encountered that boundary.
+Do not replace engine-side OpenAdapter with a harness factory.
+
+Activation acceptance requires separate native ARM64/x64/x86 ordinary runtime
+processes, system d3d11/d3d12/dxgi, exact hardware LUID and the expected loaded
+front/implementation modules with hashes. A successful Arm64X loader fixture or
+three architecture builds alone is insufficient. Parent's independent f6da604
+runtime probe (CI34613737738 PASS) is the ordinary D3D acceptance path; explicit
+minimum10_0 is a bring-up milestone and default11_0 is the formal D3D11 gate.
+
+Official sources read2026-09-11:
+
+- https://learn.microsoft.com/windows-hardware/drivers/display/microsoft-windows-vista-display-driver-64-bit-issues
+- https://learn.microsoft.com/windows-hardware/drivers/display/enabling-support-for-the-direct3d-version-11-ddi
+- https://learn.microsoft.com/windows-hardware/drivers/display/wddm-2-1-features
+- https://learn.microsoft.com/windows/arm/arm64x-pe
+- https://learn.microsoft.com/windows/arm/arm64x-build
+
 ## Implementation order
 
-The next source step closes four runtime initialization slots: default constant
+Source cf492c9 closes four runtime initialization slots: default constant
 buffer updates reuse the real update path, relocation acknowledges the new table
 without caching stale pointers, and counter queries report DXVK's actual absence
 of performance counters even after device loss. It is still insufficient to
 advertise the incomplete feature-level/table contract. No additional backend
 workload is introduced; subsequent acceptance must use the ordinary runtime tool.
+
+The following source continuation accepts the native UNDEFINED topology reset
+and all D3D10 primitive topology setters, and atomically replaces up to16
+viewports. A native all-NaN viewport remains an unbound zero-area slot without
+compacting later indices; zero count clears the whole viewport/scissor state
+even if the runtime clear hint is zero. This does not add geometry shaders or
+claim their draw coverage. Existing Microsoft WARP CI verifies actual state
+getters after replacement, shrink, invalid-input refusal and zero-count reset.
 
 1. Build actual adapter/version/CreateDevice wiring and complete the chosen
    runtime table as one coherent candidate. Preserve exact-LUID filtering and

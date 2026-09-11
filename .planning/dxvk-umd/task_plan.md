@@ -6,6 +6,15 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+cf492c9 closes four actual native initialization slots; CI34613950771ALL5PASS.
+Newnative state-reset continuation implements allD3D10topologysetters,
+16viewportatomicreplacement/nullslots/zerocount andscissorunbinding.
+ExistingWARPtestaddsactualstategetterchecks; implementationCIpending.
+Architecturecontract reviewed with OpenCLagent and officialMicrosoft docs:
+Arm64X sharednative/x64 path, separateWoW32bit, no inventedx64registrykey.
+Parent'sordinaryruntimef6da604CI34613737738PASS is the next acceptance tool.
+Continue native reset/topology/viewport correctness before negotiatedtable
+activation; no extra backend hardwaretest requested.
 b8c73ef CI34606380427 ALL5PASS; both ORIGINAL and REBUILT MicrosoftWARP
 payloads match all16words, shader887checksPASS. Exact two ARM64 files/hashes
 delivered to parent. Targetseven-dxvkb8-ddi-03PASS Exit0/249ms, all4096pixels,
@@ -102,6 +111,10 @@ window. Preserve existing driver and desktop. Parent owns all shared worktree
 and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
 
 ## Errors
+- Resume searches guessed obsolete docs/INF/shader paths and a zsh glob had
+  no matches. Actual docs are workspace windows-driver-docs, INF is
+  viogpu/viogpuwddm/viogpuwddm.inx, shader is umd_shader.cpp. Discover before
+  reading further files; missing searches made no edits.
 - 970f14a CI34611474525 actual WDK signature is device/view/resource for SRV
   hazards, contrary to local Microsoft markdown's parameter naming. Corrected
   production and test order; clear callback also requires mutable FLOAT[].

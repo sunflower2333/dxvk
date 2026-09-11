@@ -1,10 +1,12 @@
 #include "../src/umd/umd_view.h"
+#include "../src/umd/umd_state.h"
 #include <d3dcompiler.h>
 #include <wrl/client.h>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 using Microsoft::WRL::ComPtr;
 using namespace dxvk::umd;
@@ -84,6 +86,51 @@ int main() {
   ComPtr<ID3D11DeviceContext> context;
   CHECK(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, nullptr, 0,
     D3D11_SDK_VERSION, &device, nullptr, &context) == S_OK);
+  // Validate native reset/replacement semantics against an independent
+  // runtime implementation, including a hole that must retain its index.
+  const FLOAT nan = std::numeric_limits<FLOAT>::quiet_NaN();
+  const D3D10_DDI_VIEWPORT nativeViews[] = {
+    {0, 0, 16, 16, 0, 1}, {nan, nan, nan, nan, nan, nan}, {8, 4, 4, 8, 0, 1}};
+  auto applyViews = [&](UINT size, const D3D11_VIEWPORT* views) {
+    context->RSSetViewports(size, views);
+  };
+  CHECK(replaceViewports(3, 0, nativeViews, applyViews));
+  UINT viewCount = 16;
+  D3D11_VIEWPORT actualViews[16] = {};
+  context->RSGetViewports(&viewCount, actualViews);
+  CHECK(viewCount == 3);
+  CHECK(actualViews[0].Width == 16 && actualViews[1].Width == 0 && actualViews[1].Height == 0);
+  CHECK(actualViews[2].TopLeftX == 8 && actualViews[2].Width == 4);
+  CHECK(!replaceViewports(3, UINT(-1), nativeViews, applyViews));
+  CHECK(!replaceViewports(17, 0, nativeViews, applyViews));
+  CHECK(!replaceViewports(1, 0, nullptr, applyViews));
+  viewCount = 16; context->RSGetViewports(&viewCount, actualViews);
+  CHECK(viewCount == 3 && actualViews[2].TopLeftX == 8);
+  CHECK(replaceViewports(1, 2, nativeViews, applyViews));
+  viewCount = 16; context->RSGetViewports(&viewCount, actualViews);
+  CHECK(viewCount == 1 && actualViews[0].Width == 16);
+  CHECK(replaceViewports(0, 0, nullptr, applyViews));
+  viewCount = 16; context->RSGetViewports(&viewCount, actualViews);
+  CHECK(viewCount == 0);
+  const D3D10_DDI_PRIMITIVE_TOPOLOGY nativeTopologies[] = {
+    D3D10_DDI_PRIMITIVE_TOPOLOGY_UNDEFINED, D3D10_DDI_PRIMITIVE_TOPOLOGY_POINTLIST,
+    D3D10_DDI_PRIMITIVE_TOPOLOGY_LINELIST, D3D10_DDI_PRIMITIVE_TOPOLOGY_LINESTRIP,
+    D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
+    D3D10_DDI_PRIMITIVE_TOPOLOGY_LINELIST_ADJ, D3D10_DDI_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ,
+    D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ};
+  for (auto nativeTopology : nativeTopologies) {
+    D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    CHECK(primitiveTopology(nativeTopology, topology));
+    context->IASetPrimitiveTopology(topology);
+    D3D11_PRIMITIVE_TOPOLOGY actual;
+    context->IAGetPrimitiveTopology(&actual);
+    CHECK(actual == topology);
+  }
+  D3D11_PRIMITIVE_TOPOLOGY unchanged = D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP;
+  CHECK(!primitiveTopology(static_cast<D3D10_DDI_PRIMITIVE_TOPOLOGY>(UINT(-1)), unchanged));
+  CHECK(unchanged == D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
+  CHECK(!primitiveTopology(D3D11_DDI_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST, unchanged));
+  context->ClearState();
   std::array<UINT, 64> zeros = {};
   D3D11_SUBRESOURCE_DATA data[4] = {{zeros.data(),32,256}, {zeros.data(),16,64},
     {zeros.data(),32,256}, {zeros.data(),16,64}};

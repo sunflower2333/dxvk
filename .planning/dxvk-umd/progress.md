@@ -1,5 +1,18 @@
 # Progress
 
+2026-09-11: cf492c9 CI34613950771 ALL5PASS. New continuation implements
+native UNDEFINED and other D3D10 topology setters, full16viewport replacement,
+null-viewport holes and unconditional zero-count viewport/scissor unbinding.
+Added independent WARP state getters to the existing view test, preserving
+the backend GPU workload. CI pending; no ordinary-runtime or hardware claim.
+
+2026-09-11: Resumed cf492c9 push complete. Native CI34613950771 identity and
+shader-cpu PASS, ARM64/x64/x86 builds running. Frozen5b0983d/61edc56 artifacts
+remain the delivered candidates. Parent supplied independent ordinary runtime
+f6da604 probe CI34613737738PASS. Coordinated ARM64/x64 loader contract with
+OpenCL agent and read official Microsoft Arm64X/WDDM INF documentation.
+Updated activation gap count20->16 and recorded architecture selection rules.
+
 2026-09-11: Runtime activation continuation closes four10.0 table slots:
 default constant-buffer update, table relocation and counter capability/query.
 The first reuses actual backend update; relocation keeps no stale table pointer;

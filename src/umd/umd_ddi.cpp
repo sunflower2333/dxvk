@@ -6,6 +6,7 @@
 #include "umd_allocation.h"
 #include "umd_map.h"
 #include "umd_view.h"
+#include "umd_state.h"
 
 #include <wrl/client.h>
 #include <memory>
@@ -28,7 +29,7 @@ struct Device {
   bool pixelBound = false;
   bool targetBound = false;
   bool viewportBound = false;
-  bool triangleList = false;
+  bool topologyBound = false;
   bool indexBound = false;
   Shader* vertexShader = nullptr;
   Shader* pixelShader = nullptr;
@@ -788,14 +789,14 @@ void APIENTRY setRenderTargets(D3D10DDI_HDEVICE h, const D3D10DDI_HRENDERTARGETV
 }
 void APIENTRY setViewports(D3D10DDI_HDEVICE h, UINT count, UINT clear, const D3D10_DDI_VIEWPORT* views) {
   auto device = get(h);
-  if (count > 1 || clear > D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE - count ||
-      (count && !views)) { device->error(E_INVALIDARG); return; }
-  D3D11_VIEWPORT viewport = {};
-  if (count) viewport = {views->TopLeftX, views->TopLeftY, views->Width, views->Height, views->MinDepth, views->MaxDepth};
-  if (count || clear) {
-    device->context->RSSetViewports(count, count ? &viewport : nullptr);
+  try {
+    if (!dxvk::umd::replaceViewports(count, clear, views,
+        [&](UINT size, const D3D11_VIEWPORT* translated) {
+          device->context->RSSetViewports(size, translated);
+        })) { device->error(E_INVALIDARG); return; }
     device->viewportBound = count != 0;
-  }
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
 }
 void APIENTRY setScissors(D3D10DDI_HDEVICE h, UINT count, UINT clear, const D3D10_DDI_RECT* input) {
   auto device = get(h);
@@ -804,7 +805,7 @@ void APIENTRY setScissors(D3D10DDI_HDEVICE h, UINT count, UINT clear, const D3D1
   D3D11_RECT rects[slots] = {};
   for (UINT i = 0; i < count; i++)
     rects[i] = {input[i].left, input[i].top, input[i].right, input[i].bottom};
-  try { if (count || clear) device->context->RSSetScissorRects(count, rects); }
+  try { device->context->RSSetScissorRects(count, count ? rects : nullptr); }
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
 }
@@ -839,9 +840,13 @@ void APIENTRY setRasterizer(D3D10DDI_HDEVICE h, D3D10DDI_HRASTERIZERSTATE state)
 }
 void APIENTRY setTopology(D3D10DDI_HDEVICE h, D3D10_DDI_PRIMITIVE_TOPOLOGY topology) {
   auto device = get(h);
-  if (topology != D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST) { device->error(E_INVALIDARG); return; }
-  device->context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-  device->triangleList = true;
+  D3D11_PRIMITIVE_TOPOLOGY api;
+  if (!dxvk::umd::primitiveTopology(topology, api)) { device->error(E_INVALIDARG); return; }
+  try {
+    device->context->IASetPrimitiveTopology(api);
+    device->topologyBound = api != D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
 }
 SIZE_T APIENTRY blendSize(D3D10DDI_HDEVICE, const D3D10_DDI_BLEND_DESC*) { return sizeof(BlendState); }
 void APIENTRY createBlend(D3D10DDI_HDEVICE h, const D3D10_DDI_BLEND_DESC* args,
@@ -1090,7 +1095,7 @@ void APIENTRY setIndexBuffer(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE object, DXGI
 }
 bool drawReady(Device* device, bool indexed = false) {
   if (!device->vertexBound || !device->pixelBound || !device->targetBound ||
-      !device->viewportBound || !device->triangleList || (indexed && !device->indexBound)) {
+      !device->viewportBound || !device->topologyBound || (indexed && !device->indexBound)) {
     device->error(E_INVALIDARG); return false;
   }
   return prepareVertexShader(device);

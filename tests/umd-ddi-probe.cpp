@@ -296,6 +296,10 @@ int main(int argc, char** argv) {
     nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
   if (lastError != E_INVALIDARG) { table.pfnDestroyDevice(device); return 18; }
   lastError = S_OK;
+  table.pfnIaSetTopology(device, D3D10_DDI_PRIMITIVE_TOPOLOGY_UNDEFINED);
+  table.pfnSetViewports(device, 0, 0, nullptr);
+  table.pfnSetScissorRects(device, 0, 0, nullptr);
+  if (FAILED(lastError)) { table.pfnDestroyDevice(device); return 18; }
   if (!testBufferTransfers(device, table)) { table.pfnDestroyDevice(device); return 13; }
   if (!testMultisample(device, table)) { table.pfnDestroyDevice(device); return 17; }
   D3D10DDIARG_CREATEQUERY eventDesc = {D3D10DDI_QUERY_EVENT, 0};

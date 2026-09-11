@@ -271,7 +271,10 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
   return false;
 }
 bool subresourceBox(const SubresourceInfo& info, const D3D10_DDI_BOX* input, D3D11_BOX& box) {
-  box = input ? D3D11_BOX{input->left, input->top, input->front, input->right, input->bottom, input->back}
+  if (input && (input->left < 0 || input->top < 0 || input->front < 0 ||
+      input->right < 0 || input->bottom < 0 || input->back < 0)) return false;
+  box = input ? D3D11_BOX{UINT(input->left), UINT(input->top), UINT(input->front),
+                         UINT(input->right), UINT(input->bottom), UINT(input->back)}
               : D3D11_BOX{0, 0, 0, info.width, info.height, 1};
   return box.left <= box.right && box.top <= box.bottom && box.front <= box.back
       && box.right <= info.width && box.bottom <= info.height && box.back <= 1;

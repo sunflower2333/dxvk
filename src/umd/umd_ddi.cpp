@@ -590,6 +590,43 @@ void APIENTRY mapResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource,
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }
+BOOL APIENTRY isStagingBusy(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
+  auto device = get(h);
+  if (!owned(device, get(resource))) return TRUE;
+  BOOL busy = TRUE;
+  const HRESULT removed = device->backend->GetDeviceRemovedReason();
+  if (FAILED(removed)) { device->error(removed); return TRUE; }
+  device->error(dxvk::umd::isStagingResourceBusy(device->context.Get(),
+    get(resource)->backend.Get(), &busy));
+  return busy;
+}
+void APIENTRY resourceHazard(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
+  auto device = get(h);
+  if (!owned(device, get(resource))) return;
+  D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
+  get(resource)->backend->GetType(&dimension);
+  if (dimension != D3D11_RESOURCE_DIMENSION_BUFFER) {
+    device->error(E_INVALIDARG); return;
+  }
+  // DXVK tracks Vulkan access transitions at the ensuing buffer bind/use.
+  // This notification does not require a CPU/GPU synchronization operation.
+}
+void APIENTRY shaderViewHazard(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource,
+    D3D10DDI_HSHADERRESOURCEVIEW object) {
+  auto device = get(h);
+  if (!owned(device, get(resource))) return;
+  auto view = get(object);
+  if (!view || view->owner != device || !view->backend) {
+    device->error(E_INVALIDARG); return;
+  }
+  ComPtr<ID3D11Resource> viewed;
+  view->backend->GetResource(&viewed);
+  if (viewed.Get() != get(resource)->backend.Get()) {
+    device->error(E_INVALIDARG); return;
+  }
+  // The embedded view retains its exact subresource range. DXVK's resource
+  // tracking inserts the necessary Vulkan barriers when that view is used.
+}
 void APIENTRY unmapResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource, UINT subresource) {
   auto device = get(h);
   if (!owned(device, get(resource))) return;
@@ -1187,6 +1224,9 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnResourceUnmap = unmapResource;
   table->pfnStagingResourceMap = mapResource;
   table->pfnStagingResourceUnmap = unmapResource;
+  table->pfnResourceIsStagingBusy = isStagingBusy;
+  table->pfnResourceReadAfterWriteHazard = resourceHazard;
+  table->pfnShaderResourceViewReadAfterWriteHazard = shaderViewHazard;
   table->pfnDynamicIABufferMapDiscard = mapResource;
   table->pfnDynamicIABufferMapNoOverwrite = mapResource;
   table->pfnDynamicIABufferUnmap = unmapResource;

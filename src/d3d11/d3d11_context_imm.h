@@ -73,6 +73,12 @@ namespace dxvk {
     void STDMETHODCALLTYPE Unmap(
             ID3D11Resource*             pResource,
             UINT                        Subresource);
+
+    // Native UMD whole-resource query, including already mapped subresources.
+    // Never changes mapping state or waits for GPU completion.
+    HRESULT IsStagingResourceBusy(
+            ID3D11Resource*             pResource,
+            BOOL*                       pBusy);
             
     void STDMETHODCALLTYPE SwapDeviceContextState(
             ID3DDeviceContextState*           pState,

@@ -326,6 +326,63 @@ namespace dxvk {
   }
 
 
+  HRESULT D3D11ImmediateContext::IsStagingResourceBusy(
+          ID3D11Resource*             pResource,
+          BOOL*                       pBusy) {
+    D3D10DeviceLock lock = LockContext();
+    if (!pBusy) return E_POINTER;
+    *pBusy = TRUE;
+    if (!pResource) return E_INVALIDARG;
+
+    D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
+    pResource->GetType(&dimension);
+    if (dimension == D3D11_RESOURCE_DIMENSION_BUFFER) {
+      auto buffer = static_cast<D3D11Buffer*>(pResource);
+      if (buffer->Desc()->Usage != D3D11_USAGE_STAGING)
+        return E_INVALIDARG;
+      if (buffer->HasSequenceNumber()) {
+        // A reference in an unexecuted (even partially built) CS chunk is busy.
+        if (buffer->GetSequenceNumber() > m_csThread.lastSequenceNumber())
+          return S_OK;
+      } else {
+        // SynchronizeAll is a sentinel, not a sequence that can stay pending.
+        // Process CPU command tracking only; do not flush/wait for the GPU.
+        SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
+      }
+      *pBusy = buffer->GetBuffer()->isInUse(DxvkAccess::Read);
+      return S_OK;
+    }
+
+    if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE1D
+        && dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D
+        && dimension != D3D11_RESOURCE_DIMENSION_TEXTURE3D)
+      return E_INVALIDARG;
+    auto texture = GetCommonTexture(pResource);
+    if (texture->Desc()->Usage != D3D11_USAGE_STAGING)
+      return E_INVALIDARG;
+    if (texture->HasSequenceNumber()) {
+      const auto completed = m_csThread.lastSequenceNumber();
+      for (UINT i = 0; i < texture->CountSubresources(); i++) {
+        if (texture->GetSequenceNumber(i) > completed)
+          return S_OK;
+      }
+    } else {
+      SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
+    }
+    // Staging textures commonly have only per-subresource buffers, no image.
+    if (auto image = texture->GetImage()) {
+      if (image->isInUse(DxvkAccess::Read)) return S_OK;
+    }
+    for (UINT i = 0; i < texture->CountSubresources(); i++) {
+      if (auto buffer = texture->GetMappedBuffer(i)) {
+        if (buffer->isInUse(DxvkAccess::Read)) return S_OK;
+      }
+    }
+    *pBusy = FALSE;
+    return S_OK;
+  }
+
+
   HRESULT D3D11ImmediateContext::MapBuffer(
           D3D11Buffer*                pResource,
           D3D11_MAP                   MapType,

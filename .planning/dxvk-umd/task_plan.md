@@ -10,15 +10,27 @@ b8c73ef CI34606380427 ALL5PASS; both ORIGINAL and REBUILT MicrosoftWARP
 payloads match all16words, shader887checksPASS. Exact two ARM64 files/hashes
 delivered to parent. Targetseven-dxvkb8-ddi-03PASS Exit0/249ms, all4096pixels,
 buffer/depth-stencil/KMTpublicationPASS. DWM2088/Explorer5820retained.
-Current implementation extends native2D SRV/RTV ranges, MSAA views/resolve
-and explicit format-cap translation. New independent WARP range/sampling/
-resolve fixture and bounded native640pixel MSAA workload await Windows CI.
+Native2D SRV/RTV ranges, MSAA views/resolve and explicit format-cap translation
+1a7cf3b CI34608704564 ALL5PASS. IndependentWARP246checks and shader887PASS.
+Targetseven-dxvk1a-resources-04PASS Exit0/259ms; all640MSAApixels and
+4096drawpixels, depth/stencil/copy/KMTpublicationPASS. LUID5805/ICD9AA5/
+KMD58386, DWM1036/Explorer5640retained; parenthosttraceclosurepending.
 VKD3D0447a76 CI34606533835 ALL4PASS. Exact standalone EXE/hash delivered;
 targetseven-vkd3d044-ranges-03PASS Exit0/1039ms, all15360words. Paired72cef21
-CI34607682895 has6jobsPASS, signing/build running. Duplicate
+CI34607682895 ALL7PASS, artifact downloaded/all40manifestentriesPASS. Duplicate
 identical push run34607682868 cancelled after verifying same source/workflow.
 Both tests used OS LUID581E/ICD9AA5/KMD58386/hostVirgl28a. Host trace started
 afterDXVK completed, so noGPU-trace claim forDXVK; VKD3D was trace-covered.
+NextVKD3Dbc61de9 implements native root32constant callbacks, bounds,
+64DWORDrootcost and copied caller lifetime. Local17workloads/17408wordsPASS;
+CI34609416636 ALL4PASS. Targetseven-vkd3dbc-constants-05PASS Exit0/1167ms,
+17workloads/17408words including2root32rounds. LUID581B/ICD9AA5/KMD58386,
+host0d87/Virgl28a/TURNIPblit, DWM2140/Explorer5972retained. Hostclosurepending.
+Paired97e7b00 pinsbc61de9; CI34610190479 ALL7PASS, finalartifactcheckpending.
+ResourceIsStagingBusy and read-after-write hazards implemented with real
+backendtracking and bounded mapped-resource/actualhazard targetfixture.
+Run WindowsCI before parenthardwarehandoff; source remainsuntested.
+No childremoteactions; native runtime/displayPresent acceptance remains open.
 
 ## Earlier checkpoint sequence
 

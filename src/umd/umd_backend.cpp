@@ -1,11 +1,26 @@
 #include "umd_backend.h"
 #include "umd_api.h"
 #include "../dxvk/dxvk_instance.h"
+#include "../d3d11/d3d11_context_imm.h"
 
 #include <cstring>
 #include <new>
 
 namespace dxvk::umd {
+
+HRESULT isStagingResourceBusy(ID3D11DeviceContext* context,
+                             ID3D11Resource* resource, BOOL* busy) noexcept {
+  if (!busy) return E_POINTER;
+  *busy = TRUE;
+  if (!context || !resource) return E_INVALIDARG;
+  try {
+    return static_cast<D3D11ImmediateContext*>(context)->IsStagingResourceBusy(resource, busy);
+  } catch (const std::bad_alloc&) {
+    return E_OUTOFMEMORY;
+  } catch (...) {
+    return E_FAIL;
+  }
+}
 
 HRESULT createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
                      ID3D11Device** device, ID3D11DeviceContext** context) noexcept {

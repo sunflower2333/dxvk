@@ -47,16 +47,23 @@ static bool testBufferTransfers(D3D10DDI_HDEVICE device, const D3D10DDI_DEVICEFU
   functions.pfnResourceUpdateSubresourceUP(device, source.handle, 0, &box, pattern.data(), 0, 0);
   functions.pfnResourceCopyRegion(device, destination.handle, 0, 8, 0, 0, source.handle, 0, &box);
   if (FAILED(lastError)) return false;
+  const BOOL invalidBusy = functions.pfnResourceIsStagingBusy(device, source.handle);
+  if (!invalidBusy || lastError != E_INVALIDARG) return false;
+  lastError = S_OK;
+  const BOOL before = functions.pfnResourceIsStagingBusy(device, destination.handle);
+  if (FAILED(lastError)) return false;
   D3D10DDI_MAPPED_SUBRESOURCE mapped = {};
   functions.pfnStagingResourceMap(device, destination.handle, 0, D3D10_DDI_MAP_READ, 0, &mapped);
   if (FAILED(lastError) || !mapped.pData) return false;
+  const BOOL whileMapped = functions.pfnResourceIsStagingBusy(device, destination.handle);
   unsigned mismatches = 0;
   auto bytes = static_cast<const unsigned char*>(mapped.pData);
   for (size_t i = 0; i < zeros.size(); i++)
     mismatches += bytes[i] != (i >= 8 && i < 24 ? pattern[i-8] : 0);
   functions.pfnStagingResourceUnmap(device, destination.handle, 0);
   std::printf("DDI_BUFFER_COPY bytes=64 mismatches=%u\n", mismatches);
-  return !mismatches && SUCCEEDED(lastError);
+  std::printf("DDI_STAGING_BUSY buffer_pre=%u mapped=%u invalid_rejected=1\n", UINT(before), UINT(whileMapped));
+  return !mismatches && !whileMapped && SUCCEEDED(lastError);
 }
 
 static bool testMultisample(D3D10DDI_HDEVICE device, const D3D10DDI_DEVICEFUNCS& functions) {
@@ -125,11 +132,23 @@ static bool testMultisample(D3D10DDI_HDEVICE device, const D3D10DDI_DEVICEFUNCS&
   lastError = S_OK;
   functions.pfnResourceCopy(device, staging.handle, resolved.handle);
   if (FAILED(lastError)) return false;
+  const BOOL before = functions.pfnResourceIsStagingBusy(device, staging.handle);
+  if (FAILED(lastError)) return false;
+  std::array<D3D10DDI_MAPPED_SUBRESOURCE,4> maps = {};
+  UINT mappedCount = 0;
+  for (; mappedCount < maps.size(); mappedCount++) {
+    functions.pfnStagingResourceMap(device, staging.handle, mappedCount, D3D10_DDI_MAP_READ, 0, &maps[mappedCount]);
+    if (FAILED(lastError) || !maps[mappedCount].pData) break;
+  }
+  if (mappedCount != maps.size()) {
+    for (UINT i = 0; i < mappedCount; i++) functions.pfnStagingResourceUnmap(device, staging.handle, i);
+    return false;
+  }
+  // Query all four simultaneously mapped subresources, without remapping any.
+  const BOOL whileMapped = functions.pfnResourceIsStagingBusy(device, staging.handle);
   UINT mismatches = 0, pixelCount = 0;
   for (UINT i = 0; i < 4; i++) {
-    D3D10DDI_MAPPED_SUBRESOURCE map = {};
-    functions.pfnStagingResourceMap(device, staging.handle, i, D3D10_DDI_MAP_READ, 0, &map);
-    if (FAILED(lastError) || !map.pData) return false;
+    const auto& map = maps[i];
     const UINT size = i & 1 ? 8 : 16;
     const UINT expected = i == 3 ? 0xff0000ff : 0;
     for (UINT y = 0; y < size; y++) {
@@ -139,7 +158,8 @@ static bool testMultisample(D3D10DDI_HDEVICE device, const D3D10DDI_DEVICEFUNCS&
     functions.pfnStagingResourceUnmap(device, staging.handle, i);
   }
   std::printf("DDI_MSAA_RESOLVE samples=4 src_slice=1 dst_slice=1 dst_mip=1 pixels=%u mismatches=%u\n", pixelCount, mismatches);
-  return !mismatches && SUCCEEDED(lastError);
+  std::printf("DDI_STAGING_BUSY texture_pre=%u mapped=%u mapped_subresources=4\n", UINT(before), UINT(whileMapped));
+  return !mismatches && !whileMapped && SUCCEEDED(lastError);
 }
 
 // Explicit development harness: this callback reads the real KMD's private
@@ -254,7 +274,8 @@ int main(int argc, char** argv) {
       || !table.pfnCreateElementLayout || !table.pfnDestroyElementLayout || !table.pfnIaSetInputLayout
       || !table.pfnDynamicIABufferMapDiscard || !table.pfnDynamicIABufferUnmap
       || !table.pfnResourceResolveSubresource || !table.pfnCheckFormatSupport
-      || !table.pfnCheckMultisampleQualityLevels) {
+      || !table.pfnCheckMultisampleQualityLevels || !table.pfnResourceIsStagingBusy
+      || !table.pfnResourceReadAfterWriteHazard || !table.pfnShaderResourceViewReadAfterWriteHazard) {
     std::fputs("Required development DDI absent; use the probe and DLL from one exact build\n", stderr);
     if (table.pfnDestroyDevice) table.pfnDestroyDevice(device);
     return 15;
@@ -329,14 +350,14 @@ int main(int argc, char** argv) {
   constantDesc.BindFlags = D3D10_DDI_BIND_CONSTANT_BUFFER;
   constantDesc.MipLevels = 1; constantDesc.ArraySize = 1; constantDesc.SampleDesc.Count = 1;
   auto constant = std::make_unique<ProbeResource>(device, table, constantDesc);
-  uint32_t whitePixels[4] = {0xffffffff,0xffffffff,0xffffffff,0xffffffff};
+  uint32_t samplePixels[4] = {};
   D3D10DDI_MIPINFO sampleMip = {2,2,1,2,2,1};
-  D3D10_DDIARG_SUBRESOURCE_UP sampleData = {whitePixels,8,16};
+  D3D10_DDIARG_SUBRESOURCE_UP sampleData = {samplePixels,8,16};
   D3D10DDIARG_CREATERESOURCE sampleDesc = {};
   sampleDesc.pMipInfoList = &sampleMip; sampleDesc.pInitialDataUP = &sampleData;
   sampleDesc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
-  sampleDesc.Usage = D3D10_DDI_USAGE_IMMUTABLE;
-  sampleDesc.BindFlags = D3D10_DDI_BIND_SHADER_RESOURCE;
+  sampleDesc.Usage = D3D10_DDI_USAGE_DEFAULT;
+  sampleDesc.BindFlags = D3D10_DDI_BIND_SHADER_RESOURCE | D3D10_DDI_BIND_RENDER_TARGET;
   sampleDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
   sampleDesc.MipLevels = 1; sampleDesc.ArraySize = 1; sampleDesc.SampleDesc.Count = 1;
   auto sample = std::make_unique<ProbeResource>(device, table, sampleDesc);
@@ -347,6 +368,22 @@ int main(int argc, char** argv) {
   auto sampleViewMemory = allocate(table.pfnCalcPrivateShaderResourceViewSize(device, &sampleViewDesc));
   D3D10DDI_HSHADERRESOURCEVIEW sampleView = {sampleViewMemory.get()};
   table.pfnCreateShaderResourceView(device, &sampleViewDesc, sampleView, {});
+  D3D10DDIARG_CREATERENDERTARGETVIEW sampleTargetDesc = {};
+  sampleTargetDesc.hDrvResource = sample->handle; sampleTargetDesc.Format = sampleDesc.Format;
+  sampleTargetDesc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D; sampleTargetDesc.Tex2D.ArraySize = 1;
+  auto sampleTargetMemory = allocate(table.pfnCalcPrivateRenderTargetViewSize(device, &sampleTargetDesc));
+  D3D10DDI_HRENDERTARGETVIEW sampleTarget = {sampleTargetMemory.get()};
+  table.pfnCreateRenderTargetView(device, &sampleTargetDesc, sampleTarget, {});
+  if (SUCCEEDED(lastError)) {
+    const FLOAT white[4] = {1,1,1,1};
+    table.pfnClearRenderTargetView(device, sampleTarget, white);
+  }
+  table.pfnDestroyRenderTargetView(device, sampleTarget);
+  if (SUCCEEDED(lastError)) {
+    table.pfnShaderResourceViewReadAfterWriteHazard(device, target, sampleView);
+    if (lastError == E_INVALIDARG) lastError = S_OK;
+    else lastError = E_FAIL;
+  }
   D3D10_DDI_SAMPLER_DESC samplerDesc = {};
   samplerDesc.Filter = D3D10_DDI_FILTER_MIN_MAG_MIP_POINT;
   samplerDesc.AddressU = samplerDesc.AddressV = samplerDesc.AddressW = D3D10_DDI_TEXTURE_ADDRESS_CLAMP;
@@ -357,13 +394,14 @@ int main(int argc, char** argv) {
   table.pfnCreateSampler(device, &samplerDesc, sampler, {});
   uint32_t indices[3] = {0,1,2};
   D3D10DDI_MIPINFO indexMip = {12,1,1,12,1,1};
-  D3D10_DDIARG_SUBRESOURCE_UP indexData = {indices,12,12};
   D3D10DDIARG_CREATERESOURCE indexDesc = {};
-  indexDesc.pMipInfoList = &indexMip; indexDesc.pInitialDataUP = &indexData;
+  indexDesc.pMipInfoList = &indexMip;
   indexDesc.ResourceDimension = D3D10DDIRESOURCE_BUFFER;
-  indexDesc.Usage = D3D10_DDI_USAGE_IMMUTABLE; indexDesc.BindFlags = D3D10_DDI_BIND_INDEX_BUFFER;
+  indexDesc.Usage = D3D10_DDI_USAGE_DEFAULT; indexDesc.BindFlags = D3D10_DDI_BIND_INDEX_BUFFER;
   indexDesc.MipLevels = 1; indexDesc.ArraySize = 1; indexDesc.SampleDesc.Count = 1;
   auto index = std::make_unique<ProbeResource>(device, table, indexDesc);
+  if (SUCCEEDED(lastError))
+    table.pfnResourceUpdateSubresourceUP(device, index->handle, 0, nullptr, indices, 0, 0);
   FLOAT positions[6] = {-1,1,3,1,-1,-3};
   D3D10DDI_MIPINFO vertexMip = {24,1,1,24,1,1};
   D3D10DDIARG_CREATERESOURCE vertexDesc = indexDesc;
@@ -442,6 +480,7 @@ int main(int argc, char** argv) {
     table.pfnPsSetShader(device, pixel);
     table.pfnPsSetConstantBuffers(device, 0, 1, &constant->handle);
     table.pfnVsSetConstantBuffers(device, 0, 1, &constant->handle);
+    table.pfnShaderResourceViewReadAfterWriteHazard(device, sample->handle, sampleView);
     table.pfnPsSetShaderResources(device, 0, 1, &sampleView);
     table.pfnPsSetSamplers(device, 0, 1, &sampler);
     const FLOAT factor[4] = {1,1,1,1};
@@ -455,6 +494,7 @@ int main(int argc, char** argv) {
     const D3D10_DDI_RECT scissor = {0,0,64,64};
     table.pfnSetScissorRects(device, 1, 0, &scissor);
     table.pfnIaSetTopology(device, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    table.pfnResourceReadAfterWriteHazard(device, index->handle);
     table.pfnIaSetIndexBuffer(device, index->handle, DXGI_FORMAT_R32_UINT, 0);
     table.pfnIaSetInputLayout(device, layout);
     const UINT stride = 8, offset = 0;

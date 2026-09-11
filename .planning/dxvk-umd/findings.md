@@ -1,5 +1,16 @@
 # Findings
 
+- Native ResourceIsStagingBusy queries the whole resource and is legal while
+  subresources remain mapped. Implement through embedded DXVK CS sequence and
+  GPU access tracking, never Map again or return a constant. Pending buffers
+  count busy without requiring submission. Untracked sequence sentinel must
+  not be compared as a real sequence. Existing Vulkan barriers own actual
+  read/write transitions; hazard DDIs validate native ownership without GPU
+  idle. SRV hazard parameter order is device, resource, view.
+- Target1a7cf3b andbc61de9 now PASS with original shells retained. These are
+  bounded native callbacks and GPU readback, not Microsoft runtime activation
+  or application/visible Present support. Parent owns final host trace closure.
+
 - Independent original-bytecode WARP execution caught a probe defect that
   final-SPIR-V interface checks could not: FXC emitted rawFloats.y=+0 for the
   expected-0 source.37678fbdisassembly confirms literal0 inoutputo3, even

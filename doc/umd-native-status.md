@@ -137,9 +137,23 @@ Independent Microsoft WARP tests exercise translated views by clearing only
 slice1/mip1 of a typeless texture array, sampling it using relative coordinates,
 and resolving a selected MSAA slice. The next standalone native probe adds a
 4x MSAA clear/resolve from source slice1 to destination slice1/mip1; all640
-pixels, including untouched neighboring subresources, must match. This source
-step is awaiting Windows CI and target execution; it is not native application
-or runtime activation evidence.
+pixels, including untouched neighboring subresources, must match. Source
+1a7cf3b passed all five CI34608704564 jobs, including246independent WARP
+view/sampling/MSAA checks. Parent targetseven-dxvk1a-resources-04 passed in259ms:
+640MSAApixels and4096drawpixels correct, with copy/depth/stencil/KMTpublication
+also passing. LUID5805/ICD9AA5/KMD58386; DWM1036/Explorer5640 retained. The
+host trace began before execution; its final analysis belongs to the parent.
+This remains standalone native-DDI evidence, not Microsoft runtime activation.
+
+The next native synchronization step implements ResourceIsStagingBusy using
+the embedded context's command sequence and GPU access tracker. It covers all
+staging subresources without changing Map state and treats pending CS chunks
+as busy. Untracked resources synchronize only CPU command processing. Native
+buffer/SRV read-after-write notifications validate resource ownership and view
+correspondence; DXVK inserts Vulkan barriers at actual use, with no forced GPU
+idle. The target probe checks a mapped buffer and four simultaneously mapped
+texture subresources, plus clear-to-sample and update-to-index-buffer hazards.
+These new callbacks await Windows CI and target execution.
 
 `VioGpuDxvkOpenAdapterForTest` now wires the real WDK OpenAdapter, private
 device-size, CreateDevice and CloseAdapter signatures into the development

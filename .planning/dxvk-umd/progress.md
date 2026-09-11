@@ -1,5 +1,22 @@
 # Progress
 
+2026-09-11: Implemented native whole-resource staging-busy query through
+embedded DXVK CS/GPU tracking, no remap or GPU idle. Added buffer and SRV
+hazard notifications with ownership/view-resource checks. Target fixture now
+queries one mapped buffer and four simultaneously mapped texture subresources,
+checks fail-closed nonstaging input, and requires actual clear-to-sample and
+buffer-update-to-index transitions. New implementation CI/runtime pending.
+Paired97e7b00 CI34610190479 nowALL7PASS; final artifact verification next.
+
+2026-09-11: Parent1a7cf3b target PASS exit0/259ms,640MSAApixels and4096draw
+pixels correct, copy/depth/stencil/KMTpublicationPASS, original shell retained.
+Parentbc61de9 target PASS exit0/1167ms,17workloads/17408words including two
+native root32 updates; original shell retained. Exact runtime identities and
+host-proof limits recorded in respective hardware guides. Standalone CI all
+passed; paired97e7b00 CI34610190479 still running. Continue real native
+staging-busy and hazard interfaces. Resume searches guessed two absent paths;
+use rg file discovery for backend/engine source locations before opening them.
+
 2026-09-11: Typed vertex inputs7b30c07 CI34598775633 ALL PASS. Dynamic
 maps/error translation272a067 CI34599288562 ALL PASS on ARM64/x64/x86;
 x64 logs confirm715adapter,100query/map,217allocation/present and74real

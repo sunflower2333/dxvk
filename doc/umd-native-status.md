@@ -1,0 +1,68 @@
+# Native VIOGPU DXVK UMD development status
+
+The Windows native UMD is still a development subset. `viogpudxvk.dll` has no
+OpenAdapter export and is not selected by the paired driver's INF. The INF
+continues to select the existing Mesa UMD. The long-term goal remains native
+D3D9/10/11 Display+Render through DXVK, not application-local replacement DLLs.
+
+## Implemented path
+
+`src/umd` embeds DXVK's D3D11 frontend without `d3d11_main.cpp` or public D3D
+creation imports. It requires a nonzero exact Windows adapter LUID and exactly
+one Vulkan physical device with that valid LUID and the Mesa Turnip driver ID.
+The private D3D11 object is constructed directly; no DXGI factory is used to
+select an adapter and no first-adapter/software fallback exists.
+
+The development D3D10 DDI table currently includes resource creation/destruction
+for buffers and Texture2D, RTV clear/copy, staging and resource Map/Unmap, Flush,
+restricted VS/PS creation/binding/destruction, rasterizer state, one viewport,
+one RGBA8 render target, triangle-list topology and Draw. Driver-private memory
+belongs to the caller; objects retain an owning-device pointer and backend COM
+references. DDI CPU access and DO_NOT_WAIT bits are translated explicitly to
+the different D3D11 API bit values.
+
+The initial shader interface is deliberately limited to SM4.0 VS with optional
+SV_VertexID and SV_Position output, plus a PS with no inputs and one float
+SV_Target0 output. User varyings, other stages and custom-data instructions
+are rejected. Shader tokens are preserved byte-for-byte in the new DXBC
+container, which carries canonical signatures only for these known types and
+the proper DXBC checksum. General shader interfaces still require implementation.
+
+## Validation and evidence limits
+
+`scripts/test-native-umd.sh` exercises adapter matching, optional identity
+trailer decoding and malformed shader containers under ASan/UBSan on Linux.
+The Windows CPU test uses real D3DCompile output and checks the reconstructed
+containers with Microsoft's D3DReflect. Windows CI builds ARM64, x64 and x86
+targets and checks PE architecture, exports and absence of public D3D creation
+imports. These checks require no GPU and establish no hardware rendering claim.
+
+Two device-only executables are packaged for coordinated testing:
+
+- `dxvk-umd-backend-probe.exe <16 hex digits>` creates the private backend,
+  clears magenta, copies and verifies 4096 pixels.
+- `dxvk-umd-ddi-probe.exe <16 hex digits>` uses real WDK DDI function pointers,
+  clears green, draws a red full-screen triangle and verifies all 4096 pixels.
+
+The argument encodes the eight LUID bytes in memory order; it is not an adapter
+index or a printed 64-bit integer. Neither executable has yet been run on the
+target device. The runtime identity callback consumer is tested with mocks;
+the current KMD does not produce its proposed optional identity trailer.
+
+## Required follow-up
+
+1. Coordinate the KMD LUID producer in `umd-identity-proposal.md`, preserving
+   the existing 128-byte adapter-info prefix and validating stop/restart/reset.
+2. Expand shaders, resources, state, queries, hazards and remaining mandatory
+   D3D10/10.1/11 DDIs before publishing any runtime callback table or caps.
+3. Bind backend allocations to Windows kernel allocation/resource ownership,
+   shared handles, residency, fences and device loss. An internally created
+   Vulkan image is not automatically a runtime-owned primary.
+4. Implement DXGI Present and scanout ownership with the existing display KMD,
+   then test real native runtime activation and visible accelerated UI.
+5. Build a distinct D3D9 DDI bridge. The existing DXVK D3D9 factory enumerates
+   displays with adapter-index fallback and constructs an implicit swapchain;
+   it must not be called unchanged from a native UMD. Reuse the D3D9 rendering
+   core with exact adapter binding and runtime-owned presentation instead.
+6. Validate D3D9/10/11 workloads for ARM64, x64 and x86, including the requested
+   TestD3D and stress applications, after real runtime/display integration.

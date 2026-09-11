@@ -171,10 +171,12 @@ void APIENTRY mapResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource,
   auto device = get(h);
   if (!out) { device->error(E_INVALIDARG); return; }
   *out = {};
+  if (flags & ~D3D10_DDI_MAP_FLAG_MASK) { device->error(E_INVALIDARG); return; }
   if (!owned(device, get(resource))) return;
   D3D11_MAPPED_SUBRESOURCE mapped = {};
+  const UINT apiFlags = (flags & D3D10_DDI_MAP_FLAG_DONOTWAIT) ? D3D11_MAP_FLAG_DO_NOT_WAIT : 0;
   const HRESULT hr = device->context->Map(get(resource)->backend.Get(), subresource,
-    static_cast<D3D11_MAP>(type), flags, &mapped);
+    static_cast<D3D11_MAP>(type), apiFlags, &mapped);
   if (SUCCEEDED(hr)) {
     out->pData = mapped.pData; out->RowPitch = mapped.RowPitch; out->DepthPitch = mapped.DepthPitch;
   }

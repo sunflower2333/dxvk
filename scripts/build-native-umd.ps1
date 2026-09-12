@@ -36,12 +36,14 @@ meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Den
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
 ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe src/umd/dxvk-umd-shader-test.exe src/umd/dxvk-umd-view-test.exe
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
-ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-native-lifetime-test.exe src/umd/dxvk-umd-runtime-gpu-test.exe
+ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-native-lifetime-test.exe src/umd/dxvk-umd-runtime-gpu-test.exe src/umd/dxvk-umd-texture-resource-test.exe
 if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build failed' }
 ninja -C build-umd src/umd/viogpudxvk.dll.p/umd_ddi.cpp.obj src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
 if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 if ($arch -ne 'arm64') {
+    & build-umd/src/umd/dxvk-umd-texture-resource-test.exe | Tee-Object (Join-Path $OutputDirectory 'texture-resource-test.txt')
+    if ($LASTEXITCODE) { throw 'Actual native 1D/3D resource contract regression failed' }
     & build-umd/src/umd/dxvk-umd-runtime-gpu-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-gpu-test.txt')
     if ($LASTEXITCODE) { throw 'Actual runtime GPU allocation/submission owner regression failed' }
     & build-umd/src/umd/dxvk-umd-identity-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-query-test.txt')
@@ -76,7 +78,7 @@ foreach ($name in @('viogpudxvk.dll', 'dxvk-umd-backend-probe.exe', 'dxvk-umd-dd
 $exports = & dumpbin /exports build-umd/src/umd/viogpudxvk.dll | Out-String
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
-foreach ($name in @('dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe')) {
+foreach ($name in @('dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-texture-resource-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
     # Include ARM64 fixtures for execution by the target validation owner.
     $path = Join-Path 'build-umd/src/umd' $name
@@ -93,6 +95,7 @@ Native OpenAdapter10_2 negotiates exact identity/generation; incomplete producti
 Production entry/lifetime fixtures use controlled callbacks and a WARP backend; they are not ordinary Microsoft runtime activation.
 Native resource creation unwinds failed staged owners; destruction retires private storage before callbacks. Allocation identity/reset checks and cleanup fixtures are included.
 Native backend receives copied runtime callbacks before vkCreateDevice; Turnip internal BO allocation/map/submit use one runtime-owned context through private Mesa v1. Actual GPU/system-runtime acceptance pending.
+Typed native Texture1D/Texture3D creation, padded initial data, map/copy/update and failed-handle ownership tested in production-source WARP fixtures. Their view/auto-mip contracts remain pending.
 Windowed-blit Present development path uses runtime allocations and synchronized pixel copies; target proof pending.
 Registration, ordinary runtime activation, complete required table, sharing and primary/flip Present remain pending.
 "@ | Set-Content (Join-Path $OutputDirectory 'STATUS.txt')

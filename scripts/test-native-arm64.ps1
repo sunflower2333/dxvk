@@ -9,6 +9,7 @@ if ($status -notmatch "(?m)^DXVK_COMMIT=$($env:GITHUB_SHA)\r?$" -or $status -not
     throw 'Artifact source or architecture does not match this CI run'
 }
 $cases = [ordered]@{
+    'dxvk-umd-texture-resource-test.exe' = 'PASS \d+ native texture resource checks'
     'dxvk-umd-runtime-gpu-test.exe' = 'PASS \d+ runtime GPU checks'
     'dxvk-umd-native-entry-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=0 backend-calls=0'
     'dxvk-umd-native-lifetime-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=1'

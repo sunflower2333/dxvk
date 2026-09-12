@@ -57,5 +57,10 @@ umd_runtime_gpu_test = executable('dxvk-umd-runtime-gpu-test',
   'umd_ddi.cpp', 'umd_allocation.cpp', 'umd_shader.cpp',
   dependencies : native_entry_dependencies)
 
+umd_texture_resource_test = executable('dxvk-umd-texture-resource-test',
+  '../../tests/umd-texture-resource.cpp', 'umd_runtime_gpu.cpp', 'umd_runtime_query.cpp',
+  'umd_ddi.cpp', 'umd_allocation.cpp', 'umd_shader.cpp',
+  dependencies : native_entry_dependencies)
+
 umd_view_test = executable('dxvk-umd-view-test', '../../tests/umd-view.cpp',
   dependencies : [cpp.find_library('d3d11'), cpp.find_library('d3dcompiler')])

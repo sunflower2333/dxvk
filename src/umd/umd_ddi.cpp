@@ -218,6 +218,31 @@ bool owned(Device* device, RenderTarget* target) {
 SIZE_T APIENTRY resourceSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERESOURCE*) {
   return sizeof(Resource);
 }
+bool linearOrVolumeTexture(const D3D10DDIARG_CREATERESOURCE& args) {
+  const bool volume = args.ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D;
+  const auto& base = args.pMipInfoList[0];
+  const UINT limit = volume ? D3D10_REQ_TEXTURE3D_U_V_OR_W_DIMENSION : D3D10_REQ_TEXTURE1D_U_DIMENSION;
+  if (args.SampleDesc.Count != 1 || args.SampleDesc.Quality
+      || !base.TexelWidth || base.TexelWidth > limit
+      || !base.TexelHeight || base.TexelHeight > limit
+      || !base.TexelDepth || base.TexelDepth > limit
+      || (volume ? args.ArraySize != 1 : (base.TexelHeight != 1 || base.TexelDepth != 1)))
+    return false;
+  UINT levels = 1;
+  for (UINT size = std::max(base.TexelWidth, std::max(base.TexelHeight, base.TexelDepth)); size > 1; size >>= 1)
+    ++levels;
+  if (args.MipLevels > levels) return false;
+  for (UINT mip = 0; mip < args.MipLevels; ++mip) {
+    const auto& current = args.pMipInfoList[mip];
+    if (current.TexelWidth != std::max(1u, base.TexelWidth >> mip)
+        || current.TexelHeight != std::max(1u, base.TexelHeight >> mip)
+        || current.TexelDepth != std::max(1u, base.TexelDepth >> mip)) return false;
+  }
+  // Physical dimensions may include block-compression padding. The embedded
+  // API allocates its own layout from texel dimensions; never reinterpret the
+  // physical dimensions as extra rows/slices in the caller's initial data.
+  return true;
+}
 HRESULT createResourceData(Device* device,
     const D3D10DDIARG_CREATERESOURCE* args, Resource* resource,
     D3D10DDI_HRTRESOURCE runtime) {
@@ -230,6 +255,9 @@ HRESULT createResourceData(Device* device,
       (args->BindFlags & ~(D3D10_DDI_BIND_PIPELINE_MASK | D3D10_DDI_BIND_PRESENT))) {
     return E_INVALIDARG;
   }
+  if ((args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D
+      || args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D)
+      && !linearOrVolumeTexture(*args)) return E_INVALIDARG;
   const bool presentable = (args->BindFlags & D3D10_DDI_BIND_PRESENT) != 0;
   if (presentable && (!device->memory.available() || !runtime.handle
       || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
@@ -262,6 +290,17 @@ HRESULT createResourceData(Device* device,
       ComPtr<ID3D11Buffer> buffer;
       hr = device->backend->CreateBuffer(&desc, data, &buffer);
       resource->backend = buffer;
+    } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D) {
+      D3D11_TEXTURE1D_DESC desc = {};
+      desc.Width = args->pMipInfoList[0].TexelWidth;
+      desc.MipLevels = args->MipLevels; desc.ArraySize = args->ArraySize;
+      desc.Format = args->Format; desc.Usage = static_cast<D3D11_USAGE>(args->Usage);
+      desc.MiscFlags = miscFlags; desc.BindFlags = args->BindFlags & D3D10_DDI_BIND_PIPELINE_MASK;
+      desc.CPUAccessFlags = ((args->MapFlags & D3D10_DDI_CPU_ACCESS_READ) ? D3D11_CPU_ACCESS_READ : 0)
+                         | ((args->MapFlags & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
+      ComPtr<ID3D11Texture1D> texture;
+      hr = device->backend->CreateTexture1D(&desc, data, &texture);
+      resource->backend = texture;
     } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
       D3D11_TEXTURE2D_DESC desc = {};
       desc.Width = args->pMipInfoList[0].TexelWidth;
@@ -277,6 +316,19 @@ HRESULT createResourceData(Device* device,
                          | ((args->MapFlags & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
       ComPtr<ID3D11Texture2D> texture;
       hr = device->backend->CreateTexture2D(&desc, data, &texture);
+      resource->backend = texture;
+    } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
+      D3D11_TEXTURE3D_DESC desc = {};
+      desc.Width = args->pMipInfoList[0].TexelWidth;
+      desc.Height = args->pMipInfoList[0].TexelHeight;
+      desc.Depth = args->pMipInfoList[0].TexelDepth;
+      desc.MipLevels = args->MipLevels;
+      desc.Format = args->Format; desc.Usage = static_cast<D3D11_USAGE>(args->Usage);
+      desc.MiscFlags = miscFlags; desc.BindFlags = args->BindFlags & D3D10_DDI_BIND_PIPELINE_MASK;
+      desc.CPUAccessFlags = ((args->MapFlags & D3D10_DDI_CPU_ACCESS_READ) ? D3D11_CPU_ACCESS_READ : 0)
+                         | ((args->MapFlags & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
+      ComPtr<ID3D11Texture3D> texture;
+      hr = device->backend->CreateTexture3D(&desc, data, &texture);
       resource->backend = texture;
     }
     if (hr == S_OK && !resource->backend) hr = E_FAIL;
@@ -617,7 +669,7 @@ void APIENTRY checkMultisample(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT coun
 }
 
 struct SubresourceInfo {
-  UINT width = 0, height = 1;
+  UINT width = 0, height = 1, depth = 1;
   D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
   DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
   D3D11_USAGE usage = D3D11_USAGE_DEFAULT;
@@ -645,6 +697,26 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
     info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
     return info.format == DXGI_FORMAT_R8G8B8A8_UNORM || info.format == DXGI_FORMAT_B8G8R8A8_UNORM;
   }
+  if (info.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D) {
+    ComPtr<ID3D11Texture1D> texture;
+    if (FAILED(resource->backend.As(&texture))) return false;
+    D3D11_TEXTURE1D_DESC desc = {}; texture->GetDesc(&desc);
+    if (!desc.MipLevels || index / desc.MipLevels >= desc.ArraySize) return false;
+    info.width = std::max(1u, desc.Width >> (index % desc.MipLevels));
+    info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
+    return info.format == DXGI_FORMAT_R8G8B8A8_UNORM || info.format == DXGI_FORMAT_B8G8R8A8_UNORM;
+  }
+  if (info.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
+    ComPtr<ID3D11Texture3D> texture;
+    if (FAILED(resource->backend.As(&texture))) return false;
+    D3D11_TEXTURE3D_DESC desc = {}; texture->GetDesc(&desc);
+    if (index >= desc.MipLevels) return false;
+    info.width = std::max(1u, desc.Width >> index);
+    info.height = std::max(1u, desc.Height >> index);
+    info.depth = std::max(1u, desc.Depth >> index);
+    info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
+    return info.format == DXGI_FORMAT_R8G8B8A8_UNORM || info.format == DXGI_FORMAT_B8G8R8A8_UNORM;
+  }
   return false;
 }
 bool subresourceBox(const SubresourceInfo& info, const D3D10_DDI_BOX* input, D3D11_BOX& box) {
@@ -652,9 +724,9 @@ bool subresourceBox(const SubresourceInfo& info, const D3D10_DDI_BOX* input, D3D
       input->right < 0 || input->bottom < 0 || input->back < 0)) return false;
   box = input ? D3D11_BOX{UINT(input->left), UINT(input->top), UINT(input->front),
                          UINT(input->right), UINT(input->bottom), UINT(input->back)}
-              : D3D11_BOX{0, 0, 0, info.width, info.height, 1};
+              : D3D11_BOX{0, 0, 0, info.width, info.height, info.depth};
   return box.left <= box.right && box.top <= box.bottom && box.front <= box.back
-      && box.right <= info.width && box.bottom <= info.height && box.back <= 1;
+      && box.right <= info.width && box.bottom <= info.height && box.back <= info.depth;
 }
 void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstIndex,
     UINT x, UINT y, UINT z, D3D10DDI_HRESOURCE src, UINT srcIndex, const D3D10_DDI_BOX* input) {
@@ -669,7 +741,8 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
   if (box.left == box.right || box.top == box.bottom || box.front == box.back) return;
   if ((get(src)->backend.Get() == get(dst)->backend.Get() && srcIndex == dstIndex)
       || x > destination.width || box.right - box.left > destination.width - x
-      || y > destination.height || box.bottom - box.top > destination.height - y || z) {
+      || y > destination.height || box.bottom - box.top > destination.height - y
+      || z > destination.depth || box.back - box.front > destination.depth - z) {
     device->error(E_INVALIDARG); return;
   }
   try {
@@ -689,8 +762,13 @@ void APIENTRY updateResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT in
     device->error(E_INVALIDARG); return;
   }
   if (box.left == box.right || box.top == box.bottom || box.front == box.back) return;
-  if (!source || (destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D
-      && rowPitch < (box.right - box.left) * 4)) { device->error(E_INVALIDARG); return; }
+  if (!source || ((destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D
+      || destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D)
+      && rowPitch < (box.right - box.left) * 4)
+      || (destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D
+      && uint64_t(depthPitch) < uint64_t(rowPitch) * (box.bottom - box.top))) {
+    device->error(E_INVALIDARG); return;
+  }
   try {
     device->context->UpdateSubresource(get(dst)->backend.Get(), index, input ? &box : nullptr,
       source, rowPitch, depthPitch);

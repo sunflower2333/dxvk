@@ -33,16 +33,33 @@ static D3D10DDI_DEVICEFUNCS* activeTable;
 enum class Action { None, QueryAgain, Close, Reset, DuplicateCreate };
 static Action queryAction, backendAction;
 static bool destroyOnError;
+static D3D10DDI_HRESOURCE activeResource = {};
+static SIZE_T activeResourceBytes;
+static HRESULT allocationResult = S_OK, deallocationResult = S_OK;
+static bool zeroAllocation, destroyResourceOnDeallocate, destroyResourceOnError;
+static bool cancelResourceCreation;
 
 static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
   CHECK(device == &deviceCookie && args && args->hResource == &resourceCookie);
   CHECK(args->NumAllocations == 1 && args->pAllocationInfo);
-  args->pAllocationInfo[0].hAllocation = 123; args->hKMResource = 456; ++allocations;
-  return S_OK;
+  args->pAllocationInfo[0].hAllocation = zeroAllocation ? 0 : 123;
+  args->hKMResource = 456; ++allocations;
+  if (cancelResourceCreation) {
+    cancelResourceCreation = false;
+    activeTable->pfnDestroyResource(activeCreate->hDrvDevice, activeResource);
+    std::memset(activeResource.pDrvPrivate, 0xcc, activeResourceBytes);
+  }
+  return allocationResult;
 }
 static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* args) {
   CHECK(device == &deviceCookie && args && args->hResource == &resourceCookie); ++deallocations;
-  return S_OK;
+  if (destroyResourceOnDeallocate) {
+    destroyResourceOnDeallocate = false;
+    activeTable->pfnDestroyResource(activeCreate->hDrvDevice, activeResource);
+    // Model the runtime immediately reclaiming the retired resource storage.
+    std::memset(activeResource.pDrvPrivate, 0xcc, activeResourceBytes);
+  }
+  return deallocationResult;
 }
 static HRESULT APIENTRY lock(HANDLE device, D3DDDICB_LOCK* args) {
   CHECK(device == &deviceCookie && args && args->hAllocation == 123);
@@ -88,6 +105,10 @@ static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* a
 
 static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
   CHECK(runtime.handle == &coreCookie && FAILED(hr)); ++errors;
+  if (destroyResourceOnError) {
+    destroyResourceOnError = false;
+    activeTable->pfnDestroyResource(activeCreate->hDrvDevice, activeResource);
+  }
   if (destroyOnError) {
     destroyOnError = false;
     activeTable->pfnDestroyDevice(activeCreate->hDrvDevice);
@@ -244,6 +265,7 @@ int main() {
     SIZE_T resourceBytes = table.pfnCalcPrivateResourceSize(create.hDrvDevice, &desc);
     std::vector<std::max_align_t> resourceStorage((resourceBytes+sizeof(std::max_align_t)-1)/sizeof(std::max_align_t));
     D3D10DDI_HRESOURCE resource = {resourceStorage.data()};
+    activeResource = resource; activeResourceBytes = resourceBytes;
     table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
     CHECK(allocations == 1 && errors == 0);
     DXGI_DDI_ARG_PRESENT presentation = {};
@@ -252,11 +274,44 @@ int main() {
     presentation.pDXGIContext = &dxgiCookie; presentation.Flags.Blt = 1;
     CHECK(dxgiFunctions.pfnPresent(&presentation) == S_OK && presents == 1);
     CHECK(!std::memcmp(pixels, publishedPixels, sizeof(pixels)));
+    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
+    CHECK(errors == 1 && allocations == 1); // Duplicate storage stays intact.
+    deallocationResult = D3DDDIERR_DEVICEREMOVED;
+    destroyResourceOnDeallocate = true; destroyResourceOnError = true;
     table.pfnDestroyResource(create.hDrvDevice, resource);
-    CHECK(deallocations == 1);
+    CHECK(deallocations == 1 && errors == 2);
+    for (SIZE_T i = 0; i < resourceBytes; ++i)
+      CHECK(static_cast<unsigned char*>(resource.pDrvPrivate)[i] == 0xcc);
+    table.pfnDestroyResource(create.hDrvDevice, resource);
+    CHECK(deallocations == 1 && errors == 2);
+    deallocationResult = S_OK;
+
+    // Failed creation receives no DestroyResource. Its staged backend owner,
+    // successful malformed allocation and storage reservation must all unwind.
+    zeroAllocation = true;
+    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
+    CHECK(allocations == 2 && deallocations == 2 && errors == 3);
+    for (SIZE_T i = 0; i < resourceBytes; ++i)
+      CHECK(static_cast<unsigned char*>(resource.pDrvPrivate)[i] == 0xcc);
+    zeroAllocation = false;
+    allocationResult = E_OUTOFMEMORY;
+    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
+    CHECK(allocations == 3 && deallocations == 2 && errors == 4);
+    allocationResult = S_OK;
+    cancelResourceCreation = true;
+    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
+    CHECK(allocations == 4 && deallocations == 3 && errors == 5);
+    for (SIZE_T i = 0; i < resourceBytes; ++i)
+      CHECK(static_cast<unsigned char*>(resource.pDrvPrivate)[i] == 0xcc);
+    // Reuse the same storage after all three failure modes without a destroy.
+    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
+    CHECK(allocations == 5 && deallocations == 3 && errors == 5);
+    CHECK(dxgiFunctions.pfnPresent(&presentation) == S_OK && presents == 2);
+    table.pfnDestroyResource(create.hDrvDevice, resource);
+    CHECK(deallocations == 4 && errors == 5);
     destroyOnError = true;
     table.pfnDestroyDevice(create.hDrvDevice);
-    CHECK(errors == 1 && contextDestroys == 1);
+    CHECK(errors == 6 && contextDestroys == 1);
     table.pfnDestroyDevice(create.hDrvDevice); // Reentry already destroyed it.
     core.pfnSetErrorCb = error; kernel = savedKernel; dxgi = savedDxgi;
     openAdapter();

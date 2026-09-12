@@ -50,7 +50,7 @@ umd_native_lifetime_test = executable('dxvk-umd-native-lifetime-test',
 umd_query_test = executable('dxvk-umd-query-test', '../../tests/umd-query.cpp')
 
 umd_allocation_test = executable('dxvk-umd-allocation-test',
-  '../../tests/umd-allocation.cpp', 'umd_allocation.cpp')
+  '../../tests/umd-allocation.cpp', 'umd_allocation.cpp', 'umd_runtime_query.cpp')
 
 umd_view_test = executable('dxvk-umd-view-test', '../../tests/umd-view.cpp',
   dependencies : [cpp.find_library('d3d11'), cpp.find_library('d3dcompiler')])

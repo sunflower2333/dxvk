@@ -1,6 +1,7 @@
 #pragma once
 
 #include "umd_ddi.h"
+#include "umd_adapter.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -26,14 +27,20 @@ public:
   RuntimeAllocation() = default;
   RuntimeAllocation(const RuntimeAllocation&) = delete;
   RuntimeAllocation& operator=(const RuntimeAllocation&) = delete;
+  RuntimeAllocation(RuntimeAllocation&& other) noexcept;
   ~RuntimeAllocation();
   HRESULT release();
   D3DKMT_HANDLE handle() const { return m_handle; }
+  D3DKMT_HANDLE kernelResource() const { return m_kernelResource; }
+  HANDLE runtimeResource() const { return m_resource; }
+  uint64_t generation() const { return m_generation; }
 private:
   friend class RuntimeMemory;
   RuntimeMemory* m_owner = nullptr;
   HANDLE m_resource = nullptr;
   D3DKMT_HANDLE m_handle = 0;
+  D3DKMT_HANDLE m_kernelResource = 0;
+  uint64_t m_generation = 0;
   AllocationInfo m_info;
   bool m_published = false;
 };
@@ -47,7 +54,8 @@ public:
   RuntimeMemory& operator=(const RuntimeMemory&) = delete;
   ~RuntimeMemory();
   void initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kernel,
-    const DXGI_DDI_BASE_CALLBACKS* dxgi);
+    const DXGI_DDI_BASE_CALLBACKS* dxgi,
+    std::shared_ptr<const AdapterIdentity> identity = {});
   bool available() const;
   HRESULT allocate(RuntimeAllocation& out, HANDLE resource, UINT width,
     UINT height, DXGI_FORMAT format);
@@ -57,10 +65,14 @@ public:
   HRESULT close();
 private:
   HRESULT ensureContext();
+  HRESULT checkIdentity();
   HANDLE m_device = nullptr;
   D3DDDI_DEVICECALLBACKS m_callbacks = {};
   DXGI_DDI_BASE_CALLBACKS m_dxgi = {};
   HANDLE m_context = nullptr;
+  std::shared_ptr<const AdapterIdentity> m_identity;
+  bool m_removed = false;
+  bool m_querying = false;
 };
 
 }

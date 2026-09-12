@@ -55,6 +55,14 @@ struct Resource {
   ComPtr<ID3D11Texture2D> presentReadback;
   dxvk::umd::RuntimeAllocation allocation;
 };
+enum class ResourcePhase { Creating, Live };
+struct ResourceRecord {
+  Device* owner;
+  ResourcePhase phase;
+  std::shared_ptr<const char> reservation;
+};
+std::mutex resourceStorageMutex;
+std::unordered_map<void*, ResourceRecord> resourceStorage;
 struct RenderTarget {
   Device* owner = nullptr;
   ComPtr<ID3D11RenderTargetView> backend;
@@ -202,12 +210,9 @@ bool owned(Device* device, RenderTarget* target) {
 SIZE_T APIENTRY resourceSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERESOURCE*) {
   return sizeof(Resource);
 }
-void APIENTRY createResource(D3D10DDI_HDEVICE h,
-    const D3D10DDIARG_CREATERESOURCE* args, D3D10DDI_HRESOURCE out,
+HRESULT createResourceData(Device* device,
+    const D3D10DDIARG_CREATERESOURCE* args, Resource* resource,
     D3D10DDI_HRTRESOURCE runtime) {
-  auto device = get(h);
-  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
-  auto resource = new (out.pDrvPrivate) Resource();
   resource->owner = device;
   UINT miscFlags = 0;
   if (!args || !args->pMipInfoList || !args->MipLevels || !args->ArraySize ||
@@ -215,7 +220,7 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
       args->pPrimaryDesc ||
       !dxvk::umd::textureMiscFlags(*args, miscFlags) || (args->MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK) ||
       (args->BindFlags & ~(D3D10_DDI_BIND_PIPELINE_MASK | D3D10_DDI_BIND_PRESENT))) {
-    device->error(E_INVALIDARG); return;
+    return E_INVALIDARG;
   }
   const bool presentable = (args->BindFlags & D3D10_DDI_BIND_PRESENT) != 0;
   if (presentable && (!device->memory.available() || !runtime.handle
@@ -225,7 +230,7 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
       || args->Usage != D3D10_DDI_USAGE_DEFAULT || args->MapFlags
       || !(args->BindFlags & D3D10_DDI_BIND_RENDER_TARGET)
       || (args->Format != DXGI_FORMAT_R8G8B8A8_UNORM && args->Format != DXGI_FORMAT_B8G8R8A8_UNORM))) {
-    device->error(DXGI_ERROR_UNSUPPORTED); return;
+    return DXGI_ERROR_UNSUPPORTED;
   }
   try {
     std::vector<D3D11_SUBRESOURCE_DATA> initial;
@@ -266,20 +271,85 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
       hr = device->backend->CreateTexture2D(&desc, data, &texture);
       resource->backend = texture;
     }
-    if (SUCCEEDED(hr) && presentable) {
+    if (hr == S_OK && !resource->backend) hr = E_FAIL;
+    if (hr == S_OK && presentable) {
       hr = device->memory.allocate(resource->allocation, runtime.handle,
         args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight, args->Format);
       if (FAILED(hr)) resource->backend.Reset();
     }
-    device->error(hr);
-  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
-    catch (...) { device->error(E_FAIL); }
+    return hr == S_OK || FAILED(hr) ? hr : E_FAIL;
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
+}
+void APIENTRY createResource(D3D10DDI_HDEVICE h,
+    const D3D10DDIARG_CREATERESOURCE* args, D3D10DDI_HRESOURCE out,
+    D3D10DDI_HRTRESOURCE runtime) {
+  auto device = get(h);
+  const auto report = device->callbacks.pfnSetErrorCb;
+  const auto core = device->runtime;
+  HRESULT hr = S_OK;
+  std::shared_ptr<const char> reservation;
+  if (!out.pDrvPrivate || uintptr_t(out.pDrvPrivate) % alignof(Resource)) {
+    report(core, E_INVALIDARG); return;
+  }
+  try {
+    reservation = std::make_shared<const char>(0);
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    if (!resourceStorage.emplace(out.pDrvPrivate,
+        ResourceRecord{device, ResourcePhase::Creating, reservation}).second) hr = E_INVALIDARG;
+  } catch (const std::bad_alloc&) { hr = E_OUTOFMEMORY; }
+    catch (...) { hr = E_FAIL; }
+  if (FAILED(hr)) { report(core, dxvk::umd::ddiResult(hr)); return; }
+  {
+    // CreateResource failures receive no DestroyResource from the runtime.
+    // Stage every backend/allocation owner locally and publish private storage
+    // only when all steps succeeded. No runtime callback runs under the lock.
+    Resource staged;
+    hr = createResourceData(device, args, &staged, runtime);
+    if (hr == S_OK) {
+      std::lock_guard<std::mutex> lock(resourceStorageMutex);
+      const auto entry = resourceStorage.find(out.pDrvPrivate);
+      if (entry == resourceStorage.end() || entry->second.reservation != reservation)
+        hr = DXGI_ERROR_DEVICE_REMOVED;
+      else {
+        new (out.pDrvPrivate) Resource(std::move(staged));
+        entry->second.phase = ResourcePhase::Live;
+      }
+    }
+  } // Failed staged owners are fully destroyed before SetError can reenter.
+  if (FAILED(hr)) {
+    {
+      std::lock_guard<std::mutex> lock(resourceStorageMutex);
+      const auto entry = resourceStorage.find(out.pDrvPrivate);
+      if (entry != resourceStorage.end() && entry->second.reservation == reservation)
+        resourceStorage.erase(entry);
+    }
+    report(core, dxvk::umd::ddiResult(hr));
+  }
 }
 void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
-  auto object = get(resource);
-  if (!object || object->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  get(h)->error(object->allocation.release());
-  object->~Resource();
+  {
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    const auto entry = resourceStorage.find(resource.pDrvPrivate);
+    if (entry == resourceStorage.end() || entry->second.owner != get(h)) return;
+    const bool live = entry->second.phase == ResourcePhase::Live;
+    resourceStorage.erase(entry);
+    // Cancel unpublished creation without accessing runtime private storage.
+    if (!live) return;
+  }
+  auto device = get(h);
+  const auto report = device->callbacks.pfnSetErrorCb;
+  const auto core = device->runtime;
+  HRESULT hr = S_OK;
+  {
+    auto object = get(resource);
+    Resource retired(std::move(*object));
+    object->~Resource();
+    // The runtime may free/reuse private storage during a recursive destroy.
+    // Release only local owners; neither object nor device is accessed afterward.
+    hr = retired.allocation.release();
+  }
+  if (FAILED(hr)) report(core, dxvk::umd::ddiResult(hr));
 }
 
 SIZE_T APIENTRY shaderViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATESHADERRESOURCEVIEW*) {
@@ -1445,7 +1515,7 @@ HRESULT dxvk::umd::createAdapterDevice(
     auto device = get(args->hDrvDevice);
     device->adapter = identity;
     device->memory.initialize(args->hRTDevice.handle, *args->pKTCallbacks,
-      args->DXGIBaseDDI.pDXGIBaseCallbacks);
+      args->DXGIBaseDDI.pDXGIBaseCallbacks, identity);
     if (args->DXGIBaseDDI.pDXGIDDIBaseFunctions) {
       *args->DXGIBaseDDI.pDXGIDDIBaseFunctions = {};
       if (device->memory.available())

@@ -13,6 +13,8 @@
 #include <new>
 #include <vector>
 #include <array>
+#include <mutex>
+#include <unordered_map>
 
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -39,6 +41,14 @@ struct Device {
     if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, dxvk::umd::ddiResult(hr));
   }
 };
+enum class DevicePhase { Creating, Live, Destroying };
+std::mutex deviceStorageMutex;
+std::unordered_map<void*, DevicePhase> deviceStorage;
+
+void releaseDeviceStorage(void* storage) {
+  std::lock_guard<std::mutex> lock(deviceStorageMutex);
+  deviceStorage.erase(storage);
+}
 struct Resource {
   Device* owner = nullptr;
   ComPtr<ID3D11Resource> backend;
@@ -1233,8 +1243,22 @@ void APIENTRY checkCounter(D3D10DDI_HDEVICE h, D3D10DDI_QUERY query,
     ? DXGI_DDI_ERR_UNSUPPORTED : E_INVALIDARG);
 }
 void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
-  get(h)->error(get(h)->memory.close());
-  get(h)->~Device();
+  {
+    std::lock_guard<std::mutex> lock(deviceStorageMutex);
+    const auto entry = deviceStorage.find(h.pDrvPrivate);
+    if (entry == deviceStorage.end() || entry->second != DevicePhase::Live) return;
+    entry->second = DevicePhase::Destroying;
+  }
+  auto device = get(h);
+  const auto report = device->callbacks.pfnSetErrorCb;
+  const auto runtime = device->runtime;
+  HRESULT hr = E_FAIL;
+  try { hr = device->memory.close(); } catch (...) {}
+  device->~Device();
+  releaseDeviceStorage(h.pDrvPrivate);
+  // A synchronous SetError/DestroyContext callback may reenter destruction.
+  // State is already retired, and no access to Device follows this callback.
+  if (FAILED(hr)) report(runtime, dxvk::umd::ddiResult(hr));
 }
 
 HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
@@ -1278,18 +1302,31 @@ HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
 
 extern "C" SIZE_T APIENTRY VioGpuDxvkPrivateDeviceSize() { return sizeof(Device); }
 
-extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
+namespace {
+HRESULT createDdiDevice(
     const LUID* luid, D3D10DDI_HDEVICE h, D3D10DDI_HRTCORELAYER runtime,
     const D3D10DDI_CORELAYER_DEVICECALLBACKS* callbacks, D3D10DDI_DEVICEFUNCS* table) {
-  if (!luid || !h.pDrvPrivate || !callbacks || !callbacks->pfnSetErrorCb || !table)
+  if (!luid || !h.pDrvPrivate || uintptr_t(h.pDrvPrivate) % alignof(Device)
+      || !runtime.handle || !callbacks || !callbacks->pfnSetErrorCb || !table)
     return E_INVALIDARG;
-  *table = {};
+  try {
+    std::lock_guard<std::mutex> lock(deviceStorageMutex);
+    if (!deviceStorage.emplace(h.pDrvPrivate, DevicePhase::Creating).second)
+      return E_INVALIDARG;
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
   auto device = new (h.pDrvPrivate) Device();
+  auto cleanup = [](Device* value) { value->~Device(); releaseDeviceStorage(value); };
+  std::unique_ptr<Device, decltype(cleanup)> guard(device, cleanup);
   device->runtime = runtime;
-  device->callbacks = *callbacks;
+  // Only the callback used by this exact interface is read. The runtime owns
+  // its original table and may have supplied an older WDK structure size.
+  device->callbacks.pfnSetErrorCb = callbacks->pfnSetErrorCb;
   const HRESULT hr = dxvk::umd::createDevice(*luid, D3D_FEATURE_LEVEL_10_0,
     &device->backend, &device->context);
-  if (FAILED(hr)) { device->~Device(); return hr; }
+  if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  if (!device->backend || !device->context) return E_FAIL;
+  *table = {};
   table->pfnCalcPrivateResourceSize = resourceSize;
   table->pfnCreateResource = createResource;
   table->pfnDestroyResource = destroyResource;
@@ -1383,12 +1420,26 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   table->pfnCheckCounterInfo = counterInfo;
   table->pfnCheckCounter = checkCounter;
   table->pfnDestroyDevice = destroyDevice;
+  {
+    std::lock_guard<std::mutex> lock(deviceStorageMutex);
+    deviceStorage.at(h.pDrvPrivate) = DevicePhase::Live;
+  }
+  guard.release();
   return S_OK;
+}
+}
+
+extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
+    const LUID* luid, D3D10DDI_HDEVICE h, D3D10DDI_HRTCORELAYER runtime,
+    const D3D10DDI_CORELAYER_DEVICECALLBACKS* callbacks, D3D10DDI_DEVICEFUNCS* table) {
+  try { return createDdiDevice(luid, h, runtime, callbacks, table); }
+  catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+  catch (...) { return E_FAIL; }
 }
 
 HRESULT dxvk::umd::createAdapterDevice(
     const std::shared_ptr<const AdapterIdentity>& identity, D3D10DDIARG_CREATEDEVICE* args) {
-  const HRESULT hr = VioGpuDxvkCreateDdiTestDevice(&identity->luid, args->hDrvDevice,
+  const HRESULT hr = createDdiDevice(&identity->luid, args->hDrvDevice,
     args->hRTCoreLayer, args->pUMCallbacks, args->pDeviceFuncs);
   if (SUCCEEDED(hr)) {
     auto device = get(args->hDrvDevice);

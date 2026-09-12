@@ -1,7 +1,7 @@
 name: Native UMD backend development
 on:
   push:
-    branches: [viogpu-umd-20260911]
+    branches: [viogpu-umd-20260911, work/native-runtime-entry-20260912]
   workflow_dispatch:
 jobs:
   identity:

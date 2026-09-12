@@ -3,10 +3,13 @@
 #include <d3d10_1.h>
 #include <d3d10umddi.h>
 
-// Development harness entry points. They use real WDK DDI types, but the
-// subset table is never published to the Windows runtime as full support.
-// OpenAdapter registration follows only after the complete required table
-// and the runtime-adapter identity contract have been implemented.
+// Native entrypoints use the WDK ABI. Negotiation advertises no incomplete
+// interface or feature level; these exports do not imply INF registration.
+extern "C" HRESULT APIENTRY OpenAdapter10(D3D10DDIARG_OPENADAPTER* args);
+extern "C" HRESULT APIENTRY OpenAdapter10_2(D3D10DDIARG_OPENADAPTER* args);
+
+// Explicit development helpers can exercise the partial table independently
+// of native capability admission. They are not ordinary runtime activation.
 extern "C" SIZE_T APIENTRY VioGpuDxvkPrivateDeviceSize();
 // Uses the real WDK OpenAdapter/CreateDevice structures and callback ABI.
 // Explicit harness name: no OpenAdapter10 export or system registration.

@@ -10,6 +10,12 @@ namespace dxvk::umd {
 // optional trailer carries the kernel-supplied runtime adapter LUID.
 constexpr size_t RuntimeIdentityReplySize = 160;
 
+struct RuntimeIdentity {
+  AdapterLuid luid = {};
+  uint64_t generation = 0;
+  uint64_t capabilities = 0;
+};
+
 inline bool readProposedRuntimeIdentity(const void* reply, size_t size, AdapterLuid& result) {
   result = {};
   if (!reply || size != RuntimeIdentityReplySize) return false;
@@ -26,6 +32,23 @@ inline bool readProposedRuntimeIdentity(const void* reply, size_t size, AdapterL
   for (size_t i = 0; i < luid.size(); i++) luid[i] = bytes[144+i];
   if (luid == AdapterLuid{}) return false;
   result = luid;
+  return true;
+}
+
+inline bool readRuntimeIdentity(const void* reply, size_t size, RuntimeIdentity& result) {
+  result = {};
+  RuntimeIdentity value;
+  if (!readProposedRuntimeIdentity(reply, size, value.luid)) return false;
+  auto bytes = static_cast<const uint8_t*>(reply);
+  auto u64 = [&](size_t offset) {
+    uint64_t v = 0;
+    for (unsigned i = 0; i < 8; i++) v |= uint64_t(bytes[offset+i]) << (8*i);
+    return v;
+  };
+  value.capabilities = u64(16);
+  value.generation = u64(24);
+  if (!value.generation || u64(112) || u64(120)) return false;
+  result = value;
   return true;
 }
 

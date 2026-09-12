@@ -36,6 +36,8 @@ meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Den
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
 ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe src/umd/dxvk-umd-shader-test.exe src/umd/dxvk-umd-view-test.exe
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
+ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-native-lifetime-test.exe
+if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build failed' }
 ninja -C build-umd src/umd/viogpudxvk.dll.p/umd_ddi.cpp.obj src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
 if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
@@ -44,6 +46,10 @@ if ($arch -ne 'arm64') {
     if ($LASTEXITCODE) { throw 'Runtime identity callback consumer test failed' }
     & build-umd/src/umd/dxvk-umd-adapter-test.exe | Tee-Object (Join-Path $OutputDirectory 'adapter-test.txt')
     if ($LASTEXITCODE) { throw 'Adapter lifecycle test failed' }
+    & build-umd/src/umd/dxvk-umd-native-entry-test.exe | Tee-Object (Join-Path $OutputDirectory 'native-entry-test.txt')
+    if ($LASTEXITCODE) { throw 'Production native capability gate test failed' }
+    & build-umd/src/umd/dxvk-umd-native-lifetime-test.exe | Tee-Object (Join-Path $OutputDirectory 'native-lifetime-test.txt')
+    if ($LASTEXITCODE) { throw 'Production native lifetime fixture failed' }
     & build-umd/src/umd/dxvk-umd-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'query-test.txt')
     if ($LASTEXITCODE) { throw 'Query completion test failed' }
     & build-umd/src/umd/dxvk-umd-allocation-test.exe | Tee-Object (Join-Path $OutputDirectory 'allocation-test.txt')
@@ -66,15 +72,16 @@ foreach ($name in @('viogpudxvk.dll', 'dxvk-umd-backend-probe.exe', 'dxvk-umd-dd
     $imports | Set-Content (Join-Path $OutputDirectory "$name.imports.txt")
 }
 $exports = & dumpbin /exports build-umd/src/umd/viogpudxvk.dll | Out-String
-if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch 'VioGpuDxvkOpenAdapterForTest' -or $exports -match '\bOpenAdapter(?:10(?:_2)?)?\b|D3D11CreateDevice') { throw 'Unexpected UMD development exports' }
+if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
 @"
 DXVK_COMMIT=$(git rev-parse HEAD)
 ARCH=$arch
 STATUS=DDI development candidate; not registered or installable as the system UMD.
 Development DDIs include restricted SM4 VS/GS/PS, state and Draw; stream output and general shader interfaces remain pending.
-Development OpenAdapter harness validates runtime identity and retains it across adapter/device lifetime.
+Native OpenAdapter10_2 negotiates exact identity/generation; incomplete production interfaces and feature levels remain unadvertised.
+Production entry/lifetime fixtures use controlled callbacks and a WARP backend; they are not ordinary Microsoft runtime activation.
 Windowed-blit Present development path uses runtime allocations and synchronized pixel copies; target proof pending.
-Runtime-to-DDI activation, complete required table, sharing and primary/flip Present remain pending.
+Registration, ordinary runtime activation, complete required table, sharing and primary/flip Present remain pending.
 "@ | Set-Content (Join-Path $OutputDirectory 'STATUS.txt')
 Get-ChildItem $OutputDirectory -File | Where-Object Extension -in '.dll','.exe' | Get-FileHash | Format-List

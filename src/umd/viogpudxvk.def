@@ -1,5 +1,7 @@
 LIBRARY viogpudxvk
 EXPORTS
+  OpenAdapter10
+  OpenAdapter10_2
   VioGpuDxvkPrivateDeviceSize
   VioGpuDxvkOpenAdapterForTest
   VioGpuDxvkQueryRuntimeAdapterLuid

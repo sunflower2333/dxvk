@@ -29,7 +29,7 @@ static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* a
   auto set = [bytes](size_t offset, uint32_t value) {
     for (size_t i = 0; i < 4; i++) bytes[offset+i] = uint8_t(value >> (i*8));
   };
-  set(0,0x504d5644); set(8,128);
+  set(0,0x504d5644); set(8,128); set(24,7);
   if (!oldReply) {
     set(128,0x44494c56); set(132,1); set(136,32); set(140,1); set(152,1);
     std::memcpy(bytes+144, &expectedLuid, sizeof(expectedLuid));

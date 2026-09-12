@@ -18,6 +18,14 @@ int main() {
   check(readProposedRuntimeIdentity(reply.data(), reply.size(), luid));
   check(luid == AdapterLuid{1,2,3,4,5,6,7,8});
   const auto valid = reply;
+  RuntimeIdentity current;
+  check(!readRuntimeIdentity(reply.data(), reply.size(), current)); // zero generation
+  set(24, 0x1234); set(28, 0x9876); set(16, 7);
+  check(readRuntimeIdentity(reply.data(), reply.size(), current));
+  check(current.luid == luid && current.generation == 0x987600001234ull && current.capabilities == 7);
+  set(112, 1);
+  check(!readRuntimeIdentity(reply.data(), reply.size(), current) && !current.generation);
+  reply = valid;
   for (size_t size = 0; size < reply.size(); size++) {
     luid.fill(0xff);
     check(!readProposedRuntimeIdentity(reply.data(), size, luid) && luid == AdapterLuid{});

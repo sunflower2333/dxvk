@@ -163,6 +163,10 @@ int main() {
   zeroResource = true;
   CHECK(memory.allocate(allocation, &resourceCookie, 3, 2, DXGI_FORMAT_R8G8B8A8_UNORM) == E_FAIL);
   CHECK(!allocation.handle()); sequence("AD"); zeroResource = false;
+  zeroResource = true; deallocateResult = D3DDDIERR_DEVICEREMOVED;
+  CHECK(memory.allocate(allocation, &resourceCookie, 3, 2, DXGI_FORMAT_R8G8B8A8_UNORM)
+    == D3DDDIERR_DEVICEREMOVED);
+  CHECK(!allocation.handle()); sequence("AD"); zeroResource = false; deallocateResult = S_OK;
   CHECK(memory.allocate(allocation, &resourceCookie, 3, 2, DXGI_FORMAT_R8G8B8A8_UNORM) == S_OK);
   CHECK(allocation.handle() == 123); sequence("A");
   CHECK(allocation.kernelResource() == 456 && allocation.runtimeResource() == &resourceCookie);
@@ -193,6 +197,8 @@ int main() {
   lockResult = DXGI_DDI_ERR_WASSTILLDRAWING;
   CHECK(memory.upload(allocation, pixels, 16) == DXGI_DDI_ERR_WASSTILLDRAWING);
   CHECK(memory.present(allocation, args) == E_INVALIDARG); sequence("L"); lockResult = S_OK;
+  lockResult = S_FALSE;
+  CHECK(memory.upload(allocation, pixels, 16) == E_FAIL); sequence("LU"); lockResult = S_OK;
   nullLock = true;
   CHECK(memory.upload(allocation, pixels, 16) == E_FAIL);
   CHECK(memory.present(allocation, args) == E_INVALIDARG); sequence("LU"); nullLock = false;
@@ -205,6 +211,8 @@ int main() {
   CHECK(memory.close() == S_OK); sequence("X");
   contextResult = E_OUTOFMEMORY;
   CHECK(memory.present(allocation, args) == E_OUTOFMEMORY); sequence("C"); contextResult = S_OK;
+  contextResult = S_FALSE;
+  CHECK(memory.present(allocation, args) == E_FAIL); sequence("CX"); contextResult = S_OK;
   zeroContext = true;
   CHECK(memory.present(allocation, args) == E_FAIL); sequence("C"); zeroContext = false;
   CHECK(memory.present(allocation, args) == S_OK); sequence("CP");

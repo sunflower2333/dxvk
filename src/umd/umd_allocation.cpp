@@ -87,8 +87,8 @@ HRESULT RuntimeMemory::allocate(RuntimeAllocation& out, HANDLE resource,
     // when its returned handles are incomplete. Never expose a zero handle.
     D3DDDICB_DEALLOCATE cleanup = {};
     cleanup.hResource = resource;
-    m_callbacks.pfnDeallocateCb(m_device, &cleanup);
-    return FAILED(hr) ? hr : E_FAIL;
+    const HRESULT released = completed(m_callbacks.pfnDeallocateCb(m_device, &cleanup));
+    return FAILED(released) ? released : FAILED(hr) ? hr : E_FAIL;
   }
   out.m_owner = this; out.m_resource = resource;
   out.m_handle = allocation.hAllocation; out.m_info = info;
@@ -129,9 +129,11 @@ HRESULT RuntimeMemory::upload(RuntimeAllocation& allocation, const void* pixels,
   lock.Flags.WriteOnly = 1;
   // Do not discard or ignore synchronization: VidSch may still consume the
   // last Present. A successful synchronized lock precedes every CPU write.
-  hr = completed(m_callbacks.pfnLockCb(m_device, &lock));
-  if (FAILED(hr)) return hr;
-  hr = checkIdentity();
+  const HRESULT locked = m_callbacks.pfnLockCb(m_device, &lock);
+  if (FAILED(locked)) return locked;
+  // Any callback-reported success acquired a lock, even when its status is
+  // outside the documented exact-S_OK contract. Balance before rejecting it.
+  hr = locked == S_OK ? checkIdentity() : E_FAIL;
   if (SUCCEEDED(hr) && (!lock.pData || lock.hAllocation != allocation.m_handle)) hr = E_FAIL;
   if (SUCCEEDED(hr)) {
     for (UINT y = 0; y < info.height; y++) {
@@ -153,9 +155,17 @@ HRESULT RuntimeMemory::ensureContext() {
   if (m_context) return S_OK;
   D3DDDICB_CREATECONTEXT request = {};
   request.EngineAffinity = 1;
-  HRESULT hr = completed(m_callbacks.pfnCreateContextCb(m_device, &request));
-  if (FAILED(hr)) return hr;
-  if (!request.hContext) return E_FAIL;
+  const HRESULT created = m_callbacks.pfnCreateContextCb(m_device, &request);
+  if (FAILED(created)) return created;
+  if (created != S_OK || !request.hContext) {
+    if (request.hContext) {
+      D3DDDICB_DESTROYCONTEXT cleanup = {};
+      cleanup.hContext = request.hContext;
+      const HRESULT released = completed(m_callbacks.pfnDestroyContextCb(m_device, &cleanup));
+      if (FAILED(released)) return released;
+    }
+    return E_FAIL;
+  }
   m_context = request.hContext;
   return S_OK;
 }

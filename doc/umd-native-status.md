@@ -1,7 +1,8 @@
 # Native VIOGPU DXVK UMD development status
 
-The Windows native UMD is still a development subset. `viogpudxvk.dll` has no
-OpenAdapter export and is not selected by the paired driver's INF. The INF
+The Windows native UMD is still a development subset. `viogpudxvk.dll` now
+exports typed OpenAdapter10/OpenAdapter10_2, but its incomplete interfaces and
+feature levels remain unadvertised and it is not selected by the paired INF. The INF
 continues to select the existing Mesa UMD. The long-term goal remains native
 D3D9/10/11 Display+Render through DXVK, not application-local replacement DLLs.
 
@@ -198,7 +199,8 @@ only the D3D10.0 table and compatible runtime builds, and rejects unsupported
 flags rather than silently ignoring threading restrictions. Devices retain
 adapter identity after the adapter handle is closed. The CPU lifecycle test
 uses mocked runtime/backend callbacks, including failure paths; this is not
-Windows runtime activation. No OpenAdapter10 export is supplied.
+Windows runtime activation. The later native entry implementation and strict
+production capability gate are documented in [native-runtime-entry.md](native-runtime-entry.md).
 
 The development adapter now optionally supplies a windowed-blit DXGI Present
 entry when the real allocation/context/Present callbacks are provided. Single

@@ -74,6 +74,14 @@ foreach ($name in @('viogpudxvk.dll', 'dxvk-umd-backend-probe.exe', 'dxvk-umd-dd
 $exports = & dumpbin /exports build-umd/src/umd/viogpudxvk.dll | Out-String
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
+foreach ($name in @('dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe')) {
+    # Test-only WARP binaries are separate from the production import gate.
+    # Include ARM64 fixtures for execution by the target validation owner.
+    $path = Join-Path 'build-umd/src/umd' $name
+    $headers = & dumpbin /headers $path | Out-String
+    if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }
+    Copy-Item $path $OutputDirectory
+}
 @"
 DXVK_COMMIT=$(git rev-parse HEAD)
 ARCH=$arch

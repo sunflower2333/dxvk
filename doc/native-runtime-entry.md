@@ -58,8 +58,9 @@ controlled runtime/backend; it is not ordinary Microsoft runtime activation,
 Vulkan/Turnip hardware proof or visible display acceptance.
 
 The Windows CI builds actual WDK ARM64, x64 and x86 binaries. The x64 and x86
-fixtures execute on the Windows runner; ARM64 fixture execution requires the
-target. Linux ASan/UBSan checks the architecture-independent identity and
+fixtures execute on the Windows runner; the separate test binaries are also
+included in each architecture artifact for the target owner. ARM64 execution
+requires the target. Linux ASan/UBSan checks the architecture-independent identity and
 shader parsing paths. The build verifies exact real adapter exports and still
 rejects public D3D11 creation imports from the production DLL.
 

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <type_traits>
 
 static unsigned checks, queries, backends, errors;
 #define CHECK(value) do { ++checks; if (!(value)) { \
@@ -19,7 +20,9 @@ static constexpr bool complete = true;
 static constexpr bool complete = false;
 #endif
 
-static char adapterCookie, deviceCookie, coreCookie;
+static char adapterCookie, deviceCookie, coreCookie, resourceCookie, contextCookie, dxgiCookie;
+static unsigned allocations, deallocations, presents, contextDestroys;
+static uint32_t publishedPixels[4];
 static LUID expected = {0x92345678, -81};
 static uint64_t generation = 19, capabilities = 3;
 static HRESULT queryResult = S_OK, backendResult = S_OK;
@@ -30,6 +33,37 @@ static D3D10DDI_DEVICEFUNCS* activeTable;
 enum class Action { None, QueryAgain, Close, Reset, DuplicateCreate };
 static Action queryAction, backendAction;
 static bool destroyOnError;
+
+static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
+  CHECK(device == &deviceCookie && args && args->hResource == &resourceCookie);
+  CHECK(args->NumAllocations == 1 && args->pAllocationInfo);
+  args->pAllocationInfo[0].hAllocation = 123; args->hKMResource = 456; ++allocations;
+  return S_OK;
+}
+static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* args) {
+  CHECK(device == &deviceCookie && args && args->hResource == &resourceCookie); ++deallocations;
+  return S_OK;
+}
+static HRESULT APIENTRY lock(HANDLE device, D3DDDICB_LOCK* args) {
+  CHECK(device == &deviceCookie && args && args->hAllocation == 123);
+  args->pData = publishedPixels; return S_OK;
+}
+static HRESULT APIENTRY unlock(HANDLE device, const D3DDDICB_UNLOCK* args) {
+  CHECK(device == &deviceCookie && args && args->NumAllocations == 1); return S_OK;
+}
+static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* args) {
+  CHECK(device == &deviceCookie && args); args->hContext = &contextCookie; return S_OK;
+}
+static HRESULT APIENTRY destroyContext(HANDLE device, const D3DDDICB_DESTROYCONTEXT* args) {
+  CHECK(device == &deviceCookie && args && args->hContext == &contextCookie); ++contextDestroys;
+  activeTable->pfnDestroyDevice(activeCreate->hDrvDevice); // Reenter the actual destructor.
+  return E_FAIL; // Verify error callback is retained and invoked after retirement.
+}
+static HRESULT APIENTRY present(HANDLE device, DXGIDDICB_PRESENT* args) {
+  CHECK(device == &deviceCookie && args && args->hSrcAllocation == 123);
+  CHECK(args->hContext == &contextCookie && args->pDXGIContext == &dxgiCookie); ++presents;
+  return S_OK;
+}
 
 static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* args) {
   ++queries;
@@ -105,6 +139,17 @@ static void openAdapter() {
 
 int main() {
   CHECK(OpenAdapter10_2(nullptr) == E_INVALIDARG);
+  struct LegacyTable { D3D10DDI_ADAPTERFUNCS table; UINT64 canary; } legacy = {{}, 0xabcdef};
+  D3DDDI_ADAPTERCALLBACKS legacyCallbacks = {}; legacyCallbacks.pfnQueryAdapterInfoCb = query;
+  D3D10DDIARG_OPENADAPTER legacyOpen = {};
+  legacyOpen.Interface = D3D10_0_DDI_INTERFACE_VERSION;
+  legacyOpen.Version = D3D10_0_DDI_BUILD_VERSION << 16;
+  legacyOpen.pAdapterFuncs = &legacy.table; legacyOpen.pAdapterCallbacks = &legacyCallbacks;
+  legacyOpen.hRTAdapter.handle = &adapterCookie;
+  CHECK(OpenAdapter10(&legacyOpen) == (complete ? S_OK : DXGI_ERROR_UNSUPPORTED));
+  CHECK(legacy.canary == 0xabcdef);
+  if (complete) CHECK(legacy.table.pfnCloseAdapter(legacyOpen.hAdapter) == S_OK);
+  else CHECK(!legacyOpen.hAdapter.pDrvPrivate && !legacy.table.pfnCreateDevice);
   openAdapter();
   UINT32 count = 31;
   CHECK(functions.pfnGetSupportedVersions(active, nullptr, nullptr) == E_INVALIDARG);
@@ -142,18 +187,36 @@ int main() {
   std::vector<std::max_align_t> storage((VioGpuDxvkPrivateDeviceSize()+sizeof(std::max_align_t)-1)/sizeof(std::max_align_t));
   D3D10DDI_CORELAYER_DEVICECALLBACKS core = {}; core.pfnSetErrorCb = error;
   D3DDDI_DEVICECALLBACKS kernel = {};
+  kernel.pfnAllocateCb = allocate; kernel.pfnDeallocateCb = deallocate;
+  kernel.pfnLockCb = lock; kernel.pfnUnlockCb = unlock;
+  kernel.pfnCreateContextCb = createContext; kernel.pfnDestroyContextCb = destroyContext;
+  DXGI_DDI_BASE_CALLBACKS dxgi = {}; dxgi.pfnPresentCb = present;
+  DXGI_DDI_BASE_FUNCTIONS dxgiFunctions = {};
   D3D10DDI_DEVICEFUNCS table = {};
   D3D10DDIARG_CREATEDEVICE create = {};
   create.Interface = size.Interface; create.Version = size.Version;
   create.hDrvDevice.pDrvPrivate = storage.data();
   create.hRTDevice.handle = &deviceCookie; create.hRTCoreLayer.handle = &coreCookie;
   create.pUMCallbacks = &core; create.pKTCallbacks = &kernel; create.pDeviceFuncs = &table;
+  create.DXGIBaseDDI.pDXGIBaseCallbacks = &dxgi;
+  create.DXGIBaseDDI.pDXGIDDIBaseFunctions = &dxgiFunctions;
   activeCreate = &create; activeTable = &table;
   auto invalid = create; invalid.Interface = D3D11_0_DDI_INTERFACE_VERSION;
   CHECK(functions.pfnCreateDevice(active, &invalid) == DXGI_ERROR_UNSUPPORTED && backends == 0);
   if (!complete) {
     CHECK(functions.pfnCreateDevice(active, &create) == DXGI_ERROR_UNSUPPORTED && backends == 0);
   } else {
+    auto savedKernel = kernel; auto savedDxgi = dxgi;
+#define MISSING_CALLBACK(member) do { kernel.member = nullptr; \
+    CHECK(functions.pfnCreateDevice(active, &create) == E_INVALIDARG && backends == 0); \
+    kernel = savedKernel; } while (0)
+    MISSING_CALLBACK(pfnAllocateCb); MISSING_CALLBACK(pfnDeallocateCb);
+    MISSING_CALLBACK(pfnLockCb); MISSING_CALLBACK(pfnUnlockCb);
+    MISSING_CALLBACK(pfnCreateContextCb); MISSING_CALLBACK(pfnDestroyContextCb);
+#undef MISSING_CALLBACK
+    dxgi.pfnPresentCb = nullptr;
+    CHECK(functions.pfnCreateDevice(active, &create) == E_INVALIDARG && backends == 0);
+    dxgi = savedDxgi;
     backendResult = E_OUTOFMEMORY;
     CHECK(functions.pfnCreateDevice(active, &create) == E_OUTOFMEMORY && !table.pfnDestroyDevice);
     backendResult = S_OK; backendAction = Action::DuplicateCreate;
@@ -163,15 +226,39 @@ int main() {
     CHECK(functions.pfnCloseAdapter(active) == E_INVALIDARG);
     // Device survives adapter close; original error callback and core handle
     // remain valid after the runtime overwrites the source callback structure.
-    core.pfnSetErrorCb = nullptr;
+    core.pfnSetErrorCb = nullptr; kernel = {}; dxgi = {};
     D3D10DDI_COUNTER_INFO counters = {};
     table.pfnCheckCounterInfo(create.hDrvDevice, &counters);
+    CHECK(dxgiFunctions.pfnPresent);
+    D3D10DDI_MIPINFO mip = {2,2,1,2,2,1};
+    D3D10DDIARG_CREATERESOURCE desc = {};
+    desc.pMipInfoList = &mip; desc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+    desc.Usage = D3D10_DDI_USAGE_DEFAULT;
+    desc.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+    desc.MipLevels = 1; desc.ArraySize = 1;
+    uint32_t pixels[] = {0xff0000ff, 0xff00ff00, 0xffff0000, 0xffffffff};
+    std::remove_const_t<std::remove_reference_t<decltype(*desc.pInitialDataUP)>> initial = {};
+    initial.pSysMem = pixels; initial.SysMemPitch = 8; initial.SysMemSlicePitch = 16;
+    desc.pInitialDataUP = &initial;
+    SIZE_T resourceBytes = table.pfnCalcPrivateResourceSize(create.hDrvDevice, &desc);
+    std::vector<std::max_align_t> resourceStorage((resourceBytes+sizeof(std::max_align_t)-1)/sizeof(std::max_align_t));
+    D3D10DDI_HRESOURCE resource = {resourceStorage.data()};
+    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
+    CHECK(allocations == 1 && errors == 0);
+    DXGI_DDI_ARG_PRESENT presentation = {};
+    presentation.hDevice = reinterpret_cast<UINT_PTR>(create.hDrvDevice.pDrvPrivate);
+    presentation.hSurfaceToPresent = reinterpret_cast<UINT_PTR>(resource.pDrvPrivate);
+    presentation.pDXGIContext = &dxgiCookie; presentation.Flags.Blt = 1;
+    CHECK(dxgiFunctions.pfnPresent(&presentation) == S_OK && presents == 1);
+    CHECK(!std::memcmp(pixels, publishedPixels, sizeof(pixels)));
+    table.pfnDestroyResource(create.hDrvDevice, resource);
+    CHECK(deallocations == 1);
     destroyOnError = true;
-    table.pfnCheckCounter(create.hDrvDevice, static_cast<D3D10DDI_QUERY>(0xffffffff),
-      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
-    CHECK(errors == 1);
+    table.pfnDestroyDevice(create.hDrvDevice);
+    CHECK(errors == 1 && contextDestroys == 1);
     table.pfnDestroyDevice(create.hDrvDevice); // Reentry already destroyed it.
-    core.pfnSetErrorCb = error;
+    core.pfnSetErrorCb = error; kernel = savedKernel; dxgi = savedDxgi;
     openAdapter();
     table = {}; backendAction = Action::Reset;
     CHECK(functions.pfnCreateDevice(active, &create) == DXGI_ERROR_DEVICE_REMOVED && !table.pfnDestroyDevice);

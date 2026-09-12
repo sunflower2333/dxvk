@@ -1307,7 +1307,7 @@ HRESULT createDdiDevice(
     const LUID* luid, D3D10DDI_HDEVICE h, D3D10DDI_HRTCORELAYER runtime,
     const D3D10DDI_CORELAYER_DEVICECALLBACKS* callbacks, D3D10DDI_DEVICEFUNCS* table) {
   if (!luid || !h.pDrvPrivate || uintptr_t(h.pDrvPrivate) % alignof(Device)
-      || !runtime.handle || !callbacks || !callbacks->pfnSetErrorCb || !table)
+      || !callbacks || !callbacks->pfnSetErrorCb || !table)
     return E_INVALIDARG;
   try {
     std::lock_guard<std::mutex> lock(deviceStorageMutex);

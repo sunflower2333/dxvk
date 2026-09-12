@@ -73,6 +73,13 @@ HRESULT APIENTRY createDevice(D3D10DDI_HADAPTER handle, D3D10DDIARG_CREATEDEVICE
   if (!args->pDeviceFuncs || !args->hDrvDevice.pDrvPrivate || !args->hRTDevice.handle
       || !args->pKTCallbacks || !args->hRTCoreLayer.handle
       || !args->pUMCallbacks || !args->pUMCallbacks->pfnSetErrorCb) return E_INVALIDARG;
+  if (!adapter->development && (!args->pKTCallbacks->pfnAllocateCb
+      || !args->pKTCallbacks->pfnDeallocateCb || !args->pKTCallbacks->pfnLockCb
+      || !args->pKTCallbacks->pfnUnlockCb || !args->pKTCallbacks->pfnCreateContextCb
+      || !args->pKTCallbacks->pfnDestroyContextCb
+      || !args->DXGIBaseDDI.pDXGIBaseCallbacks
+      || !args->DXGIBaseDDI.pDXGIBaseCallbacks->pfnPresentCb
+      || !args->DXGIBaseDDI.pDXGIDDIBaseFunctions)) return E_INVALIDARG;
   try {
     HRESULT hr = current(adapter);
     if (FAILED(hr)) return hr;
@@ -80,7 +87,13 @@ HRESULT APIENTRY createDevice(D3D10DDI_HADAPTER handle, D3D10DDIARG_CREATEDEVICE
     // never leaves a half-created table or writes into an incompatible union.
     D3D10DDI_DEVICEFUNCS table = {};
     DXGI_DDI_BASE_FUNCTIONS dxgi = {};
-    auto local = *args;
+    // Read only fields belonging to the selected D3D10 creation contract.
+    D3D10DDIARG_CREATEDEVICE local = {};
+    local.Interface = args->Interface; local.Version = args->Version; local.Flags = args->Flags;
+    local.hDrvDevice = args->hDrvDevice; local.hRTDevice = args->hRTDevice;
+    local.hRTCoreLayer = args->hRTCoreLayer;
+    local.pKTCallbacks = args->pKTCallbacks; local.pUMCallbacks = args->pUMCallbacks;
+    local.DXGIBaseDDI.pDXGIBaseCallbacks = args->DXGIBaseDDI.pDXGIBaseCallbacks;
     local.pDeviceFuncs = &table;
     if (args->DXGIBaseDDI.pDXGIDDIBaseFunctions)
       local.DXGIBaseDDI.pDXGIDDIBaseFunctions = &dxgi;
@@ -122,7 +135,7 @@ HRESULT APIENTRY supportedVersions(D3D10DDI_HADAPTER handle, UINT32* entries, UI
   HRESULT hr = current(adapter);
   if (FAILED(hr)) return hr;
   const UINT32 required = dxvk::umd::runtimeSupportsD3D10() ? 1 : 0;
-  const UINT32 capacity = *entries;
+  const UINT32 capacity = versions ? *entries : 0;
   *entries = required;
   if (versions && capacity < required) return E_OUTOFMEMORY;
   if (versions && required) versions[0] = D3D10_0_DDI_SUPPORTED;

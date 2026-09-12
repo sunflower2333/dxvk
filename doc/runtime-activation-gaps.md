@@ -1,5 +1,12 @@
 # Native Microsoft runtime activation gaps
 
+2026-09-12 native entry continuation: DXVK now implements and exports the typed
+adapter entry/version/capability/private-device/lifetime path. Its production
+contract still advertises no incomplete interfaces or feature levels, and no
+system UMD registration is claimed. See [native-runtime-entry.md](native-runtime-entry.md)
+for current behavior, controlled production-source tests and the remaining gates.
+The source audit below records the earlier baseline rather than current exports.
+
 Source audit: DXVK7c0b9e3 and VKD3D61edc56,2026-09-12. DXVK5b0983d and
 VKD3D61edc56 pass standalone architecture CI; cf492c9 CI34613950771 and
 ef4b174 CI34615056755 also pass all five jobs. GenMips source c9e389d compiles,

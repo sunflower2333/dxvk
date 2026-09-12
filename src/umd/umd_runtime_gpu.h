@@ -26,7 +26,7 @@ private:
     uint64_t address = 0, size = 0;
     uint32_t handle = 0, flags = 0, users = 1, maps = 0;
     void* mapping = nullptr;
-    bool pending = false, locked = false;
+    bool pending = false, locked = false, mapValid = false;
   };
   struct Call {
     RuntimeGpu* value;

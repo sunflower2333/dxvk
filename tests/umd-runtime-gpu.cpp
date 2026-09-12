@@ -27,8 +27,11 @@ struct Fixture {
   unsigned contexts = 0, contextCloses = 0, renders = 0, callbackCalls = 0;
   uint32_t nextHandle = 31, completedFence = 0;
   bool rename = false, nullMap = false, malformedContext = false, reset = false;
-  bool allocationFails = false, deallocateFails = false, renderFails = false, replaceBad = false;
+  bool allocationFails = false, deallocateFails = false, renderFails = false, replaceBad = false, unlockFails = false;
   bool nonExactAllocate = false, nonExactLock = false;
+  bool checkQueryOwner = false;
+  bool terminalBorrow = false;
+  mwd_device_create_info borrowed = {};
   char retireAt = 0;
   void* pendingToken = nullptr;
   unsigned buffer = 0;
@@ -51,6 +54,10 @@ static HRESULT APIENTRY query(HANDLE h, const D3DDDICB_QUERYADAPTERINFO* args) {
   put(data, 24, f->generation + (f->reset ? 1 : 0), 8);
   put(data, 128, 0x44494c56, 4); put(data, 132, 1, 4); put(data, 136, 32, 4);
   put(data, 140, 1, 4); std::memcpy(static_cast<uint8_t*>(data)+144, &f->luid, 8); put(data, 152, 1, 4);
+  if (f->checkQueryOwner) {
+    f->checkQueryOwner = false;
+    CHECK(f->bridge.create.callbacks->release(f->bridge.create.owner, f->pendingToken) == E_INVALIDARG);
+  }
   f->retire('Q'); return S_OK;
 }
 static HRESULT APIENTRY createContext(HANDLE h, D3DDDICB_CREATECONTEXT* args) {
@@ -65,7 +72,9 @@ static HRESULT APIENTRY createContext(HANDLE h, D3DDDICB_CREATECONTEXT* args) {
 }
 static HRESULT APIENTRY destroyContext(HANDLE h, const D3DDDICB_DESTROYCONTEXT* args) {
   CHECK(h == &f->device && args->hContext == &f->contextCookie);
-  ++f->contextCloses; f->retire('D'); return S_OK;
+  ++f->contextCloses;
+  if (f->terminalBorrow) CHECK(f->borrowed.callbacks->status(f->borrowed.owner) == S_OK);
+  f->retire('D'); return S_OK;
 }
 static HRESULT APIENTRY escape(HANDLE h, const D3DDDICB_ESCAPE* args) {
   CHECK(h == &f->adapter && args->hDevice == &f->device && args->hContext == &f->contextCookie);
@@ -120,7 +129,7 @@ static HRESULT APIENTRY lock(HANDLE h, D3DDDICB_LOCK* args) {
 }
 static HRESULT APIENTRY unlock(HANDLE h, const D3DDDICB_UNLOCK* args) {
   CHECK(h == &f->device && args->NumAllocations == 1 && f->allocations.count(*args->phAllocations) == 1);
-  ++f->unlocks; f->retire('U'); return S_OK;
+  ++f->unlocks; f->retire('U'); return f->unlockFails ? E_FAIL : S_OK;
 }
 static HRESULT APIENTRY render(HANDLE h, D3DDDICB_RENDER* args) {
   CHECK(h == &f->device && args->hContext == &f->contextCookie && args->NumAllocations == 1 && args->NumPatchLocations == 1);
@@ -195,7 +204,9 @@ int main() {
     CHECK(mwd_callbacks_valid(cb)); f->input = {};
     auto a = buffer(); auto b = buffer();
     CHECK(a.address != b.address && a.token != b.token && f->contexts == 1);
+    f->pendingToken = a.token; f->checkQueryOwner = true;
     mwd_allocation alias{}; CHECK(cb->retain(owner, a.token, &alias) == S_OK && alias.handle == a.handle && f->allocationCalls == 2);
+    f->pendingToken = nullptr;
     CHECK(cb->release(owner, a.token) == S_OK && f->deallocations == 0);
     f->rename = true; void* ptr = nullptr; uint32_t handle = 0;
     CHECK(cb->map(owner, alias.token, &ptr, &handle) == S_OK && handle != alias.handle);
@@ -205,6 +216,7 @@ int main() {
     CHECK(cb->unmap(owner, alias.token) == S_OK && !f->unlocks);
     CHECK(cb->unmap(owner, alias.token) == S_OK && f->unlocks == 1);
     f->pendingToken = alias.token;
+    f->checkQueryOwner = true;
     CHECK(send(alias) == S_OK);
     f->renderFails = true; CHECK(send(alias) == E_FAIL);
     f->renderFails = false; CHECK(send(alias) == S_OK && f->renders == 3);
@@ -245,6 +257,7 @@ int main() {
     CHECK(cb->allocate(owner, UINT64_MAX, 4096, 0, 6, &out) == E_INVALIDARG);
     CHECK(cb->allocate(owner, 4096, 4097, 0, 6, &out) == E_INVALIDARG);
     CHECK(cb->retain(owner, reinterpret_cast<void*>(uintptr_t(0x12345)), &out) == E_INVALIDARG);
+    CHECK(cb->allocate(owner, 4096, 4096, 1, 6, &out) == E_INVALIDARG);
     uint32_t stream[8] = {}; mwd_reference refs[2] = {{a.token, 0, 4096, 3, 0}, {a.token, 0, 4096, 3, 8}};
     CHECK(cb->submit(owner, stream, sizeof(stream), refs, 2) == E_INVALIDARG);
     refs[0].offset = UINT64_MAX; CHECK(cb->submit(owner, stream, sizeof(stream), refs, 1) == E_INVALIDARG);
@@ -252,6 +265,25 @@ int main() {
     f->deallocateFails = true; CHECK(cb->release(owner, a.token) == E_FAIL);
     f->deallocateFails = false; CHECK(cb->release(owner, a.token) == S_OK);
     CHECK(f->gpu->close() == S_OK && f->allocations.empty());
+  }
+  {
+    auto scope = setup();
+    f->gpu->close(); f->bridge = {}; f->gpu.reset(); f->input.pfnRenderCb = nullptr;
+    f->gpu = RuntimeGpu::create(&f->device, f->input, f->identity); f->bridge = f->gpu->backend();
+    mwd_context_info context{};
+    CHECK(f->bridge.create.callbacks->context(f->bridge.create.owner, &context) == DXGI_ERROR_UNSUPPORTED);
+    CHECK(!context.context_id && !f->contexts && !f->allocationCalls && f->gpu->close() == S_OK);
+  }
+  {
+    auto scope = setup(); auto cb = f->bridge.create.callbacks; auto owner = f->bridge.create.owner;
+    auto a = buffer(); f->nullMap = true; f->unlockFails = true;
+    void* ptr = nullptr; uint32_t handle = 0;
+    CHECK(cb->map(owner, a.token, &ptr, &handle) == E_FAIL && !ptr && !handle);
+    f->nullMap = false;
+    CHECK(cb->map(owner, a.token, &ptr, &handle) == E_FAIL && !ptr && !handle && f->locks == 1);
+    f->unlockFails = false;
+    CHECK(cb->release(owner, a.token) == S_OK && f->unlocks == 2 && f->allocations.empty());
+    CHECK(f->gpu->close() == S_OK);
   }
   for (char point : {'Q', 'C', 'E', 'A', 'L', 'U', 'R', 'F'}) {
     auto scope = setup(); auto cb = f->bridge.create.callbacks; auto owner = f->bridge.create.owner;
@@ -285,6 +317,13 @@ int main() {
     else { CHECK(hr == S_OK && table.pfnDestroyDevice); table.pfnDestroyDevice(args.hDrvDevice); }
     CHECK(f->allocationCalls == 1 && f->renders == 1 && f->deallocations == 1 && f->contextCloses == 1 && f->allocations.empty());
     CHECK(f->bridge.create.callbacks->status(f->bridge.create.owner) == DXGI_ERROR_DEVICE_REMOVED);
+  }
+  {
+    auto scope = setup(); auto a = buffer();
+    CHECK(f->bridge.create.callbacks->release(f->bridge.create.owner, a.token) == S_OK);
+    f->terminalBorrow = true; f->borrowed = f->bridge.create;
+    f->bridge = {}; f->gpu.reset();
+    CHECK(f->contextCloses == 1 && f->allocations.empty());
   }
   CHECK(earlyBackends == 2);
   std::printf("PASS %u runtime GPU checks; production entry early BO callbacks, shared owners, map/submit/reset and recursive retirement\n", checks);

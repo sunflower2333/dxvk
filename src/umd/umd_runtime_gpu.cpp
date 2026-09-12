@@ -213,7 +213,7 @@ int32_t MWD_CALL RuntimeGpu::allocate(void* ptr, uint64_t size, uint64_t alignme
     if (hr == S_OK) hr = self.identity();
     if (hr == S_OK) self.publish(*allocation, out);
     // Failed creates retain unpublished ownership until close if cleanup fails.
-    // Keep this record alive until Pending leaves scope.
+    // Keep this record alive until Finish clears its reservation.
     else if (allocation->handle && self.m_live) {
       D3DDDICB_DEALLOCATE cleanup = {};
       cleanup.NumAllocations = 1; cleanup.HandleList = &allocation->handle;
@@ -244,7 +244,7 @@ HRESULT RuntimeGpu::unlock(Allocation& a) {
   D3DDDICB_UNLOCK request = {}; request.NumAllocations = 1; request.phAllocations = &a.handle;
   const HRESULT hr = exact(m_callbacks.pfnUnlockCb(m_device, &request));
   if (!m_live) return DXGI_ERROR_DEVICE_REMOVED;
-  if (hr == S_OK) { a.locked = false; a.mapping = nullptr; a.maps = 0; }
+  if (hr == S_OK) { a.locked = false; a.mapValid = false; a.mapping = nullptr; a.maps = 0; }
   return hr;
 }
 HRESULT RuntimeGpu::release(Allocation& a) {
@@ -277,6 +277,9 @@ int32_t MWD_CALL RuntimeGpu::map(void* ptr, void* token, void** out, uint32_t* h
   Pending pending(a->pending);
   HRESULT hr = self.identity();
   if (FAILED(hr)) return hr;
+  // A malformed successful Lock whose balancing Unlock failed is still owned,
+  // but its returned pointer must never become a successful nested mapping.
+  if (a->locked && !a->mapValid) return E_FAIL;
   if (!a->locked) {
     D3DDDICB_LOCK request = {}; request.hAllocation = a->handle; request.Flags.LockEntire = 1;
     const HRESULT locked = self.m_callbacks.pfnLockCb(self.m_device, &request);
@@ -293,6 +296,7 @@ int32_t MWD_CALL RuntimeGpu::map(void* ptr, void* token, void** out, uint32_t* h
       const HRESULT cleanup = self.unlock(*a);
       return FAILED(cleanup) ? cleanup : hr;
     }
+    a->mapValid = true;
   }
   ++a->maps; *out = a->mapping; *handle = a->handle;
   return S_OK;

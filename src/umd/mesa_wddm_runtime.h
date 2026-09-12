@@ -80,3 +80,4 @@ static inline int mwd_callbacks_valid(const struct mwd_callbacks *cb)
       cb->completed && cb->status;
 }
 #endif
+

@@ -16,6 +16,15 @@ can synchronously retire the runtime: the provider then stops using all opaque
 runtime handles. Final kernel teardown owns residual backing in that case.
 This does not establish Microsoft's backing teardown serialization guarantee.
 
+Arbitrary DDI DestroyDevice reentry during an active backend operation remains
+an explicit admission gate. Provider callbacks hold their recursive mutex;
+immediate backend drain on that callback stack could wait for another worker
+needing the same mutex. Closing callbacks first would also break normal drain.
+The remaining solution needs ownership of the outer DDI operation and deferred
+backend retirement after that operation and worker callbacks have quiesced.
+The tests below exercise provider retirement and failed device creation, not
+that unimplemented arbitrary outer-DDI cancellation guarantee.
+
 The native context query validates the exact LUID, generation, VA arena,
 context and queue identity. Allocations use runtime AllocateCb with actual
 native IOVA, generation and ContextId. Tokens do not expose KMT handles and

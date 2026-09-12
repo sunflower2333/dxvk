@@ -11,6 +11,7 @@
 #include "../util/util_gdi.h"
 
 namespace dxvk {
+  namespace umd { struct RuntimeBackend; }
   
   class DxvkDevice;
   class DxvkInstance;
@@ -233,7 +234,7 @@ namespace dxvk {
      * Creates a logical device for this adapter.
      * \returns Device handle
      */
-    Rc<DxvkDevice> createDevice();
+    Rc<DxvkDevice> createDevice(const umd::RuntimeBackend* runtime = nullptr);
     
     /**
      * \brief Imports a foreign device
@@ -330,7 +331,7 @@ namespace dxvk {
 
     std::array<DxvkAdapterMemoryStats, VK_MAX_MEMORY_HEAPS> m_memoryStats = { };
 
-    Rc<DxvkDevice> createDevice(bool safeMode);
+    Rc<DxvkDevice> createDevice(bool safeMode, const umd::RuntimeBackend* runtime);
 
   };
   

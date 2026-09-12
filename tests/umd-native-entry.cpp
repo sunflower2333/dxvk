@@ -116,9 +116,12 @@ static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
 }
 
 HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
-    ID3D11Device** device, ID3D11DeviceContext** context) noexcept {
+    ID3D11Device** device, ID3D11DeviceContext** context,
+    const dxvk::umd::RuntimeBackend* runtime) noexcept {
   ++backends;
   CHECK(!std::memcmp(&luid, &expected, sizeof(luid)) && level == D3D_FEATURE_LEVEL_10_0);
+  CHECK(runtime && runtime->owner && runtime->create.owner == runtime->owner.get()
+    && mwd_callbacks_valid(runtime->create.callbacks));
   *device = nullptr; *context = nullptr;
   if (backendResult != S_OK) return backendResult;
   const Action action = backendAction; backendAction = Action::None;

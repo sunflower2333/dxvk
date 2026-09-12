@@ -23,7 +23,8 @@ HRESULT isStagingResourceBusy(ID3D11DeviceContext* context,
 }
 
 HRESULT createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
-                     ID3D11Device** device, ID3D11DeviceContext** context) noexcept {
+                     ID3D11Device** device, ID3D11DeviceContext** context,
+                     const RuntimeBackend* runtime) noexcept {
   if (!device || !context)
     return E_POINTER;
   *device = nullptr;
@@ -32,7 +33,7 @@ HRESULT createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
   static_assert(sizeof(luid) == sizeof(requested));
   std::memcpy(requested.data(), &luid, sizeof(luid));
   std::unique_ptr<Backend> backend;
-  HRESULT hr = Backend::create(requested, level, backend);
+  HRESULT hr = Backend::create(requested, level, backend, runtime);
   if (FAILED(hr))
     return hr;
   *device = backend->d3d.ref();
@@ -42,7 +43,8 @@ HRESULT createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
 
 HRESULT Backend::create(const AdapterLuid& luid,
                        D3D_FEATURE_LEVEL level,
-                       std::unique_ptr<Backend>& result) noexcept {
+                       std::unique_ptr<Backend>& result,
+                       const RuntimeBackend* runtime) noexcept {
   result.reset();
   if (luid == AdapterLuid{})
     return E_INVALIDARG;
@@ -69,7 +71,25 @@ HRESULT Backend::create(const AdapterLuid& luid,
     if (!backend->adapter)
       return DXGI_ERROR_NOT_FOUND;
 
-    backend->device = backend->adapter->createDevice();
+    if (runtime) {
+      if (!runtime->owner || runtime->create.owner != runtime->owner.get()
+          || runtime->create.sType != MWD_STYPE_DEVICE || runtime->create.pNext
+          || !mwd_callbacks_valid(runtime->create.callbacks)) return E_INVALIDARG;
+      mwd_support support = {MWD_STYPE_SUPPORT, nullptr, 0, 0, 0, 0};
+      VkPhysicalDeviceProperties2 properties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+      properties.pNext = &support;
+      backend->instance->vki()->vkGetPhysicalDeviceProperties2(backend->adapter->handle(), &properties);
+      if (support.magic != MWD_RUNTIME_MAGIC || support.version != MWD_RUNTIME_ABI_VERSION
+          || support.size != sizeof(mwd_callbacks) || support.flags != 1) return DXGI_ERROR_UNSUPPORTED;
+      mwd_context_info contextInfo = {};
+      const HRESULT ready = runtime->create.callbacks->context(runtime->create.owner, &contextInfo);
+      if (ready != S_OK) return FAILED(ready) ? ready : E_FAIL;
+      if (std::memcmp(contextInfo.luid, luid.data(), luid.size()) || !contextInfo.generation
+          || !contextInfo.context_id || !contextInfo.queue_id) return DXGI_ERROR_DEVICE_REMOVED;
+    }
+    // The callback owner reaches VkDeviceCreateInfo before Turnip allocates any
+    // internal BO. Native runtime creation never falls back to direct KMT.
+    backend->device = backend->adapter->createDevice(runtime);
     if (level > D3D11Device::GetMaxFeatureLevel(*backend->device))
       return DXGI_ERROR_UNSUPPORTED;
 

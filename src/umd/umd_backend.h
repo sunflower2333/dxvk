@@ -2,6 +2,7 @@
 
 #include "../d3d11/d3d11_device.h"
 #include "umd_identity.h"
+#include "umd_runtime_bridge.h"
 
 namespace dxvk::umd {
 
@@ -16,7 +17,8 @@ struct Backend {
   // creation, adapter-index fallback, WARP or llvmpipe fallback.
   static HRESULT create(const AdapterLuid& luid,
                         D3D_FEATURE_LEVEL level,
-                        std::unique_ptr<Backend>& result) noexcept;
+                        std::unique_ptr<Backend>& result,
+                        const RuntimeBackend* runtime = nullptr) noexcept;
 };
 
 }

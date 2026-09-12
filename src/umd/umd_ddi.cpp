@@ -4,6 +4,7 @@
 #include "umd_shader.h"
 #include "umd_query.h"
 #include "umd_allocation.h"
+#include "umd_runtime_gpu.h"
 #include "umd_map.h"
 #include "umd_view.h"
 #include "umd_state.h"
@@ -22,6 +23,7 @@ struct Shader;
 struct InputLayout;
 struct Device {
   std::shared_ptr<const dxvk::umd::AdapterIdentity> adapter;
+  std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
   ComPtr<ID3D11Device> backend;
   ComPtr<ID3D11DeviceContext> context;
   D3D10DDI_HRTCORELAYER runtime;
@@ -37,6 +39,12 @@ struct Device {
   Shader* geometryShader = nullptr;
   Shader* pixelShader = nullptr;
   InputLayout* inputLayout = nullptr;
+  ~Device() {
+    // Backend drain still needs completion/status callbacks. Detach the owner
+    // only after releasing its context/device, including failed creation.
+    context.Reset(); backend.Reset();
+    if (gpu) gpu->close();
+  }
   void error(HRESULT hr) {
     if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, dxvk::umd::ddiResult(hr));
   }
@@ -1323,7 +1331,12 @@ void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
   const auto report = device->callbacks.pfnSetErrorCb;
   const auto runtime = device->runtime;
   HRESULT hr = E_FAIL;
-  try { hr = device->memory.close(); } catch (...) {}
+  try {
+    device->context.Reset(); device->backend.Reset();
+    hr = device->gpu ? device->gpu->close() : S_OK;
+    const HRESULT presentClose = device->memory.close();
+    if (FAILED(presentClose)) hr = presentClose;
+  } catch (...) {}
   device->~Device();
   releaseDeviceStorage(h.pDrvPrivate);
   // A synchronous SetError/DestroyContext callback may reenter destruction.
@@ -1375,7 +1388,9 @@ extern "C" SIZE_T APIENTRY VioGpuDxvkPrivateDeviceSize() { return sizeof(Device)
 namespace {
 HRESULT createDdiDevice(
     const LUID* luid, D3D10DDI_HDEVICE h, D3D10DDI_HRTCORELAYER runtime,
-    const D3D10DDI_CORELAYER_DEVICECALLBACKS* callbacks, D3D10DDI_DEVICEFUNCS* table) {
+    const D3D10DDI_CORELAYER_DEVICECALLBACKS* callbacks, D3D10DDI_DEVICEFUNCS* table,
+    std::shared_ptr<const dxvk::umd::AdapterIdentity> identity = {},
+    const D3D10DDIARG_CREATEDEVICE* native = nullptr) {
   if (!luid || !h.pDrvPrivate || uintptr_t(h.pDrvPrivate) % alignof(Device)
       || !callbacks || !callbacks->pfnSetErrorCb || !table)
     return E_INVALIDARG;
@@ -1392,8 +1407,20 @@ HRESULT createDdiDevice(
   // Only the callback used by this exact interface is read. The runtime owns
   // its original table and may have supplied an older WDK structure size.
   device->callbacks.pfnSetErrorCb = callbacks->pfnSetErrorCb;
+  DXGI_DDI_BASE_FUNCTIONS* dxgiTable = nullptr;
+  if (native) {
+    // These callbacks are available during the first Vulkan allocation, before
+    // CreateDevice returns. Do not read caller tables again after backend entry.
+    device->adapter = identity;
+    device->memory.initialize(native->hRTDevice.handle, *native->pKTCallbacks,
+      native->DXGIBaseDDI.pDXGIBaseCallbacks, identity);
+    device->gpu = dxvk::umd::RuntimeGpu::create(native->hRTDevice.handle,
+      *native->pKTCallbacks, identity);
+    dxgiTable = native->DXGIBaseDDI.pDXGIDDIBaseFunctions;
+  }
+  auto backendRuntime = device->gpu ? device->gpu->backend() : dxvk::umd::RuntimeBackend{};
   const HRESULT hr = dxvk::umd::createDevice(*luid, D3D_FEATURE_LEVEL_10_0,
-    &device->backend, &device->context);
+    &device->backend, &device->context, device->gpu ? &backendRuntime : nullptr);
   if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
   if (!device->backend || !device->context) return E_FAIL;
   *table = {};
@@ -1490,6 +1517,10 @@ HRESULT createDdiDevice(
   table->pfnCheckCounterInfo = counterInfo;
   table->pfnCheckCounter = checkCounter;
   table->pfnDestroyDevice = destroyDevice;
+  if (dxgiTable) {
+    *dxgiTable = {};
+    if (device->memory.available()) dxgiTable->pfnPresent = present;
+  }
   {
     std::lock_guard<std::mutex> lock(deviceStorageMutex);
     deviceStorage.at(h.pDrvPrivate) = DevicePhase::Live;
@@ -1509,18 +1540,6 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
 
 HRESULT dxvk::umd::createAdapterDevice(
     const std::shared_ptr<const AdapterIdentity>& identity, D3D10DDIARG_CREATEDEVICE* args) {
-  const HRESULT hr = createDdiDevice(&identity->luid, args->hDrvDevice,
-    args->hRTCoreLayer, args->pUMCallbacks, args->pDeviceFuncs);
-  if (SUCCEEDED(hr)) {
-    auto device = get(args->hDrvDevice);
-    device->adapter = identity;
-    device->memory.initialize(args->hRTDevice.handle, *args->pKTCallbacks,
-      args->DXGIBaseDDI.pDXGIBaseCallbacks, identity);
-    if (args->DXGIBaseDDI.pDXGIDDIBaseFunctions) {
-      *args->DXGIBaseDDI.pDXGIDDIBaseFunctions = {};
-      if (device->memory.available())
-        args->DXGIBaseDDI.pDXGIDDIBaseFunctions->pfnPresent = present;
-    }
-  }
-  return hr;
+  return createDdiDevice(&identity->luid, args->hDrvDevice,
+    args->hRTCoreLayer, args->pUMCallbacks, args->pDeviceFuncs, identity, args);
 }

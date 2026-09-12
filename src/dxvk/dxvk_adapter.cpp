@@ -4,6 +4,7 @@
 #include "dxvk_adapter.h"
 #include "dxvk_device.h"
 #include "dxvk_instance.h"
+#include "../umd/umd_runtime_bridge.h"
 
 namespace dxvk {
 
@@ -196,11 +197,11 @@ namespace dxvk {
   }
 
 
-  Rc<DxvkDevice> DxvkAdapter::createDevice() {
-    Rc<DxvkDevice> device = createDevice(false);
+  Rc<DxvkDevice> DxvkAdapter::createDevice(const umd::RuntimeBackend* runtime) {
+    Rc<DxvkDevice> device = createDevice(false, runtime);
 
     if (!device)
-      device = createDevice(true);
+      device = createDevice(true, runtime);
 
     if (!device)
       throw DxvkError("Failed to initialize DXVK device.");
@@ -209,7 +210,7 @@ namespace dxvk {
   }
 
 
-  Rc<DxvkDevice> DxvkAdapter::createDevice(bool safeMode) {
+  Rc<DxvkDevice> DxvkAdapter::createDevice(bool safeMode, const umd::RuntimeBackend* runtime) {
     auto vk = m_instance->vki();
 
     DxvkDeviceCapabilities caps(*m_instance, m_handle, nullptr, safeMode);
@@ -286,6 +287,13 @@ namespace dxvk {
     deviceInfo.ppEnabledExtensionNames = extensionNames.data();
     deviceInfo.pEnabledFeatures = &features->features;
 
+    mwd_device_create_info runtimeInfo = {};
+    if (runtime) {
+      runtimeInfo = runtime->create;
+      runtimeInfo.pNext = deviceInfo.pNext;
+      deviceInfo.pNext = &runtimeInfo;
+    }
+
     VkDevice device = VK_NULL_HANDLE;
     VkResult vr = vk->vkCreateDevice(m_handle, &deviceInfo, nullptr, &device);
 
@@ -302,7 +310,8 @@ namespace dxvk {
     deviceQueues.transfer = getDeviceQueue(vkd, caps, queueMapping.transfer);
     deviceQueues.sparse   = getDeviceQueue(vkd, caps, queueMapping.sparse);
 
-    return new DxvkDevice(m_instance, this, vkd, caps, deviceQueues, DxvkQueueCallback());
+    return new DxvkDevice(m_instance, this, vkd, caps, deviceQueues, DxvkQueueCallback(),
+      runtime ? runtime->owner : std::shared_ptr<void>());
   }
 
 

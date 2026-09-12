@@ -91,7 +91,8 @@ namespace dxvk {
       const Rc<vk::DeviceFn>&         vkd,
       const DxvkDeviceCapabilities&   caps,
       const DxvkDeviceQueueSet&       queues,
-      const DxvkQueueCallback&        queueCallback);
+      const DxvkQueueCallback&        queueCallback,
+      std::shared_ptr<void>          runtimeOwner = {});
       
     ~DxvkDevice();
     
@@ -754,6 +755,8 @@ namespace dxvk {
 
     Rc<DxvkInstance>            m_instance;
     Rc<DxvkAdapter>             m_adapter;
+    // Declared before m_vkd so the callback owner outlives vkDestroyDevice.
+    std::shared_ptr<void>       m_runtimeOwner;
     Rc<vk::DeviceFn>            m_vkd;
     D3DKMT_HANDLE               m_kmtLocal = 0;
 

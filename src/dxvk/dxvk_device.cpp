@@ -13,10 +13,12 @@ namespace dxvk {
     const Rc<vk::DeviceFn>&         vkd,
     const DxvkDeviceCapabilities&   caps,
     const DxvkDeviceQueueSet&       queues,
-    const DxvkQueueCallback&        queueCallback)
+    const DxvkQueueCallback&        queueCallback,
+    std::shared_ptr<void>          runtimeOwner)
   : m_options           (instance->options()),
     m_instance          (instance),
     m_adapter           (adapter),
+    m_runtimeOwner      (std::move(runtimeOwner)),
     m_vkd               (vkd),
     m_debugFlags        (instance->debugFlags()),
     m_queues            (queues),
@@ -27,7 +29,7 @@ namespace dxvk {
     m_checkpoints       (this),
     m_submissionQueue   (this, queueCallback) {
 
-    if (adapter->kmtLocal()) {
+    if (!m_runtimeOwner && adapter->kmtLocal()) {
       D3DKMT_CREATEDEVICE create = { };
       create.hAdapter = adapter->kmtLocal();
       if (D3DKMTCreateDevice(&create))

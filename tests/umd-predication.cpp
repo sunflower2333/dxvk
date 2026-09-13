@@ -97,7 +97,11 @@ int main(int argc, char** argv) {
     CHECK(map.pData && map.RowPitch >= 64);
     for (unsigned y = 0; y < 16; ++y) {
       auto row = reinterpret_cast<const UINT*>(static_cast<const char*>(map.pData) + y*map.RowPitch);
-      for (unsigned x = 0; x < 16; ++x) CHECK(row[x] == expected);
+      for (unsigned x = 0; x < 16; ++x) {
+        if (row[x] != expected) std::fprintf(stderr,
+          "PREDICATION_PIXEL x=%u y=%u expected=%08x actual=%08x\n",x,y,expected,row[x]);
+        CHECK(row[x] == expected);
+      }
     }
     f.pfnStagingResourceUnmap(device, staging, 0); ok();
   };
@@ -174,13 +178,16 @@ float4 ps() : SV_Target { return float4(1,0,0,1); }
     BOOL result = !visible;
     f.pfnQueryGetData(device, predicate, &result, sizeof(result), D3D10_DDI_GET_DATA_DO_NOT_FLUSH);
     ok(); CHECK(bool(result) == visible);
+    std::printf("PREDICATION_DRAW_INTERVAL result=%d draw-cases=%u checks=%u\n",result,draws,checks);
   }
   // Empty (false) predicate suppresses value=false; all state/queries remain live.
   f.pfnClearRenderTargetView(device, view, black);
+  ok(); pixels(target,0xff000000);
   f.pfnSetPredication(device, predicate, FALSE); ok();
   f.pfnQueryBegin(device, predicate); CHECK(lastError == E_INVALIDARG); lastError = S_OK;
   f.pfnQueryEnd(device, predicate); CHECK(lastError == E_INVALIDARG); lastError = S_OK;
   f.pfnDestroyQuery(device, predicate); CHECK(lastError == E_INVALIDARG); lastError = S_OK;
+  std::puts("PREDICATION_CLEAR_AFTER_BOUND_QUERY_REJECTIONS");
   f.pfnClearRenderTargetView(device, view, red); ok(); unbind(); pixels(target,0xff000000);
   f.pfnClearRenderTargetView(device, copyView, red);
   f.pfnSetPredication(device, predicate, FALSE);

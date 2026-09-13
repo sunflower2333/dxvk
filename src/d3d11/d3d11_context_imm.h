@@ -95,6 +95,10 @@ namespace dxvk {
     void SynchronizeCsThread(
             uint64_t                          SequenceNumber);
 
+    // Native D3D10 Flush must submit before its runtime caller returns. This
+    // is separate from public D3D11 Flush's usual asynchronous CPU behavior.
+    HRESULT FlushRuntimeSubmission();
+
     D3D10Multithread& GetMultithread() {
         return m_multithread;
     }

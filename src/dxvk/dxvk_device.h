@@ -679,6 +679,11 @@ namespace dxvk {
             uint64_t                  frameId,
             DxvkSubmitStatus*         status);
 
+    VkResult synchronizeSubmission() {
+      m_submissionQueue.synchronize();
+      return m_submissionQueue.getLastError();
+    }
+
     /**
      * \brief Locks submission queue
      * 

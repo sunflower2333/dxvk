@@ -8,6 +8,7 @@
 #include <new>
 #include <utility>
 #include <type_traits>
+#include <optional>
 
 namespace dxvk::umd {
 
@@ -30,16 +31,29 @@ public:
   RuntimeService(const RuntimeService&) = delete;
   RuntimeService& operator=(const RuntimeService&) = delete;
 
-  template<typename Function> HRESULT invoke(Function&& function) {
-    bool caller = false;
+  // Native rendering workers may finish between DDIs. Their requests retain
+  // their own stack storage until the next permitted caller services them.
+  // Flush must separately join command recording and queue submission: a
+  // deferred callback is never a replacement for that submission barrier.
+  void allowDeferredCalls() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_deferred = true;
+  }
+
+  bool isCaller() const {
     for (auto scope = Scope::current; scope; scope = scope->previous)
-      if (scope->service == this) { caller = true; break; }
+      if (scope->service == this) return true;
+    return false;
+  }
+
+  template<typename Function> HRESULT invoke(Function&& function) {
+    const bool caller = isCaller();
     std::unique_lock<std::mutex> lock(m_mutex);
     if (m_closed) return DXGI_ERROR_DEVICE_REMOVED;
     if (caller) { lock.unlock(); return function(); }
     // Outside a synchronous pump there is no legal D3D10 callback thread to
     // execute this request. Fail before reading runtime handles or backing.
-    if (!m_pumping) return DXGI_ERROR_UNSUPPORTED;
+    if (!m_pumps && !m_deferred) return DXGI_ERROR_UNSUPPORTED;
     Request request;
     request.context = &function;
     request.function = [](void* ptr) -> HRESULT { return (*static_cast<std::remove_reference_t<Function>*>(ptr))(); };
@@ -49,21 +63,35 @@ public:
     return request.result;
   }
 
-  // Only backend release runs on the reserved worker. This calling DDI thread
-  // executes every requested runtime callback, then joins the worker before
-  // any runtime handle or private-storage lifetime can end.
+  // Run backend work separately while the original DDI thread services all
+  // runtime callbacks. Nested runtime callbacks may enter a child DDI; give
+  // that operation its own job and pump without joining its suspended parent.
+  template<typename Function> auto run(Function&& function) -> decltype(function()) {
+    using Result = decltype(function());
+    if constexpr (std::is_void_v<Result>) {
+      drain(std::forward<Function>(function));
+    } else {
+      std::optional<Result> result;
+      drain([&] { result.emplace(function()); });
+      return std::move(*result);
+    }
+  }
+
   template<typename Function> void drain(Function&& function) {
+    std::lock_guard<std::recursive_mutex> entry(m_entry);
     Scope scope(this);
+    Job job;
+    job.context = &function;
+    job.function = [](void* ptr) { (*static_cast<std::remove_reference_t<Function>*>(ptr))(); };
     {
       std::lock_guard<std::mutex> lock(m_mutex);
-      m_jobContext = &function;
-      m_job = [](void* ptr) { (*static_cast<std::remove_reference_t<Function>*>(ptr))(); };
-      m_jobComplete = false; m_error = nullptr; m_pumping = true;
+      *m_jobTail = &job; m_jobTail = &job.next;
+      ++m_pumps;
     }
     SubmitThreadpoolWork(m_work);
     std::unique_lock<std::mutex> lock(m_mutex);
     for (;;) {
-      m_changed.wait(lock, [&] { return m_head || m_jobComplete; });
+      m_changed.wait(lock, [&] { return m_head || job.complete; });
       if (m_head) {
         Request* request = m_head;
         m_head = request->next;
@@ -77,19 +105,28 @@ public:
         request->result = result; request->complete = true;
         m_changed.notify_all();
       } else {
-        m_pumping = false;
+        --m_pumps;
         break;
       }
     }
+    const bool outermost = !m_pumps;
     lock.unlock();
-    // Work completion publishes the result before its callback returns. Join
-    // that return too, while the runtime still owns the executing UMD module.
-    WaitForThreadpoolWorkCallbacks(m_work, FALSE);
-    if (m_error) std::rethrow_exception(m_error);
+    // A nested callback cannot join its own suspended parent. The outermost
+    // DDI joins every work callback return before runtime/module lifetime ends.
+    if (outermost) WaitForThreadpoolWorkCallbacks(m_work, FALSE);
+    if (job.error) std::rethrow_exception(job.error);
   }
   void close() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_closed = true;
+    while (m_head) {
+      auto request = m_head;
+      m_head = request->next;
+      request->result = DXGI_ERROR_DEVICE_REMOVED;
+      request->complete = true;
+    }
+    m_tail = &m_head;
+    m_changed.notify_all();
   }
 
 private:
@@ -100,22 +137,38 @@ private:
     HRESULT result = E_FAIL;
     bool complete = false;
   };
-  static void CALLBACK work(PTP_CALLBACK_INSTANCE, void* context, PTP_WORK) {
+  struct Job {
+    Job* next = nullptr;
+    void* context = nullptr;
+    void (*function)(void*) = nullptr;
+    std::exception_ptr error;
+    bool complete = false;
+  };
+  static void CALLBACK work(PTP_CALLBACK_INSTANCE instance, void* context, PTP_WORK) {
+    CallbackMayRunLong(instance);
     auto self = static_cast<RuntimeService*>(context);
-    try { self->m_job(self->m_jobContext); }
-    catch (...) { self->m_error = std::current_exception(); }
+    Job* job;
+    {
+      std::lock_guard<std::mutex> lock(self->m_mutex);
+      job = self->m_jobHead;
+      self->m_jobHead = job->next;
+      if (!self->m_jobHead) self->m_jobTail = &self->m_jobHead;
+    }
+    try { job->function(job->context); }
+    catch (...) { job->error = std::current_exception(); }
     std::lock_guard<std::mutex> lock(self->m_mutex);
-    self->m_jobComplete = true;
+    job->complete = true;
     self->m_changed.notify_all();
   }
   PTP_WORK m_work = nullptr;
+  std::recursive_mutex m_entry;
   std::mutex m_mutex;
   std::condition_variable m_changed;
   Request* m_head = nullptr;
   Request** m_tail = &m_head;
-  void* m_jobContext = nullptr;
-  void (*m_job)(void*) = nullptr;
-  std::exception_ptr m_error;
-  bool m_jobComplete = false, m_pumping = false, m_closed = false;
+  Job* m_jobHead = nullptr;
+  Job** m_jobTail = &m_jobHead;
+  unsigned m_pumps = 0;
+  bool m_deferred = false, m_closed = false;
 };
 }

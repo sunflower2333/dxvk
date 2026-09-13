@@ -18,6 +18,7 @@ static std::atomic<unsigned> runtimeHookDepth{0}, errorHookDepth{0}, backendDrai
 static std::function<void()> errorHook;
 static bool trackBackendDrain = false;
 static bool preexistingWorker = false;
+static HANDLE pendingSubmission = nullptr;
 struct Fixture {
   char device, adapter, contextCookie;
   LUID luid{0x13579024, -11};
@@ -249,7 +250,7 @@ private:
     uint32_t fence = 0;
     const auto& b = marker->bridge;
     if (marker->persistent) {
-      CHECK(b.create.callbacks->status(b.create.owner) == DXGI_ERROR_UNSUPPORTED);
+      CHECK(b.create.callbacks->status(b.create.owner) == S_OK);
       CHECK(SetEvent(marker->ready));
       CHECK(WaitForSingleObject(marker->stop, 3000) == WAIT_OBJECT_0);
     }
@@ -298,6 +299,13 @@ HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
   return hr;
 }
 HRESULT dxvk::umd::isStagingResourceBusy(ID3D11DeviceContext*, ID3D11Resource*, BOOL*) noexcept { return E_NOTIMPL; }
+HRESULT dxvk::umd::flushRuntimeSubmission(ID3D11DeviceContext* context) noexcept {
+  CHECK(GetCurrentThreadId() != f->runtimeThread);
+  context->Flush();
+  if (pendingSubmission)
+    CHECK(WaitForSingleObject(pendingSubmission, 3000) == WAIT_OBJECT_0);
+  return S_OK;
+}
 static void APIENTRY setError(D3D10DDI_HRTCORELAYER, HRESULT) {
   CHECK(bool(errorHook));
   auto callback = errorHook;
@@ -325,10 +333,54 @@ static void runtimeTeardown() {
     args.pUMCallbacks = &callbacks; args.pKTCallbacks = &kernel; args.pDeviceFuncs = &table;
     CHECK(dxvk::umd::createAdapterDevice(f->identity, &args) == S_OK);
     const auto bridge = f->bridge;
-    const unsigned calls = f->callbackCalls;
-    CHECK(bridge.create.callbacks->status(bridge.create.owner) == DXGI_ERROR_UNSUPPORTED);
-    CHECK(f->callbackCalls == calls); // No active DDI scope, no runtime access.
     CHECK(f->allocations.size() == 1);
+
+    // A backend CS/submission job can request runtime service between DDIs.
+    // It must block without calling the runtime until the next permitted
+    // caller pumps it, and native Flush must wait for this submission.
+    struct Submission {
+      dxvk::umd::RuntimeBackend bridge;
+      HANDLE started = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    } submission{bridge};
+    CHECK(submission.started);
+    pendingSubmission = CreateThread(nullptr, 0, [](void* ptr) -> DWORD {
+      auto& job = *static_cast<Submission*>(ptr);
+      CHECK(SetEvent(job.started));
+      const auto cb = job.bridge.create.callbacks; const auto owner = job.bridge.create.owner;
+      mwd_allocation allocation{};
+      CHECK(cb->allocate(owner, 4096, 4096, 0, 6, &allocation) == S_OK);
+      void* data = nullptr; uint32_t handle = 0;
+      CHECK(cb->map(owner, allocation.token, &data, &handle) == S_OK && data && handle);
+      std::memset(data, 0x57, 4096);
+      CHECK(cb->unmap(owner, allocation.token) == S_OK);
+      const uint32_t commands[4] = {0, 0, 0x11223344, 0x55667788};
+      const mwd_reference ref{allocation.token, 0, 4096, 3, 0};
+      CHECK(cb->submit(owner, commands, sizeof(commands), &ref, 1) == S_OK);
+      CHECK(cb->release(owner, allocation.token) == S_OK);
+      return 0;
+    }, &submission, 0, nullptr);
+    CHECK(pendingSubmission && WaitForSingleObject(submission.started, 3000) == WAIT_OBJECT_0);
+    const unsigned calls = f->callbackCalls;
+    CHECK(WaitForSingleObject(pendingSubmission, 30) == WAIT_TIMEOUT);
+    CHECK(f->callbackCalls == calls);
+    bool nested = false;
+    f->outerHook = [&](char point) {
+      if (point != 'R' || nested) return;
+      nested = true;
+      D3D10DDI_COUNTER_INFO info{}; info.NumDetectableParallelUnits = 99;
+      table.pfnCheckCounterInfo(args.hDrvDevice, &info);
+      CHECK(info.NumDetectableParallelUnits == 0);
+      std::thread sizeThread([&] {
+        CHECK(table.pfnCalcPrivateResourceSize(args.hDrvDevice, nullptr) > 0);
+      });
+      sizeThread.join();
+    };
+    const unsigned rendered = f->renders;
+    table.pfnFlush(args.hDrvDevice);
+    CHECK(nested && f->renders == rendered + 1 && f->allocations.size() == 1);
+    CHECK(WaitForSingleObject(pendingSubmission, 0) == WAIT_OBJECT_0);
+    CloseHandle(pendingSubmission); pendingSubmission = nullptr;
+    CloseHandle(submission.started); f->outerHook = {};
     table.pfnDestroyDevice(args.hDrvDevice);
     CHECK(backendDrains == before + 1 && f->contextCloses == 1 && f->allocations.empty());
     f->runtimeValid = false; // Handles and all service end immediately here.
@@ -476,5 +528,5 @@ int main() {
   }
   CHECK(earlyBackends == 2);
   runtimeTeardown();
-  std::printf("PASS %u runtime GPU checks; production entry early BO callbacks, shared owners, map/submit/reset and synchronous D3D10 teardown; backend-drains=%u\n", checks.load(), backendDrains.load());
+  std::printf("PASS %u runtime GPU checks; ordinary caller dispatch, nested DDI and Flush submission, shared owners, map/submit/reset and synchronous D3D10 teardown; backend-drains=%u\n", checks.load(), backendDrains.load());
 }

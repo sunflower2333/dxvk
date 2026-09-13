@@ -2,6 +2,7 @@
 
 #include "umd_ddi.h"
 #include "umd_adapter.h"
+#include "umd_runtime_service.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -55,15 +56,33 @@ public:
   ~RuntimeMemory();
   void initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kernel,
     const DXGI_DDI_BASE_CALLBACKS* dxgi,
-    std::shared_ptr<const AdapterIdentity> identity = {});
+    std::shared_ptr<const AdapterIdentity> identity = {},
+    std::shared_ptr<RuntimeService> service = {});
   bool available() const;
   HRESULT allocate(RuntimeAllocation& out, HANDLE resource, UINT width,
-    UINT height, DXGI_FORMAT format);
-  HRESULT release(RuntimeAllocation& allocation);
-  HRESULT upload(RuntimeAllocation& allocation, const void* pixels, UINT rowPitch);
-  HRESULT present(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args);
-  HRESULT close();
+    UINT height, DXGI_FORMAT format) {
+    return call([&] { return allocateImpl(out, resource, width, height, format); });
+  }
+  HRESULT release(RuntimeAllocation& allocation) {
+    return call([&] { return releaseImpl(allocation); });
+  }
+  HRESULT upload(RuntimeAllocation& allocation, const void* pixels, UINT rowPitch) {
+    return call([&] { return uploadImpl(allocation, pixels, rowPitch); });
+  }
+  HRESULT present(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args) {
+    return call([&] { return presentImpl(source, args); });
+  }
+  HRESULT close() { return !m_context ? S_OK : call([&] { return closeImpl(); }); }
 private:
+  template<typename Function> HRESULT call(Function&& function) {
+    return m_service ? m_service->invoke(std::forward<Function>(function)) : function();
+  }
+  HRESULT allocateImpl(RuntimeAllocation& out, HANDLE resource, UINT width,
+    UINT height, DXGI_FORMAT format);
+  HRESULT releaseImpl(RuntimeAllocation& allocation);
+  HRESULT uploadImpl(RuntimeAllocation& allocation, const void* pixels, UINT rowPitch);
+  HRESULT presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args);
+  HRESULT closeImpl();
   HRESULT ensureContext();
   HRESULT checkIdentity();
   HANDLE m_device = nullptr;
@@ -71,6 +90,7 @@ private:
   DXGI_DDI_BASE_CALLBACKS m_dxgi = {};
   HANDLE m_context = nullptr;
   std::shared_ptr<const AdapterIdentity> m_identity;
+  std::shared_ptr<RuntimeService> m_service;
   bool m_removed = false;
   bool m_querying = false;
 };

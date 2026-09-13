@@ -65,7 +65,15 @@ struct Device {
   }
   ~Device() { close(); }
   void error(HRESULT hr) {
-    if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, dxvk::umd::ddiResult(hr));
+    if (!FAILED(hr)) return;
+    auto report = [&] {
+      callbacks.pfnSetErrorCb(runtime, dxvk::umd::ddiResult(hr));
+      return S_OK;
+    };
+    // DestroyDevice may report removal after GPU service closes, while still
+    // inside its original runtime DDI. No destructor reports late errors.
+    if (service->isCaller()) report();
+    else service->invoke(report);
   }
 };
 // Runtime private bytes are only a registration key. Callable state is
@@ -92,8 +100,9 @@ struct DeviceOperation {
   std::shared_ptr<Device> owner;
   DeviceOperation* previous = nullptr;
   static thread_local DeviceOperation* current;
-  explicit DeviceOperation(void* value) : storage(value) {
-    {
+  explicit DeviceOperation(void* value, std::shared_ptr<Device> pinned = {})
+  : storage(value), owner(std::move(pinned)) {
+    if (!owner) {
       std::lock_guard<std::mutex> lock(deviceStorageMutex);
       const auto entry = deviceStorage.find(storage);
       if (entry != deviceStorage.end() && entry->second.phase == DevicePhase::Live)
@@ -126,8 +135,24 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
       else if constexpr (std::is_same_v<Result, BOOL>) return TRUE;
       else return Result{};
     }
-    dxvk::umd::RuntimeService::Scope scope(operation.owner->service.get());
-    return function(h, args...);
+    // CalcPrivate functions remain genuinely concurrent, as required even
+    // for D3D10 drivers without D3D11 FREETHREADED admission. They only return
+    // object sizes and never run backend work or runtime callbacks.
+    if constexpr (std::is_same_v<Result, SIZE_T>) return function(h, args...);
+    else {
+      dxvk::umd::RuntimeService::Scope scope(operation.owner->service.get());
+      try {
+        return operation.owner->service->run([&]() -> Result {
+          DeviceOperation worker(h.pDrvPrivate, operation.owner);
+          return function(h, args...);
+        });
+      } catch (...) {
+        operation.owner->error(DXGI_ERROR_DEVICE_REMOVED);
+        if constexpr (std::is_void_v<Result>) return;
+        else if constexpr (std::is_same_v<Result, BOOL>) return TRUE;
+        else return Result{};
+      }
+    }
   }
 };
 template<auto function>
@@ -372,12 +397,10 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
     const D3D10DDIARG_CREATERESOURCE* args, D3D10DDI_HRESOURCE out,
     D3D10DDI_HRTRESOURCE runtime) {
   auto device = get(h);
-  const auto report = device->callbacks.pfnSetErrorCb;
-  const auto core = device->runtime;
   HRESULT hr = S_OK;
   std::shared_ptr<const char> reservation;
   if (!out.pDrvPrivate || uintptr_t(out.pDrvPrivate) % alignof(Resource)) {
-    report(core, E_INVALIDARG); return;
+    device->error(E_INVALIDARG); return;
   }
   try {
     reservation = std::make_shared<const char>(0);
@@ -386,7 +409,7 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
         ResourceRecord{device, ResourcePhase::Creating, reservation}).second) hr = E_INVALIDARG;
   } catch (const std::bad_alloc&) { hr = E_OUTOFMEMORY; }
     catch (...) { hr = E_FAIL; }
-  if (FAILED(hr)) { report(core, dxvk::umd::ddiResult(hr)); return; }
+  if (FAILED(hr)) { device->error(hr); return; }
   {
     // CreateResource failures receive no DestroyResource from the runtime.
     // Stage every backend/allocation owner locally and publish private storage
@@ -411,7 +434,7 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
       if (entry != resourceStorage.end() && entry->second.reservation == reservation)
         resourceStorage.erase(entry);
     }
-    report(core, dxvk::umd::ddiResult(hr));
+    device->error(hr);
   }
 }
 void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
@@ -425,8 +448,6 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
     if (!live) return;
   }
   auto device = get(h);
-  const auto report = device->callbacks.pfnSetErrorCb;
-  const auto core = device->runtime;
   HRESULT hr = S_OK;
   {
     auto object = get(resource);
@@ -436,7 +457,7 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
     // Release only local owners; neither object nor device is accessed afterward.
     hr = retired.allocation.release();
   }
-  if (FAILED(hr)) report(core, dxvk::umd::ddiResult(hr));
+  if (FAILED(hr)) device->error(hr);
 }
 
 SIZE_T APIENTRY shaderViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATESHADERRESOURCEVIEW*) {
@@ -1381,7 +1402,14 @@ void APIENTRY drawIndexedInstanced(D3D10DDI_HDEVICE h, UINT count, UINT instance
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
 }
-void APIENTRY flush(D3D10DDI_HDEVICE h) { get(h)->context->Flush(); }
+void APIENTRY flush(D3D10DDI_HDEVICE h) {
+  auto device = get(h);
+  // D3D10 Flush permits only device-removed reporting. Backend command
+  // recording AND Vulkan queue submission must finish while its caller can
+  // service runtime callbacks; GPU completion is deliberately asynchronous.
+  if (FAILED(dxvk::umd::flushRuntimeSubmission(device->context.Get())))
+    device->error(DXGI_ERROR_DEVICE_REMOVED);
+}
 void APIENTRY relocateDeviceFunctions(D3D10DDI_HDEVICE h, D3D10DDI_DEVICEFUNCS* functions) {
   if (!functions) { get(h)->error(E_INVALIDARG); return; }
   // The runtime has already copied its table. No driver object caches a
@@ -1412,6 +1440,7 @@ void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
   // The runtime destroys all children first. Deferred backend objects and
   // runtime allocations must be gone before this DDI returns. Its caller
   // services worker callbacks during the synchronous backend drain.
+  dxvk::umd::RuntimeService::Scope scope(owner->service.get());
   const HRESULT hr = owner->close();
   // DestroyDevice permits only device-removed error reporting. A failed
   // terminal cleanup makes this device unusable; never report transient busy.
@@ -1419,13 +1448,7 @@ void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
   owner.reset();
 }
 
-HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
-  if (!args || !args->hDevice || !args->hSurfaceToPresent)
-    return E_INVALIDARG;
-  DeviceOperation operation(reinterpret_cast<void*>(args->hDevice));
-  auto device = operation.owner.get();
-  if (!device) return DXGI_ERROR_DEVICE_REMOVED;
-  dxvk::umd::RuntimeService::Scope scope(device->service.get());
+HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
   auto resource = reinterpret_cast<Resource*>(args->hSurfaceToPresent);
   if (resource->owner != device || !resource->backend || !resource->allocation.handle()
       || args->SrcSubResourceIndex || args->DstSubResourceIndex
@@ -1457,6 +1480,19 @@ HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
     if (FAILED(hr)) return hr;
     if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
     return device->memory.present(resource->allocation, *args);
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
+}
+
+HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
+  if (!args || !args->hDevice || !args->hSurfaceToPresent) return E_INVALIDARG;
+  DeviceOperation operation(reinterpret_cast<void*>(args->hDevice));
+  if (!operation.owner) return DXGI_ERROR_DEVICE_REMOVED;
+  try {
+    return operation.owner->service->run([&] {
+      DeviceOperation worker(operation.storage, operation.owner);
+      return presentData(operation.owner.get(), args);
+    });
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }
 }
@@ -1498,14 +1534,17 @@ HRESULT createDdiDevice(
     // CreateDevice returns. Do not read caller tables again after backend entry.
     device->adapter = identity;
     device->memory.initialize(native->hRTDevice.handle, *native->pKTCallbacks,
-      native->DXGIBaseDDI.pDXGIBaseCallbacks, identity);
+      native->DXGIBaseDDI.pDXGIBaseCallbacks, identity, device->service);
     device->gpu = dxvk::umd::RuntimeGpu::create(native->hRTDevice.handle,
       *native->pKTCallbacks, identity, device->service);
     dxgiTable = native->DXGIBaseDDI.pDXGIDDIBaseFunctions;
+    device->service->allowDeferredCalls();
   }
   auto backendRuntime = device->gpu ? device->gpu->backend() : dxvk::umd::RuntimeBackend{};
-  const HRESULT hr = dxvk::umd::createDevice(*luid, D3D_FEATURE_LEVEL_10_0,
-    &device->backend, &device->context, device->gpu ? &backendRuntime : nullptr);
+  const HRESULT hr = device->service->run([&] {
+    return dxvk::umd::createDevice(*luid, D3D_FEATURE_LEVEL_10_0,
+      &device->backend, &device->context, device->gpu ? &backendRuntime : nullptr);
+  });
   if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
   if (!device->backend || !device->context) return E_FAIL;
   *table = {};

@@ -59,3 +59,7 @@ umd_runtime_gpu_test = executable('dxvk-umd-runtime-gpu-test',
 
 umd_view_test = executable('dxvk-umd-view-test', '../../tests/umd-view.cpp',
   dependencies : [cpp.find_library('d3d11'), cpp.find_library('d3dcompiler')])
+
+umd_system_runtime_test = executable('dxvk-umd-system-runtime-test',
+  '../../tests/umd-system-runtime.cpp',
+  dependencies : [cpp.find_library('d3d11'), cpp.find_library('d3dcompiler'), cpp.find_library('user32')])

@@ -8,6 +8,13 @@
 
 namespace dxvk::umd {
 
+HRESULT flushRuntimeSubmission(ID3D11DeviceContext* context) noexcept {
+  if (!context) return E_INVALIDARG;
+  try {
+    return static_cast<D3D11ImmediateContext*>(context)->FlushRuntimeSubmission();
+  } catch (...) { return DXGI_ERROR_DEVICE_REMOVED; }
+}
+
 HRESULT isStagingResourceBusy(ID3D11DeviceContext* context,
                              ID3D11Resource* resource, BOOL* busy) noexcept {
   if (!busy) return E_POINTER;

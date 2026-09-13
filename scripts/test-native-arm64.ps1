@@ -13,6 +13,7 @@ $cases = [ordered]@{
     'dxvk-umd-native-entry-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=0 backend-calls=0'
     'dxvk-umd-native-lifetime-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=1'
     'dxvk-umd-allocation-test.exe' = 'runtime allocation/presentation PASS checks='
+    'dxvk-umd-system-runtime-test.exe' = 'system runtime control PASS: WARP Draw/readback/Present/immediate teardown'
 }
 foreach ($name in $cases.Keys) {
     $exe = Join-Path $root $name

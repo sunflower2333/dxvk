@@ -921,6 +921,14 @@ namespace dxvk {
   void D3D11ImmediateContext::SynchronizeDevice() {
     m_device->waitForIdle();
   }
+
+
+  HRESULT D3D11ImmediateContext::FlushRuntimeSubmission() {
+    Flush();
+    SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
+    return m_device->synchronizeSubmission() == VK_SUCCESS
+      ? S_OK : DXGI_ERROR_DEVICE_REMOVED;
+  }
   
   
   void D3D11ImmediateContext::EndFrame(

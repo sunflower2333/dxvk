@@ -12,4 +12,6 @@ HRESULT createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
 // The context and resource must belong to the embedded backend above.
 HRESULT isStagingResourceBusy(ID3D11DeviceContext* context,
                              ID3D11Resource* resource, BOOL* busy) noexcept;
+// Joins recording and kernel submission, without waiting for GPU completion.
+HRESULT flushRuntimeSubmission(ID3D11DeviceContext* context) noexcept;
 }

@@ -1,6 +1,7 @@
 #include "../src/umd/umd_adapter.h"
 #include "../src/umd/umd_api.h"
 #include "../src/umd/umd_contract.h"
+#include "../src/umd/umd_runtime_gpu.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -10,6 +11,8 @@
 static unsigned checks, queries, backends, errors;
 #define CHECK(value) do { ++checks; if (!(value)) { \
   std::fprintf(stderr, "native entry check failed line %d: %s\n", __LINE__, #value); std::abort(); } } while (0)
+static DWORD runtimeThread;
+static void checkRuntime() { CHECK(GetCurrentThreadId() == runtimeThread); }
 
 #ifdef VIOGPU_TEST_COMPLETE_CONTRACT
 // Linked only into this controlled lifetime fixture, never into the UMD DLL.
@@ -40,6 +43,7 @@ static bool zeroAllocation, destroyResourceOnDeallocate, destroyResourceOnError;
 static bool cancelResourceCreation;
 
 static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
+  checkRuntime();
   CHECK(device == &deviceCookie && args && args->hResource == &resourceCookie);
   CHECK(args->NumAllocations == 1 && args->pAllocationInfo);
   args->pAllocationInfo[0].hAllocation = zeroAllocation ? 0 : 123;
@@ -52,6 +56,7 @@ static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
   return allocationResult;
 }
 static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* args) {
+  checkRuntime();
   CHECK(device == &deviceCookie && args && args->hResource == &resourceCookie); ++deallocations;
   if (destroyResourceOnDeallocate) {
     destroyResourceOnDeallocate = false;
@@ -62,27 +67,33 @@ static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* arg
   return deallocationResult;
 }
 static HRESULT APIENTRY lock(HANDLE device, D3DDDICB_LOCK* args) {
+  checkRuntime();
   CHECK(device == &deviceCookie && args && args->hAllocation == 123);
   args->pData = publishedPixels; return S_OK;
 }
 static HRESULT APIENTRY unlock(HANDLE device, const D3DDDICB_UNLOCK* args) {
+  checkRuntime();
   CHECK(device == &deviceCookie && args && args->NumAllocations == 1); return S_OK;
 }
 static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* args) {
+  checkRuntime();
   CHECK(device == &deviceCookie && args); args->hContext = &contextCookie; return S_OK;
 }
 static HRESULT APIENTRY destroyContext(HANDLE device, const D3DDDICB_DESTROYCONTEXT* args) {
+  checkRuntime();
   CHECK(device == &deviceCookie && args && args->hContext == &contextCookie); ++contextDestroys;
   activeTable->pfnDestroyDevice(activeCreate->hDrvDevice); // Reenter the actual destructor.
   return E_FAIL; // Verify error callback is retained and invoked after retirement.
 }
 static HRESULT APIENTRY present(HANDLE device, DXGIDDICB_PRESENT* args) {
+  checkRuntime();
   CHECK(device == &deviceCookie && args && args->hSrcAllocation == 123);
   CHECK(args->hContext == &contextCookie && args->pDXGIContext == &dxgiCookie); ++presents;
   return S_OK;
 }
 
 static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* args) {
+  checkRuntime();
   ++queries;
   CHECK(runtime == &adapterCookie && args && args->PrivateDriverDataSize == 160);
   auto bytes = static_cast<uint8_t*>(args->pPrivateDriverData);
@@ -104,6 +115,7 @@ static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* a
 }
 
 static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
+  checkRuntime();
   CHECK(runtime.handle == &coreCookie && FAILED(hr)); ++errors;
   if (destroyResourceOnError) {
     destroyResourceOnError = false;
@@ -126,9 +138,12 @@ HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
   if (backendResult != S_OK) return backendResult;
   const Action action = backendAction; backendAction = Action::None;
   if (action == Action::DuplicateCreate) {
-    D3D10DDI_DEVICEFUNCS untouched = *activeCreate->pDeviceFuncs;
-    CHECK(functions.pfnCreateDevice(active, activeCreate) == E_INVALIDARG);
-    CHECK(!std::memcmp(&untouched, activeCreate->pDeviceFuncs, sizeof(untouched)));
+    CHECK(std::static_pointer_cast<dxvk::umd::RuntimeGpu>(runtime->owner)->serviceCall([&] {
+      D3D10DDI_DEVICEFUNCS untouched = *activeCreate->pDeviceFuncs;
+      CHECK(functions.pfnCreateDevice(active, activeCreate) == E_INVALIDARG);
+      CHECK(!std::memcmp(&untouched, activeCreate->pDeviceFuncs, sizeof(untouched)));
+      return S_OK;
+    }) == S_OK);
   }
   // The fixture backend is Microsoft's WARP only. The production DLL retains
   // the embedded DXVK factory and its exact LUID/Turnip selection policy.
@@ -140,6 +155,10 @@ HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
 }
 HRESULT dxvk::umd::isStagingResourceBusy(ID3D11DeviceContext*, ID3D11Resource*, BOOL*) noexcept {
   return E_NOTIMPL; // This fixture never calls the staging-resource busy DDI.
+}
+HRESULT dxvk::umd::flushRuntimeSubmission(ID3D11DeviceContext* context) noexcept {
+  context->Flush();
+  return S_OK; // WARP fixture; embedded DXVK's CS/queue barrier is built separately.
 }
 
 static void openAdapter() {
@@ -162,6 +181,7 @@ static void openAdapter() {
 }
 
 int main() {
+  runtimeThread = GetCurrentThreadId();
   CHECK(OpenAdapter10_2(nullptr) == E_INVALIDARG);
   struct LegacyTable { D3D10DDI_ADAPTERFUNCS table; UINT64 canary; } legacy = {{}, 0xabcdef};
   D3DDDI_ADAPTERCALLBACKS legacyCallbacks = {}; legacyCallbacks.pfnQueryAdapterInfoCb = query;

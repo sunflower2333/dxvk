@@ -20,7 +20,8 @@ HRESULT RuntimeAllocation::release() { return m_owner ? m_owner->release(*this) 
 RuntimeMemory::~RuntimeMemory() { close(); }
 
 void RuntimeMemory::initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kernel,
-    const DXGI_DDI_BASE_CALLBACKS* dxgi, std::shared_ptr<const AdapterIdentity> identity) {
+    const DXGI_DDI_BASE_CALLBACKS* dxgi, std::shared_ptr<const AdapterIdentity> identity,
+    std::shared_ptr<RuntimeService> service) {
   m_device = device;
   m_callbacks.pfnAllocateCb = kernel.pfnAllocateCb;
   m_callbacks.pfnDeallocateCb = kernel.pfnDeallocateCb;
@@ -30,6 +31,7 @@ void RuntimeMemory::initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kern
   m_callbacks.pfnDestroyContextCb = kernel.pfnDestroyContextCb;
   m_dxgi.pfnPresentCb = dxgi ? dxgi->pfnPresentCb : nullptr;
   m_identity = std::move(identity);
+  m_service = std::move(service);
   m_removed = false;
 }
 
@@ -58,7 +60,7 @@ bool RuntimeMemory::available() const {
       && m_dxgi.pfnPresentCb;
 }
 
-HRESULT RuntimeMemory::allocate(RuntimeAllocation& out, HANDLE resource,
+HRESULT RuntimeMemory::allocateImpl(RuntimeAllocation& out, HANDLE resource,
     UINT width, UINT height, DXGI_FORMAT format) {
   if (!available()) return DXGI_ERROR_UNSUPPORTED;
   if (out.m_owner || !resource || !width || !height || width > 16384 || height > 16384)
@@ -100,7 +102,7 @@ HRESULT RuntimeMemory::allocate(RuntimeAllocation& out, HANDLE resource,
   return S_OK;
 }
 
-HRESULT RuntimeMemory::release(RuntimeAllocation& allocation) {
+HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   if (allocation.m_owner != this) return E_INVALIDARG;
   D3DDDICB_DEALLOCATE request = {};
   request.hResource = allocation.m_resource;
@@ -114,7 +116,7 @@ HRESULT RuntimeMemory::release(RuntimeAllocation& allocation) {
   return completed(deallocate(device, &request));
 }
 
-HRESULT RuntimeMemory::upload(RuntimeAllocation& allocation, const void* pixels, UINT rowPitch) {
+HRESULT RuntimeMemory::uploadImpl(RuntimeAllocation& allocation, const void* pixels, UINT rowPitch) {
   if (allocation.m_owner != this || !allocation.m_handle) return E_INVALIDARG;
   allocation.m_published = false;
   const auto& info = allocation.m_info;
@@ -170,7 +172,7 @@ HRESULT RuntimeMemory::ensureContext() {
   return S_OK;
 }
 
-HRESULT RuntimeMemory::present(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args) {
+HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args) {
   if (!available()) return DXGI_ERROR_UNSUPPORTED;
   // Initial windowed blit path only. Primary/flip, opened shared resources,
   // stereo and explicit destinations require their own ownership support.
@@ -194,7 +196,7 @@ HRESULT RuntimeMemory::present(RuntimeAllocation& source, const DXGI_DDI_ARG_PRE
   return FAILED(hr) ? hr : checkIdentity();
 }
 
-HRESULT RuntimeMemory::close() {
+HRESULT RuntimeMemory::closeImpl() {
   if (!m_context) return S_OK;
   D3DDDICB_DESTROYCONTEXT request = {};
   request.hContext = m_context;

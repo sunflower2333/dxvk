@@ -41,25 +41,26 @@ if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build faile
 ninja -C build-umd src/umd/viogpudxvk.dll.p/umd_ddi.cpp.obj src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
 if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
-if ($arch -ne 'arm64') {
-    $runtimeOut = Join-Path $OutputDirectory 'runtime-gpu-test.txt'
-    $runtimeErr = Join-Path $OutputDirectory 'runtime-gpu-test.stderr.txt'
-    $runtimeTest = Start-Process build-umd/src/umd/dxvk-umd-runtime-gpu-test.exe -PassThru -RedirectStandardOutput $runtimeOut -RedirectStandardError $runtimeErr
-    $null = $runtimeTest.Handle
-    if (!$runtimeTest.WaitForExit(30000)) {
-        $runtimeTest.Kill(); $runtimeTest.WaitForExit()
-        throw 'Runtime GPU teardown fixture exceeded its 30-second deadline'
+function Invoke-BoundedFixture([string]$Executable, [string]$Name) {
+    $out = Join-Path $OutputDirectory "$Name.txt"
+    $err = Join-Path $OutputDirectory "$Name.stderr.txt"
+    $process = Start-Process $Executable -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+    $null = $process.Handle
+    if (!$process.WaitForExit(30000)) {
+        $process.Kill(); $process.WaitForExit()
+        throw "$Name exceeded its 30-second deadline"
     }
-    Get-Content -LiteralPath $runtimeOut
-    if ($runtimeTest.ExitCode) { throw "Runtime GPU owner regression failed: $(Get-Content -LiteralPath $runtimeErr -Raw)" }
+    Get-Content -LiteralPath $out
+    if ($process.ExitCode) { throw "$Name failed: $(Get-Content -LiteralPath $err -Raw)" }
+}
+if ($arch -ne 'arm64') {
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-runtime-gpu-test.exe runtime-gpu-test
     & build-umd/src/umd/dxvk-umd-identity-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-query-test.txt')
     if ($LASTEXITCODE) { throw 'Runtime identity callback consumer test failed' }
     & build-umd/src/umd/dxvk-umd-adapter-test.exe | Tee-Object (Join-Path $OutputDirectory 'adapter-test.txt')
     if ($LASTEXITCODE) { throw 'Adapter lifecycle test failed' }
-    & build-umd/src/umd/dxvk-umd-native-entry-test.exe | Tee-Object (Join-Path $OutputDirectory 'native-entry-test.txt')
-    if ($LASTEXITCODE) { throw 'Production native capability gate test failed' }
-    & build-umd/src/umd/dxvk-umd-native-lifetime-test.exe | Tee-Object (Join-Path $OutputDirectory 'native-lifetime-test.txt')
-    if ($LASTEXITCODE) { throw 'Production native lifetime fixture failed' }
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-native-entry-test.exe native-entry-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-native-lifetime-test.exe native-lifetime-test
     & build-umd/src/umd/dxvk-umd-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'query-test.txt')
     if ($LASTEXITCODE) { throw 'Query completion test failed' }
     & build-umd/src/umd/dxvk-umd-allocation-test.exe | Tee-Object (Join-Path $OutputDirectory 'allocation-test.txt')
@@ -69,7 +70,7 @@ if ($arch -ne 'arm64') {
     & build-umd/src/umd/dxvk-umd-view-test.exe | Tee-Object (Join-Path $OutputDirectory 'view-test.txt')
     if ($LASTEXITCODE) { throw 'Native texture view/range/MSAA test failed' }
 }
-ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe src/umd/viogpudxvk.dll src/umd/dxvk-umd-ddi-probe.exe
+ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe src/umd/viogpudxvk.dll src/umd/dxvk-umd-ddi-probe.exe src/umd/dxvk-umd-system-runtime-test.exe
 if ($LASTEXITCODE) { throw 'DXVK UMD development build failed' }
 foreach ($name in @('viogpudxvk.dll', 'dxvk-umd-backend-probe.exe', 'dxvk-umd-ddi-probe.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
@@ -84,13 +85,16 @@ foreach ($name in @('viogpudxvk.dll', 'dxvk-umd-backend-probe.exe', 'dxvk-umd-dd
 $exports = & dumpbin /exports build-umd/src/umd/viogpudxvk.dll | Out-String
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
-foreach ($name in @('dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe')) {
+foreach ($name in @('dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
     # Include ARM64 fixtures for execution by the target validation owner.
     $path = Join-Path 'build-umd/src/umd' $name
     $headers = & dumpbin /headers $path | Out-String
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }
     Copy-Item $path $OutputDirectory
+}
+if ($arch -ne 'arm64') {
+    Invoke-BoundedFixture (Join-Path $OutputDirectory 'dxvk-umd-system-runtime-test.exe') system-runtime-test
 }
 @"
 DXVK_COMMIT=$(git rev-parse HEAD)
@@ -101,7 +105,8 @@ Native OpenAdapter10_2 negotiates exact identity/generation; incomplete producti
 Production entry/lifetime fixtures use controlled callbacks and a WARP backend; they are not ordinary Microsoft runtime activation.
 Native resource creation unwinds failed staged owners; destruction retires private storage before callbacks. Allocation identity/reset checks and cleanup fixtures are included.
 Native backend receives copied runtime callbacks before vkCreateDevice; Turnip internal BO allocation/map/submit use one runtime-owned context through private Mesa v1. Actual GPU/system-runtime acceptance pending.
-DestroyDevice synchronously drains backend workers while its DDI caller services their RuntimeGpu requests, then closes runtime allocations and context before return. Native worker callbacks outside a caller/pump scope are rejected before runtime access; regular rendering worker dispatch remains an explicit admission gap. No post-DestroyDevice runtime lifetime is assumed.
+Ordinary native DDI/Present jobs pump RuntimeGpu, runtime allocation and core callbacks on their original DDI caller; CalcPrivate remains concurrent. Worker requests between DDIs wait for the next permitted caller. Native Flush joins command recording and queue submission before returning, without waiting for GPU completion. DestroyDevice drains backend workers and closes allocations/context before return. No post-DestroyDevice runtime lifetime is assumed.
+The actual Microsoft runtime test requires candidate activation rejection on CI without VIOGPU and independently validates WARP Draw/readback/Present/immediate teardown. WARP control success is not candidate rendering or native admission. The dispatch integration still needs actual target/runtime proof.
 Windowed-blit Present development path uses runtime allocations and synchronized pixel copies; target proof pending.
 Registration, ordinary runtime activation, complete required table, sharing and primary/flip Present remain pending.
 "@ | Set-Content (Join-Path $OutputDirectory 'STATUS.txt')

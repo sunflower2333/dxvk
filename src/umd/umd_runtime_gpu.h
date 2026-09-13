@@ -4,6 +4,7 @@
 #include "umd_runtime_bridge.h"
 #include <map>
 #include <mutex>
+#include <condition_variable>
 
 namespace dxvk::umd {
 
@@ -16,11 +17,14 @@ public:
     std::shared_ptr<const AdapterIdentity> identity);
   ~RuntimeGpu();
   RuntimeBackend backend();
-  // Call after releasing/draining the embedded device, while the enclosing
-  // runtime DDI still owns callback service. Ordinary DestroyDevice does this
-  // before returning; nested retirement defers it to the final outer DDI exit.
-  // Earlier retirement of runtime handles is not an admitted contract.
+  // Call after releasing/draining the embedded device. The controlled runtime
+  // must retain callback service through that drain, including asynchronous
+  // retirement. Earlier retirement of runtime handles is not admitted.
   HRESULT close();
+  // Independent of the recursive runtime lock: DestroyDevice may be called
+  // by another thread while a runtime callback waits for that thread to exit.
+  bool hasActiveCalls() const;
+  void waitForCalls();
 
 private:
   struct Allocation {
@@ -30,9 +34,15 @@ private:
     void* mapping = nullptr;
     bool pending = false, locked = false, mapValid = false;
   };
+  struct Activity {
+    RuntimeGpu& value;
+    explicit Activity(RuntimeGpu& value);
+    ~Activity();
+  };
   struct Call {
     RuntimeGpu* value;
     std::shared_ptr<RuntimeGpu> owner;
+    Activity activity;
     std::unique_lock<std::recursive_mutex> lock;
     explicit Call(void* ptr);
     ~Call();
@@ -57,6 +67,9 @@ private:
   static const mwd_callbacks s_callbacks;
 
   std::recursive_mutex m_mutex;
+  mutable std::mutex m_activityMutex;
+  std::condition_variable m_activityChanged;
+  unsigned m_calls = 0;
   HANDLE m_device = nullptr, m_context = nullptr;
   D3DDDI_DEVICECALLBACKS m_callbacks = {};
   std::shared_ptr<const AdapterIdentity> m_identity;

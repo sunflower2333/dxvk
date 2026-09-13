@@ -65,8 +65,27 @@ RuntimeGpu::~RuntimeGpu() { close(); }
 RuntimeBackend RuntimeGpu::backend() {
   return {{MWD_STYPE_DEVICE, nullptr, &s_callbacks, this}, shared_from_this()};
 }
+RuntimeGpu::Activity::Activity(RuntimeGpu& source) : value(source) {
+  std::lock_guard<std::mutex> lock(value.m_activityMutex);
+  ++value.m_calls;
+}
+RuntimeGpu::Activity::~Activity() {
+  std::lock_guard<std::mutex> lock(value.m_activityMutex);
+  if (!--value.m_calls) value.m_activityChanged.notify_all();
+}
+bool RuntimeGpu::hasActiveCalls() const {
+  std::lock_guard<std::mutex> lock(m_activityMutex);
+  return m_calls != 0;
+}
+void RuntimeGpu::waitForCalls() {
+  std::unique_lock<std::mutex> lock(m_activityMutex);
+  m_activityChanged.wait(lock, [this] { return !m_calls; });
+}
 RuntimeGpu::Call::Call(void* ptr)
-: value(static_cast<RuntimeGpu*>(ptr)), owner(value->weak_from_this().lock()), lock(value->m_mutex) { ++value->m_active; }
+: value(static_cast<RuntimeGpu*>(ptr)), owner(value->weak_from_this().lock()),
+  activity(*value), lock(value->m_mutex) { ++value->m_active; }
+// Member order releases the recursive lock before publishing quiescence,
+// and retains RuntimeGpu until both lock and activity guards have unwound.
 RuntimeGpu::Call::~Call() { --value->m_active; }
 bool RuntimeGpu::Call::live(bool cleanup) const {
   return value->m_live && (cleanup || !value->m_closing) && value->m_device && value->m_identity;

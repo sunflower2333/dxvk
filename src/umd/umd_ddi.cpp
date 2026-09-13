@@ -18,12 +18,45 @@
 #include <unordered_map>
 #include <type_traits>
 #include <atomic>
+#include <stdexcept>
 
 namespace {
 using Microsoft::WRL::ComPtr;
 struct Shader;
 struct InputLayout;
 struct Device {
+  PTP_WORK retirementWork = nullptr;
+  HMODULE retirementModule = nullptr;
+  Device() {
+    // Reserve finalization resources before exposing any backend callbacks.
+    // SubmitThreadpoolWork has no failure return; DestroyDevice needs no new
+    // application allocation, thread or work object when reentered.
+    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+        reinterpret_cast<LPCSTR>(&Device::finalize), &retirementModule))
+      throw std::runtime_error("Cannot retain the native UMD module");
+    retirementWork = CreateThreadpoolWork(finalize, this, nullptr);
+    if (!retirementWork) {
+      FreeLibrary(retirementModule); retirementModule = nullptr;
+      throw std::bad_alloc();
+    }
+  }
+  static void release(Device* value) noexcept {
+    if (value->gpu && value->gpu->hasActiveCalls())
+      SubmitThreadpoolWork(value->retirementWork);
+    else delete value;
+  }
+  static void CALLBACK finalize(PTP_CALLBACK_INSTANCE instance, void* context, PTP_WORK) {
+    auto value = static_cast<Device*>(context);
+    // This is never a backend's own callback/worker thread. Wait only here,
+    // then let backend release drain any workers that resume or make cleanup
+    // callbacks after this quiescent point. Keep callback service live until
+    // the backend has fully returned, and keep UMD code mapped to our return.
+    value->gpu->waitForCalls();
+    const HMODULE module = value->retirementModule;
+    value->retirementModule = nullptr;
+    delete value;
+    FreeLibraryWhenCallbackReturns(instance, module);
+  }
   std::shared_ptr<const dxvk::umd::AdapterIdentity> adapter;
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
   ComPtr<ID3D11Device> backend;
@@ -49,8 +82,8 @@ struct Device {
     closing = true;
     HRESULT result = E_FAIL;
     try {
-      // This runs after the final enclosing DDI has unwound, outside registry
-      // and runtime-callback locks. Backend workers can still use RuntimeGpu
+      // This runs after enclosing DDIs and active callbacks have unwound,
+      // outside registry and runtime locks. Backend workers can use RuntimeGpu
       // until context/device release has fully drained them.
       context.Reset(); backend.Reset();
       result = gpu ? gpu->close() : S_OK;
@@ -62,6 +95,9 @@ struct Device {
   ~Device() {
     const HRESULT hr = close();
     if (reportRetirement && FAILED(hr)) error(hr);
+    // An outstanding work callback keeps the work object alive to its return.
+    if (retirementWork) CloseThreadpoolWork(retirementWork);
+    if (retirementModule) FreeLibrary(retirementModule);
   }
   void error(HRESULT hr) {
     if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, dxvk::umd::ddiResult(hr));
@@ -1468,7 +1504,7 @@ HRESULT createDdiDevice(
   if (!luid || !h.pDrvPrivate || uintptr_t(h.pDrvPrivate) % alignof(DevicePrivate)
       || !callbacks || !callbacks->pfnSetErrorCb || !table)
     return E_INVALIDARG;
-  auto owner = std::make_shared<Device>();
+  auto owner = std::shared_ptr<Device>(new Device, Device::release);
   try {
     std::lock_guard<std::mutex> lock(deviceStorageMutex);
     if (!deviceStorage.emplace(h.pDrvPrivate, DeviceRecord{DevicePhase::Creating, owner}).second)

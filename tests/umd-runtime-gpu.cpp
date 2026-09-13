@@ -17,6 +17,14 @@ static std::atomic<unsigned> checks{0};
 static std::atomic<unsigned> runtimeHookDepth{0}, errorHookDepth{0}, backendDrains{0};
 static std::function<void()> errorHook;
 static bool trackBackendDrain = false;
+struct WorkerDrain {
+  HANDLE returned = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  HANDLE closed = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  std::atomic<DWORD> originThread{0};
+  WorkerDrain() { CHECK(returned && closed); }
+  ~WorkerDrain() { CloseHandle(returned); CloseHandle(closed); }
+};
+static std::shared_ptr<WorkerDrain> workerDrain;
 struct Fixture {
   char device, adapter, contextCookie;
   LUID luid{0x13579024, -11};
@@ -41,6 +49,7 @@ struct Fixture {
   char retireAt = 0;
   void* pendingToken = nullptr;
   unsigned buffer = 0;
+  HANDLE closedEvent = nullptr;
   std::function<void(char)> outerHook;
   void retire(char point) {
     ++callbackCalls;
@@ -90,7 +99,9 @@ static HRESULT APIENTRY destroyContext(HANDLE h, const D3DDDICB_DESTROYCONTEXT* 
   CHECK(h == &f->device && args->hContext == &f->contextCookie);
   ++f->contextCloses;
   if (f->terminalBorrow) CHECK(f->borrowed.callbacks->status(f->borrowed.owner) == S_OK);
-  f->retire('D'); return S_OK;
+  f->retire('D');
+  if (f->closedEvent) CHECK(SetEvent(f->closedEvent));
+  return S_OK;
 }
 static HRESULT APIENTRY escape(HANDLE h, const D3DDDICB_ESCAPE* args) {
   CHECK(h == &f->adapter && args->hDevice == &f->device && args->hContext == &f->contextCookie);
@@ -195,7 +206,8 @@ static unsigned earlyBackends = 0;
 // lock, so teardown on the interrupted callback stack cannot pass this test.
 class DrainMarker final : public IUnknown {
 public:
-  explicit DrainMarker(const dxvk::umd::RuntimeBackend& value) : bridge(value) {}
+  explicit DrainMarker(const dxvk::umd::RuntimeBackend& value)
+  : bridge(value), worker(workerDrain) {}
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override {
     if (!out) return E_POINTER;
     *out = nullptr;
@@ -211,6 +223,13 @@ public:
 private:
   ~DrainMarker() {
     CHECK(runtimeHookDepth == 0 && errorHookDepth == 0);
+    if (worker) {
+      // A real backend drain may join the very thread whose runtime callback
+      // requested retirement. It must run elsewhere and allow that callback
+      // and its complete bridge call to return before joining it.
+      CHECK(worker->originThread != 0 && worker->originThread != GetCurrentThreadId());
+      CHECK(WaitForSingleObject(worker->returned, 3000) == WAIT_OBJECT_0);
+    }
     HANDLE worker = CreateThread(nullptr, 0, completed, this, 0, nullptr);
     CHECK(worker && WaitForSingleObject(worker, 3000) == WAIT_OBJECT_0);
     DWORD result = 1; CHECK(GetExitCodeThread(worker, &result) && result == 0);
@@ -225,6 +244,7 @@ private:
   }
   std::atomic<ULONG> references{1};
   dxvk::umd::RuntimeBackend bridge;
+  std::shared_ptr<WorkerDrain> worker;
 };
 static const GUID drainGuid = {0x4fef0123, 0x4241, 0x4abd, {0x91,0x01,0x01,0x02,0x03,0x04,0x05,0x06}};
 HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
@@ -339,6 +359,81 @@ static void outerRetirement() {
     table.pfnDestroyDevice(args.hDrvDevice);
     CHECK(VirtualFree(storage, 0, MEM_RELEASE));
     trackBackendDrain = false;
+  }
+}
+
+static DWORD WINAPI runTask(void* task) {
+  (*static_cast<std::function<void()>*>(task))();
+  return 0;
+}
+static void finishTask(HANDLE thread) {
+  CHECK(thread && WaitForSingleObject(thread, 3000) == WAIT_OBJECT_0);
+  DWORD result = 1; CHECK(GetExitCodeThread(thread, &result) && result == 0);
+  CloseHandle(thread);
+}
+static void workerRetirement() {
+  // No device table wrapper is entered around the bridge invocation. Exercise
+  // synchronous callback reentry, a backend RenderCb worker, and a callback
+  // that joins a separate DestroyDevice worker while holding the runtime lock.
+  for (unsigned mode = 0; mode < 3; ++mode) {
+    auto scope = setup();
+    f->gpu->close(); f->bridge = {}; f->gpu.reset();
+    earlyBackendFail = false; trackBackendDrain = true;
+    auto control = std::make_shared<WorkerDrain>(); workerDrain = control;
+    f->closedEvent = control->closed;
+    const unsigned before = backendDrains;
+    D3D10DDI_DEVICEFUNCS table{};
+    D3D10DDI_CORELAYER_DEVICECALLBACKS callbacks{}; callbacks.pfnSetErrorCb = setError;
+    auto kernel = f->input;
+    const SIZE_T privateSize = VioGpuDxvkPrivateDeviceSize();
+    void* storage = VirtualAlloc(nullptr, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    CHECK(storage && privateSize <= 4096);
+    D3D10DDIARG_CREATEDEVICE args{};
+    args.hDrvDevice.pDrvPrivate = storage; args.hRTDevice.handle = &f->device;
+    args.pUMCallbacks = &callbacks; args.pKTCallbacks = &kernel; args.pDeviceFuncs = &table;
+    CHECK(dxvk::umd::createAdapterDevice(f->identity, &args) == S_OK);
+    const auto bridge = f->bridge;
+    mwd_allocation a{};
+    if (mode == 1) a = buffer();
+    std::atomic<bool> retired{false};
+    f->outerHook = [&](char point) {
+      if (point != (mode == 1 ? 'R' : 'Q')) return;
+      f->outerHook = {};
+      control->originThread = GetCurrentThreadId();
+      std::function<void()> retire = [&] {
+        table.pfnDestroyDevice(args.hDrvDevice);
+        retired = true;
+        std::memset(storage, 0xce, privateSize);
+        D3D10DDI_COUNTER_INFO rejected{}; rejected.NumDetectableParallelUnits = 99;
+        table.pfnCheckCounterInfo(args.hDrvDevice, &rejected);
+        CHECK(rejected.NumDetectableParallelUnits == 99);
+        DWORD previous = 0;
+        CHECK(VirtualProtect(storage, 4096, PAGE_NOACCESS, &previous));
+      };
+      if (mode == 2) finishTask(CreateThread(nullptr, 0, runTask, &retire, 0, nullptr));
+      else retire();
+      CHECK(retired && backendDrains == before && f->contextCloses == 0);
+    };
+    std::function<void()> invoke = [&] {
+      const HRESULT hr = mode == 1 ? send(a) : bridge.create.callbacks->status(bridge.create.owner);
+      CHECK(hr == S_OK && retired);
+      CHECK(SetEvent(control->returned));
+    };
+    if (mode == 0) invoke();
+    else finishTask(CreateThread(nullptr, 0, runTask, &invoke, 0, nullptr));
+    CHECK(WaitForSingleObject(control->closed, 3000) == WAIT_OBJECT_0);
+    CHECK(bridge.create.callbacks->status(bridge.create.owner) == DXGI_ERROR_DEVICE_REMOVED);
+    CHECK(backendDrains == before + 1 && f->contextCloses == 1 && f->allocations.empty());
+    const unsigned calls = f->callbackCalls;
+    CHECK(bridge.create.callbacks->status(bridge.create.owner) == DXGI_ERROR_DEVICE_REMOVED);
+    CHECK(f->callbackCalls == calls);
+    table.pfnDestroyDevice(args.hDrvDevice); // Key lookup must not read protected storage.
+    DWORD previous = 0;
+    CHECK(VirtualProtect(storage, 4096, PAGE_READWRITE, &previous));
+    for (SIZE_T i = 0; i < privateSize; ++i)
+      CHECK(static_cast<unsigned char*>(storage)[i] == 0xce);
+    CHECK(VirtualFree(storage, 0, MEM_RELEASE));
+    workerDrain.reset(); trackBackendDrain = false;
   }
 }
 
@@ -471,5 +566,6 @@ int main() {
   }
   CHECK(earlyBackends == 2);
   outerRetirement();
-  std::printf("PASS %u runtime GPU checks; production entry early BO callbacks, shared owners, map/submit/reset and outer DDI retirement; backend-drains=%u\n", checks.load(), backendDrains.load());
+  workerRetirement();
+  std::printf("PASS %u runtime GPU checks; production entry early BO callbacks, shared owners, map/submit/reset and outer DDI/worker retirement; backend-drains=%u\n", checks.load(), backendDrains.load());
 }

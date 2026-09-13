@@ -93,6 +93,7 @@ Native OpenAdapter10_2 negotiates exact identity/generation; incomplete producti
 Production entry/lifetime fixtures use controlled callbacks and a WARP backend; they are not ordinary Microsoft runtime activation.
 Native resource creation unwinds failed staged owners; destruction retires private storage before callbacks. Allocation identity/reset checks and cleanup fixtures are included.
 Native backend receives copied runtime callbacks before vkCreateDevice; Turnip internal BO allocation/map/submit use one runtime-owned context through private Mesa v1. Actual GPU/system-runtime acceptance pending.
+All published device DDIs retain independent callable state; callback reentry can retire/reuse device storage, with backend shutdown deferred until enclosing DDIs unwind. Controlled cross-worker drain tests included; asynchronous retirement without an outer DDI and unrelated live resource reclamation remain unadmitted.
 Windowed-blit Present development path uses runtime allocations and synchronized pixel copies; target proof pending.
 Registration, ordinary runtime activation, complete required table, sharing and primary/flip Present remain pending.
 "@ | Set-Content (Join-Path $OutputDirectory 'STATUS.txt')

@@ -16,6 +16,8 @@
 #include <array>
 #include <mutex>
 #include <unordered_map>
+#include <type_traits>
+#include <atomic>
 
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -39,24 +41,95 @@ struct Device {
   Shader* geometryShader = nullptr;
   Shader* pixelShader = nullptr;
   InputLayout* inputLayout = nullptr;
+  bool closing = false;
+  std::atomic<bool> retired{false};
+  bool reportRetirement = false;
+  HRESULT close() noexcept {
+    if (closing) return S_OK;
+    closing = true;
+    HRESULT result = E_FAIL;
+    try {
+      // This runs after the final enclosing DDI has unwound, outside registry
+      // and runtime-callback locks. Backend workers can still use RuntimeGpu
+      // until context/device release has fully drained them.
+      context.Reset(); backend.Reset();
+      result = gpu ? gpu->close() : S_OK;
+      const HRESULT presentResult = memory.close();
+      if (FAILED(presentResult)) result = presentResult;
+    } catch (...) {}
+    return result;
+  }
   ~Device() {
-    // Backend drain still needs completion/status callbacks. Detach the owner
-    // only after releasing its context/device, including failed creation.
-    context.Reset(); backend.Reset();
-    if (gpu) gpu->close();
+    const HRESULT hr = close();
+    if (reportRetirement && FAILED(hr)) error(hr);
   }
   void error(HRESULT hr) {
     if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, dxvk::umd::ddiResult(hr));
   }
 };
-enum class DevicePhase { Creating, Live, Destroying };
+// Runtime private bytes are only a stable registration key. Callable state is
+// separately owned, so nested DestroyDevice may reclaim/poison/reuse those
+// bytes while an outer DDI still unwinds.
+struct DevicePrivate { uintptr_t reserved; };
+enum class DevicePhase { Creating, Live };
+struct DeviceRecord {
+  DevicePhase phase;
+  std::shared_ptr<Device> owner;
+};
 std::mutex deviceStorageMutex;
-std::unordered_map<void*, DevicePhase> deviceStorage;
+std::unordered_map<void*, DeviceRecord> deviceStorage;
 
-void releaseDeviceStorage(void* storage) {
+void releaseDeviceStorage(void* storage, const std::shared_ptr<Device>& owner) {
   std::lock_guard<std::mutex> lock(deviceStorageMutex);
-  deviceStorage.erase(storage);
+  const auto entry = deviceStorage.find(storage);
+  if (entry != deviceStorage.end() && entry->second.owner == owner)
+    deviceStorage.erase(entry);
 }
+
+struct DeviceOperation {
+  void* storage;
+  std::shared_ptr<Device> owner;
+  DeviceOperation* previous = nullptr;
+  static thread_local DeviceOperation* current;
+  explicit DeviceOperation(void* value) : storage(value) {
+    {
+      std::lock_guard<std::mutex> lock(deviceStorageMutex);
+      const auto entry = deviceStorage.find(storage);
+      if (entry != deviceStorage.end() && entry->second.phase == DevicePhase::Live)
+        owner = entry->second.owner;
+    }
+    previous = current;
+    current = this;
+  }
+  ~DeviceOperation() {
+    current = previous;
+    // Drop the final callable owner only after every local DDI object/guard
+    // and callback lock was destroyed. No runtime private pointer is read.
+    owner.reset();
+  }
+};
+thread_local DeviceOperation* DeviceOperation::current = nullptr;
+
+// All published D3D device entries pass through this typed WDK-ABI wrapper.
+// Thread-local operation lookup preserves the old owner when a callback
+// reuses the same runtime storage for a new device before the outer DDI ends.
+template<typename Function, Function function> struct DeviceEntry;
+template<typename Result, typename... Args,
+    Result (APIENTRY *function)(D3D10DDI_HDEVICE, Args...)>
+struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
+  static Result APIENTRY call(D3D10DDI_HDEVICE h, Args... args) {
+    DeviceOperation operation(h.pDrvPrivate);
+    if (!operation.owner) {
+      if constexpr (std::is_void_v<Result>) return;
+      // The sole BOOL entry is IsStagingBusy; a retired owner is not ready.
+      else if constexpr (std::is_same_v<Result, BOOL>) return TRUE;
+      else return Result{};
+    }
+    return function(h, args...);
+  }
+};
+template<auto function>
+constexpr auto deviceEntry = &DeviceEntry<decltype(function), function>::call;
 struct Resource {
   Device* owner = nullptr;
   ComPtr<ID3D11Resource> backend;
@@ -126,7 +199,11 @@ struct Query {
   bool begun = false;
   bool issued = false;
 };
-Device* get(D3D10DDI_HDEVICE h) { return static_cast<Device*>(h.pDrvPrivate); }
+Device* get(D3D10DDI_HDEVICE h) {
+  for (auto operation = DeviceOperation::current; operation; operation = operation->previous)
+    if (operation->storage == h.pDrvPrivate) return operation->owner.get();
+  return nullptr;
+}
 Resource* get(D3D10DDI_HRESOURCE h) { return static_cast<Resource*>(h.pDrvPrivate); }
 RenderTarget* get(D3D10DDI_HRENDERTARGETVIEW h) { return static_cast<RenderTarget*>(h.pDrvPrivate); }
 ShaderView* get(D3D10DDI_HSHADERRESOURCEVIEW h) { return static_cast<ShaderView*>(h.pDrvPrivate); }
@@ -317,7 +394,7 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
     if (hr == S_OK) {
       std::lock_guard<std::mutex> lock(resourceStorageMutex);
       const auto entry = resourceStorage.find(out.pDrvPrivate);
-      if (entry == resourceStorage.end() || entry->second.reservation != reservation)
+      if (device->retired || entry == resourceStorage.end() || entry->second.reservation != reservation)
         hr = DXGI_ERROR_DEVICE_REMOVED;
       else {
         new (out.pDrvPrivate) Resource(std::move(staged));
@@ -1321,33 +1398,29 @@ void APIENTRY checkCounter(D3D10DDI_HDEVICE h, D3D10DDI_QUERY query,
     ? DXGI_DDI_ERR_UNSUPPORTED : E_INVALIDARG);
 }
 void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
+  std::shared_ptr<Device> owner;
   {
     std::lock_guard<std::mutex> lock(deviceStorageMutex);
     const auto entry = deviceStorage.find(h.pDrvPrivate);
-    if (entry == deviceStorage.end() || entry->second != DevicePhase::Live) return;
-    entry->second = DevicePhase::Destroying;
+    if (entry == deviceStorage.end() || entry->second.phase != DevicePhase::Live) return;
+    owner = std::move(entry->second.owner);
+    owner->retired = true;
+    owner->reportRetirement = true;
+    deviceStorage.erase(entry);
   }
-  auto device = get(h);
-  const auto report = device->callbacks.pfnSetErrorCb;
-  const auto runtime = device->runtime;
-  HRESULT hr = E_FAIL;
-  try {
-    device->context.Reset(); device->backend.Reset();
-    hr = device->gpu ? device->gpu->close() : S_OK;
-    const HRESULT presentClose = device->memory.close();
-    if (FAILED(presentClose)) hr = presentClose;
-  } catch (...) {}
-  device->~Device();
-  releaseDeviceStorage(h.pDrvPrivate);
-  // A synchronous SetError/DestroyContext callback may reenter destruction.
-  // State is already retired, and no access to Device follows this callback.
-  if (FAILED(hr)) report(runtime, dxvk::umd::ddiResult(hr));
+  // Do not release backend/context or close callbacks under a nested runtime
+  // callback. Active outer DDI operations retain this owner until their local
+  // guards and callback locks have unwound. Ordinary destruction has no other
+  // operation owner and still completes synchronously before returning.
+  owner.reset();
 }
 
 HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
   if (!args || !args->hDevice || !args->hSurfaceToPresent)
     return E_INVALIDARG;
-  auto device = reinterpret_cast<Device*>(args->hDevice);
+  DeviceOperation operation(reinterpret_cast<void*>(args->hDevice));
+  auto device = operation.owner.get();
+  if (!device) return DXGI_ERROR_DEVICE_REMOVED;
   auto resource = reinterpret_cast<Resource*>(args->hSurfaceToPresent);
   if (resource->owner != device || !resource->backend || !resource->allocation.handle()
       || args->SrcSubResourceIndex || args->DstSubResourceIndex
@@ -1377,13 +1450,14 @@ HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
     } unmap = {device->context.Get(), resource->presentReadback.Get()};
     hr = device->memory.upload(resource->allocation, map.pData, map.RowPitch);
     if (FAILED(hr)) return hr;
+    if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
     return device->memory.present(resource->allocation, *args);
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }
 }
 }
 
-extern "C" SIZE_T APIENTRY VioGpuDxvkPrivateDeviceSize() { return sizeof(Device); }
+extern "C" SIZE_T APIENTRY VioGpuDxvkPrivateDeviceSize() { return sizeof(DevicePrivate); }
 
 namespace {
 HRESULT createDdiDevice(
@@ -1391,18 +1465,23 @@ HRESULT createDdiDevice(
     const D3D10DDI_CORELAYER_DEVICECALLBACKS* callbacks, D3D10DDI_DEVICEFUNCS* table,
     std::shared_ptr<const dxvk::umd::AdapterIdentity> identity = {},
     const D3D10DDIARG_CREATEDEVICE* native = nullptr) {
-  if (!luid || !h.pDrvPrivate || uintptr_t(h.pDrvPrivate) % alignof(Device)
+  if (!luid || !h.pDrvPrivate || uintptr_t(h.pDrvPrivate) % alignof(DevicePrivate)
       || !callbacks || !callbacks->pfnSetErrorCb || !table)
     return E_INVALIDARG;
+  auto owner = std::make_shared<Device>();
   try {
     std::lock_guard<std::mutex> lock(deviceStorageMutex);
-    if (!deviceStorage.emplace(h.pDrvPrivate, DevicePhase::Creating).second)
+    if (!deviceStorage.emplace(h.pDrvPrivate, DeviceRecord{DevicePhase::Creating, owner}).second)
       return E_INVALIDARG;
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }
-  auto device = new (h.pDrvPrivate) Device();
-  auto cleanup = [](Device* value) { value->~Device(); releaseDeviceStorage(value); };
-  std::unique_ptr<Device, decltype(cleanup)> guard(device, cleanup);
+  struct Creation {
+    void* storage;
+    const std::shared_ptr<Device>& owner;
+    bool published = false;
+    ~Creation() { if (!published) releaseDeviceStorage(storage, owner); }
+  } guard{h.pDrvPrivate, owner};
+  auto device = owner.get();
   device->runtime = runtime;
   // Only the callback used by this exact interface is read. The runtime owns
   // its original table and may have supplied an older WDK structure size.
@@ -1424,98 +1503,98 @@ HRESULT createDdiDevice(
   if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
   if (!device->backend || !device->context) return E_FAIL;
   *table = {};
-  table->pfnCalcPrivateResourceSize = resourceSize;
-  table->pfnCreateResource = createResource;
-  table->pfnDestroyResource = destroyResource;
-  table->pfnCalcPrivateShaderResourceViewSize = shaderViewSize;
-  table->pfnCreateShaderResourceView = createShaderView;
-  table->pfnDestroyShaderResourceView = destroyShaderView;
-  table->pfnGenMips = generateMips;
-  table->pfnVsSetShaderResources = setShaderResources<dxvk::umd::ShaderStage::Vertex>;
-  table->pfnGsSetShaderResources = setShaderResources<dxvk::umd::ShaderStage::Geometry>;
-  table->pfnPsSetShaderResources = setShaderResources<dxvk::umd::ShaderStage::Pixel>;
-  table->pfnCalcPrivateSamplerSize = samplerSize;
-  table->pfnCreateSampler = createSampler;
-  table->pfnDestroySampler = destroySampler;
-  table->pfnVsSetSamplers = setSamplers<dxvk::umd::ShaderStage::Vertex>;
-  table->pfnGsSetSamplers = setSamplers<dxvk::umd::ShaderStage::Geometry>;
-  table->pfnPsSetSamplers = setSamplers<dxvk::umd::ShaderStage::Pixel>;
-  table->pfnCalcPrivateRenderTargetViewSize = targetSize;
-  table->pfnCreateRenderTargetView = createTarget;
-  table->pfnDestroyRenderTargetView = destroyTarget;
-  table->pfnClearRenderTargetView = clearTarget;
-  table->pfnCalcPrivateDepthStencilViewSize = depthViewSize;
-  table->pfnCreateDepthStencilView = createDepthView;
-  table->pfnDestroyDepthStencilView = destroyDepthView;
-  table->pfnClearDepthStencilView = clearDepthView;
-  table->pfnCalcPrivateDepthStencilStateSize = depthStateSize;
-  table->pfnCreateDepthStencilState = createDepthState;
-  table->pfnDestroyDepthStencilState = destroyDepthState;
-  table->pfnSetDepthStencilState = setDepthState;
-  table->pfnResourceCopy = copyResource;
-  table->pfnResourceResolveSubresource = resolveResource;
-  table->pfnCheckFormatSupport = checkFormat;
-  table->pfnCheckMultisampleQualityLevels = checkMultisample;
-  table->pfnResourceCopyRegion = copyRegion;
-  table->pfnResourceUpdateSubresourceUP = updateResource;
-  table->pfnDefaultConstantBufferUpdateSubresourceUP = updateResource;
-  table->pfnCalcPrivateQuerySize = querySize;
-  table->pfnCreateQuery = createQuery;
-  table->pfnDestroyQuery = destroyQuery;
-  table->pfnQueryBegin = beginQuery;
-  table->pfnQueryEnd = endQuery;
-  table->pfnQueryGetData = getQueryData;
-  table->pfnResourceMap = mapResource;
-  table->pfnResourceUnmap = unmapResource;
-  table->pfnStagingResourceMap = mapResource;
-  table->pfnStagingResourceUnmap = unmapResource;
-  table->pfnResourceIsStagingBusy = isStagingBusy;
-  table->pfnResourceReadAfterWriteHazard = resourceHazard;
-  table->pfnShaderResourceViewReadAfterWriteHazard = shaderViewHazard;
-  table->pfnDynamicIABufferMapDiscard = mapResource;
-  table->pfnDynamicIABufferMapNoOverwrite = mapResource;
-  table->pfnDynamicIABufferUnmap = unmapResource;
-  table->pfnDynamicConstantBufferMapDiscard = mapResource;
-  table->pfnDynamicConstantBufferUnmap = unmapResource;
-  table->pfnDynamicResourceMapDiscard = mapResource;
-  table->pfnDynamicResourceUnmap = unmapResource;
-  table->pfnCalcPrivateShaderSize = shaderSize;
-  table->pfnCreateVertexShader = createVertexShader;
-  table->pfnCreatePixelShader = createPixelShader;
-  table->pfnCreateGeometryShader = createGeometryShader;
-  table->pfnDestroyShader = destroyShader;
-  table->pfnVsSetShader = setVertexShader;
-  table->pfnPsSetShader = setPixelShader;
-  table->pfnGsSetShader = setGeometryShader;
-  table->pfnVsSetConstantBuffers = setConstantBuffers<dxvk::umd::ShaderStage::Vertex>;
-  table->pfnGsSetConstantBuffers = setConstantBuffers<dxvk::umd::ShaderStage::Geometry>;
-  table->pfnPsSetConstantBuffers = setConstantBuffers<dxvk::umd::ShaderStage::Pixel>;
-  table->pfnSetRenderTargets = setRenderTargets;
-  table->pfnSetViewports = setViewports;
-  table->pfnSetScissorRects = setScissors;
-  table->pfnCalcPrivateRasterizerStateSize = rasterizerSize;
-  table->pfnCreateRasterizerState = createRasterizer;
-  table->pfnDestroyRasterizerState = destroyRasterizer;
-  table->pfnSetRasterizerState = setRasterizer;
-  table->pfnIaSetTopology = setTopology;
-  table->pfnIaSetIndexBuffer = setIndexBuffer;
-  table->pfnIaSetVertexBuffers = setVertexBuffers;
-  table->pfnCalcPrivateElementLayoutSize = layoutSize;
-  table->pfnCreateElementLayout = createLayout;
-  table->pfnDestroyElementLayout = destroyLayout;
-  table->pfnIaSetInputLayout = setLayout;
-  table->pfnCalcPrivateBlendStateSize = blendSize;
-  table->pfnCreateBlendState = createBlend;
-  table->pfnDestroyBlendState = destroyBlend;
-  table->pfnSetBlendState = setBlend;
-  table->pfnDraw = draw;
-  table->pfnDrawIndexed = drawIndexed;
-  table->pfnDrawInstanced = drawInstanced;
-  table->pfnDrawIndexedInstanced = drawIndexedInstanced;
-  table->pfnFlush = flush;
-  table->pfnRelocateDeviceFuncs = relocateDeviceFunctions;
-  table->pfnCheckCounterInfo = counterInfo;
-  table->pfnCheckCounter = checkCounter;
+  table->pfnCalcPrivateResourceSize = deviceEntry<resourceSize>;
+  table->pfnCreateResource = deviceEntry<createResource>;
+  table->pfnDestroyResource = deviceEntry<destroyResource>;
+  table->pfnCalcPrivateShaderResourceViewSize = deviceEntry<shaderViewSize>;
+  table->pfnCreateShaderResourceView = deviceEntry<createShaderView>;
+  table->pfnDestroyShaderResourceView = deviceEntry<destroyShaderView>;
+  table->pfnGenMips = deviceEntry<generateMips>;
+  table->pfnVsSetShaderResources = deviceEntry<setShaderResources<dxvk::umd::ShaderStage::Vertex>>;
+  table->pfnGsSetShaderResources = deviceEntry<setShaderResources<dxvk::umd::ShaderStage::Geometry>>;
+  table->pfnPsSetShaderResources = deviceEntry<setShaderResources<dxvk::umd::ShaderStage::Pixel>>;
+  table->pfnCalcPrivateSamplerSize = deviceEntry<samplerSize>;
+  table->pfnCreateSampler = deviceEntry<createSampler>;
+  table->pfnDestroySampler = deviceEntry<destroySampler>;
+  table->pfnVsSetSamplers = deviceEntry<setSamplers<dxvk::umd::ShaderStage::Vertex>>;
+  table->pfnGsSetSamplers = deviceEntry<setSamplers<dxvk::umd::ShaderStage::Geometry>>;
+  table->pfnPsSetSamplers = deviceEntry<setSamplers<dxvk::umd::ShaderStage::Pixel>>;
+  table->pfnCalcPrivateRenderTargetViewSize = deviceEntry<targetSize>;
+  table->pfnCreateRenderTargetView = deviceEntry<createTarget>;
+  table->pfnDestroyRenderTargetView = deviceEntry<destroyTarget>;
+  table->pfnClearRenderTargetView = deviceEntry<clearTarget>;
+  table->pfnCalcPrivateDepthStencilViewSize = deviceEntry<depthViewSize>;
+  table->pfnCreateDepthStencilView = deviceEntry<createDepthView>;
+  table->pfnDestroyDepthStencilView = deviceEntry<destroyDepthView>;
+  table->pfnClearDepthStencilView = deviceEntry<clearDepthView>;
+  table->pfnCalcPrivateDepthStencilStateSize = deviceEntry<depthStateSize>;
+  table->pfnCreateDepthStencilState = deviceEntry<createDepthState>;
+  table->pfnDestroyDepthStencilState = deviceEntry<destroyDepthState>;
+  table->pfnSetDepthStencilState = deviceEntry<setDepthState>;
+  table->pfnResourceCopy = deviceEntry<copyResource>;
+  table->pfnResourceResolveSubresource = deviceEntry<resolveResource>;
+  table->pfnCheckFormatSupport = deviceEntry<checkFormat>;
+  table->pfnCheckMultisampleQualityLevels = deviceEntry<checkMultisample>;
+  table->pfnResourceCopyRegion = deviceEntry<copyRegion>;
+  table->pfnResourceUpdateSubresourceUP = deviceEntry<updateResource>;
+  table->pfnDefaultConstantBufferUpdateSubresourceUP = deviceEntry<updateResource>;
+  table->pfnCalcPrivateQuerySize = deviceEntry<querySize>;
+  table->pfnCreateQuery = deviceEntry<createQuery>;
+  table->pfnDestroyQuery = deviceEntry<destroyQuery>;
+  table->pfnQueryBegin = deviceEntry<beginQuery>;
+  table->pfnQueryEnd = deviceEntry<endQuery>;
+  table->pfnQueryGetData = deviceEntry<getQueryData>;
+  table->pfnResourceMap = deviceEntry<mapResource>;
+  table->pfnResourceUnmap = deviceEntry<unmapResource>;
+  table->pfnStagingResourceMap = deviceEntry<mapResource>;
+  table->pfnStagingResourceUnmap = deviceEntry<unmapResource>;
+  table->pfnResourceIsStagingBusy = deviceEntry<isStagingBusy>;
+  table->pfnResourceReadAfterWriteHazard = deviceEntry<resourceHazard>;
+  table->pfnShaderResourceViewReadAfterWriteHazard = deviceEntry<shaderViewHazard>;
+  table->pfnDynamicIABufferMapDiscard = deviceEntry<mapResource>;
+  table->pfnDynamicIABufferMapNoOverwrite = deviceEntry<mapResource>;
+  table->pfnDynamicIABufferUnmap = deviceEntry<unmapResource>;
+  table->pfnDynamicConstantBufferMapDiscard = deviceEntry<mapResource>;
+  table->pfnDynamicConstantBufferUnmap = deviceEntry<unmapResource>;
+  table->pfnDynamicResourceMapDiscard = deviceEntry<mapResource>;
+  table->pfnDynamicResourceUnmap = deviceEntry<unmapResource>;
+  table->pfnCalcPrivateShaderSize = deviceEntry<shaderSize>;
+  table->pfnCreateVertexShader = deviceEntry<createVertexShader>;
+  table->pfnCreatePixelShader = deviceEntry<createPixelShader>;
+  table->pfnCreateGeometryShader = deviceEntry<createGeometryShader>;
+  table->pfnDestroyShader = deviceEntry<destroyShader>;
+  table->pfnVsSetShader = deviceEntry<setVertexShader>;
+  table->pfnPsSetShader = deviceEntry<setPixelShader>;
+  table->pfnGsSetShader = deviceEntry<setGeometryShader>;
+  table->pfnVsSetConstantBuffers = deviceEntry<setConstantBuffers<dxvk::umd::ShaderStage::Vertex>>;
+  table->pfnGsSetConstantBuffers = deviceEntry<setConstantBuffers<dxvk::umd::ShaderStage::Geometry>>;
+  table->pfnPsSetConstantBuffers = deviceEntry<setConstantBuffers<dxvk::umd::ShaderStage::Pixel>>;
+  table->pfnSetRenderTargets = deviceEntry<setRenderTargets>;
+  table->pfnSetViewports = deviceEntry<setViewports>;
+  table->pfnSetScissorRects = deviceEntry<setScissors>;
+  table->pfnCalcPrivateRasterizerStateSize = deviceEntry<rasterizerSize>;
+  table->pfnCreateRasterizerState = deviceEntry<createRasterizer>;
+  table->pfnDestroyRasterizerState = deviceEntry<destroyRasterizer>;
+  table->pfnSetRasterizerState = deviceEntry<setRasterizer>;
+  table->pfnIaSetTopology = deviceEntry<setTopology>;
+  table->pfnIaSetIndexBuffer = deviceEntry<setIndexBuffer>;
+  table->pfnIaSetVertexBuffers = deviceEntry<setVertexBuffers>;
+  table->pfnCalcPrivateElementLayoutSize = deviceEntry<layoutSize>;
+  table->pfnCreateElementLayout = deviceEntry<createLayout>;
+  table->pfnDestroyElementLayout = deviceEntry<destroyLayout>;
+  table->pfnIaSetInputLayout = deviceEntry<setLayout>;
+  table->pfnCalcPrivateBlendStateSize = deviceEntry<blendSize>;
+  table->pfnCreateBlendState = deviceEntry<createBlend>;
+  table->pfnDestroyBlendState = deviceEntry<destroyBlend>;
+  table->pfnSetBlendState = deviceEntry<setBlend>;
+  table->pfnDraw = deviceEntry<draw>;
+  table->pfnDrawIndexed = deviceEntry<drawIndexed>;
+  table->pfnDrawInstanced = deviceEntry<drawInstanced>;
+  table->pfnDrawIndexedInstanced = deviceEntry<drawIndexedInstanced>;
+  table->pfnFlush = deviceEntry<flush>;
+  table->pfnRelocateDeviceFuncs = deviceEntry<relocateDeviceFunctions>;
+  table->pfnCheckCounterInfo = deviceEntry<counterInfo>;
+  table->pfnCheckCounter = deviceEntry<checkCounter>;
   table->pfnDestroyDevice = destroyDevice;
   if (dxgiTable) {
     *dxgiTable = {};
@@ -1523,9 +1602,9 @@ HRESULT createDdiDevice(
   }
   {
     std::lock_guard<std::mutex> lock(deviceStorageMutex);
-    deviceStorage.at(h.pDrvPrivate) = DevicePhase::Live;
+    deviceStorage.at(h.pDrvPrivate).phase = DevicePhase::Live;
   }
-  guard.release();
+  guard.published = true;
   return S_OK;
 }
 }

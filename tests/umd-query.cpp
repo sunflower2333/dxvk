@@ -18,6 +18,12 @@ int main() {
   CHECK(!queryInfo(D3D10DDI_QUERY_PIPELINESTATS, 0, info) && info.size == 0);
   CHECK(!queryInfo(D3D10DDI_QUERY_EVENT, D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info) && info.size == 0);
   CHECK(!queryInfo(static_cast<D3D10DDI_QUERY>(0x7fffffff), 0, info));
+  CHECK(queryInfo(D3D10DDI_QUERY_OCCLUSIONPREDICATE, 0, info));
+  CHECK(info.predicate && info.beginRequired && !info.hint && info.size == sizeof(BOOL));
+  CHECK(queryInfo(D3D10DDI_QUERY_OCCLUSIONPREDICATE, D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info));
+  CHECK(info.predicate && info.hint && info.type == D3D11_QUERY_OCCLUSION_PREDICATE);
+  CHECK(readQueryData(info, nullptr, 0, 0, [](void*, UINT, UINT) { std::abort(); return S_OK; }) == E_INVALIDARG);
+  CHECK(!queryInfo(D3D10DDI_QUERY_OCCLUSIONPREDICATE, 2, info));
   CHECK(queryInfo(D3D10DDI_QUERY_TIMESTAMP, 0, info));
   const UINT64 original = 0xaaaaaaaa55555555ull;
   const UINT64 expected = 0x12345678fedcba98ull;

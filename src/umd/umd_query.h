@@ -14,11 +14,14 @@ struct QueryInfo {
   D3D11_QUERY type = D3D11_QUERY_EVENT;
   UINT size = 0;
   bool beginRequired = false;
+  bool predicate = false;
+  bool hint = false;
 };
 
 inline bool queryInfo(D3D10DDI_QUERY type, UINT miscFlags, QueryInfo& result) {
   result = {};
-  if (miscFlags) return false;
+  if (miscFlags & ~D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT) return false;
+  if (miscFlags && type != D3D10DDI_QUERY_OCCLUSIONPREDICATE) return false;
   switch (type) {
     case D3D10DDI_QUERY_EVENT:
       result = {D3D11_QUERY_EVENT, sizeof(BOOL), false}; return true;
@@ -31,6 +34,8 @@ inline bool queryInfo(D3D10DDI_QUERY type, UINT miscFlags, QueryInfo& result) {
       static_assert(offsetof(D3D10_DDI_QUERY_DATA_TIMESTAMP_DISJOINT, Disjoint)
         == offsetof(D3D11_QUERY_DATA_TIMESTAMP_DISJOINT, Disjoint));
       result = {D3D11_QUERY_TIMESTAMP_DISJOINT, sizeof(D3D11_QUERY_DATA_TIMESTAMP_DISJOINT), true}; return true;
+    case D3D10DDI_QUERY_OCCLUSIONPREDICATE:
+      result = {D3D11_QUERY_OCCLUSION_PREDICATE, sizeof(BOOL), true, true, miscFlags != 0}; return true;
     default: return false;
   }
 }
@@ -41,7 +46,7 @@ HRESULT readQueryData(const QueryInfo& info, void* data, UINT size, UINT flags, 
   // through local storage even when the backend writes before returning.
   alignas(D3D11_QUERY_DATA_TIMESTAMP_DISJOINT)
   std::array<unsigned char, sizeof(D3D11_QUERY_DATA_TIMESTAMP_DISJOINT)> scratch = {};
-  if (!info.size || info.size > scratch.size() || (flags & ~D3D10_DDI_GET_DATA_DO_NOT_FLUSH)
+  if (info.hint || !info.size || info.size > scratch.size() || (flags & ~D3D10_DDI_GET_DATA_DO_NOT_FLUSH)
       || (data ? size != info.size : size != 0)) return E_INVALIDARG;
   const UINT apiFlags = (flags & D3D10_DDI_GET_DATA_DO_NOT_FLUSH) ? D3D11_ASYNC_GETDATA_DONOTFLUSH : 0;
   const HRESULT hr = getData(data ? scratch.data() : nullptr, size, apiFlags);

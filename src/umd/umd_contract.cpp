@@ -2,7 +2,7 @@
 
 uint32_t dxvk::umd::runtimeMissingD3D10Requirements() noexcept {
   // Missing callbacks: GeometryShaderWithStreamOutput size/create, SoSetTargets,
-  // DrawAuto, SetPredication, OpenedResource size/OpenResource, SetTextFilterSize,
+  // DrawAuto, OpenedResource size/OpenResource, SetTextFilterSize,
   // ResetPrimitiveID and SetVertexPipelineOutput. The last two are version
   // dependent. Non-null callbacks also reject texture dimensions, primary and
   // shared ownership, several shader semantics and multiple render targets.
@@ -11,6 +11,8 @@ uint32_t dxvk::umd::runtimeMissingD3D10Requirements() noexcept {
   // Ordinary worker dispatch and Flush submission are implemented, but this
   // integration still needs actual native runtime/Turnip proof. Controlled
   // WARP fixture success alone must not remove this admission requirement.
+  // Occlusion predication has a synchronous correctness fallback, but the
+  // full predicate contract still needs stream-output and real Turnip proof.
   return StreamOutput | Predication | OpenedResources | CompleteResources
     | CompleteShaderSemantics | MultipleRenderTargets | PrimaryAndDxgi
     | LegacyPipelineCallbacks | RuntimeThreading;

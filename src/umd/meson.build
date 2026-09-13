@@ -24,6 +24,10 @@ umd_ddi_probe = executable('dxvk-umd-ddi-probe', '../../tests/umd-ddi-probe.cpp'
   dependencies : [cpp.find_library('d3dcompiler'), lib_gdi32],
 )
 
+umd_predication_probe = executable('dxvk-umd-predication-probe', '../../tests/umd-predication.cpp',
+  link_with : [umd_development],
+  dependencies : [cpp.find_library('d3dcompiler')])
+
 umd_shader_test = executable('dxvk-umd-shader-test',
   '../../tests/umd-shader-container.cpp', 'umd_shader.cpp',
   dependencies : [dxbc_spirv_dep, cpp.find_library('d3dcompiler'), cpp.find_library('d3d11')],
@@ -41,6 +45,11 @@ umd_adapter_test = executable('dxvk-umd-adapter-test',
 native_entry_sources = ['../../tests/umd-native-entry.cpp', 'umd_adapter.cpp',
   'umd_runtime_query.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp']
 native_entry_dependencies = [dxbc_spirv_dep, cpp.find_library('d3d11')]
+umd_predication_test = executable('dxvk-umd-predication-test',
+  ['../../tests/umd-predication.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')],
+  cpp_args : ['-DVIOGPU_PREDICATION_WARP'])
 umd_native_entry_test = executable('dxvk-umd-native-entry-test',
   native_entry_sources + ['umd_contract.cpp'], dependencies : native_entry_dependencies)
 umd_native_lifetime_test = executable('dxvk-umd-native-lifetime-test',

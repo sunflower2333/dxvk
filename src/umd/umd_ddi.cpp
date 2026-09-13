@@ -30,6 +30,9 @@ struct Device {
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
   ComPtr<ID3D11Device> backend;
   ComPtr<ID3D11DeviceContext> context;
+  ComPtr<ID3D11Query> predicate;
+  BOOL predicateValue = FALSE;
+  bool suppressCommands = false;
   D3D10DDI_HRTCORELAYER runtime;
   D3D10DDI_CORELAYER_DEVICECALLBACKS callbacks;
   dxvk::umd::RuntimeMemory memory;
@@ -53,7 +56,7 @@ struct Device {
     try {
       // Backend release can join workers that need runtime callbacks. Pump
       // those requests on this DDI caller while release runs separately.
-      service->drain([&] { context.Reset(); backend.Reset(); });
+      service->drain([&] { predicate.Reset(); context.Reset(); backend.Reset(); });
     } catch (...) { result = E_FAIL; }
     try {
       const HRESULT gpuResult = gpu ? gpu->close() : S_OK;
@@ -123,6 +126,7 @@ thread_local DeviceOperation* DeviceOperation::current = nullptr;
 void APIENTRY flush(D3D10DDI_HDEVICE h);
 template<auto function> constexpr bool isFlushEntry = false;
 template<> constexpr bool isFlushEntry<&flush> = true;
+template<auto function> constexpr bool isPredicatedEntry = false;
 
 // All published D3D device entries pass through this typed WDK-ABI wrapper.
 // Thread-local operation lookup preserves the old owner when a callback
@@ -148,6 +152,9 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
       try {
         auto backend = [&]() -> Result {
           DeviceOperation worker(h.pDrvPrivate, operation.owner);
+          if constexpr (isPredicatedEntry<function>) {
+            if (operation.owner->suppressCommands) return;
+          }
           return function(h, args...);
         };
         if constexpr (isFlushEntry<function>) {
@@ -319,20 +326,39 @@ void APIENTRY createQuery(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEQUERY* arg
   auto query = new (out.pDrvPrivate) Query();
   query->owner = device;
   if (!args || !dxvk::umd::queryInfo(args->Query, args->MiscFlags, query->info)) {
-    device->error(E_INVALIDARG); return;
+    query->~Query(); device->error(E_INVALIDARG); return;
   }
-  D3D11_QUERY_DESC desc = {query->info.type, 0};
-  createChildBackend(device, query, [&] { return device->backend->CreateQuery(&desc, &query->backend); });
+  // Failed CreateQuery handles receive no DestroyQuery from the runtime.
+  // Unwind all private state before reporting an error (which may reenter).
+  HRESULT result = S_OK;
+  try {
+    query->retirement = std::make_unique<ComRetirement>();
+    D3D11_QUERY_DESC desc = {query->info.type,
+      query->info.hint ? D3D11_QUERY_MISC_PREDICATEHINT : 0u};
+    if (query->info.predicate) {
+      ComPtr<ID3D11Predicate> predicate;
+      result = device->backend->CreatePredicate(&desc, &predicate);
+      if (result == S_OK) query->backend = predicate;
+    } else result = device->backend->CreateQuery(&desc, &query->backend);
+  } catch (const std::bad_alloc&) { result = E_OUTOFMEMORY; }
+    catch (...) { result = E_FAIL; }
+  if (result != S_OK) {
+    query->~Query();
+    device->error(FAILED(result) ? result : E_FAIL);
+  }
 }
 void APIENTRY destroyQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
   auto query = get(object);
   if (!query || query->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  if (get(h)->predicate.Get() == query->backend.Get()) { get(h)->error(E_INVALIDARG); return; }
   retireChild(get(h), query, query->backend);
 }
 void APIENTRY beginQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
   auto device = get(h); auto query = get(object);
   if (!owned(device, query)) return;
-  if (!query->info.beginRequired || query->begun) { device->error(E_INVALIDARG); return; }
+  if (!query->info.beginRequired || query->begun || device->predicate.Get() == query->backend.Get()) {
+    device->error(E_INVALIDARG); return;
+  }
   try {
     device->context->Begin(query->backend.Get());
     query->begun = true; query->issued = false;
@@ -342,12 +368,57 @@ void APIENTRY beginQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
 void APIENTRY endQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
   auto device = get(h); auto query = get(object);
   if (!owned(device, query)) return;
-  if (query->info.beginRequired && !query->begun) { device->error(E_INVALIDARG); return; }
+  if (device->predicate.Get() == query->backend.Get()) { device->error(E_INVALIDARG); return; }
   try {
+    // D3D10 QueryEnd without Begin is an empty query interval, including
+    // reuse of an already issued query. This is explicitly legal in the DDI.
+    if (query->info.beginRequired && !query->begun)
+      device->context->Begin(query->backend.Get());
     device->context->End(query->backend.Get());
     query->begun = false; query->issued = true;
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
+}
+
+void APIENTRY setPredication(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object, BOOL value) {
+  auto device = get(h);
+  if (!object.pDrvPrivate) {
+    device->predicate.Reset();
+    device->predicateValue = value;
+    device->suppressCommands = false;
+    return;
+  }
+  auto query = get(object);
+  if (!owned(device, query)) return;
+  if (!query->info.predicate || !query->issued) { device->error(E_INVALIDARG); return; }
+  // DXVK's public SetPredication is still a stub. Until GPU conditional
+  // rendering is implemented, resolve a guaranteed predicate once here and
+  // suppress the native operations explicitly. This correctness fallback
+  // synchronizes CPU/GPU; it is not the efficient final implementation.
+  // Hold independent owners across Flush/runtime callbacks: private query
+  // bytes may be reclaimed from a nested runtime callback.
+  auto backend = query->backend;
+  const auto info = query->info;
+  BOOL result = FALSE;
+  if (!info.hint) {
+    const HRESULT submitted = dxvk::umd::flushRuntimeSubmission(device->context.Get());
+    if (FAILED(submitted)) { device->error(submitted); return; }
+    const ULONGLONG deadline = GetTickCount64() + 2000;
+    for (;;) {
+      const HRESULT hr = device->context->GetData(backend.Get(), &result, sizeof(result),
+        D3D11_ASYNC_GETDATA_DONOTFLUSH);
+      if (hr == S_OK) break;
+      if (hr != S_FALSE) { device->error(FAILED(hr) ? hr : E_FAIL); return; }
+      if (device->retired || GetTickCount64() >= deadline) {
+        device->error(DXGI_ERROR_DEVICE_REMOVED); return;
+      }
+      Sleep(1);
+    }
+  }
+  if (device->retired) return;
+  device->predicate = std::move(backend);
+  device->predicateValue = value;
+  device->suppressCommands = !info.hint && ((result != FALSE) == (value != FALSE));
 }
 void APIENTRY getQueryData(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object, void* data, UINT size, UINT flags) {
   auto device = get(h); auto query = get(object);
@@ -1459,6 +1530,19 @@ void APIENTRY flush(D3D10DDI_HDEVICE h) {
   if (FAILED(dxvk::umd::flushRuntimeSubmission(device->context.Get())))
     device->error(DXGI_ERROR_DEVICE_REMOVED);
 }
+// Only pipeline work and resource-manipulation commands are predicated.
+// State changes, queries, Map/Unmap and Flush must still execute.
+template<> constexpr bool isPredicatedEntry<&draw> = true;
+template<> constexpr bool isPredicatedEntry<&drawIndexed> = true;
+template<> constexpr bool isPredicatedEntry<&drawInstanced> = true;
+template<> constexpr bool isPredicatedEntry<&drawIndexedInstanced> = true;
+template<> constexpr bool isPredicatedEntry<&clearTarget> = true;
+template<> constexpr bool isPredicatedEntry<&clearDepthView> = true;
+template<> constexpr bool isPredicatedEntry<&copyResource> = true;
+template<> constexpr bool isPredicatedEntry<&copyRegion> = true;
+template<> constexpr bool isPredicatedEntry<&resolveResource> = true;
+template<> constexpr bool isPredicatedEntry<&updateResource> = true;
+template<> constexpr bool isPredicatedEntry<&generateMips> = true;
 void APIENTRY relocateDeviceFunctions(D3D10DDI_HDEVICE h, D3D10DDI_DEVICEFUNCS* functions) {
   if (!functions) { get(h)->error(E_INVALIDARG); return; }
   // The runtime has already copied its table. No driver object caches a
@@ -1638,6 +1722,7 @@ HRESULT createDdiDevice(
   table->pfnQueryBegin = deviceEntry<beginQuery>;
   table->pfnQueryEnd = deviceEntry<endQuery>;
   table->pfnQueryGetData = deviceEntry<getQueryData>;
+  table->pfnSetPredication = deviceEntry<setPredication>;
   table->pfnResourceMap = deviceEntry<mapResource>;
   table->pfnResourceUnmap = deviceEntry<unmapResource>;
   table->pfnStagingResourceMap = deviceEntry<mapResource>;

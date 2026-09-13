@@ -160,7 +160,7 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
           do {
             epoch = service->retirementEpoch();
             service->run(backend);
-          } while (epoch != service->retirementEpoch());
+          } while (!operation.owner->retired && epoch != service->retirementEpoch());
           return;
         } else return operation.owner->service->run(backend);
       } catch (...) {

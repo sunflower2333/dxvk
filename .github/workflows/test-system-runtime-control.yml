@@ -1,5 +1,7 @@
 name: Standalone Microsoft runtime control
 on:
+  push:
+    branches: [work/runtime-dispatch-20260913]
   workflow_dispatch:
 jobs:
   control:

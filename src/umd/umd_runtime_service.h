@@ -138,30 +138,7 @@ public:
       // this same DDI caller continues to service further runtime requests.
       // Nested destroy may already have returned and its private bytes may
       // have been freed. Only independently owned retirement nodes survive.
-      if (!m_releasing) {
-        m_releasing = true;
-        try {
-          for (;;) {
-            Retirement* retired;
-            {
-              std::lock_guard<std::mutex> guard(m_mutex);
-              retired = m_retired;
-              m_retired = nullptr;
-              m_retiredTail = &m_retired;
-            }
-            if (!retired) break;
-            drain([&] {
-              while (retired) {
-                auto object = retired;
-                retired = object->next;
-                object->release();
-                delete object;
-              }
-            });
-          }
-        } catch (...) { m_releasing = false; throw; }
-        m_releasing = false;
-      }
+      releaseRetired();
     }
     if (job.error) std::rethrow_exception(job.error);
   }
@@ -179,6 +156,7 @@ public:
   }
 
 private:
+  void releaseRetired();
   struct Request {
     Request* next = nullptr;
     void* context = nullptr;
@@ -222,4 +200,32 @@ private:
   unsigned m_pumps = 0;
   bool m_deferred = false, m_closed = false, m_releasing = false;
 };
+
+// Keep the cleanup closure out of drain<Function>: a lambda inside that
+// template would create a fresh dependent type at each recursive instantiation.
+inline void RuntimeService::releaseRetired() {
+  if (m_releasing) return;
+  m_releasing = true;
+  try {
+    for (;;) {
+      Retirement* retired;
+      {
+        std::lock_guard<std::mutex> guard(m_mutex);
+        retired = m_retired;
+        m_retired = nullptr;
+        m_retiredTail = &m_retired;
+      }
+      if (!retired) break;
+      drain([&] {
+        while (retired) {
+          auto object = retired;
+          retired = object->next;
+          object->release();
+          delete object;
+        }
+      });
+    }
+  } catch (...) { m_releasing = false; throw; }
+  m_releasing = false;
+}
 }

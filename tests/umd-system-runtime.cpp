@@ -15,6 +15,7 @@ using Microsoft::WRL::ComPtr;
 int main(int argc, char** argv) {
   const bool warpOnly = argc == 2 && std::strcmp(argv[1], "--warp-only") == 0;
   CHECK(argc == 1 || warpOnly);
+  const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_10_0;
   if (!warpOnly) {
   wchar_t executable[32768];
   DWORD length = GetModuleFileNameW(nullptr, executable, 32768);
@@ -24,7 +25,6 @@ int main(int argc, char** argv) {
   dll += L"viogpudxvk.dll";
   HMODULE candidate = LoadLibraryExW(dll.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
   CHECK(candidate);
-  const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_10_0;
   {
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
@@ -44,6 +44,10 @@ int main(int argc, char** argv) {
   HWND window = CreateWindowW(klass.lpszClassName, L"runtime control", WS_OVERLAPPEDWINDOW,
     0, 0, 64, 64, nullptr, nullptr, klass.hInstance, nullptr);
   CHECK(window);
+  if (warpOnly) {
+    ShowWindow(window, SW_SHOWNORMAL);
+    UpdateWindow(window);
+  }
   HRESULT presented = E_FAIL;
   {
     DXGI_SWAP_CHAIN_DESC desc{};
@@ -95,7 +99,20 @@ int main(int argc, char** argv) {
           && pixel[2] >= 191 && pixel[2] <= 192 && pixel[3] == 255);
       }
       context->Unmap(staging.Get(), 0);
-      presented = swapchain->Present(0, 0); CHECK(SUCCEEDED(presented));
+      const ULONGLONG deadline = GetTickCount64() + 2000;
+      do {
+        MSG message{};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+          TranslateMessage(&message); DispatchMessageW(&message);
+        }
+        context->Draw(3, 0); context->Flush();
+        presented = swapchain->Present(0, 0);
+        if (!warpOnly || presented == S_OK || FAILED(presented)) break;
+        Sleep(16);
+      } while (GetTickCount64() < deadline);
+      std::printf("WARP Present final=0x%08lx window-shown=%d startup-budget-ms=2000\n",
+        static_cast<unsigned long>(presented), warpOnly);
+      CHECK(warpOnly ? presented == S_OK : SUCCEEDED(presented));
       context->ClearState();
     }
     // Children are gone; no later application call is used to finish teardown.

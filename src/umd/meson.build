@@ -28,6 +28,10 @@ umd_predication_probe = executable('dxvk-umd-predication-probe', '../../tests/um
   link_with : [umd_development],
   dependencies : [cpp.find_library('d3dcompiler')])
 
+umd_stream_output_probe = executable('dxvk-umd-stream-output-probe', '../../tests/umd-stream-output.cpp',
+  link_with : [umd_development],
+  dependencies : [cpp.find_library('d3dcompiler')])
+
 umd_shader_test = executable('dxvk-umd-shader-test',
   '../../tests/umd-shader-container.cpp', 'umd_shader.cpp',
   dependencies : [dxbc_spirv_dep, cpp.find_library('d3dcompiler'), cpp.find_library('d3d11')],
@@ -50,6 +54,11 @@ umd_predication_test = executable('dxvk-umd-predication-test',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')],
   cpp_args : ['-DVIOGPU_PREDICATION_WARP'])
+umd_stream_output_test = executable('dxvk-umd-stream-output-test',
+  ['../../tests/umd-stream-output.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')],
+  cpp_args : ['-DVIOGPU_STREAM_OUTPUT_WARP'])
 umd_native_entry_test = executable('dxvk-umd-native-entry-test',
   native_entry_sources + ['umd_contract.cpp'], dependencies : native_entry_dependencies)
 umd_native_lifetime_test = executable('dxvk-umd-native-lifetime-test',

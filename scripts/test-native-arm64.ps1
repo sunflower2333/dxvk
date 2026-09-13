@@ -14,6 +14,8 @@ $cases = [ordered]@{
     'dxvk-umd-native-lifetime-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=1'
     'dxvk-umd-allocation-test.exe' = 'runtime allocation/presentation PASS checks='
     'dxvk-umd-predication-test.exe' = 'native predication PASS checks=.*draw-cases=24'
+    'dxvk-umd-stream-output-test.exe' = 'native stream output PASS checks=.*drawauto-cases=2'
+    'dxvk-umd-query-test.exe' = 'query completion PASS checks='
     'dxvk-umd-system-runtime-test.exe' = 'system runtime control PASS: WARP Draw/readback/Present/immediate teardown'
 }
 foreach ($name in $cases.Keys) {

@@ -8,6 +8,7 @@
 #include "umd_map.h"
 #include "umd_view.h"
 #include "umd_state.h"
+#include "umd_stream_output.h"
 
 #include <wrl/client.h>
 #include <memory>
@@ -263,6 +264,8 @@ struct Shader : Child {
   std::array<dxvk::umd::ShaderScalar,32> compiledOutputTypes = {};
   bool needsLayout = false;
   bool needsLinkage = false;
+  bool withStreamOutput = false;
+  dxvk::umd::StreamOutput streamOutput;
 };
 struct InputLayout : Child {
   Device* owner = nullptr;
@@ -980,7 +983,8 @@ SIZE_T APIENTRY shaderSize(D3D10DDI_HDEVICE, const UINT*, const D3D10DDIARG_STAG
   return sizeof(Shader);
 }
 void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
-    const D3D10DDIARG_STAGE_IO_SIGNATURES* signature, dxvk::umd::ShaderStage stage) {
+    const D3D10DDIARG_STAGE_IO_SIGNATURES* signature, dxvk::umd::ShaderStage stage,
+    const D3D10DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT* streamOutput = nullptr) {
   auto device = get(h);
   if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
   auto shader = new (out.pDrvPrivate) Shader();
@@ -995,6 +999,12 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
   try {
     Shader candidate; candidate.owner = device; candidate.stage = stage;
     candidate.retirement = std::make_unique<ComRetirement>();
+    if (streamOutput) {
+      if (!dxvk::umd::streamOutputDeclaration(*streamOutput, *signature, candidate.streamOutput)) {
+        device->error(E_INVALIDARG); return;
+      }
+      candidate.withStreamOutput = true;
+    }
     for (UINT i = 0; i < signature->NumInputSignatureEntries; i++) {
       const auto& entry = signature->pInputSignature[i];
       candidate.inputs.push_back({uint32_t(entry.SystemValue), entry.Register, entry.Mask});
@@ -1057,6 +1067,19 @@ void APIENTRY createPixelShader(D3D10DDI_HDEVICE h, const UINT* code,
 void APIENTRY createGeometryShader(D3D10DDI_HDEVICE h, const UINT* code,
     D3D10DDI_HSHADER out, D3D10DDI_HRTSHADER, const D3D10DDIARG_STAGE_IO_SIGNATURES* sig) {
   createShader(h, code, out, sig, dxvk::umd::ShaderStage::Geometry);
+}
+SIZE_T APIENTRY geometryStreamSize(D3D10DDI_HDEVICE,
+    const D3D10DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT*, const D3D10DDIARG_STAGE_IO_SIGNATURES*) {
+  return sizeof(Shader);
+}
+void APIENTRY createGeometryStream(D3D10DDI_HDEVICE h,
+    const D3D10DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT* args,
+    D3D10DDI_HSHADER out, D3D10DDI_HRTSHADER,
+    const D3D10DDIARG_STAGE_IO_SIGNATURES* signature) {
+  if (!args) { get(h)->error(E_INVALIDARG); return; }
+  // This slice accepts actual GS bytecode. Null-GS signature-only passthrough
+  // remains an explicit admission gap rather than an invented shader.
+  createShader(h, args->pShaderCode, out, signature, dxvk::umd::ShaderStage::Geometry, args);
 }
 void APIENTRY destroyShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto object = get(shader);
@@ -1405,12 +1428,39 @@ void APIENTRY setVertexBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
 }
+void APIENTRY setStreamTargets(D3D10DDI_HDEVICE h, UINT count, UINT clear,
+    const D3D10DDI_HRESOURCE* resources, const UINT* offsets) {
+  auto device = get(h);
+  constexpr UINT slots = D3D11_SO_BUFFER_SLOT_COUNT;
+  if (count > slots || clear > slots-count || (count && (!resources || !offsets))) {
+    device->error(E_INVALIDARG); return;
+  }
+  std::array<ComPtr<ID3D11Buffer>,slots> owners;
+  std::array<ID3D11Buffer*,slots> buffers{};
+  std::array<UINT,slots> positions{};
+  for (UINT i = 0; i < count; ++i) {
+    if (!resources[i].pDrvPrivate) continue;
+    auto resource = get(resources[i]);
+    if (!owned(device, resource)) return;
+    if (FAILED(resource->backend.As(&owners[i]))) { device->error(E_INVALIDARG); return; }
+    D3D11_BUFFER_DESC desc{}; owners[i]->GetDesc(&desc);
+    if (!(desc.BindFlags & D3D11_BIND_STREAM_OUTPUT)
+        || (offsets[i] != UINT(-1) && (offsets[i] > desc.ByteWidth || offsets[i]%4))) {
+      device->error(E_INVALIDARG); return;
+    }
+    buffers[i] = owners[i].Get(); positions[i] = offsets[i];
+    for (UINT j = 0; j < i; ++j) if (buffers[j] == buffers[i]) { device->error(E_INVALIDARG); return; }
+  }
+  // D3D11 clears every higher slot; ClearTargets is only an optimization hint.
+  device->context->SOSetTargets(count, buffers.data(), positions.data());
+}
 bool prepareGeometryShader(Device* device) {
   auto shader = device->geometryShader;
   if (!shader) return true;
   std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
+  const auto pixel = shader->withStreamOutput ? nullptr : device->pixelShader;
   if (!dxvk::umd::linkVertexOutputs(shader->outputs.data(), shader->outputs.size(),
-      device->pixelShader->inputs.data(), device->pixelShader->inputs.size(), outputs)) {
+      pixel ? pixel->inputs.data() : nullptr, pixel ? pixel->inputs.size() : 0, outputs)) {
     device->error(E_INVALIDARG); return false;
   }
   std::array<dxvk::umd::ShaderScalar,32> outputTypes = {};
@@ -1422,7 +1472,12 @@ bool prepareGeometryShader(Device* device) {
       device->error(E_INVALIDARG); return false;
     }
     ComPtr<ID3D11GeometryShader> compiled;
-    const HRESULT hr = device->backend->CreateGeometryShader(bytecode.data(), bytecode.size(), nullptr, &compiled);
+    const auto& stream = shader->streamOutput;
+    const HRESULT hr = shader->withStreamOutput
+      ? device->backend->CreateGeometryShaderWithStreamOutput(bytecode.data(), bytecode.size(),
+          stream.entries.data(), UINT(stream.entries.size()), stream.strides.data(), stream.strideCount,
+          D3D11_SO_NO_RASTERIZED_STREAM, nullptr, &compiled)
+      : device->backend->CreateGeometryShader(bytecode.data(), bytecode.size(), nullptr, &compiled);
     if (FAILED(hr)) { device->error(hr); return false; }
     shader->geometry = std::move(compiled); shader->compiledOutputTypes = outputTypes;
   }
@@ -1431,7 +1486,7 @@ bool prepareGeometryShader(Device* device) {
 }
 bool prepareVertexShader(Device* device) {
   auto shader = device->vertexShader;
-  if (!shader || !device->pixelShader) return false;
+  if (!shader || (!device->pixelShader && !device->geometryShader)) return false;
   auto layout = device->inputLayout;
   if (shader->needsLayout && (!layout || !layout->backend)) { device->error(E_INVALIDARG); return false; }
   try {
@@ -1486,8 +1541,9 @@ void APIENTRY setIndexBuffer(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE object, DXGI
     catch (...) { device->error(E_FAIL); }
 }
 bool drawReady(Device* device, bool indexed = false) {
-  if (!device->vertexBound || !device->pixelBound || !device->targetBound ||
-      !device->viewportBound || !device->topologyBound || (indexed && !device->indexBound)) {
+  const bool streamOnly = device->geometryShader && device->geometryShader->withStreamOutput;
+  if (!device->vertexBound || (!streamOnly && (!device->pixelBound || !device->targetBound || !device->viewportBound))
+      || !device->topologyBound || (indexed && !device->indexBound)) {
     device->error(E_INVALIDARG); return false;
   }
   return prepareVertexShader(device);
@@ -1498,6 +1554,10 @@ void APIENTRY draw(D3D10DDI_HDEVICE h, UINT count, UINT start) {
   try { device->context->Draw(count, start); }
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
+}
+void APIENTRY drawAuto(D3D10DDI_HDEVICE h) {
+  auto device = get(h);
+  if (drawReady(device)) device->context->DrawAuto();
 }
 void APIENTRY drawIndexed(D3D10DDI_HDEVICE h, UINT count, UINT start, INT base) {
   auto device = get(h);
@@ -1729,6 +1789,9 @@ HRESULT createDdiDevice(
   table->pfnCreateVertexShader = deviceEntry<createVertexShader>;
   table->pfnCreatePixelShader = deviceEntry<createPixelShader>;
   table->pfnCreateGeometryShader = deviceEntry<createGeometryShader>;
+  table->pfnCalcPrivateGeometryShaderWithStreamOutput = deviceEntry<geometryStreamSize>;
+  table->pfnCreateGeometryShaderWithStreamOutput = deviceEntry<createGeometryStream>;
+  table->pfnSoSetTargets = deviceEntry<setStreamTargets>;
   table->pfnDestroyShader = deviceEntry<destroyShader>;
   table->pfnVsSetShader = deviceEntry<setVertexShader>;
   table->pfnPsSetShader = deviceEntry<setPixelShader>;
@@ -1755,6 +1818,7 @@ HRESULT createDdiDevice(
   table->pfnDestroyBlendState = deviceEntry<destroyBlend>;
   table->pfnSetBlendState = deviceEntry<setBlend>;
   table->pfnDraw = deviceEntry<draw, true>;
+  table->pfnDrawAuto = deviceEntry<drawAuto, true>;
   table->pfnDrawIndexed = deviceEntry<drawIndexed, true>;
   table->pfnDrawInstanced = deviceEntry<drawInstanced, true>;
   table->pfnDrawIndexedInstanced = deviceEntry<drawIndexedInstanced, true>;

@@ -109,7 +109,8 @@ namespace dxvk {
       return S_OK;
     }
     
-    if (m_desc.Query == D3D11_QUERY_OCCLUSION_PREDICATE) {
+    if (m_desc.Query == D3D11_QUERY_OCCLUSION_PREDICATE
+        || m_desc.Query == D3D11_QUERY_SO_OVERFLOW_PREDICATE) {
       if (riid == __uuidof(ID3D11Predicate)) {
         *ppvObject = AsPredicate(ref(this));
         return S_OK;

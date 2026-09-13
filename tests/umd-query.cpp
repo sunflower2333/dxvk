@@ -15,7 +15,28 @@ int main() {
   CHECK(queryInfo(D3D10DDI_QUERY_OCCLUSION, 0, info) && info.size == sizeof(UINT64) && info.beginRequired);
   CHECK(queryInfo(D3D10DDI_QUERY_TIMESTAMP, 0, info) && info.type == D3D11_QUERY_TIMESTAMP && !info.beginRequired);
   CHECK(queryInfo(D3D10DDI_QUERY_TIMESTAMPDISJOINT, 0, info) && info.size == sizeof(D3D10_DDI_QUERY_DATA_TIMESTAMP_DISJOINT));
-  CHECK(!queryInfo(D3D10DDI_QUERY_PIPELINESTATS, 0, info) && info.size == 0);
+  CHECK(queryInfo(D3D10DDI_QUERY_STREAMOUTPUTSTATS, 0, info) && info.size == 2*sizeof(UINT64) && info.beginRequired);
+  CHECK(queryInfo(D3D10DDI_QUERY_STREAMOVERFLOWPREDICATE, 0, info) && info.predicate && !info.hint);
+  CHECK(!queryInfo(D3D10DDI_QUERY_STREAMOVERFLOWPREDICATE, D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info));
+  CHECK(queryInfo(D3D10DDI_QUERY_PIPELINESTATS, 0, info) && info.size == 8*sizeof(UINT64)
+    && info.backendSize == 11*sizeof(UINT64));
+  struct GuardedCounters { UINT64 before; UINT64 counters[8]; UINT64 after; } guarded{};
+  guarded.before = guarded.after = 0xcafebabefeedfaceull;
+  auto pipeline = [](void* output, UINT size, UINT flags) {
+    CHECK(output && size == 11*sizeof(UINT64) && flags == 0);
+    for (unsigned i = 0; i < 11; ++i) static_cast<UINT64*>(output)[i] = 101+i;
+    return S_OK;
+  };
+  CHECK(readQueryData(info, guarded.counters, sizeof(guarded.counters), 0, pipeline) == S_OK);
+  for (unsigned i = 0; i < 8; ++i) CHECK(guarded.counters[i] == 101+i);
+  CHECK(guarded.before == 0xcafebabefeedfaceull && guarded.after == guarded.before);
+  for (HRESULT result : {S_FALSE, E_OUTOFMEMORY}) {
+    CHECK(readQueryData(info, guarded.counters, sizeof(guarded.counters), 0,
+      [&](void* out, UINT size, UINT flags) { pipeline(out,size,flags); std::memset(out,0,size); return result; })
+      == (result == S_FALSE ? DXGI_DDI_ERR_WASSTILLDRAWING : result));
+    for (unsigned i = 0; i < 8; ++i) CHECK(guarded.counters[i] == 101+i);
+    CHECK(guarded.before == 0xcafebabefeedfaceull && guarded.after == guarded.before);
+  }
   CHECK(!queryInfo(D3D10DDI_QUERY_EVENT, D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info) && info.size == 0);
   CHECK(!queryInfo(static_cast<D3D10DDI_QUERY>(0x7fffffff), 0, info));
   CHECK(queryInfo(D3D10DDI_QUERY_OCCLUSIONPREDICATE, 0, info));

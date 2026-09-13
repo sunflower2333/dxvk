@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <type_traits>
 #include <atomic>
+#include <optional>
 
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -166,12 +167,12 @@ struct Resource {
   std::unique_ptr<ResourceRetirement> retirement;
 };
 struct ResourceRetirement final : dxvk::umd::RuntimeService::Retirement {
-  Resource resource;
+  std::optional<Resource> resource;
   void release() noexcept override {
-    auto device = resource.owner;
-    const HRESULT hr = resource.allocation.release();
-    resource.presentReadback.Reset();
-    resource.backend.Reset();
+    auto device = resource->owner;
+    const HRESULT hr = resource->allocation.release();
+    resource->presentReadback.Reset();
+    resource->backend.Reset();
     if (FAILED(hr)) device->error(hr);
   }
 };
@@ -494,7 +495,7 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
   auto device = get(h);
   auto object = get(resource);
   auto retired = std::move(object->retirement);
-  retired->resource = std::move(*object);
+  retired->resource.emplace(std::move(*object));
   object->~Resource();
   // D3D10 RenderCb may reenter here while its submit worker owns the Mesa
   // WDDM lock. Retire private bytes now; final COM/HRESOURCE release runs only

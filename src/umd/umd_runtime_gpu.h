@@ -16,8 +16,10 @@ public:
     std::shared_ptr<const AdapterIdentity> identity);
   ~RuntimeGpu();
   RuntimeBackend backend();
-  // Call after releasing/draining the embedded device, before DestroyDevice
-  // returns to the runtime. No callback can use a retired runtime handle.
+  // Call after releasing/draining the embedded device, while the enclosing
+  // runtime DDI still owns callback service. Ordinary DestroyDevice does this
+  // before returning; nested retirement defers it to the final outer DDI exit.
+  // Earlier retirement of runtime handles is not an admitted contract.
   HRESULT close();
 
 private:

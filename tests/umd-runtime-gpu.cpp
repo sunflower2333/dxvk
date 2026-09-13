@@ -10,6 +10,7 @@
 #include <atomic>
 #include <functional>
 #include <thread>
+#include <mutex>
 
 using dxvk::umd::RuntimeGpu;
 static std::atomic<unsigned> checks{0};
@@ -19,8 +20,11 @@ static std::function<void()> errorHook;
 static bool trackBackendDrain = false;
 static bool preexistingWorker = false;
 static HANDLE pendingSubmission = nullptr;
+static ID3D11DeviceContext* inspectionContext = nullptr; // Borrowed test WARP context.
+static std::mutex submissionMutex;
+static std::atomic<unsigned> childDrains{0};
 struct Fixture {
-  char device, adapter, contextCookie;
+  char device, adapter, contextCookie, resourceCookie;
   LUID luid{0x13579024, -11};
   uint64_t generation = 73;
   std::shared_ptr<RuntimeGpu> gpu;
@@ -33,6 +37,7 @@ struct Fixture {
   D3DDDI_PATCHLOCATIONLIST patches[2][64] = {};
   unsigned allocationCalls = 0, deallocations = 0, locks = 0, unlocks = 0;
   unsigned contexts = 0, contextCloses = 0, renders = 0, callbackCalls = 0;
+  unsigned presentAllocations = 0, presentDeallocations = 0;
   uint32_t nextHandle = 31, completedFence = 0;
   bool rename = false, nullMap = false, malformedContext = false, reset = false;
   bool allocationFails = false, deallocateFails = false, renderFails = false, replaceBad = false, unlockFails = false;
@@ -122,6 +127,13 @@ static HRESULT APIENTRY escape(HANDLE h, const D3DDDICB_ESCAPE* args) {
 }
 static HRESULT APIENTRY allocate(HANDLE h, D3DDDICB_ALLOCATE* args) {
   f->checkRuntime();
+  if (args->hResource) {
+    CHECK(h == &f->device && args->hResource == &f->resourceCookie && args->NumAllocations == 1);
+    CHECK(args->pAllocationInfo && args->pAllocationInfo->PrivateDriverDataSize == sizeof(dxvk::umd::AllocationInfo));
+    args->pAllocationInfo->hAllocation = 900; args->hKMResource = 901;
+    ++f->presentAllocations;
+    return S_OK;
+  }
   CHECK(h == &f->device && !args->hResource && args->NumAllocations == 1 && !args->hKMResource);
   CHECK(args->pAllocationInfo->PrivateDriverDataSize == sizeof(dxvk::umd::AllocationInfo));
   dxvk::umd::AllocationInfo info;
@@ -142,6 +154,12 @@ static HRESULT APIENTRY allocate(HANDLE h, D3DDDICB_ALLOCATE* args) {
 }
 static HRESULT APIENTRY deallocate(HANDLE h, const D3DDDICB_DEALLOCATE* args) {
   f->checkRuntime();
+  if (args->hResource) {
+    CHECK(h == &f->device && args->hResource == &f->resourceCookie);
+    CHECK(runtimeHookDepth == 0); // Never deallocate HRESOURCE inside RenderCb.
+    ++f->presentDeallocations;
+    return S_OK;
+  }
   CHECK(h == &f->device && !args->hResource && args->NumAllocations == 1 && args->HandleList);
   CHECK(f->allocations.count(*args->HandleList) == 1);
   ++f->deallocations;
@@ -271,6 +289,30 @@ private:
   HANDLE stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 };
 static const GUID drainGuid = {0x4fef0123, 0x4241, 0x4abd, {0x91,0x01,0x01,0x02,0x03,0x04,0x05,0x06}};
+// Attached to the actual WARP resource reached through production DDI view
+// binding. Its final release models Mesa's BO mutex, held across RenderCb.
+class ChildDrainMarker final : public IUnknown {
+public:
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override {
+    if (!out) return E_POINTER;
+    *out = nullptr;
+    if (iid != __uuidof(IUnknown)) return E_NOINTERFACE;
+    *out = static_cast<IUnknown*>(this); AddRef(); return S_OK;
+  }
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++references; }
+  ULONG STDMETHODCALLTYPE Release() override {
+    const ULONG value = --references;
+    if (!value) delete this;
+    return value;
+  }
+private:
+  ~ChildDrainMarker() {
+    CHECK(runtimeHookDepth == 0 && GetCurrentThreadId() != f->runtimeThread);
+    std::lock_guard<std::mutex> lock(submissionMutex);
+    ++childDrains;
+  }
+  std::atomic<ULONG> references{1};
+};
 HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
     ID3D11Device** device, ID3D11DeviceContext** context, const RuntimeBackend* runtime) noexcept {
   ++earlyBackends;
@@ -291,6 +333,7 @@ HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
   if (earlyBackendFail) return E_FAIL;
   HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, &level, 1,
     D3D11_SDK_VERSION, device, nullptr, context);
+  inspectionContext = *context;
   if (hr == S_OK && trackBackendDrain) {
     auto marker = new DrainMarker(*runtime, a);
     CHECK((*device)->SetPrivateDataInterface(drainGuid, marker) == S_OK);
@@ -313,6 +356,7 @@ static void APIENTRY setError(D3D10DDI_HRTCORELAYER, HRESULT) {
   callback();
   --errorHookDepth;
 }
+static HRESULT APIENTRY unusedPresent(HANDLE, DXGIDDICB_PRESENT*) { return E_NOTIMPL; }
 
 static void runtimeTeardown() {
   // D3D10 runtime calls stay on their DDI caller, and all device-owned
@@ -331,9 +375,56 @@ static void runtimeTeardown() {
     D3D10DDIARG_CREATEDEVICE args{};
     args.hDrvDevice.pDrvPrivate = storage; args.hRTDevice.handle = &f->device;
     args.pUMCallbacks = &callbacks; args.pKTCallbacks = &kernel; args.pDeviceFuncs = &table;
+    DXGI_DDI_BASE_CALLBACKS dxgi{};
+    dxgi.pfnPresentCb = unusedPresent;
+    DXGI_DDI_BASE_FUNCTIONS dxgiFunctions{};
+    args.DXGIBaseDDI.pDXGIBaseCallbacks = &dxgi;
+    args.DXGIBaseDDI.pDXGIDDIBaseFunctions = &dxgiFunctions;
     CHECK(dxvk::umd::createAdapterDevice(f->identity, &args) == S_OK);
     const auto bridge = f->bridge;
     CHECK(f->allocations.size() == 1);
+
+    D3D10DDI_MIPINFO mip{2,2,1,2,2,1};
+    D3D10DDIARG_CREATERESOURCE resourceArgs{};
+    resourceArgs.pMipInfoList = &mip; resourceArgs.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+    resourceArgs.Usage = D3D10_DDI_USAGE_DEFAULT;
+    resourceArgs.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT;
+    resourceArgs.Format = DXGI_FORMAT_R8G8B8A8_UNORM; resourceArgs.SampleDesc.Count = 1;
+    resourceArgs.MipLevels = resourceArgs.ArraySize = 1;
+    void* resourceStorage = VirtualAlloc(nullptr, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    void* targetStorage = VirtualAlloc(nullptr, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    CHECK(resourceStorage && targetStorage);
+    D3D10DDI_HRESOURCE resource{resourceStorage};
+    D3D10DDI_HRENDERTARGETVIEW target{targetStorage};
+    CHECK(table.pfnCalcPrivateResourceSize(args.hDrvDevice, &resourceArgs) <= 4096);
+    table.pfnCreateResource(args.hDrvDevice, &resourceArgs, resource, {&f->resourceCookie});
+    CHECK(f->presentAllocations == 1 && !f->presentDeallocations);
+    D3D10DDIARG_CREATERENDERTARGETVIEW targetArgs{};
+    targetArgs.hDrvResource = resource; targetArgs.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+    targetArgs.Format = resourceArgs.Format; targetArgs.Tex2D.ArraySize = 1;
+    CHECK(table.pfnCalcPrivateRenderTargetViewSize(args.hDrvDevice, &targetArgs) <= 4096);
+    table.pfnCreateRenderTargetView(args.hDrvDevice, &targetArgs, target, {});
+    table.pfnSetRenderTargets(args.hDrvDevice, &target, 1, 0, {});
+    ID3D11RenderTargetView* actualView = nullptr;
+    inspectionContext->OMGetRenderTargets(1, &actualView, nullptr);
+    CHECK(actualView);
+    ID3D11Resource* actualResource = nullptr;
+    actualView->GetResource(&actualResource); CHECK(actualResource);
+    auto marker = new ChildDrainMarker;
+    CHECK(actualResource->SetPrivateDataInterface(drainGuid, marker) == S_OK);
+    marker->Release(); actualResource->Release(); actualView->Release();
+    table.pfnSetRenderTargets(args.hDrvDevice, nullptr, 0, 1, {});
+    const unsigned childrenBefore = childDrains;
+    DWORD oldProtection = 0;
+    if (mode) {
+      // The view owns the final backend reference after Resource destruction.
+      table.pfnDestroyResource(args.hDrvDevice, resource);
+      CHECK(VirtualProtect(resourceStorage, 4096, PAGE_NOACCESS, &oldProtection));
+    } else {
+      table.pfnDestroyRenderTargetView(args.hDrvDevice, target);
+      CHECK(VirtualProtect(targetStorage, 4096, PAGE_NOACCESS, &oldProtection));
+    }
+    CHECK(childDrains == childrenBefore);
 
     // A backend CS/submission job can request runtime service between DDIs.
     // It must block without calling the runtime until the next permitted
@@ -355,7 +446,10 @@ static void runtimeTeardown() {
       CHECK(cb->unmap(owner, allocation.token) == S_OK);
       const uint32_t commands[4] = {0, 0, 0x11223344, 0x55667788};
       const mwd_reference ref{allocation.token, 0, 4096, 3, 0};
-      CHECK(cb->submit(owner, commands, sizeof(commands), &ref, 1) == S_OK);
+      {
+        std::lock_guard<std::mutex> lock(submissionMutex);
+        CHECK(cb->submit(owner, commands, sizeof(commands), &ref, 1) == S_OK);
+      }
       CHECK(cb->release(owner, allocation.token) == S_OK);
       return 0;
     }, &submission, 0, nullptr);
@@ -374,10 +468,21 @@ static void runtimeTeardown() {
         CHECK(table.pfnCalcPrivateResourceSize(args.hDrvDevice, nullptr) > 0);
       });
       sizeThread.join();
+      if (mode) {
+        table.pfnDestroyRenderTargetView(args.hDrvDevice, target);
+        CHECK(VirtualProtect(targetStorage, 4096, PAGE_NOACCESS, &oldProtection));
+      } else {
+        table.pfnDestroyResource(args.hDrvDevice, resource);
+        CHECK(VirtualProtect(resourceStorage, 4096, PAGE_NOACCESS, &oldProtection));
+      }
+      CHECK(childDrains == childrenBefore); // No COM release inside RenderCb.
+      CHECK(f->presentDeallocations == (mode ? 1u : 0u));
     };
     const unsigned rendered = f->renders;
     table.pfnFlush(args.hDrvDevice);
     CHECK(nested && f->renders == rendered + 1 && f->allocations.size() == 1);
+    CHECK(childDrains == childrenBefore + 1); // Retirement drained by Flush return.
+    CHECK(f->presentDeallocations == 1);
     CHECK(WaitForSingleObject(pendingSubmission, 0) == WAIT_OBJECT_0);
     CloseHandle(pendingSubmission); pendingSubmission = nullptr;
     CloseHandle(submission.started); f->outerHook = {};
@@ -395,6 +500,9 @@ static void runtimeTeardown() {
     CHECK(rejected.NumDetectableParallelUnits == 99);
     table.pfnDestroyDevice(args.hDrvDevice);
     CHECK(VirtualFree(storage, 0, MEM_RELEASE));
+    CHECK(VirtualFree(resourceStorage, 0, MEM_RELEASE));
+    CHECK(VirtualFree(targetStorage, 0, MEM_RELEASE));
+    inspectionContext = nullptr;
     trackBackendDrain = false;
   }
 }
@@ -528,5 +636,5 @@ int main() {
   }
   CHECK(earlyBackends == 2);
   runtimeTeardown();
-  std::printf("PASS %u runtime GPU checks; ordinary caller dispatch, nested DDI and Flush submission, shared owners, map/submit/reset and synchronous D3D10 teardown; backend-drains=%u\n", checks.load(), backendDrains.load());
+  std::printf("PASS %u runtime GPU checks; ordinary caller dispatch, nested resource/view destruction and Flush retirement, shared owners, map/submit/reset and synchronous D3D10 teardown; backend-drains=%u child-drains=%u\n", checks.load(), backendDrains.load(), childDrains.load());
 }

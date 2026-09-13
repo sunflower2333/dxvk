@@ -16,6 +16,19 @@ namespace dxvk::umd {
 // admission. Runtime callbacks must stay on the thread inside the DDI.
 class RuntimeService final {
 public:
+  // Storage is reserved by object creation. Destroy DDIs may run inside a
+  // runtime callback while the suspended submit owns backend locks; they
+  // must not allocate or perform final backend release on that nested path.
+  struct Retirement {
+    Retirement* next = nullptr;
+    virtual ~Retirement() = default;
+    virtual void release() noexcept = 0;
+  };
+  void retire(Retirement* object) noexcept {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    *m_retiredTail = object;
+    m_retiredTail = &object->next;
+  }
   struct Scope {
     RuntimeService* service;
     Scope* previous;
@@ -118,7 +131,38 @@ public:
     lock.unlock();
     // A nested callback cannot join its own suspended parent. The outermost
     // DDI joins every work callback return before runtime/module lifetime ends.
-    if (outermost) WaitForThreadpoolWorkCallbacks(m_work, FALSE);
+    if (outermost) {
+      WaitForThreadpoolWorkCallbacks(m_work, FALSE);
+      // Signal the original callback requester before releasing retired
+      // backend objects. A release can now wait for its submit lock while
+      // this same DDI caller continues to service further runtime requests.
+      // Nested destroy may already have returned and its private bytes may
+      // have been freed. Only independently owned retirement nodes survive.
+      if (!m_releasing) {
+        m_releasing = true;
+        try {
+          for (;;) {
+            Retirement* retired;
+            {
+              std::lock_guard<std::mutex> guard(m_mutex);
+              retired = m_retired;
+              m_retired = nullptr;
+              m_retiredTail = &m_retired;
+            }
+            if (!retired) break;
+            drain([&] {
+              while (retired) {
+                auto object = retired;
+                retired = object->next;
+                object->release();
+                delete object;
+              }
+            });
+          }
+        } catch (...) { m_releasing = false; throw; }
+        m_releasing = false;
+      }
+    }
     if (job.error) std::rethrow_exception(job.error);
   }
   void close() {
@@ -173,7 +217,9 @@ private:
   Request** m_tail = &m_head;
   Job* m_jobHead = nullptr;
   Job** m_jobTail = &m_jobHead;
+  Retirement* m_retired = nullptr;
+  Retirement** m_retiredTail = &m_retired;
   unsigned m_pumps = 0;
-  bool m_deferred = false, m_closed = false;
+  bool m_deferred = false, m_closed = false, m_releasing = false;
 };
 }

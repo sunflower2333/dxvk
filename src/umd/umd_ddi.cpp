@@ -157,11 +157,23 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
 };
 template<auto function>
 constexpr auto deviceEntry = &DeviceEntry<decltype(function), function>::call;
+struct ResourceRetirement;
 struct Resource {
   Device* owner = nullptr;
   ComPtr<ID3D11Resource> backend;
   ComPtr<ID3D11Texture2D> presentReadback;
   dxvk::umd::RuntimeAllocation allocation;
+  std::unique_ptr<ResourceRetirement> retirement;
+};
+struct ResourceRetirement final : dxvk::umd::RuntimeService::Retirement {
+  Resource resource;
+  void release() noexcept override {
+    auto device = resource.owner;
+    const HRESULT hr = resource.allocation.release();
+    resource.presentReadback.Reset();
+    resource.backend.Reset();
+    if (FAILED(hr)) device->error(hr);
+  }
 };
 enum class ResourcePhase { Creating, Live };
 struct ResourceRecord {
@@ -171,20 +183,51 @@ struct ResourceRecord {
 };
 std::mutex resourceStorageMutex;
 std::unordered_map<void*, ResourceRecord> resourceStorage;
-struct RenderTarget {
+struct ComRetirement final : dxvk::umd::RuntimeService::Retirement {
+  std::array<ComPtr<IUnknown>, 3> references;
+  void release() noexcept override {
+    for (auto& reference : references) reference.Reset();
+  }
+};
+struct Child {
+  std::unique_ptr<ComRetirement> retirement;
+};
+// A view can hold the final reference to a resource even after its resource
+// DDI was destroyed. Apply the same no-final-release rule to every COM child.
+template<typename Object, typename Function>
+void createChildBackend(Device* device, Object* object, Function&& function) {
+  try {
+    auto retirement = std::make_unique<ComRetirement>();
+    const HRESULT hr = function();
+    if (hr == S_OK) object->retirement = std::move(retirement);
+    device->error(hr);
+  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+    catch (...) { device->error(E_FAIL); }
+}
+template<typename Object, typename... Interfaces>
+void retireChild(Device* device, Object* object, ComPtr<Interfaces>&... references) {
+  auto retired = std::move(object->retirement);
+  if (retired) {
+    unsigned index = 0;
+    (retired->references[index++].Attach(references.Detach()), ...);
+  }
+  object->~Object();
+  if (retired) device->service->retire(retired.release());
+}
+struct RenderTarget : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11RenderTargetView> backend;
   DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
 };
-struct ShaderView {
+struct ShaderView : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11ShaderResourceView> backend;
 };
-struct Sampler {
+struct Sampler : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11SamplerState> backend;
 };
-struct Shader {
+struct Shader : Child {
   Device* owner = nullptr;
   dxvk::umd::ShaderStage stage = dxvk::umd::ShaderStage::Vertex;
   ComPtr<ID3D11VertexShader> vertex;
@@ -198,28 +241,28 @@ struct Shader {
   bool needsLayout = false;
   bool needsLinkage = false;
 };
-struct InputLayout {
+struct InputLayout : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11InputLayout> backend;
   std::array<dxvk::umd::ShaderScalar,32> inputTypes = {};
 };
-struct Rasterizer {
+struct Rasterizer : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11RasterizerState> backend;
 };
-struct BlendState {
+struct BlendState : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11BlendState> backend;
 };
-struct DepthView {
+struct DepthView : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11DepthStencilView> backend;
 };
-struct DepthState {
+struct DepthState : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11DepthStencilState> backend;
 };
-struct Query {
+struct Query : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11Query> backend;
   dxvk::umd::QueryInfo info;
@@ -262,14 +305,12 @@ void APIENTRY createQuery(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEQUERY* arg
     device->error(E_INVALIDARG); return;
   }
   D3D11_QUERY_DESC desc = {query->info.type, 0};
-  try { device->error(device->backend->CreateQuery(&desc, &query->backend)); }
-  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
-  catch (...) { device->error(E_FAIL); }
+  createChildBackend(device, query, [&] { return device->backend->CreateQuery(&desc, &query->backend); });
 }
 void APIENTRY destroyQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
   auto query = get(object);
   if (!query || query->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  query->~Query();
+  retireChild(get(h), query, query->backend);
 }
 void APIENTRY beginQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
   auto device = get(h); auto query = get(object);
@@ -345,6 +386,9 @@ HRESULT createResourceData(Device* device,
     return DXGI_ERROR_UNSUPPORTED;
   }
   try {
+    // Reserve the intrusive retirement node before entering any backend or
+    // runtime operation. DestroyResource cannot allocate under memory pressure.
+    resource->retirement = std::make_unique<ResourceRetirement>();
     std::vector<D3D11_SUBRESOURCE_DATA> initial;
     if (args->pInitialDataUP) {
       initial.resize(size_t(args->MipLevels) * args->ArraySize);
@@ -448,16 +492,14 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
     if (!live) return;
   }
   auto device = get(h);
-  HRESULT hr = S_OK;
-  {
-    auto object = get(resource);
-    Resource retired(std::move(*object));
-    object->~Resource();
-    // The runtime may free/reuse private storage during a recursive destroy.
-    // Release only local owners; neither object nor device is accessed afterward.
-    hr = retired.allocation.release();
-  }
-  if (FAILED(hr)) device->error(hr);
+  auto object = get(resource);
+  auto retired = std::move(object->retirement);
+  retired->resource = std::move(*object);
+  object->~Resource();
+  // D3D10 RenderCb may reenter here while its submit worker owns the Mesa
+  // WDDM lock. Retire private bytes now; final COM/HRESOURCE release runs only
+  // after the outer callback has returned, before its outer DDI returns.
+  device->service->retire(retired.release());
 }
 
 SIZE_T APIENTRY shaderViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATESHADERRESOURCEVIEW*) {
@@ -480,14 +522,12 @@ void APIENTRY createShaderView(D3D10DDI_HDEVICE h,
   if (!dxvk::umd::textureShaderView(*args, resource, desc)) {
     device->error(E_INVALIDARG); return;
   }
-  try { device->error(device->backend->CreateShaderResourceView(texture.Get(), &desc, &view->backend)); }
-  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
-  catch (...) { device->error(E_FAIL); }
+  createChildBackend(device, view, [&] { return device->backend->CreateShaderResourceView(texture.Get(), &desc, &view->backend); });
 }
 void APIENTRY destroyShaderView(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW object) {
   auto view = get(object);
   if (!view || view->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  view->~ShaderView();
+  retireChild(get(h), view, view->backend);
 }
 void APIENTRY generateMips(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW object) {
   auto device = get(h); auto view = get(object);
@@ -550,14 +590,12 @@ void APIENTRY createSampler(D3D10DDI_HDEVICE h, const D3D10_DDI_SAMPLER_DESC* ar
   desc.ComparisonFunc = static_cast<D3D11_COMPARISON_FUNC>(args->ComparisonFunc);
   for (unsigned i = 0; i < 4; i++) desc.BorderColor[i] = args->BorderColor[i];
   desc.MinLOD = args->MinLOD; desc.MaxLOD = args->MaxLOD;
-  try { device->error(device->backend->CreateSamplerState(&desc, &sampler->backend)); }
-  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
-  catch (...) { device->error(E_FAIL); }
+  createChildBackend(device, sampler, [&] { return device->backend->CreateSamplerState(&desc, &sampler->backend); });
 }
 void APIENTRY destroySampler(D3D10DDI_HDEVICE h, D3D10DDI_HSAMPLER object) {
   auto sampler = get(object);
   if (!sampler || sampler->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  sampler->~Sampler();
+  retireChild(get(h), sampler, sampler->backend);
 }
 template<dxvk::umd::ShaderStage Stage>
 void APIENTRY setSamplers(D3D10DDI_HDEVICE h, UINT start, UINT count, const D3D10DDI_HSAMPLER* objects) {
@@ -597,14 +635,12 @@ void APIENTRY createTarget(D3D10DDI_HDEVICE h,
   D3D11_TEXTURE2D_DESC resource = {}; texture->GetDesc(&resource);
   if (!dxvk::umd::textureTargetView(*args, resource, desc)) { device->error(E_INVALIDARG); return; }
   target->format = desc.Format;
-  try { device->error(device->backend->CreateRenderTargetView(texture.Get(), &desc, &target->backend)); }
-  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
-  catch (...) { device->error(E_FAIL); }
+  createChildBackend(device, target, [&] { return device->backend->CreateRenderTargetView(texture.Get(), &desc, &target->backend); });
 }
 void APIENTRY destroyTarget(D3D10DDI_HDEVICE h, D3D10DDI_HRENDERTARGETVIEW target) {
   auto object = get(target);
   if (!object || object->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  object->~RenderTarget();
+  retireChild(get(h), object, object->backend);
 }
 void APIENTRY clearTarget(D3D10DDI_HDEVICE h, D3D10DDI_HRENDERTARGETVIEW target, FLOAT color[4]) {
   auto device = get(h);
@@ -640,14 +676,12 @@ void APIENTRY createDepthView(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEDEPTHS
     desc.Texture2DArray.FirstArraySlice = args->Tex2D.FirstArraySlice;
     desc.Texture2DArray.ArraySize = args->Tex2D.ArraySize;
   }
-  try { device->error(device->backend->CreateDepthStencilView(texture.Get(), &desc, &view->backend)); }
-  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
-  catch (...) { device->error(E_FAIL); }
+  createChildBackend(device, view, [&] { return device->backend->CreateDepthStencilView(texture.Get(), &desc, &view->backend); });
 }
 void APIENTRY destroyDepthView(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILVIEW object) {
   auto view = get(object);
   if (!view || view->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  view->~DepthView();
+  retireChild(get(h), view, view->backend);
 }
 void APIENTRY clearDepthView(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILVIEW object,
     UINT flags, FLOAT depth, UINT8 stencil) {
@@ -873,6 +907,7 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
   static_assert(D3D10_SB_NAME_POSITION == 1 && D3D10_SB_NAME_VERTEX_ID == 6);
   try {
     Shader candidate; candidate.owner = device; candidate.stage = stage;
+    candidate.retirement = std::make_unique<ComRetirement>();
     for (UINT i = 0; i < signature->NumInputSignatureEntries; i++) {
       const auto& entry = signature->pInputSignature[i];
       candidate.inputs.push_back({uint32_t(entry.SystemValue), entry.Register, entry.Mask});
@@ -951,7 +986,7 @@ void APIENTRY destroyShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
     get(h)->context->GSSetShader(nullptr, nullptr, 0);
     get(h)->geometryShader = nullptr;
   }
-  object->~Shader();
+  retireChild(get(h), object, object->vertex, object->geometry, object->pixel);
 }
 void APIENTRY setVertexShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto device = get(h);
@@ -1072,12 +1107,12 @@ void APIENTRY createRasterizer(D3D10DDI_HDEVICE h, const D3D10_DDI_RASTERIZER_DE
   desc.SlopeScaledDepthBias = args->SlopeScaledDepthBias;
   desc.DepthClipEnable = args->DepthClipEnable; desc.ScissorEnable = args->ScissorEnable;
   desc.MultisampleEnable = args->MultisampleEnable; desc.AntialiasedLineEnable = args->AntialiasedLineEnable;
-  device->error(device->backend->CreateRasterizerState(&desc, &object->backend));
+  createChildBackend(device, object, [&] { return device->backend->CreateRasterizerState(&desc, &object->backend); });
 }
 void APIENTRY destroyRasterizer(D3D10DDI_HDEVICE h, D3D10DDI_HRASTERIZERSTATE state) {
   auto object = get(state);
   if (!object || object->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  object->~Rasterizer();
+  retireChild(get(h), object, object->backend);
 }
 void APIENTRY setRasterizer(D3D10DDI_HDEVICE h, D3D10DDI_HRASTERIZERSTATE state) {
   auto device = get(h);
@@ -1118,14 +1153,12 @@ void APIENTRY createBlend(D3D10DDI_HDEVICE h, const D3D10_DDI_BLEND_DESC* args,
     target.DestBlendAlpha = static_cast<D3D11_BLEND>(args->DestBlendAlpha);
     target.BlendOpAlpha = static_cast<D3D11_BLEND_OP>(args->BlendOpAlpha);
   }
-  try { device->error(device->backend->CreateBlendState(&desc, &state->backend)); }
-  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
-  catch (...) { device->error(E_FAIL); }
+  createChildBackend(device, state, [&] { return device->backend->CreateBlendState(&desc, &state->backend); });
 }
 void APIENTRY destroyBlend(D3D10DDI_HDEVICE h, D3D10DDI_HBLENDSTATE object) {
   auto state = get(object);
   if (!state || state->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  state->~BlendState();
+  retireChild(get(h), state, state->backend);
 }
 void APIENTRY setBlend(D3D10DDI_HDEVICE h, D3D10DDI_HBLENDSTATE object, const FLOAT factor[4], UINT sampleMask) {
   auto device = get(h); auto state = get(object);
@@ -1162,14 +1195,12 @@ void APIENTRY createDepthState(D3D10DDI_HDEVICE h, const D3D10_DDI_DEPTH_STENCIL
   };
   desc.FrontFace = face(args->FrontFace, args->StencilEnable && args->FrontEnable);
   desc.BackFace = face(args->BackFace, args->StencilEnable && args->BackEnable);
-  try { device->error(device->backend->CreateDepthStencilState(&desc, &state->backend)); }
-  catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
-  catch (...) { device->error(E_FAIL); }
+  createChildBackend(device, state, [&] { return device->backend->CreateDepthStencilState(&desc, &state->backend); });
 }
 void APIENTRY destroyDepthState(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILSTATE object) {
   auto state = get(object);
   if (!state || state->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  state->~DepthState();
+  retireChild(get(h), state, state->backend);
 }
 void APIENTRY setDepthState(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILSTATE object, UINT stencil) {
   auto device = get(h); auto state = get(object);
@@ -1207,6 +1238,7 @@ void APIENTRY createLayout(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEELEMENTLA
   }
   try {
     InputLayout candidate; candidate.owner = device;
+    candidate.retirement = std::make_unique<ComRetirement>();
     D3D11_INPUT_ELEMENT_DESC elements[32] = {};
     dxvk::umd::ShaderSignatureEntry inputs[32] = {};
     for (UINT i = 0; i < args->NumElements; i++) {
@@ -1252,7 +1284,7 @@ void APIENTRY destroyLayout(D3D10DDI_HDEVICE h, D3D10DDI_HELEMENTLAYOUT object) 
   if (device->inputLayout == layout) {
     device->context->IASetInputLayout(nullptr); device->inputLayout = nullptr;
   }
-  layout->~InputLayout();
+  retireChild(device, layout, layout->backend);
 }
 void APIENTRY setLayout(D3D10DDI_HDEVICE h, D3D10DDI_HELEMENTLAYOUT object) {
   auto device = get(h); auto layout = get(object);

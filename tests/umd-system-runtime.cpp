@@ -12,7 +12,10 @@
 using Microsoft::WRL::ComPtr;
 #define CHECK(c) do { if (!(c)) { std::fprintf(stderr, "system runtime line %d: %s\n", __LINE__, #c); std::exit(1); } } while (0)
 
-int main() {
+int main(int argc, char** argv) {
+  const bool warpOnly = argc == 2 && std::strcmp(argv[1], "--warp-only") == 0;
+  CHECK(argc == 1 || warpOnly);
+  if (!warpOnly) {
   wchar_t executable[32768];
   DWORD length = GetModuleFileNameW(nullptr, executable, 32768);
   CHECK(length && length < 32768);
@@ -28,9 +31,10 @@ int main() {
     const HRESULT result = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_SOFTWARE,
       candidate, 0, &level, 1, D3D11_SDK_VERSION, &device, nullptr, &context);
     CHECK(FAILED(result) && !device && !context);
-    std::printf("system candidate activation rejected hr=0x%08lx; no VIOGPU KMD on CI; native admission NOT proved\n", static_cast<unsigned long>(result));
+    std::printf("system candidate software-module attempt hr=0x%08lx; native DDI entry/activation NOT proved\n", static_cast<unsigned long>(result));
   }
   CHECK(FreeLibrary(candidate));
+  }
 
   WNDCLASSW klass{};
   klass.lpfnWndProc = DefWindowProcW;

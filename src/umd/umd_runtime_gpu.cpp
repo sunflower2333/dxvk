@@ -40,18 +40,32 @@ struct Pending {
   explicit Pending(bool& value) : flag(value) { flag = true; }
   ~Pending() { flag = false; }
 };
+template<typename Function, Function function> struct RuntimeEntry;
+template<typename... Args, int32_t (MWD_CALL *function)(void*, Args...)>
+struct RuntimeEntry<int32_t (MWD_CALL *)(void*, Args...), function> {
+  static int32_t MWD_CALL call(void* owner, Args... args) {
+    return static_cast<RuntimeGpu*>(owner)->serviceCall([&] { return function(owner, args...); });
+  }
+};
+template<auto function>
+constexpr auto runtimeEntry = &RuntimeEntry<decltype(function), function>::call;
 }
 
 const mwd_callbacks RuntimeGpu::s_callbacks = {
   MWD_RUNTIME_MAGIC, MWD_RUNTIME_ABI_VERSION, sizeof(mwd_callbacks), 0,
-  getContext, allocate, retain, release, map, unmap, submit, completed, status
+  runtimeEntry<getContext>, runtimeEntry<allocate>, runtimeEntry<retain>,
+  runtimeEntry<static_cast<int32_t (MWD_CALL *)(void*, void*)>(release)>,
+  runtimeEntry<map>, runtimeEntry<unmap>, runtimeEntry<submit>,
+  runtimeEntry<completed>, runtimeEntry<status>
 };
 
 std::shared_ptr<RuntimeGpu> RuntimeGpu::create(HANDLE device,
-    const D3DDDI_DEVICECALLBACKS& cb, std::shared_ptr<const AdapterIdentity> identity) {
+    const D3DDDI_DEVICECALLBACKS& cb, std::shared_ptr<const AdapterIdentity> identity,
+    std::shared_ptr<RuntimeService> service) {
   auto result = std::shared_ptr<RuntimeGpu>(new RuntimeGpu);
   result->m_device = device;
   result->m_identity = std::move(identity);
+  result->m_service = std::move(service);
   // Copy only callbacks in the negotiated D3D10 table. Never retain a pointer
   // to runtime-owned tables or read a newer whole-WDK structure from old input.
   auto& copy = result->m_callbacks;
@@ -65,27 +79,8 @@ RuntimeGpu::~RuntimeGpu() { close(); }
 RuntimeBackend RuntimeGpu::backend() {
   return {{MWD_STYPE_DEVICE, nullptr, &s_callbacks, this}, shared_from_this()};
 }
-RuntimeGpu::Activity::Activity(RuntimeGpu& source) : value(source) {
-  std::lock_guard<std::mutex> lock(value.m_activityMutex);
-  ++value.m_calls;
-}
-RuntimeGpu::Activity::~Activity() {
-  std::lock_guard<std::mutex> lock(value.m_activityMutex);
-  if (!--value.m_calls) value.m_activityChanged.notify_all();
-}
-bool RuntimeGpu::hasActiveCalls() const {
-  std::lock_guard<std::mutex> lock(m_activityMutex);
-  return m_calls != 0;
-}
-void RuntimeGpu::waitForCalls() {
-  std::unique_lock<std::mutex> lock(m_activityMutex);
-  m_activityChanged.wait(lock, [this] { return !m_calls; });
-}
 RuntimeGpu::Call::Call(void* ptr)
-: value(static_cast<RuntimeGpu*>(ptr)), owner(value->weak_from_this().lock()),
-  activity(*value), lock(value->m_mutex) { ++value->m_active; }
-// Member order releases the recursive lock before publishing quiescence,
-// and retains RuntimeGpu until both lock and activity guards have unwound.
+: value(static_cast<RuntimeGpu*>(ptr)), owner(value->weak_from_this().lock()), lock(value->m_mutex) { ++value->m_active; }
 RuntimeGpu::Call::~Call() { --value->m_active; }
 bool RuntimeGpu::Call::live(bool cleanup) const {
   return value->m_live && (cleanup || !value->m_closing) && value->m_device && value->m_identity;

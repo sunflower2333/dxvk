@@ -38,21 +38,12 @@ static SIZE_T activeResourceBytes;
 static HRESULT allocationResult = S_OK, deallocationResult = S_OK;
 static bool zeroAllocation, destroyResourceOnDeallocate, destroyResourceOnError;
 static bool cancelResourceCreation;
-static bool destroyDeviceOnAllocate;
 
 static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
   CHECK(device == &deviceCookie && args && args->hResource == &resourceCookie);
   CHECK(args->NumAllocations == 1 && args->pAllocationInfo);
   args->pAllocationInfo[0].hAllocation = zeroAllocation ? 0 : 123;
   args->hKMResource = 456; ++allocations;
-  if (destroyDeviceOnAllocate) {
-    destroyDeviceOnAllocate = false;
-    activeTable->pfnDestroyDevice(activeCreate->hDrvDevice);
-    // Runtime private storage can be reclaimed before the outer CreateResource
-    // returns. Its staged backend/allocation must unwind without publication.
-    std::memset(activeCreate->hDrvDevice.pDrvPrivate, 0xcd, VioGpuDxvkPrivateDeviceSize());
-    std::memset(activeResource.pDrvPrivate, 0xcc, activeResourceBytes);
-  }
   if (cancelResourceCreation) {
     cancelResourceCreation = false;
     activeTable->pfnDestroyResource(activeCreate->hDrvDevice, activeResource);
@@ -336,26 +327,6 @@ int main() {
     CHECK(functions.pfnCreateDevice(active, &create) == S_OK);
     table.pfnDestroyDevice(create.hDrvDevice);
 
-    CHECK(functions.pfnCreateDevice(active, &create) == S_OK);
-    const unsigned oldAllocations = allocations, oldDeallocations = deallocations, oldErrors = errors;
-    destroyDeviceOnAllocate = true;
-    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
-    CHECK(allocations == oldAllocations + 1 && deallocations == oldDeallocations + 1 && errors == oldErrors + 1);
-    for (SIZE_T i = 0; i < VioGpuDxvkPrivateDeviceSize(); ++i)
-      CHECK(static_cast<unsigned char*>(create.hDrvDevice.pDrvPrivate)[i] == 0xcd);
-    for (SIZE_T i = 0; i < resourceBytes; ++i)
-      CHECK(static_cast<unsigned char*>(resource.pDrvPrivate)[i] == 0xcc);
-    table.pfnDestroyResource(create.hDrvDevice, resource);
-    table.pfnDestroyDevice(create.hDrvDevice);
-    CHECK(deallocations == oldDeallocations + 1);
-    // The retired creation must not leave a reservation attached to reused
-    // runtime storage, either for the Device or its unpublished resource.
-    CHECK(functions.pfnCreateDevice(active, &create) == S_OK);
-    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
-    CHECK(allocations == oldAllocations + 2 && errors == oldErrors + 1);
-    table.pfnDestroyResource(create.hDrvDevice, resource);
-    table.pfnDestroyDevice(create.hDrvDevice);
-    CHECK(deallocations == oldDeallocations + 2);
   }
 
   ++generation;

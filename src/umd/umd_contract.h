@@ -14,6 +14,7 @@ enum RuntimeGap : uint32_t {
   MultipleRenderTargets = 1 << 5,
   PrimaryAndDxgi = 1 << 6,
   LegacyPipelineCallbacks = 1 << 7,
+  RuntimeThreading = 1 << 8,
 };
 
 // This is immutable production capability policy, not an environment switch.

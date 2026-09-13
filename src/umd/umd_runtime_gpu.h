@@ -2,9 +2,9 @@
 
 #include "umd_adapter.h"
 #include "umd_runtime_bridge.h"
+#include "umd_runtime_service.h"
 #include <map>
 #include <mutex>
-#include <condition_variable>
 
 namespace dxvk::umd {
 
@@ -14,17 +14,16 @@ class RuntimeGpu final : public std::enable_shared_from_this<RuntimeGpu> {
 public:
   static std::shared_ptr<RuntimeGpu> create(HANDLE device,
     const D3DDDI_DEVICECALLBACKS& callbacks,
-    std::shared_ptr<const AdapterIdentity> identity);
+    std::shared_ptr<const AdapterIdentity> identity,
+    std::shared_ptr<RuntimeService> service = {});
   ~RuntimeGpu();
   RuntimeBackend backend();
-  // Call after releasing/draining the embedded device. The controlled runtime
-  // must retain callback service through that drain, including asynchronous
-  // retirement. Earlier retirement of runtime handles is not admitted.
+  // Close on the DestroyDevice caller after synchronous backend drain, before
+  // that DDI returns and the runtime may invalidate handles and backing.
   HRESULT close();
-  // Independent of the recursive runtime lock: DestroyDevice may be called
-  // by another thread while a runtime callback waits for that thread to exit.
-  bool hasActiveCalls() const;
-  void waitForCalls();
+  template<typename Function> HRESULT serviceCall(Function&& function) {
+    return m_service ? m_service->invoke(std::forward<Function>(function)) : function();
+  }
 
 private:
   struct Allocation {
@@ -34,15 +33,9 @@ private:
     void* mapping = nullptr;
     bool pending = false, locked = false, mapValid = false;
   };
-  struct Activity {
-    RuntimeGpu& value;
-    explicit Activity(RuntimeGpu& value);
-    ~Activity();
-  };
   struct Call {
     RuntimeGpu* value;
     std::shared_ptr<RuntimeGpu> owner;
-    Activity activity;
     std::unique_lock<std::recursive_mutex> lock;
     explicit Call(void* ptr);
     ~Call();
@@ -67,9 +60,7 @@ private:
   static const mwd_callbacks s_callbacks;
 
   std::recursive_mutex m_mutex;
-  mutable std::mutex m_activityMutex;
-  std::condition_variable m_activityChanged;
-  unsigned m_calls = 0;
+  std::shared_ptr<RuntimeService> m_service;
   HANDLE m_device = nullptr, m_context = nullptr;
   D3DDDI_DEVICECALLBACKS m_callbacks = {};
   std::shared_ptr<const AdapterIdentity> m_identity;

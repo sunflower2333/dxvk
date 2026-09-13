@@ -18,45 +18,13 @@
 #include <unordered_map>
 #include <type_traits>
 #include <atomic>
-#include <stdexcept>
 
 namespace {
 using Microsoft::WRL::ComPtr;
 struct Shader;
 struct InputLayout;
 struct Device {
-  PTP_WORK retirementWork = nullptr;
-  HMODULE retirementModule = nullptr;
-  Device() {
-    // Reserve finalization resources before exposing any backend callbacks.
-    // SubmitThreadpoolWork has no failure return; DestroyDevice needs no new
-    // application allocation, thread or work object when reentered.
-    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-        reinterpret_cast<LPCSTR>(&Device::finalize), &retirementModule))
-      throw std::runtime_error("Cannot retain the native UMD module");
-    retirementWork = CreateThreadpoolWork(finalize, this, nullptr);
-    if (!retirementWork) {
-      FreeLibrary(retirementModule); retirementModule = nullptr;
-      throw std::bad_alloc();
-    }
-  }
-  static void release(Device* value) noexcept {
-    if (value->gpu && value->gpu->hasActiveCalls())
-      SubmitThreadpoolWork(value->retirementWork);
-    else delete value;
-  }
-  static void CALLBACK finalize(PTP_CALLBACK_INSTANCE instance, void* context, PTP_WORK) {
-    auto value = static_cast<Device*>(context);
-    // This is never a backend's own callback/worker thread. Wait only here,
-    // then let backend release drain any workers that resume or make cleanup
-    // callbacks after this quiescent point. Keep callback service live until
-    // the backend has fully returned, and keep UMD code mapped to our return.
-    value->gpu->waitForCalls();
-    const HMODULE module = value->retirementModule;
-    value->retirementModule = nullptr;
-    delete value;
-    FreeLibraryWhenCallbackReturns(instance, module);
-  }
+  std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>();
   std::shared_ptr<const dxvk::umd::AdapterIdentity> adapter;
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
   ComPtr<ID3D11Device> backend;
@@ -76,36 +44,33 @@ struct Device {
   InputLayout* inputLayout = nullptr;
   bool closing = false;
   std::atomic<bool> retired{false};
-  bool reportRetirement = false;
   HRESULT close() noexcept {
     if (closing) return S_OK;
     closing = true;
-    HRESULT result = E_FAIL;
+    dxvk::umd::RuntimeService::Scope scope(service.get());
+    HRESULT result = S_OK;
     try {
-      // This runs after enclosing DDIs and active callbacks have unwound,
-      // outside registry and runtime locks. Backend workers can use RuntimeGpu
-      // until context/device release has fully drained them.
-      context.Reset(); backend.Reset();
-      result = gpu ? gpu->close() : S_OK;
+      // Backend release can join workers that need runtime callbacks. Pump
+      // those requests on this DDI caller while release runs separately.
+      service->drain([&] { context.Reset(); backend.Reset(); });
+    } catch (...) { result = E_FAIL; }
+    try {
+      const HRESULT gpuResult = gpu ? gpu->close() : S_OK;
+      if (FAILED(gpuResult)) result = gpuResult;
       const HRESULT presentResult = memory.close();
       if (FAILED(presentResult)) result = presentResult;
-    } catch (...) {}
+    } catch (...) { result = E_FAIL; }
+    service->close();
     return result;
   }
-  ~Device() {
-    const HRESULT hr = close();
-    if (reportRetirement && FAILED(hr)) error(hr);
-    // An outstanding work callback keeps the work object alive to its return.
-    if (retirementWork) CloseThreadpoolWork(retirementWork);
-    if (retirementModule) FreeLibrary(retirementModule);
-  }
+  ~Device() { close(); }
   void error(HRESULT hr) {
     if (FAILED(hr)) callbacks.pfnSetErrorCb(runtime, dxvk::umd::ddiResult(hr));
   }
 };
-// Runtime private bytes are only a stable registration key. Callable state is
-// separately owned, so nested DestroyDevice may reclaim/poison/reuse those
-// bytes while an outer DDI still unwinds.
+// Runtime private bytes are only a registration key. Callable state is
+// independently owned; DestroyDevice finishes runtime cleanup before return
+// and no later registry lookup dereferences the retired private bytes.
 struct DevicePrivate { uintptr_t reserved; };
 enum class DevicePhase { Creating, Live };
 struct DeviceRecord {
@@ -161,6 +126,7 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
       else if constexpr (std::is_same_v<Result, BOOL>) return TRUE;
       else return Result{};
     }
+    dxvk::umd::RuntimeService::Scope scope(operation.owner->service.get());
     return function(h, args...);
   }
 };
@@ -1441,13 +1407,15 @@ void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
     if (entry == deviceStorage.end() || entry->second.phase != DevicePhase::Live) return;
     owner = std::move(entry->second.owner);
     owner->retired = true;
-    owner->reportRetirement = true;
     deviceStorage.erase(entry);
   }
-  // Do not release backend/context or close callbacks under a nested runtime
-  // callback. Active outer DDI operations retain this owner until their local
-  // guards and callback locks have unwound. Ordinary destruction has no other
-  // operation owner and still completes synchronously before returning.
+  // The runtime destroys all children first. Deferred backend objects and
+  // runtime allocations must be gone before this DDI returns. Its caller
+  // services worker callbacks during the synchronous backend drain.
+  const HRESULT hr = owner->close();
+  // DestroyDevice permits only device-removed error reporting. A failed
+  // terminal cleanup makes this device unusable; never report transient busy.
+  if (FAILED(hr)) owner->error(DXGI_ERROR_DEVICE_REMOVED);
   owner.reset();
 }
 
@@ -1457,6 +1425,7 @@ HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
   DeviceOperation operation(reinterpret_cast<void*>(args->hDevice));
   auto device = operation.owner.get();
   if (!device) return DXGI_ERROR_DEVICE_REMOVED;
+  dxvk::umd::RuntimeService::Scope scope(device->service.get());
   auto resource = reinterpret_cast<Resource*>(args->hSurfaceToPresent);
   if (resource->owner != device || !resource->backend || !resource->allocation.handle()
       || args->SrcSubResourceIndex || args->DstSubResourceIndex
@@ -1504,7 +1473,8 @@ HRESULT createDdiDevice(
   if (!luid || !h.pDrvPrivate || uintptr_t(h.pDrvPrivate) % alignof(DevicePrivate)
       || !callbacks || !callbacks->pfnSetErrorCb || !table)
     return E_INVALIDARG;
-  auto owner = std::shared_ptr<Device>(new Device, Device::release);
+  auto owner = std::make_shared<Device>();
+  dxvk::umd::RuntimeService::Scope scope(owner->service.get());
   try {
     std::lock_guard<std::mutex> lock(deviceStorageMutex);
     if (!deviceStorage.emplace(h.pDrvPrivate, DeviceRecord{DevicePhase::Creating, owner}).second)
@@ -1530,7 +1500,7 @@ HRESULT createDdiDevice(
     device->memory.initialize(native->hRTDevice.handle, *native->pKTCallbacks,
       native->DXGIBaseDDI.pDXGIBaseCallbacks, identity);
     device->gpu = dxvk::umd::RuntimeGpu::create(native->hRTDevice.handle,
-      *native->pKTCallbacks, identity);
+      *native->pKTCallbacks, identity, device->service);
     dxgiTable = native->DXGIBaseDDI.pDXGIDDIBaseFunctions;
   }
   auto backendRuntime = device->gpu ? device->gpu->backend() : dxvk::umd::RuntimeBackend{};

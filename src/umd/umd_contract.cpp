@@ -8,7 +8,9 @@ uint32_t dxvk::umd::runtimeMissingD3D10Requirements() noexcept {
   // shared ownership, several shader semantics and multiple render targets.
   // Keep all native feature levels unadvertised until these contracts, not
   // just their function pointers, have been implemented and validated.
+  // Synchronous teardown services callbacks on its DDI caller, but ordinary
+  // rendering workers still need full D3D10 callback-thread dispatch.
   return StreamOutput | Predication | OpenedResources | CompleteResources
     | CompleteShaderSemantics | MultipleRenderTargets | PrimaryAndDxgi
-    | LegacyPipelineCallbacks;
+    | LegacyPipelineCallbacks | RuntimeThreading;
 }

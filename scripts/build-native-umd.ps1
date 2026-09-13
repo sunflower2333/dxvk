@@ -42,8 +42,16 @@ ninja -C build-umd src/umd/viogpudxvk.dll.p/umd_ddi.cpp.obj src/umd/dxvk-umd-ddi
 if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 if ($arch -ne 'arm64') {
-    & build-umd/src/umd/dxvk-umd-runtime-gpu-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-gpu-test.txt')
-    if ($LASTEXITCODE) { throw 'Actual runtime GPU allocation/submission owner regression failed' }
+    $runtimeOut = Join-Path $OutputDirectory 'runtime-gpu-test.txt'
+    $runtimeErr = Join-Path $OutputDirectory 'runtime-gpu-test.stderr.txt'
+    $runtimeTest = Start-Process build-umd/src/umd/dxvk-umd-runtime-gpu-test.exe -PassThru -RedirectStandardOutput $runtimeOut -RedirectStandardError $runtimeErr
+    $null = $runtimeTest.Handle
+    if (!$runtimeTest.WaitForExit(30000)) {
+        $runtimeTest.Kill(); $runtimeTest.WaitForExit()
+        throw 'Runtime GPU teardown fixture exceeded its 30-second deadline'
+    }
+    Get-Content -LiteralPath $runtimeOut
+    if ($runtimeTest.ExitCode) { throw "Runtime GPU owner regression failed: $(Get-Content -LiteralPath $runtimeErr -Raw)" }
     & build-umd/src/umd/dxvk-umd-identity-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-query-test.txt')
     if ($LASTEXITCODE) { throw 'Runtime identity callback consumer test failed' }
     & build-umd/src/umd/dxvk-umd-adapter-test.exe | Tee-Object (Join-Path $OutputDirectory 'adapter-test.txt')
@@ -93,7 +101,7 @@ Native OpenAdapter10_2 negotiates exact identity/generation; incomplete producti
 Production entry/lifetime fixtures use controlled callbacks and a WARP backend; they are not ordinary Microsoft runtime activation.
 Native resource creation unwinds failed staged owners; destruction retires private storage before callbacks. Allocation identity/reset checks and cleanup fixtures are included.
 Native backend receives copied runtime callbacks before vkCreateDevice; Turnip internal BO allocation/map/submit use one runtime-owned context through private Mesa v1. Actual GPU/system-runtime acceptance pending.
-All published device DDIs retain independent callable state; callback reentry can retire/reuse device storage, with backend shutdown deferred until enclosing DDIs unwind. A preallocated finalizer handles active backend callbacks without an outer DDI. Controlled callback service must remain valid through asynchronous drain; arbitrary runtime-handle retirement and unrelated live resource reclamation remain unadmitted.
+DestroyDevice synchronously drains backend workers while its DDI caller services their RuntimeGpu requests, then closes runtime allocations and context before return. Native worker callbacks outside a caller/pump scope are rejected before runtime access; regular rendering worker dispatch remains an explicit admission gap. No post-DestroyDevice runtime lifetime is assumed.
 Windowed-blit Present development path uses runtime allocations and synchronized pixel copies; target proof pending.
 Registration, ordinary runtime activation, complete required table, sharing and primary/flip Present remain pending.
 "@ | Set-Content (Join-Path $OutputDirectory 'STATUS.txt')

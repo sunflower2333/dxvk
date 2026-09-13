@@ -246,6 +246,18 @@ namespace dxvk {
         extensions.push_back(extra);
     }
 
+    // The native runtime-v1 owner has no calibrated-clock callback. Keep
+    // calibration disabled even if an external provider adds the extension;
+    // ordinary GPU query-pool timestamps do not require this facility.
+    if (runtime) {
+      for (auto extension = extensions.begin(); extension != extensions.end();) {
+        if (!std::strcmp(extension->extensionName, VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME)
+            || !std::strcmp(extension->extensionName, VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME))
+          extension = extensions.erase(extension);
+        else ++extension;
+      }
+    }
+
     // Create extension list that we can pass to Vulkan
     std::vector<const char*> extensionNames;
     extensionNames.reserve(extensions.size());

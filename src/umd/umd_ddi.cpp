@@ -126,15 +126,14 @@ thread_local DeviceOperation* DeviceOperation::current = nullptr;
 void APIENTRY flush(D3D10DDI_HDEVICE h);
 template<auto function> constexpr bool isFlushEntry = false;
 template<> constexpr bool isFlushEntry<&flush> = true;
-template<auto function> constexpr bool isPredicatedEntry = false;
 
 // All published D3D device entries pass through this typed WDK-ABI wrapper.
 // Thread-local operation lookup preserves the old owner when a callback
 // reuses the same runtime storage for a new device before the outer DDI ends.
-template<typename Function, Function function> struct DeviceEntry;
+template<typename Function, Function function, bool predicated> struct DeviceEntry;
 template<typename Result, typename... Args,
-    Result (APIENTRY *function)(D3D10DDI_HDEVICE, Args...)>
-struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
+    Result (APIENTRY *function)(D3D10DDI_HDEVICE, Args...), bool predicated>
+struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function, predicated> {
   static Result APIENTRY call(D3D10DDI_HDEVICE h, Args... args) {
     DeviceOperation operation(h.pDrvPrivate);
     if (!operation.owner) {
@@ -152,7 +151,7 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
       try {
         auto backend = [&]() -> Result {
           DeviceOperation worker(h.pDrvPrivate, operation.owner);
-          if constexpr (isPredicatedEntry<function>) {
+          if constexpr (predicated) {
             if (operation.owner->suppressCommands) return;
           }
           return function(h, args...);
@@ -179,8 +178,8 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
     }
   }
 };
-template<auto function>
-constexpr auto deviceEntry = &DeviceEntry<decltype(function), function>::call;
+template<auto function, bool predicated = false>
+constexpr auto deviceEntry = &DeviceEntry<decltype(function), function, predicated>::call;
 struct ResourceRetirement;
 struct Resource {
   Device* owner = nullptr;
@@ -1530,19 +1529,6 @@ void APIENTRY flush(D3D10DDI_HDEVICE h) {
   if (FAILED(dxvk::umd::flushRuntimeSubmission(device->context.Get())))
     device->error(DXGI_ERROR_DEVICE_REMOVED);
 }
-// Only pipeline work and resource-manipulation commands are predicated.
-// State changes, queries, Map/Unmap and Flush must still execute.
-template<> constexpr bool isPredicatedEntry<&draw> = true;
-template<> constexpr bool isPredicatedEntry<&drawIndexed> = true;
-template<> constexpr bool isPredicatedEntry<&drawInstanced> = true;
-template<> constexpr bool isPredicatedEntry<&drawIndexedInstanced> = true;
-template<> constexpr bool isPredicatedEntry<&clearTarget> = true;
-template<> constexpr bool isPredicatedEntry<&clearDepthView> = true;
-template<> constexpr bool isPredicatedEntry<&copyResource> = true;
-template<> constexpr bool isPredicatedEntry<&copyRegion> = true;
-template<> constexpr bool isPredicatedEntry<&resolveResource> = true;
-template<> constexpr bool isPredicatedEntry<&updateResource> = true;
-template<> constexpr bool isPredicatedEntry<&generateMips> = true;
 void APIENTRY relocateDeviceFunctions(D3D10DDI_HDEVICE h, D3D10DDI_DEVICEFUNCS* functions) {
   if (!functions) { get(h)->error(E_INVALIDARG); return; }
   // The runtime has already copied its table. No driver object caches a
@@ -1687,7 +1673,9 @@ HRESULT createDdiDevice(
   table->pfnCalcPrivateShaderResourceViewSize = deviceEntry<shaderViewSize>;
   table->pfnCreateShaderResourceView = deviceEntry<createShaderView>;
   table->pfnDestroyShaderResourceView = deviceEntry<destroyShaderView>;
-  table->pfnGenMips = deviceEntry<generateMips>;
+  // Explicitly tag every predicated DDI at registration. State changes,
+  // queries, Map/Unmap and Flush retain the ordinary non-predicated wrapper.
+  table->pfnGenMips = deviceEntry<generateMips, true>;
   table->pfnVsSetShaderResources = deviceEntry<setShaderResources<dxvk::umd::ShaderStage::Vertex>>;
   table->pfnGsSetShaderResources = deviceEntry<setShaderResources<dxvk::umd::ShaderStage::Geometry>>;
   table->pfnPsSetShaderResources = deviceEntry<setShaderResources<dxvk::umd::ShaderStage::Pixel>>;
@@ -1700,22 +1688,22 @@ HRESULT createDdiDevice(
   table->pfnCalcPrivateRenderTargetViewSize = deviceEntry<targetSize>;
   table->pfnCreateRenderTargetView = deviceEntry<createTarget>;
   table->pfnDestroyRenderTargetView = deviceEntry<destroyTarget>;
-  table->pfnClearRenderTargetView = deviceEntry<clearTarget>;
+  table->pfnClearRenderTargetView = deviceEntry<clearTarget, true>;
   table->pfnCalcPrivateDepthStencilViewSize = deviceEntry<depthViewSize>;
   table->pfnCreateDepthStencilView = deviceEntry<createDepthView>;
   table->pfnDestroyDepthStencilView = deviceEntry<destroyDepthView>;
-  table->pfnClearDepthStencilView = deviceEntry<clearDepthView>;
+  table->pfnClearDepthStencilView = deviceEntry<clearDepthView, true>;
   table->pfnCalcPrivateDepthStencilStateSize = deviceEntry<depthStateSize>;
   table->pfnCreateDepthStencilState = deviceEntry<createDepthState>;
   table->pfnDestroyDepthStencilState = deviceEntry<destroyDepthState>;
   table->pfnSetDepthStencilState = deviceEntry<setDepthState>;
-  table->pfnResourceCopy = deviceEntry<copyResource>;
-  table->pfnResourceResolveSubresource = deviceEntry<resolveResource>;
+  table->pfnResourceCopy = deviceEntry<copyResource, true>;
+  table->pfnResourceResolveSubresource = deviceEntry<resolveResource, true>;
   table->pfnCheckFormatSupport = deviceEntry<checkFormat>;
   table->pfnCheckMultisampleQualityLevels = deviceEntry<checkMultisample>;
-  table->pfnResourceCopyRegion = deviceEntry<copyRegion>;
-  table->pfnResourceUpdateSubresourceUP = deviceEntry<updateResource>;
-  table->pfnDefaultConstantBufferUpdateSubresourceUP = deviceEntry<updateResource>;
+  table->pfnResourceCopyRegion = deviceEntry<copyRegion, true>;
+  table->pfnResourceUpdateSubresourceUP = deviceEntry<updateResource, true>;
+  table->pfnDefaultConstantBufferUpdateSubresourceUP = deviceEntry<updateResource, true>;
   table->pfnCalcPrivateQuerySize = deviceEntry<querySize>;
   table->pfnCreateQuery = deviceEntry<createQuery>;
   table->pfnDestroyQuery = deviceEntry<destroyQuery>;
@@ -1766,10 +1754,10 @@ HRESULT createDdiDevice(
   table->pfnCreateBlendState = deviceEntry<createBlend>;
   table->pfnDestroyBlendState = deviceEntry<destroyBlend>;
   table->pfnSetBlendState = deviceEntry<setBlend>;
-  table->pfnDraw = deviceEntry<draw>;
-  table->pfnDrawIndexed = deviceEntry<drawIndexed>;
-  table->pfnDrawInstanced = deviceEntry<drawInstanced>;
-  table->pfnDrawIndexedInstanced = deviceEntry<drawIndexedInstanced>;
+  table->pfnDraw = deviceEntry<draw, true>;
+  table->pfnDrawIndexed = deviceEntry<drawIndexed, true>;
+  table->pfnDrawInstanced = deviceEntry<drawInstanced, true>;
+  table->pfnDrawIndexedInstanced = deviceEntry<drawIndexedInstanced, true>;
   table->pfnFlush = deviceEntry<flush>;
   table->pfnRelocateDeviceFuncs = deviceEntry<relocateDeviceFunctions>;
   table->pfnCheckCounterInfo = deviceEntry<counterInfo>;

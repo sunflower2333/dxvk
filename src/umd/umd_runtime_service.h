@@ -92,6 +92,14 @@ public:
     std::unique_lock<std::mutex> lock(m_mutex);
     for (;;) {
       m_changed.wait(lock, [&] { return m_head || job.complete; });
+      // Once this operation is finished, leave unrelated asynchronous
+      // completion/cleanup requests for the next DDI. Otherwise a finish
+      // thread polling a GPU fence can turn every DDI into a GPU-idle wait.
+      // Flush and DestroyDevice explicitly join the work they must finish.
+      if (job.complete) {
+        --m_pumps;
+        break;
+      }
       if (m_head) {
         Request* request = m_head;
         m_head = request->next;
@@ -104,9 +112,6 @@ public:
         lock.lock();
         request->result = result; request->complete = true;
         m_changed.notify_all();
-      } else {
-        --m_pumps;
-        break;
       }
     }
     const bool outermost = !m_pumps;

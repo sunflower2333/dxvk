@@ -924,7 +924,12 @@ namespace dxvk {
 
 
   HRESULT D3D11ImmediateContext::FlushRuntimeSubmission() {
-    Flush();
+    D3D10DeviceLock lock = LockContext();
+    // Public Flush may skip an unresolved tiler pass. A runtime DDI Flush
+    // cannot use that heuristic. Record a chunk even for initialization-only
+    // work so EmitCsChunk also drains the high-priority initializer first.
+    EmitCs<false>([] (DxvkContext*) { });
+    ExecuteFlush(GpuFlushType::ExplicitFlush, nullptr, false);
     SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
     return m_device->synchronizeSubmission() == VK_SUCCESS
       ? S_OK : DXGI_ERROR_DEVICE_REMOVED;

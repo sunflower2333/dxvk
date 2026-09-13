@@ -9,6 +9,7 @@
 #include <utility>
 #include <type_traits>
 #include <optional>
+#include <cstdint>
 
 namespace dxvk::umd {
 
@@ -28,6 +29,11 @@ public:
     std::lock_guard<std::mutex> lock(m_mutex);
     *m_retiredTail = object;
     m_retiredTail = &object->next;
+    ++m_retirementEpoch;
+  }
+  uint64_t retirementEpoch() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_retirementEpoch;
   }
   struct Scope {
     RuntimeService* service;
@@ -197,6 +203,7 @@ private:
   Job** m_jobTail = &m_jobHead;
   Retirement* m_retired = nullptr;
   Retirement** m_retiredTail = &m_retired;
+  uint64_t m_retirementEpoch = 0;
   unsigned m_pumps = 0;
   bool m_deferred = false, m_closed = false, m_releasing = false;
 };

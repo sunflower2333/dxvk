@@ -120,6 +120,9 @@ struct DeviceOperation {
   }
 };
 thread_local DeviceOperation* DeviceOperation::current = nullptr;
+void APIENTRY flush(D3D10DDI_HDEVICE h);
+template<auto function> constexpr bool isFlushEntry = false;
+template<> constexpr bool isFlushEntry<&flush> = true;
 
 // All published D3D device entries pass through this typed WDK-ABI wrapper.
 // Thread-local operation lookup preserves the old owner when a callback
@@ -143,10 +146,23 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function> {
     else {
       dxvk::umd::RuntimeService::Scope scope(operation.owner->service.get());
       try {
-        return operation.owner->service->run([&]() -> Result {
+        auto backend = [&]() -> Result {
           DeviceOperation worker(h.pDrvPrivate, operation.owner);
           return function(h, args...);
-        });
+        };
+        if constexpr (isFlushEntry<function>) {
+          // Runtime RenderCb can retire children during this Flush. The
+          // caller pump releases their COM owners only after that callback
+          // returns; release can itself defer backend cleanup. Flush again
+          // after those releases so no follow-up application DDI is required.
+          auto service = operation.owner->service;
+          uint64_t epoch;
+          do {
+            epoch = service->retirementEpoch();
+            service->run(backend);
+          } while (epoch != service->retirementEpoch());
+          return;
+        } else return operation.owner->service->run(backend);
       } catch (...) {
         operation.owner->error(DXGI_ERROR_DEVICE_REMOVED);
         if constexpr (std::is_void_v<Result>) return;

@@ -4,11 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [work/native-offline-contracts-20260915]
-  pull_request:
-    paths:
-      - 'src/umd/**'
-      - 'tests/umd-*'
-      - '.github/workflows/native-offline-contracts.yml'
 
 permissions:
   contents: read
@@ -18,26 +13,93 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  source-provenance:
+  linux-contracts:
+    if: github.repository == 'sunflower2333/dxvk' && github.ref == 'refs/heads/work/native-offline-contracts-20260915'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 16
           persist-credentials: false
-      - name: Archive immutable tracked sources
+      - name: Fetch the exact shader-parser submodule
+        run: git submodule update --init --depth 1 subprojects/dxbc-spirv
+      - name: Verify and reconstruct reviewed production changes
+        run: python3 .github/native-offline-stage.py
+      - name: Run actual policy and DXBC encoder/parser with two sanitizer compilers
         run: |
-          git rev-parse HEAD > native-umd-revision.txt
-          git ls-tree -r HEAD > native-umd-tree.txt
-          git archive --format=zip --output=native-umd-source.zip HEAD
-          sha256sum native-umd-source.zip > native-umd-source.sha256
+          bash scripts/test-umd-mrt.sh
+          CXX=clang++ bash scripts/test-umd-mrt.sh
+      - name: Publish verified source blobs, not branch changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/native-offline-stage.py --publish
+      - name: Preserve checked source and parser identities
+        run: |
+          git -C subprojects/dxbc-spirv rev-parse HEAD > dxbc-spirv-revision.txt
+          git -C subprojects/dxbc-spirv archive --format=zip --output="$PWD/dxbc-spirv-source.zip" HEAD
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: native-umd-source-${{ github.sha }}
+          name: native-offline-review-${{ github.sha }}
           path: |
-            native-umd-source.zip
-            native-umd-revision.txt
-            native-umd-tree.txt
-            native-umd-source.sha256
+            native-offline-receipt.json
+            dxbc-spirv-source.zip
+            dxbc-spirv-revision.txt
           retention-days: 7
           if-no-files-found: error
+
+  windows-contracts:
+    if: github.repository == 'sunflower2333/dxvk' && github.ref == 'refs/heads/work/native-offline-contracts-20260915'
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 16
+          persist-credentials: false
+      - name: Fetch the exact shader-parser submodule
+        run: git submodule update --init --depth 1 subprojects/dxbc-spirv
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch == 'x64' && 'x64' || 'x64_arm64' }}
+      - name: Verify and reconstruct reviewed production changes
+        run: python .github/native-offline-stage.py
+      - name: Ensure selected WDK headers are available
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $version = $env:WindowsSDKVersion.TrimEnd('\')
+          $header = Join-Path $env:WindowsSdkDir "Include/$version/um/d3d10umddi.h"
+          if (-not (Test-Path -LiteralPath $header)) {
+            $installer = Join-Path $env:RUNNER_TEMP 'native-umd-wdksetup.exe'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/?linkid=2272234' -OutFile $installer
+            $process = Start-Process $installer -ArgumentList '/quiet','/norestart','/features','+' -Wait -PassThru
+            if ($process.ExitCode -notin @(0,3010)) { throw "WDK setup failed: $($process.ExitCode)" }
+          }
+          if (-not (Test-Path -LiteralPath $header)) { throw 'Selected SDK and WDK do not match' }
+      - name: Compile production DDI and run WARP pixel tests on x64
+        shell: pwsh
+        run: |
+          $arguments = @{
+            Architecture = '${{ matrix.arch }}'
+            OutputDirectory = Join-Path $env:RUNNER_TEMP 'native-mrt'
+            CompileOnly = ('${{ matrix.arch }}' -eq 'arm64')
+          }
+          & ./scripts/test-umd-mrt.ps1 @arguments
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-mrt-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/native-mrt/*.exe
+            ${{ runner.temp }}/native-mrt/*.txt
+            ${{ runner.temp }}/native-mrt/receipt.json
+          retention-days: 7
+          if-no-files-found: warn

@@ -40,9 +40,10 @@ bool linkVertexOutputs(const ShaderSignatureEntry* outputs, size_t outputCount,
 
 // SM4.0 VS/GS/PS development profile. VS input types come from the bound
 // layout, GS inputs from resolveGeometryInputs, generic outputs from the
-// next active stage, and PS inputs from resolvePixelInputs. PS has one float
-// target0. Other stages, integer targets and additional system values are
-// not accepted. Tokens remain unchanged.
+// next active stage, and PS inputs from resolvePixelInputs. PS supports up to
+// eight float color outputs, preserving sparse target indices and masks.
+// Integer/depth outputs and additional system values remain unsupported.
+// Tokens remain unchanged; this does not advertise a native feature level.
 bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   const ShaderSignatureEntry* inputs, size_t inputCount,
   const ShaderSignatureEntry* outputs, size_t outputCount,

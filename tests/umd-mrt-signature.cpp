@@ -27,10 +27,11 @@ int main() {
   auto chunk=container.getCodeChunk();
   CHECK(chunk.getSize()==sizeof(code)+8 && !std::memcmp(chunk.getData(8),code,sizeof(code)));
   dxbc::Signature signature(container.getOutputSignatureChunk());
+  const ShaderSignatureEntry canonical[]{{0,0,3},{0,3,1},{0,7,15}};
   size_t count=0;
   for (const auto& entry:signature) {
     CHECK(count<3);
-    const auto& expected=outputs[count++];
+    const auto& expected=canonical[count++];
     CHECK(!std::strcmp(entry.getSemanticName(),"SV_Target"));
     CHECK(entry.getSemanticIndex()==expected.registerIndex);
     CHECK(entry.getRegisterIndex()==int32_t(expected.registerIndex));

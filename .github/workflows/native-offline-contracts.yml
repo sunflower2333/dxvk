@@ -4,6 +4,12 @@ on:
   workflow_dispatch:
   push:
     branches: [work/native-offline-contracts-20260915]
+  pull_request:
+    paths:
+      - 'src/umd/**'
+      - 'tests/umd-*'
+      - 'scripts/test-umd-mrt*'
+      - '.github/workflows/native-offline-contracts.yml'
 
 permissions:
   contents: read
@@ -14,45 +20,40 @@ concurrency:
 
 jobs:
   linux-contracts:
-    if: github.repository == 'sunflower2333/dxvk' && github.ref == 'refs/heads/work/native-offline-contracts-20260915'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 16
           persist-credentials: false
-      - name: Fetch the exact shader-parser submodule
-        run: git submodule update --init --depth 1 subprojects/dxbc-spirv
-      - name: Verify and reconstruct reviewed production changes
-        run: python3 .github/native-offline-stage.py
-      - name: Run actual policy and DXBC encoder/parser with two sanitizer compilers
+      - name: Fetch exact parser and retain source identities
         run: |
-          bash scripts/test-umd-mrt.sh
-          CXX=clang++ bash scripts/test-umd-mrt.sh
-      - name: Publish verified source blobs, not branch changes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 .github/native-offline-stage.py --publish
-      - name: Preserve checked source and parser identities
+          git submodule update --init --depth 1 subprojects/dxbc-spirv
+          test "$(git -C subprojects/dxbc-spirv rev-parse HEAD)" = "$(git rev-parse HEAD:subprojects/dxbc-spirv)"
+          git rev-parse HEAD > native-umd-revision.txt
+          git ls-tree -r HEAD > native-umd-tree.txt
+          git archive --format=zip --output=native-umd-source.zip HEAD
+      - name: Execute tracked production policy and encoder under GCC and Clang sanitizers
         run: |
-          git -C subprojects/dxbc-spirv rev-parse HEAD > dxbc-spirv-revision.txt
-          git -C subprojects/dxbc-spirv archive --format=zip --output="$PWD/dxbc-spirv-source.zip" HEAD
+          set -o pipefail
+          bash scripts/test-umd-mrt.sh 2>&1 | tee mrt-gcc.txt
+          CXX=clang++ bash scripts/test-umd-mrt.sh 2>&1 | tee mrt-clang.txt
+          bash scripts/test-umd-mrt.sh --negative-control 2>&1 | tee mrt-negative.txt
+          bash scripts/test-native-umd.sh 2>&1 | tee native-existing.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: native-offline-review-${{ github.sha }}
+          name: native-offline-source-${{ github.sha }}
           path: |
-            native-offline-receipt.json
-            dxbc-spirv-source.zip
-            dxbc-spirv-revision.txt
+            native-umd-revision.txt
+            native-umd-tree.txt
+            native-umd-source.zip
+            mrt-*.txt
+            native-existing.txt
           retention-days: 7
           if-no-files-found: error
 
   windows-contracts:
-    if: github.repository == 'sunflower2333/dxvk' && github.ref == 'refs/heads/work/native-offline-contracts-20260915'
     runs-on: windows-2025-vs2026
     timeout-minutes: 20
     strategy:
@@ -62,15 +63,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 16
           persist-credentials: false
       - name: Fetch the exact shader-parser submodule
         run: git submodule update --init --depth 1 subprojects/dxbc-spirv
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch == 'x64' && 'x64' || 'x64_arm64' }}
-      - name: Verify and reconstruct reviewed production changes
-        run: python .github/native-offline-stage.py
       - name: Ensure selected WDK headers are available
         timeout-minutes: 5
         shell: pwsh

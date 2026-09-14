@@ -4,7 +4,9 @@ uint32_t dxvk::umd::runtimeMissingD3D10Requirements() noexcept {
   // Missing callbacks: OpenedResource size/OpenResource, SetTextFilterSize,
   // ResetPrimitiveID and SetVertexPipelineOutput. The last two are version
   // dependent. Non-null callbacks also reject texture dimensions, primary and
-  // shared ownership, several shader semantics and multiple render targets.
+  // shared ownership and several shader semantics. The float MRT slice is
+  // implemented, but full MRT formats/semantics and target validation remain
+  // admission requirements; do not clear MultipleRenderTargets from fixtures.
   // Keep all native feature levels unadvertised until these contracts, not
   // just their function pointers, have been implemented and validated.
   // Ordinary worker dispatch and Flush submission are implemented, but this

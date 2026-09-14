@@ -65,6 +65,14 @@ umd_native_lifetime_test = executable('dxvk-umd-native-lifetime-test',
   native_entry_sources, dependencies : native_entry_dependencies,
   cpp_args : ['-DVIOGPU_TEST_COMPLETE_CONTRACT'])
 
+umd_mrt_test = executable('dxvk-umd-mrt-test',
+  ['../../tests/umd-mrt.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
+umd_mrt_signature_test = executable('dxvk-umd-mrt-signature-test',
+  ['../../tests/umd-mrt-signature.cpp', 'umd_shader.cpp'], dependencies : [dxbc_spirv_dep])
+umd_output_policy_test = executable('dxvk-umd-output-policy-test', '../../tests/umd-output-policy.cpp')
+
 umd_query_test = executable('dxvk-umd-query-test', '../../tests/umd-query.cpp')
 
 umd_allocation_test = executable('dxvk-umd-allocation-test',

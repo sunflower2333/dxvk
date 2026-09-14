@@ -49,7 +49,9 @@ try {
     Check-Exit 'actual DXBC signature fixture'
     & cl @flags "$root/tests/umd-output-policy.cpp" /Fe:output-policy.exe
     Check-Exit 'output policy fixture'
-    foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe')) {
+    & cl @flags "$root/tests/umd-output-views.cpp" d3d11.lib /Fe:output-views.exe
+    Check-Exit 'actual output view metadata fixture'
+    foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe')) {
         $headers = (& dumpbin /headers $name | Out-String)
         Check-Exit "PE inspection $name"
         $machine = if ($Architecture -eq 'arm64') { 'AA64' } else { '8664' }

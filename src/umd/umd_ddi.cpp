@@ -9,6 +9,7 @@
 #include "umd_view.h"
 #include "umd_state.h"
 #include "umd_stream_output.h"
+#include "umd_output_merger.h"
 
 #include <wrl/client.h>
 #include <memory>
@@ -1153,29 +1154,60 @@ void APIENTRY setConstantBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }
-void APIENTRY setRenderTargets(D3D10DDI_HDEVICE h, const D3D10DDI_HRENDERTARGETVIEW* targets,
-    UINT count, UINT clear, D3D10DDI_HDEPTHSTENCILVIEW depth) {
+// Validate the whole output-merger transaction before changing any binding.
+void APIENTRY setRenderTargets(
+    D3D10DDI_HDEVICE h,
+    const D3D10DDI_HRENDERTARGETVIEW* targets,
+    UINT count,
+    UINT clear,
+    D3D10DDI_HDEPTHSTENCILVIEW depth) {
   auto device = get(h);
-  if (count > 1 || clear > D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT - count ||
-      (count && !targets)) { device->error(E_INVALIDARG); return; }
-  auto depthView = get(depth);
-  if (depthView && (depthView->owner != device || !depthView->backend)) { device->error(E_INVALIDARG); return; }
-  ID3D11RenderTargetView* target = nullptr;
-  if (count && targets[0].pDrvPrivate) {
-    auto object = get(targets[0]);
-    if (!owned(device, object)) return;
-    // The initial PS profile has float output. Integer targets need typed
-    // output variants and are intentionally outside this development slice.
-    if (object->format != DXGI_FORMAT_R8G8B8A8_UNORM &&
-        object->format != DXGI_FORMAT_B8G8R8A8_UNORM) { device->error(E_INVALIDARG); return; }
-    target = object->backend.Get();
+  constexpr UINT slots = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
+  if (!dxvk::umd::validRenderTargetRange(count, clear) || (count && !targets)) {
+    device->error(E_INVALIDARG); return;
   }
-  // ClearSlots is an optimization aid. A zero-color-target call must still
-  // bind/unbind the depth view atomically and clear all color targets.
+  auto depthView = get(depth);
+  if (depthView && (depthView->owner != device || !depthView->backend)) {
+    device->error(E_INVALIDARG); return;
+  }
+  std::array<ID3D11RenderTargetView*, slots> translated = {};
+  std::array<dxvk::umd::OutputView, slots> views;
+  dxvk::umd::OutputShape shape = {};
+  bool anyColor = false;
+  for (UINT i = 0; i < count; i++) {
+    if (!targets[i].pDrvPrivate) continue;
+    auto object = get(targets[i]);
+    if (!owned(device, object)) return;
+    // The shader bridge currently reconstructs float outputs only.
+    if (object->format != DXGI_FORMAT_R8G8B8A8_UNORM &&
+        object->format != DXGI_FORMAT_B8G8R8A8_UNORM) {
+      device->error(E_INVALIDARG); return;
+    }
+    if (!dxvk::umd::outputView(object->backend.Get(), views[i]) ||
+        !dxvk::umd::mergeOutputShape(shape, views[i].shape)) {
+      device->error(E_INVALIDARG); return;
+    }
+    for (UINT j = 0; j < i; j++) {
+      if (translated[j] && dxvk::umd::overlappingOutputs(views[j], views[i])) {
+        device->error(E_INVALIDARG); return;
+      }
+    }
+    translated[i] = object->backend.Get();
+    anyColor = true;
+  }
+  if (depthView) {
+    dxvk::umd::OutputShape depthShape;
+    if (!dxvk::umd::depthOutputShape(depthView->backend.Get(), depthShape) ||
+        !dxvk::umd::mergeOutputShape(shape, depthShape)) {
+      device->error(E_INVALIDARG); return;
+    }
+  }
+  // ClearSlots is a hint, not a partial update. Preserve null slots and clear
+  // the complete omitted tail, even with clear=0 and count=0.
   try {
-    device->context->OMSetRenderTargets(count, count ? &target : nullptr,
+    device->context->OMSetRenderTargets(count, count ? translated.data() : nullptr,
       depthView ? depthView->backend.Get() : nullptr);
-    device->targetBound = target != nullptr;
+    device->targetBound = anyColor;
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }

@@ -1,0 +1,43 @@
+name: Native UMD offline contracts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [work/native-offline-contracts-20260915]
+  pull_request:
+    paths:
+      - 'src/umd/**'
+      - 'tests/umd-*'
+      - '.github/workflows/native-offline-contracts.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-offline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Archive immutable tracked sources
+        run: |
+          git rev-parse HEAD > native-umd-revision.txt
+          git ls-tree -r HEAD > native-umd-tree.txt
+          git archive --format=zip --output=native-umd-source.zip HEAD
+          sha256sum native-umd-source.zip > native-umd-source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-umd-source-${{ github.sha }}
+          path: |
+            native-umd-source.zip
+            native-umd-revision.txt
+            native-umd-tree.txt
+            native-umd-source.sha256
+          retention-days: 7
+          if-no-files-found: error

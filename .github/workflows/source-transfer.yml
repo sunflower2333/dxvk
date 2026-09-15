@@ -1,11 +1,11 @@
-name: Store reviewed source bytes (no build or tests)
+name: Store reviewed CI repair source blobs
 on:
   push:
     branches: [work/source-transfer-texture1d-20260915]
 permissions:
   contents: write
 jobs:
-  store-source:
+  transfer:
     if: github.repository == 'sunflower2333/dxvk'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -14,13 +14,12 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
-      - name: Reconstruct and store the reviewed Git blob only
+      - name: Verify exact source bytes and store blobs only
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 store-source.py
+        run: python3 .github/transfer.py
       - uses: actions/upload-artifact@v4
         with:
-          name: texture1d-source-receipt
-          path: source-receipt.json
+          name: native-repair-source-receipt
+          path: repair-receipt.json
           if-no-files-found: error
-          retention-days: 7

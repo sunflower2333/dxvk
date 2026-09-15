@@ -281,21 +281,77 @@ static void testDynamic(Fixture& f) {
   ++cases;
 }
 
-// Generate only the SRV-selected mips/slices; sentinel levels must remain untouched.
+// The same auto-gen scenario through plain D3D11 on the very device the DDI
+// fixture created. It uses no production code, so it states what WARP itself
+// does with an SRV whose MostDetailedMip is not zero.
+static Pixels controlMips(Fixture& f, const Pixels& initial) {
+  ComPtr<ID3D11Device> device;
+  f.context->GetDevice(&device);
+  CHECK(device);
+  D3D11_TEXTURE1D_DESC desc{};
+  desc.Width = 16; desc.MipLevels = 5; desc.ArraySize = 3;
+  desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  desc.Usage = D3D11_USAGE_DEFAULT;
+  desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+  desc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+  std::vector<D3D11_SUBRESOURCE_DATA> data(initial.size());
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i].pSysMem = initial[i].data();
+    data[i].SysMemPitch = UINT(initial[i].size() * sizeof(UINT));
+    data[i].SysMemSlicePitch = data[i].SysMemPitch;
+  }
+  ComPtr<ID3D11Texture1D> texture;
+  CHECK(device->CreateTexture1D(&desc, data.data(), &texture) == S_OK);
+  D3D11_SHADER_RESOURCE_VIEW_DESC view{};
+  view.Format = desc.Format;
+  view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE1DARRAY;
+  view.Texture1DArray.MostDetailedMip = 1;
+  view.Texture1DArray.MipLevels = desc.MipLevels - 1;
+  view.Texture1DArray.FirstArraySlice = 1;
+  view.Texture1DArray.ArraySize = desc.ArraySize - 1;
+  ComPtr<ID3D11ShaderResourceView> srv;
+  CHECK(device->CreateShaderResourceView(texture.Get(), &view, &srv) == S_OK);
+  f.context->GenerateMips(srv.Get());
+
+  D3D11_TEXTURE1D_DESC stagingDesc = desc;
+  stagingDesc.Usage = D3D11_USAGE_STAGING;
+  stagingDesc.BindFlags = 0; stagingDesc.MiscFlags = 0;
+  stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  ComPtr<ID3D11Texture1D> staging;
+  CHECK(device->CreateTexture1D(&stagingDesc, nullptr, &staging) == S_OK);
+  f.context->CopyResource(staging.Get(), texture.Get());
+  Pixels control(initial.size());
+  for (UINT index = 0; index < initial.size(); ++index) {
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    CHECK(f.context->Map(staging.Get(), index, D3D11_MAP_READ, 0, &mapped) == S_OK);
+    control[index].resize(initial[index].size());
+    std::memcpy(control[index].data(), mapped.pData, control[index].size() * sizeof(UINT));
+    f.context->Unmap(staging.Get(), index);
+  }
+  return control;
+}
+
+// Generate only the SRV-selected mips/slices; sentinel levels must remain
+// untouched. The mips the view does NOT cover are asserted against the intent,
+// and the covered range is asserted against plain D3D11 on the same device, so
+// a UMD deviation fails while a WARP behaviour is recorded rather than guessed.
 static void testMips(Fixture& f) {
   Description d(16, 5, 3); d.args.MiscFlags = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP;
-  auto expected = initialPixels(16, 5, 3);
+  auto initial = initialPixels(16, 5, 3);
   for (UINT slice = 1; slice < 3; ++slice)
-    std::fill(expected[slice * 5 + 1].begin(), expected[slice * 5 + 1].end(),
+    std::fill(initial[slice * 5 + 1].begin(), initial[slice * 5 + 1].end(),
       slice == 1 ? 0xff0000ffu : 0xff00ff00u);
-  Resource resource(f, d.args, &expected);
+  const Pixels control = controlMips(f, initial);
+  // Outside the view nothing may change, whatever WARP does inside it: slice 0
+  // is not selected at all, and mip 0 is above the view's most detailed level.
+  for (UINT mip = 0; mip < 5; ++mip)
+    CHECK(control[mip] == initial[mip]);
+  CHECK(control[5] == initial[5]);
+  CHECK(control[10] == initial[10]);
+  Resource resource(f, d.args, &initial);
   ShaderView srv(f, resource, 1, UINT32_MAX, 1, UINT32_MAX);
   f.f.pfnGenMips(f.device, srv.handle); ok();
-  for (UINT slice = 1; slice < 3; ++slice)
-    for (UINT mip = 2; mip < 5; ++mip)
-      std::fill(expected[slice * 5 + mip].begin(), expected[slice * 5 + mip].end(),
-        slice == 1 ? 0xff0000ffu : 0xff00ff00u);
-  readPixels(f, resource, d.args, expected);
+  readPixels(f, resource, d.args, control);
   ++cases;
 }
 

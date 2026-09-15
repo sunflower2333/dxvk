@@ -53,7 +53,9 @@ try {
     Check-Exit 'actual output view metadata fixture'
     & cl @flags "$root/tests/umd-texture1d.cpp" @shaderObjects @ddiObjects d3d11.lib d3dcompiler.lib /Fe:texture1d.exe
     Check-Exit 'actual Texture1D resource/view fixture'
-    foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe','texture1d.exe')) {
+    & cl @flags "$root/tests/umd-reference-control.cpp" @shaderObjects d3d11.lib d3dcompiler.lib /Fe:reference-control.exe
+    Check-Exit 'independent reference control'
+    foreach ($name in @('reference-control.exe','native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe','texture1d.exe')) {
         $headers = (& dumpbin /headers $name | Out-String)
         Check-Exit "PE inspection $name"
         $machine = if ($Architecture -eq 'arm64') { 'AA64' } else { '8664' }

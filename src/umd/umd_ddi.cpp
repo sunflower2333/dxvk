@@ -7,6 +7,7 @@
 #include "umd_runtime_gpu.h"
 #include "umd_map.h"
 #include "umd_view.h"
+#include "umd_texture1d.h"
 #include "umd_state.h"
 #include "umd_stream_output.h"
 #include "umd_output_merger.h"
@@ -289,6 +290,27 @@ struct DepthState : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11DepthStencilState> backend;
 };
+// Build resource views locally; a failed CreateView receives no DestroyView.
+// All staged backend references are released before the error callback can reenter.
+template<typename Object, typename Create>
+HRESULT createViewStorage(Device* device, void* storage, Create&& create) {
+  if (!storage || uintptr_t(storage) % alignof(Object)) return E_INVALIDARG;
+  HRESULT hr = E_FAIL;
+  {
+    Object staged;
+    staged.owner = device;
+    try {
+      staged.retirement = std::make_unique<ComRetirement>();
+      hr = create(staged);
+      if (hr == S_OK && !staged.backend) hr = E_FAIL;
+      if (hr == S_OK && device->retired) hr = DXGI_ERROR_DEVICE_REMOVED;
+      if (hr == S_OK) new (storage) Object(std::move(staged));
+      else if (!FAILED(hr)) hr = E_FAIL;
+    } catch (const std::bad_alloc&) { hr = E_OUTOFMEMORY; }
+      catch (...) { hr = E_FAIL; }
+  }
+  return hr;
+}
 struct Query : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11Query> backend;
@@ -466,6 +488,9 @@ HRESULT createResourceData(Device* device,
       (args->BindFlags & ~(D3D10_DDI_BIND_PIPELINE_MASK | D3D10_DDI_BIND_PRESENT))) {
     return E_INVALIDARG;
   }
+  D3D11_TEXTURE1D_DESC oneDimensional = {};
+  if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D &&
+      !dxvk::umd::texture1DDesc(*args, miscFlags, oneDimensional)) return E_INVALIDARG;
   const bool presentable = (args->BindFlags & D3D10_DDI_BIND_PRESENT) != 0;
   if (presentable && (!device->memory.available() || !runtime.handle
       || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
@@ -484,6 +509,7 @@ HRESULT createResourceData(Device* device,
     if (args->pInitialDataUP) {
       initial.resize(size_t(args->MipLevels) * args->ArraySize);
       for (size_t i = 0; i < initial.size(); i++) {
+        if (!args->pInitialDataUP[i].pSysMem) return E_INVALIDARG;
         initial[i].pSysMem = args->pInitialDataUP[i].pSysMem;
         initial[i].SysMemPitch = args->pInitialDataUP[i].SysMemPitch;
         initial[i].SysMemSlicePitch = args->pInitialDataUP[i].SysMemSlicePitch;
@@ -501,6 +527,10 @@ HRESULT createResourceData(Device* device,
       ComPtr<ID3D11Buffer> buffer;
       hr = device->backend->CreateBuffer(&desc, data, &buffer);
       resource->backend = buffer;
+    } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D) {
+      ComPtr<ID3D11Texture1D> texture;
+      hr = device->backend->CreateTexture1D(&oneDimensional, data, &texture);
+      resource->backend = texture;
     } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
       D3D11_TEXTURE2D_DESC desc = {};
       desc.Width = args->pMipInfoList[0].TexelWidth;
@@ -596,24 +626,33 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
 SIZE_T APIENTRY shaderViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATESHADERRESOURCEVIEW*) {
   return sizeof(ShaderView);
 }
+// Translate an SRV for the actual 1D/2D resource, never reinterpret a DDI union.
 void APIENTRY createShaderView(D3D10DDI_HDEVICE h,
     const D3D10DDIARG_CREATESHADERRESOURCEVIEW* args,
     D3D10DDI_HSHADERRESOURCEVIEW out, D3D10DDI_HRTSHADERRESOURCEVIEW) {
   auto device = get(h);
-  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
-  auto view = new (out.pDrvPrivate) ShaderView(); view->owner = device;
-  if (!args || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D) {
-    device->error(E_INVALIDARG); return;
-  }
+  if (!args) { device->error(E_INVALIDARG); return; }
   if (!owned(device, get(args->hDrvResource))) return;
-  ComPtr<ID3D11Texture2D> texture;
-  if (FAILED(get(args->hDrvResource)->backend.As(&texture))) { device->error(E_INVALIDARG); return; }
-  D3D11_TEXTURE2D_DESC resource = {}; texture->GetDesc(&resource);
-  D3D11_SHADER_RESOURCE_VIEW_DESC desc = {};
-  if (!dxvk::umd::textureShaderView(*args, resource, desc)) {
-    device->error(E_INVALIDARG); return;
+  HRESULT hr;
+  {
+    auto resource = get(args->hDrvResource)->backend;
+    hr = createViewStorage<ShaderView>(device, out.pDrvPrivate, [&](ShaderView& view) {
+      D3D11_SHADER_RESOURCE_VIEW_DESC desc = {};
+      if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D) {
+        ComPtr<ID3D11Texture1D> texture;
+        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
+        D3D11_TEXTURE1D_DESC info = {}; texture->GetDesc(&info);
+        if (!dxvk::umd::textureShaderView(*args, info, desc)) return E_INVALIDARG;
+      } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
+        ComPtr<ID3D11Texture2D> texture;
+        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
+        D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
+        if (!dxvk::umd::textureShaderView(*args, info, desc)) return E_INVALIDARG;
+      } else return E_INVALIDARG;
+      return device->backend->CreateShaderResourceView(resource.Get(), &desc, &view.backend);
+    });
   }
-  createChildBackend(device, view, [&] { return device->backend->CreateShaderResourceView(texture.Get(), &desc, &view->backend); });
+  device->error(hr);
 }
 void APIENTRY destroyShaderView(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW object) {
   auto view = get(object);
@@ -627,11 +666,21 @@ void APIENTRY generateMips(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW obje
   }
   ComPtr<ID3D11Resource> resource;
   view->backend->GetResource(&resource);
-  ComPtr<ID3D11Texture2D> texture;
-  if (FAILED(resource.As(&texture))) { device->error(E_INVALIDARG); return; }
-  D3D11_TEXTURE2D_DESC desc = {}; texture->GetDesc(&desc);
+  D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
+  if (resource) resource->GetType(&dimension);
   D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc = {}; view->backend->GetDesc(&viewDesc);
-  HRESULT hr = dxvk::umd::mipGenerationStatus(desc, viewDesc);
+  HRESULT hr = E_INVALIDARG;
+  if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D) {
+    ComPtr<ID3D11Texture1D> texture;
+    if (FAILED(resource.As(&texture))) { device->error(E_INVALIDARG); return; }
+    D3D11_TEXTURE1D_DESC desc = {}; texture->GetDesc(&desc);
+    hr = dxvk::umd::mipGenerationStatus(desc, viewDesc);
+  } else if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
+    ComPtr<ID3D11Texture2D> texture;
+    if (FAILED(resource.As(&texture))) { device->error(E_INVALIDARG); return; }
+    D3D11_TEXTURE2D_DESC desc = {}; texture->GetDesc(&desc);
+    hr = dxvk::umd::mipGenerationStatus(desc, viewDesc);
+  }
   if (FAILED(hr)) { device->error(hr); return; }
   try {
     UINT support = 0;
@@ -709,24 +758,34 @@ void APIENTRY setSamplers(D3D10DDI_HDEVICE h, UINT start, UINT count, const D3D1
 SIZE_T APIENTRY targetSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERENDERTARGETVIEW*) {
   return sizeof(RenderTarget);
 }
+// Stage the actual Texture1D/Texture2D target and its retirement owner together.
 void APIENTRY createTarget(D3D10DDI_HDEVICE h,
     const D3D10DDIARG_CREATERENDERTARGETVIEW* args,
     D3D10DDI_HRENDERTARGETVIEW out, D3D10DDI_HRTRENDERTARGETVIEW) {
   auto device = get(h);
-  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
-  auto target = new (out.pDrvPrivate) RenderTarget();
-  target->owner = device;
-  if (!args || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D ||
-      !owned(device, get(args->hDrvResource))) {
-    device->error(E_INVALIDARG); return;
+  if (!args) { device->error(E_INVALIDARG); return; }
+  if (!owned(device, get(args->hDrvResource))) return;
+  HRESULT hr;
+  {
+    auto resource = get(args->hDrvResource)->backend;
+    hr = createViewStorage<RenderTarget>(device, out.pDrvPrivate, [&](RenderTarget& target) {
+      D3D11_RENDER_TARGET_VIEW_DESC desc = {};
+      if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D) {
+        ComPtr<ID3D11Texture1D> texture;
+        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
+        D3D11_TEXTURE1D_DESC info = {}; texture->GetDesc(&info);
+        if (!dxvk::umd::textureTargetView(*args, info, desc)) return E_INVALIDARG;
+      } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
+        ComPtr<ID3D11Texture2D> texture;
+        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
+        D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
+        if (!dxvk::umd::textureTargetView(*args, info, desc)) return E_INVALIDARG;
+      } else return E_INVALIDARG;
+      target.format = desc.Format;
+      return device->backend->CreateRenderTargetView(resource.Get(), &desc, &target.backend);
+    });
   }
-  D3D11_RENDER_TARGET_VIEW_DESC desc = {};
-  ComPtr<ID3D11Texture2D> texture;
-  if (FAILED(get(args->hDrvResource)->backend.As(&texture))) { device->error(E_INVALIDARG); return; }
-  D3D11_TEXTURE2D_DESC resource = {}; texture->GetDesc(&resource);
-  if (!dxvk::umd::textureTargetView(*args, resource, desc)) { device->error(E_INVALIDARG); return; }
-  target->format = desc.Format;
-  createChildBackend(device, target, [&] { return device->backend->CreateRenderTargetView(texture.Get(), &desc, &target->backend); });
+  device->error(hr);
 }
 void APIENTRY destroyTarget(D3D10DDI_HDEVICE h, D3D10DDI_HRENDERTARGETVIEW target) {
   auto object = get(target);
@@ -740,34 +799,47 @@ void APIENTRY clearTarget(D3D10DDI_HDEVICE h, D3D10DDI_HRENDERTARGETVIEW target,
 SIZE_T APIENTRY depthViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEDEPTHSTENCILVIEW*) {
   return sizeof(DepthView);
 }
-void APIENTRY createDepthView(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEDEPTHSTENCILVIEW* args,
+// Keep depth view creation atomic for both supported texture dimensions.
+void APIENTRY createDepthView(D3D10DDI_HDEVICE h,
+    const D3D10DDIARG_CREATEDEPTHSTENCILVIEW* args,
     D3D10DDI_HDEPTHSTENCILVIEW out, D3D10DDI_HRTDEPTHSTENCILVIEW) {
   auto device = get(h);
-  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
-  auto view = new (out.pDrvPrivate) DepthView(); view->owner = device;
-  if (!args || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
-      || !owned(device, get(args->hDrvResource))) { device->error(E_INVALIDARG); return; }
-  ComPtr<ID3D11Texture2D> texture;
-  if (FAILED(get(args->hDrvResource)->backend.As(&texture))) { device->error(E_INVALIDARG); return; }
-  D3D11_TEXTURE2D_DESC resource = {}; texture->GetDesc(&resource);
-  if (!(resource.BindFlags & D3D11_BIND_DEPTH_STENCIL)
-      || args->Tex2D.MipSlice >= resource.MipLevels || !args->Tex2D.ArraySize
-      || args->Tex2D.FirstArraySlice >= resource.ArraySize
-      || args->Tex2D.ArraySize > resource.ArraySize - args->Tex2D.FirstArraySlice) {
-    device->error(E_INVALIDARG); return;
+  if (!args) { device->error(E_INVALIDARG); return; }
+  if (!owned(device, get(args->hDrvResource))) return;
+  HRESULT hr;
+  {
+    auto resource = get(args->hDrvResource)->backend;
+    hr = createViewStorage<DepthView>(device, out.pDrvPrivate, [&](DepthView& view) {
+      D3D11_DEPTH_STENCIL_VIEW_DESC desc = {}; desc.Format = args->Format;
+      if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D) {
+        ComPtr<ID3D11Texture1D> texture;
+        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
+        D3D11_TEXTURE1D_DESC info = {}; texture->GetDesc(&info);
+        if (!dxvk::umd::textureDepthView(*args, info, desc)) return E_INVALIDARG;
+      } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
+        ComPtr<ID3D11Texture2D> texture;
+        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
+        D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
+        if (!(info.BindFlags & D3D11_BIND_DEPTH_STENCIL) ||
+            !info.SampleDesc.Count || args->Tex2D.MipSlice >= info.MipLevels ||
+            !dxvk::umd::viewRange(args->Tex2D.FirstArraySlice, args->Tex2D.ArraySize, info.ArraySize))
+          return E_INVALIDARG;
+        if (info.SampleDesc.Count > 1) {
+          if (args->Tex2D.MipSlice) return E_INVALIDARG;
+          desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DMSARRAY;
+          desc.Texture2DMSArray.FirstArraySlice = args->Tex2D.FirstArraySlice;
+          desc.Texture2DMSArray.ArraySize = args->Tex2D.ArraySize;
+        } else {
+          desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DARRAY;
+          desc.Texture2DArray.MipSlice = args->Tex2D.MipSlice;
+          desc.Texture2DArray.FirstArraySlice = args->Tex2D.FirstArraySlice;
+          desc.Texture2DArray.ArraySize = args->Tex2D.ArraySize;
+        }
+      } else return E_INVALIDARG;
+      return device->backend->CreateDepthStencilView(resource.Get(), &desc, &view.backend);
+    });
   }
-  D3D11_DEPTH_STENCIL_VIEW_DESC desc = {}; desc.Format = args->Format;
-  if (resource.SampleDesc.Count > 1) {
-    desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DMSARRAY;
-    desc.Texture2DMSArray.FirstArraySlice = args->Tex2D.FirstArraySlice;
-    desc.Texture2DMSArray.ArraySize = args->Tex2D.ArraySize;
-  } else {
-    desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DARRAY;
-    desc.Texture2DArray.MipSlice = args->Tex2D.MipSlice;
-    desc.Texture2DArray.FirstArraySlice = args->Tex2D.FirstArraySlice;
-    desc.Texture2DArray.ArraySize = args->Tex2D.ArraySize;
-  }
-  createChildBackend(device, view, [&] { return device->backend->CreateDepthStencilView(texture.Get(), &desc, &view->backend); });
+  device->error(hr);
 }
 void APIENTRY destroyDepthView(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILVIEW object) {
   auto view = get(object);
@@ -858,6 +930,17 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
     info.width = desc.ByteWidth; info.usage = desc.Usage; info.bindings = desc.BindFlags;
     return true;
   }
+  if (info.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D) {
+    ComPtr<ID3D11Texture1D> texture;
+    if (FAILED(resource->backend.As(&texture))) return false;
+    D3D11_TEXTURE1D_DESC desc = {}; texture->GetDesc(&desc);
+    if (!desc.MipLevels || index / desc.MipLevels >= desc.ArraySize ||
+        index % desc.MipLevels >= D3D11_REQ_MIP_LEVELS) return false;
+    info.width = std::max(1u, desc.Width >> (index % desc.MipLevels));
+    info.height = 1;
+    info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
+    return info.format == DXGI_FORMAT_R8G8B8A8_UNORM || info.format == DXGI_FORMAT_B8G8R8A8_UNORM;
+  }
   if (info.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
     ComPtr<ID3D11Texture2D> texture;
     if (FAILED(resource->backend.As(&texture))) return false;
@@ -865,6 +948,7 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
     if (!desc.MipLevels || index / desc.MipLevels >= desc.ArraySize || desc.SampleDesc.Count != 1)
       return false;
     const UINT mip = index % desc.MipLevels;
+    if (mip >= D3D11_REQ_MIP_LEVELS) return false;
     info.width = desc.Width >> mip; if (!info.width) info.width = 1;
     info.height = desc.Height >> mip; if (!info.height) info.height = 1;
     info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
@@ -909,6 +993,7 @@ void APIENTRY updateResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT in
   if (!owned(device, get(dst))) return;
   SubresourceInfo destination; D3D11_BOX box;
   if (!subresourceInfo(get(dst), index, destination) || destination.usage != D3D11_USAGE_DEFAULT
+      || (destination.bindings & D3D11_BIND_DEPTH_STENCIL)
       || !subresourceBox(destination, input, box)
       || (input && (destination.bindings & D3D11_BIND_CONSTANT_BUFFER))) {
     device->error(E_INVALIDARG); return;

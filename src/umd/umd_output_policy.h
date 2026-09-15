@@ -29,8 +29,11 @@ inline bool validRenderTargetRange(uint32_t count, uint32_t clear) {
   return count <= colorOutputSlots && clear <= colorOutputSlots - count;
 }
 
+enum class OutputKind { Texture2D, Texture1D };
+
 struct OutputShape {
   uint32_t width = 0, height = 0, layers = 0, samples = 0, quality = 0;
+  OutputKind kind = OutputKind::Texture2D;
 };
 
 // Require every non-null color/depth view to have compatible effective dimensions.
@@ -43,7 +46,7 @@ inline bool mergeOutputShape(OutputShape& previous, const OutputShape& candidate
   }
   return previous.width == candidate.width && previous.height == candidate.height &&
       previous.layers == candidate.layers && previous.samples == candidate.samples &&
-      previous.quality == candidate.quality;
+      previous.quality == candidate.quality && previous.kind == candidate.kind;
 }
 
 // Inputs are individually validated nonempty slice ranges; avoid end overflow.

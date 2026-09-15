@@ -160,6 +160,10 @@ static void readPixels(
     for (size_t x = 0; x < expected[index].size(); ++x) {
       UINT value;
       std::memcpy(&value, static_cast<const char*>(mapped.pData) + x * sizeof(UINT), sizeof(value));
+      if (value != expected[index][x]) {
+        std::fprintf(stderr, "READBACK mismatch\nsubresource=%u\nx=%zu\nactual=%08x\nexpected=%08x\n",
+          index, x, value, expected[index][x]);
+      }
       ++texels; CHECK(value == expected[index][x]);
     }
     f.f.pfnStagingResourceUnmap(f.device, staging.handle, index); ok();
@@ -386,8 +390,16 @@ int main() {
   std::puts("BACKEND=WARP\nproduction_DDI=true\nVIOGPU=false\nregistration=false");
   {
     Fixture f;
-    testInitialization(f); testUpdates(f); testDynamic(f); testMips(f);
-    testViewFailure(f); testOutputs(f); testDepth(f);
+    const struct { const char* name; void (*run)(Fixture&); } scenarios[] = {
+      {"initialization", testInitialization}, {"updates", testUpdates},
+      {"dynamic-discard", testDynamic}, {"scoped-mips", testMips},
+      {"view-failure", testViewFailure}, {"outputs", testOutputs}, {"depth", testDepth}
+    };
+    for (const auto& scenario : scenarios) {
+      std::printf("BEGIN Texture1D\ncase=%s\n", scenario.name); std::fflush(stdout);
+      scenario.run(f);
+      std::printf("PASS Texture1D case\ncase=%s\n", scenario.name); std::fflush(stdout);
+    }
     f.f.pfnFlush(f.device); ok();
   }
   std::printf("PASS Texture1D\ncases=%u\nchecks=%u\ntexels=%u\n", cases, checks, texels);

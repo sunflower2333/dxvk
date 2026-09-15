@@ -51,6 +51,15 @@ jobs:
           name: dxvk-umd-backend-${{ matrix.arch }}-${{ github.sha }}
           path: artifacts/
           if-no-files-found: error
+      - name: Retain failure diagnostics without publishing a usable candidate
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxvk-umd-failure-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            artifacts/*.txt
+            build-umd/meson-logs/*
+          if-no-files-found: warn
   shader-cpu:
     timeout-minutes: 20
     runs-on: windows-2025-vs2026

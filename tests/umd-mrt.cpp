@@ -35,6 +35,7 @@ static void APIENTRY reportError(D3D10DDI_HRTCORELAYER, HRESULT result) {
 HRESULT dxvk::umd::createDevice(const LUID&, D3D_FEATURE_LEVEL level,
     ID3D11Device** device, ID3D11DeviceContext** context,
     const dxvk::umd::RuntimeBackend*) noexcept {
+  level = dxvk::umd::implementationFeatureLevel(level);
   const HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
     &level, 1, D3D11_SDK_VERSION, device, nullptr, context);
   if (hr == S_OK) createdContext = *context;

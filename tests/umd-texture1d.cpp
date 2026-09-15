@@ -41,6 +41,7 @@ static void APIENTRY reportError(D3D10DDI_HRTCORELAYER, HRESULT result) {
 HRESULT dxvk::umd::createDevice(
     const LUID&, D3D_FEATURE_LEVEL level, ID3D11Device** device,
     ID3D11DeviceContext** context, const dxvk::umd::RuntimeBackend*) noexcept {
+  level = dxvk::umd::implementationFeatureLevel(level);
   HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
     &level, 1, D3D11_SDK_VERSION, device, nullptr, context);
   if (hr == S_OK) createdContext = *context;
@@ -283,20 +284,27 @@ static void testDynamic(Fixture& f) {
 
 // Generate only the SRV-selected mips/slices; sentinel levels must remain untouched.
 static void testMips(Fixture& f) {
-  Description d(16, 5, 3); d.args.MiscFlags = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP;
-  auto expected = initialPixels(16, 5, 3);
-  for (UINT slice = 1; slice < 3; ++slice)
-    std::fill(expected[slice * 5 + 1].begin(), expected[slice * 5 + 1].end(),
-      slice == 1 ? 0xff0000ffu : 0xff00ff00u);
-  Resource resource(f, d.args, &expected);
-  ShaderView srv(f, resource, 1, UINT32_MAX, 1, UINT32_MAX);
-  f.f.pfnGenMips(f.device, srv.handle); ok();
-  for (UINT slice = 1; slice < 3; ++slice)
-    for (UINT mip = 2; mip < 5; ++mip)
-      std::fill(expected[slice * 5 + mip].begin(), expected[slice * 5 + mip].end(),
+  // Preserve the original all-remaining case, then add truncated views and
+  // a single-mip no-op. All source levels, other slices and omitted tail mips
+  // keep their exact sentinels; there is no WARP-derived expected value.
+  for (UINT selectedMips : {UINT32_MAX, 2u, 1u}) {
+    Description d(16, 5, 3); d.args.MiscFlags = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP;
+    auto expected = initialPixels(16, 5, 3);
+    for (UINT slice = 1; slice < 3; ++slice)
+      std::fill(expected[slice * 5 + 1].begin(), expected[slice * 5 + 1].end(),
         slice == 1 ? 0xff0000ffu : 0xff00ff00u);
-  readPixels(f, resource, d.args, expected);
-  ++cases;
+    Resource resource(f, d.args, &expected);
+    readPixels(f, resource, d.args, expected);
+    ShaderView srv(f, resource, 1, selectedMips, 1, UINT32_MAX);
+    f.f.pfnGenMips(f.device, srv.handle); ok();
+    const UINT count = selectedMips == UINT32_MAX ? 4u : selectedMips;
+    for (UINT slice = 1; slice < 3; ++slice)
+      for (UINT mip = 2; mip < 1 + count; ++mip)
+        std::fill(expected[slice * 5 + mip].begin(), expected[slice * 5 + mip].end(),
+          slice == 1 ? 0xff0000ffu : 0xff00ff00u);
+    readPixels(f, resource, d.args, expected);
+    ++cases;
+  }
 }
 
 // Failed view creation must not publish bytes and must allow retry without DestroyView.

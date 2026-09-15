@@ -1,0 +1,50 @@
+name: Store reviewed texture transfer source
+on:
+  push:
+    branches: [work/source-transfer-offline-safety-20260915]
+permissions:
+  contents: write
+jobs:
+  store:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 5eb389c1282a6cb899cea15401a313fd9e1184aa
+          persist-credentials: false
+      - name: Store hash-verified source blob without commits or ref updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import hashlib,json,os,pathlib,urllib.request
+          def blob(data):
+              return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          before = pathlib.Path('src/umd/umd_ddi.cpp').read_bytes()
+          assert blob(before) == '46cc8be1464fc0af9fa171f38ec09afad0fd2512'
+          source = before.decode()
+          source = source.replace('#include "umd_texture1d.h"','#include "umd_texture1d.h"\n#include "umd_transfer_policy.h"\n#include "umd_transfer_format.h"',1)
+          source = source.replace('struct SubresourceInfo {\n  UINT width = 0, height = 1;', 'struct SubresourceInfo {\n  UINT width = 0, height = 1, texelBytes = 1;',1)
+          anchor = 'return info.format == DXGI_FORMAT_R8G8B8A8_UNORM || info.format == DXGI_FORMAT_B8G8R8A8_UNORM;'
+          assert source.count(anchor) == 2
+          source = source.replace(anchor,'info.texelBytes = dxvk::umd::transferTexelBytes(info.format);\n    return info.texelBytes != 0;')
+          old = '  if (!source || (destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D\n      && rowPitch < (box.right - box.left) * 4)) { device->error(E_INVALIDARG); return; }'
+          new = '''  uint64_t requiredBytes = 0;
+            // Do not assume RGBA8. Validate the last byte on both 32-bit and 64-bit
+            // callers before the backend can read rows from runtime-owned source data.
+            if (!source || !dxvk::umd::uploadSpan(box.right - box.left, box.bottom - box.top,
+                destination.texelBytes, rowPitch, destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D,
+                uint64_t(UINTPTR_MAX) - reinterpret_cast<uintptr_t>(source) + 1, requiredBytes)) {
+              device->error(E_INVALIDARG); return;
+            }'''
+          assert source.count(old) == 1
+          source = source.replace(old,new)
+          source = source.replace('      || source.dimension != destination.dimension || source.format != destination.format\n      || destination.usage','      || source.dimension != destination.dimension || source.format != destination.format\n      || ((source.bindings | destination.bindings) & D3D11_BIND_DEPTH_STENCIL)\n      || destination.usage',1)
+          content = source.encode()
+          expected = '743b114d48f547a1ad1e0ef70ae4af16cc0ce533'
+          assert blob(content) == expected
+          request = urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs',data=json.dumps({'content':source,'encoding':'utf-8'}).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Content-Type':'application/json'},method='POST')
+          with urllib.request.urlopen(request) as response: stored = json.load(response)['sha']
+          assert stored == expected
+          print('SOURCE_BLOB='+stored)

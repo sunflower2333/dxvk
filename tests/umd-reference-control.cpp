@@ -124,8 +124,9 @@ static void mipControl(ID3D11Device* device, ID3D11DeviceContext* context) {
 // Observations do not decide regression success: the strict production-DDI tests still run.
 int main() {
   try {
+    for (const D3D_FEATURE_LEVEL level : {D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0}) {
     ComPtr<ID3D11Device> device; ComPtr<ID3D11DeviceContext> context;
-    const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_10_0;
+    std::printf("REFERENCE_FEATURE_LEVEL=%04x\n", level);
     HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, D3D11_CREATE_DEVICE_DEBUG,
       &level, 1, D3D11_SDK_VERSION, &device, nullptr, &context);
     if (hr == DXGI_ERROR_SDK_COMPONENT_MISSING) {
@@ -136,6 +137,7 @@ int main() {
     require(hr, "reference device");
     std::puts("REFERENCE_ONLY=WARP; no native admission or hardware assertion");
     geometryControl(device.Get()); mipControl(device.Get(), context.Get());
+    }
     return 0;
   } catch (const std::exception& error) {
     std::fprintf(stderr, "REFERENCE_ERROR\nreason=%s\n", error.what()); return 1;

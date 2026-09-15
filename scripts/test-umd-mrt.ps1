@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('x64','arm64')]
+    [ValidateSet('x64','arm64','x86')]
     [string]$Architecture = 'x64',
     [string]$OutputDirectory = 'artifacts/mrt',
     [switch]$CompileOnly
@@ -53,10 +53,14 @@ try {
     Check-Exit 'actual output view metadata fixture'
     & cl @flags "$root/tests/umd-texture1d.cpp" @shaderObjects @ddiObjects d3d11.lib d3dcompiler.lib /Fe:texture1d.exe
     Check-Exit 'actual Texture1D resource/view fixture'
-    foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe','texture1d.exe')) {
+    & cl @flags "$root/tests/umd-texture-transfer.cpp" @shaderObjects @ddiObjects d3d11.lib /Fe:texture-transfer.exe
+    Check-Exit 'actual native texture transfer fixture'
+    & cl @flags "$root/tests/umd-transfer-policy.cpp" /Fe:transfer-policy.exe
+    Check-Exit 'upload arithmetic fixture'
+    foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe','texture1d.exe','texture-transfer.exe','transfer-policy.exe')) {
         $headers = (& dumpbin /headers $name | Out-String)
         Check-Exit "PE inspection $name"
-        $machine = if ($Architecture -eq 'arm64') { 'AA64' } else { '8664' }
+        $machine = @{arm64='AA64';x64='8664';x86='14C'}[$Architecture]
         if ($headers -notmatch "$machine machine") { throw "Wrong architecture: $name" }
         if (-not $CompileOnly) {
             $process = Start-Process (Join-Path $out $name) -PassThru `

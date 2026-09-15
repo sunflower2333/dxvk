@@ -3,7 +3,7 @@ name: Native UMD offline contracts
 on:
   workflow_dispatch:
   push:
-    branches: [work/native-offline-contracts-20260915]
+    branches: [work/native-offline-contracts-20260915, work/native-offline-safety-20260915]
   pull_request:
     paths:
       - 'src/umd/**'
@@ -36,6 +36,8 @@ jobs:
       - name: Execute tracked production policy and encoder under GCC and Clang sanitizers
         run: |
           set -o pipefail
+          bash scripts/test-umd-transfer.sh 2>&1 | tee transfer-gcc.txt
+          CXX=clang++ bash scripts/test-umd-transfer.sh 2>&1 | tee transfer-clang.txt
           bash scripts/test-umd-mrt.sh 2>&1 | tee mrt-gcc.txt
           CXX=clang++ bash scripts/test-umd-mrt.sh 2>&1 | tee mrt-clang.txt
           bash scripts/test-umd-mrt.sh --negative-control 2>&1 | tee mrt-negative.txt
@@ -49,6 +51,7 @@ jobs:
             native-umd-tree.txt
             native-umd-source.zip
             mrt-*.txt
+            transfer-*.txt
             native-existing.txt
           retention-days: 7
           if-no-files-found: error
@@ -59,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64]
+        arch: [x64, arm64, x86]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,7 +71,7 @@ jobs:
         run: git submodule update --init --depth 1 subprojects/dxbc-spirv
       - uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: ${{ matrix.arch == 'x64' && 'x64' || 'x64_arm64' }}
+          arch: ${{ matrix.arch == 'x64' && 'x64' || format('x64_{0}', matrix.arch) }}
       - name: Ensure selected WDK headers are available
         timeout-minutes: 5
         shell: pwsh
@@ -82,7 +85,7 @@ jobs:
             if ($process.ExitCode -notin @(0,3010)) { throw "WDK setup failed: $($process.ExitCode)" }
           }
           if (-not (Test-Path -LiteralPath $header)) { throw 'Selected SDK and WDK do not match' }
-      - name: Compile production DDI and run WARP pixel tests on x64
+      - name: Compile production DDI; run WARP on x64/x86, compile-only ARM64
         shell: pwsh
         run: |
           $arguments = @{

@@ -124,7 +124,7 @@ struct Resource {
   Storage storage;
   D3D10DDI_HRESOURCE handle;
   // Invoke production CreateResource with caller-owned initial-data arrays.
-  Resource(Fixture& f, const D3D10DDIARG_CREATERESOURCE& desc, const Pixels* pixels = nullptr)
+  Resource(Fixture& f, const D3D10DDIARG_CREATERESOURCE& desc, Pixels* pixels = nullptr)
       : owner(f), storage(f.f.pfnCalcPrivateResourceSize(f.device, &desc)),
         handle(storage.handle<D3D10DDI_HRESOURCE>()) {
     auto args = desc;

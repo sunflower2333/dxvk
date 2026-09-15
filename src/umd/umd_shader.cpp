@@ -1,4 +1,6 @@
 #include "umd_shader.h"
+#include "umd_output_policy.h"
+#include <algorithm>
 
 #include <dxbc/dxbc_container.h>
 #include <dxbc/dxbc_parser.h>
@@ -290,8 +292,7 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
       break;
     }
     case ShaderStage::Pixel: {
-      if (outputCount != 1 || outputs[0].systemValue != 0 || outputs[0].registerIndex != 0
-          || outputs[0].mask != 15) return false;
+      if (!validFloatColorOutputs(outputs, outputCount)) return false;
       std::vector<ShaderSignatureEntry> resolved;
       if (!resolvePixelInputs(code, words, inputs, inputCount, resolved)) return false;
       for (const auto& entry : resolved) {
@@ -301,8 +302,17 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
           entry.systemValue ? dxbc::SignatureSysval::ePosition : dxbc::SignatureSysval::eNone,
           scalarType(entry.scalar)));
       }
-      output.add(dxbc::SignatureEntry("SV_Target", 0, 0, 0, 15,
-        dxbc::SignatureSysval::eTarget, ir::ScalarType::eF32));
+      // Emit register-ordered OSGN entries, preserving sparse SV_Target indices.
+      // Windows shader validation expects canonical signature register order.
+      std::vector<ShaderSignatureEntry> ordered(outputs, outputs + outputCount);
+      std::sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) {
+        return a.registerIndex < b.registerIndex;
+      });
+      for (const auto& entry : ordered) {
+        output.add(dxbc::SignatureEntry("SV_Target", entry.registerIndex,
+          entry.registerIndex, 0, entry.mask,
+          dxbc::SignatureSysval::eTarget, ir::ScalarType::eF32));
+      }
       break;
     }
     default:

@@ -147,6 +147,7 @@ HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
   }
   // The fixture backend is Microsoft's WARP only. The production DLL retains
   // the embedded DXVK factory and its exact LUID/Turnip selection policy.
+  level = dxvk::umd::implementationFeatureLevel(level);
   HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
     &level, 1, D3D11_SDK_VERSION, device, nullptr, context);
   if (action == Action::Reset) ++generation;

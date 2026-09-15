@@ -1,0 +1,103 @@
+name: Native UMD offline contracts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [work/native-offline-contracts-20260915]
+  pull_request:
+    paths:
+      - 'src/umd/**'
+      - 'tests/umd-*'
+      - 'scripts/test-umd-mrt*'
+      - '.github/workflows/native-offline-contracts.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-offline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch exact parser and retain source identities
+        run: |
+          git submodule update --init --depth 1 subprojects/dxbc-spirv
+          test "$(git -C subprojects/dxbc-spirv rev-parse HEAD)" = "$(git rev-parse HEAD:subprojects/dxbc-spirv)"
+          git rev-parse HEAD > native-umd-revision.txt
+          git ls-tree -r HEAD > native-umd-tree.txt
+          git archive --format=zip --output=native-umd-source.zip HEAD
+      - name: Execute tracked production policy and encoder under GCC and Clang sanitizers
+        run: |
+          set -o pipefail
+          bash scripts/test-umd-mrt.sh 2>&1 | tee mrt-gcc.txt
+          CXX=clang++ bash scripts/test-umd-mrt.sh 2>&1 | tee mrt-clang.txt
+          bash scripts/test-umd-mrt.sh --negative-control 2>&1 | tee mrt-negative.txt
+          bash scripts/test-native-umd.sh 2>&1 | tee native-existing.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-offline-source-${{ github.sha }}
+          path: |
+            native-umd-revision.txt
+            native-umd-tree.txt
+            native-umd-source.zip
+            mrt-*.txt
+            native-existing.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  windows-contracts:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch the exact shader-parser submodule
+        run: git submodule update --init --depth 1 subprojects/dxbc-spirv
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch == 'x64' && 'x64' || 'x64_arm64' }}
+      - name: Ensure selected WDK headers are available
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $version = $env:WindowsSDKVersion.TrimEnd('\')
+          $header = Join-Path $env:WindowsSdkDir "Include/$version/um/d3d10umddi.h"
+          if (-not (Test-Path -LiteralPath $header)) {
+            $installer = Join-Path $env:RUNNER_TEMP 'native-umd-wdksetup.exe'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/?linkid=2272234' -OutFile $installer
+            $process = Start-Process $installer -ArgumentList '/quiet','/norestart','/features','+' -Wait -PassThru
+            if ($process.ExitCode -notin @(0,3010)) { throw "WDK setup failed: $($process.ExitCode)" }
+          }
+          if (-not (Test-Path -LiteralPath $header)) { throw 'Selected SDK and WDK do not match' }
+      - name: Compile production DDI and run WARP pixel tests on x64
+        shell: pwsh
+        run: |
+          $arguments = @{
+            Architecture = '${{ matrix.arch }}'
+            OutputDirectory = Join-Path $env:RUNNER_TEMP 'native-mrt'
+            CompileOnly = ('${{ matrix.arch }}' -eq 'arm64')
+          }
+          & ./scripts/test-umd-mrt.ps1 @arguments
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-mrt-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/native-mrt/*.exe
+            ${{ runner.temp }}/native-mrt/*.txt
+            ${{ runner.temp }}/native-mrt/receipt.json
+          retention-days: 7
+          if-no-files-found: warn

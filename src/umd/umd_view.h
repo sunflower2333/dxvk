@@ -14,7 +14,8 @@ inline bool textureMiscFlags(const D3D10DDIARG_CREATERESOURCE& args, UINT& flags
   if (args.MiscFlags & ~D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP) return false;
   if (!(args.MiscFlags & D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP)) return true;
   constexpr UINT required = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_SHADER_RESOURCE;
-  if (args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
+  if ((args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
+       && args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE1D)
       || args.Usage != D3D10_DDI_USAGE_DEFAULT || args.MapFlags
       || args.SampleDesc.Count != 1 || args.SampleDesc.Quality
       || (args.BindFlags & required) != required) return false;

@@ -6,6 +6,11 @@
 // This header intentionally does not include DXVK's private KMT definitions:
 // Windows DDI translation units use the WDK's canonical definitions instead.
 namespace dxvk::umd {
+// Stream-output translation uses the D3D11 no-rasterized-stream contract.
+// This is the PRIVATE renderer minimum, not a published native DDI feature level.
+inline constexpr D3D_FEATURE_LEVEL implementationFeatureLevel(D3D_FEATURE_LEVEL requested) {
+  return requested < D3D_FEATURE_LEVEL_11_0 ? D3D_FEATURE_LEVEL_11_0 : requested;
+}
 HRESULT createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
                      ID3D11Device** device, ID3D11DeviceContext** context,
                      const RuntimeBackend* runtime = nullptr) noexcept;

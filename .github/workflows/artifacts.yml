@@ -2,29 +2,42 @@ name: Artifacts (Package)
 
 on: [push, pull_request, workflow_dispatch]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: artifacts-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   artifacts-mingw-w64:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: archlinux/archlinux:base-devel
 
     steps:
+    - name: Install dependencies
+      run: pacman -Syu --needed --noconfirm git meson mingw-w64-gcc glslang
+
     - name: Checkout code
       id: checkout-code
       uses: actions/checkout@v6
       with:
         submodules: recursive
         fetch-depth: 0
+        persist-credentials: false
 
     - name: Setup problem matcher
       uses: Joshua-Ashton/gcc-problem-matcher@master
 
     - name: Build release
       id: build-release
-      uses: WinterSnowfall/arch-mingw-github-action@v2
-      with:
-        command: |
-          export VERSION_NAME="${GITHUB_REF##*/}-${GITHUB_SHA##*/}"
-          ./package-release.sh ${VERSION_NAME} build --no-package
-          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION_NAME="${GITHUB_REF##*/}-${GITHUB_SHA##*/}"
+        ./package-release.sh "$VERSION_NAME" build --no-package
+        echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
 
     - name: Upload artifacts
       id: upload-artifacts
@@ -36,7 +49,8 @@ jobs:
 
   artifacts-steamrt-sniper:
     runs-on: ubuntu-latest
-    container: 
+    timeout-minutes: 30
+    container:
       image: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:beta
       options: --user 1001
 
@@ -47,6 +61,7 @@ jobs:
       with:
         submodules: recursive
         fetch-depth: 0
+        persist-credentials: false
 
     - name: Setup problem matcher
       uses: Joshua-Ashton/gcc-problem-matcher@master
@@ -55,9 +70,10 @@ jobs:
       id: build-release
       shell: bash
       run: |
-        export VERSION_NAME="${GITHUB_REF##*/}-${GITHUB_SHA##*/}"
-        ./package-native.sh ${VERSION_NAME} build
-        echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
+        set -euo pipefail
+        VERSION_NAME="${GITHUB_REF##*/}-${GITHUB_SHA##*/}"
+        ./package-native.sh "$VERSION_NAME" build
+        echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
 
     - name: Upload artifacts
       id: upload-artifacts
@@ -69,13 +85,14 @@ jobs:
 
   merge-artifacts:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [artifacts-mingw-w64, artifacts-steamrt-sniper]
     steps:
       - name: Get version
         id: get-version
         shell: bash
         run: |
-          echo "VERSION_NAME=${GITHUB_REF##*/}-${GITHUB_SHA##*/}" >> $GITHUB_ENV
+          echo "VERSION_NAME=${GITHUB_REF##*/}-${GITHUB_SHA##*/}" >> "$GITHUB_ENV"
 
       - name: Merge Artifacts
         uses: actions/upload-artifact/merge@v7

@@ -331,6 +331,7 @@ HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
   if (!trackBackendDrain) CHECK(cb->release(owner, a.token) == S_OK);
   *device = nullptr; *context = nullptr;
   if (earlyBackendFail) return E_FAIL;
+  level = dxvk::umd::implementationFeatureLevel(level);
   HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, &level, 1,
     D3D11_SDK_VERSION, device, nullptr, context);
   inspectionContext = *context;

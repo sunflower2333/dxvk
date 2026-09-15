@@ -8,6 +8,8 @@
 #include "umd_map.h"
 #include "umd_view.h"
 #include "umd_texture1d.h"
+#include "umd_transfer_policy.h"
+#include "umd_transfer_format.h"
 #include "umd_state.h"
 #include "umd_stream_output.h"
 #include "umd_output_merger.h"
@@ -914,7 +916,7 @@ void APIENTRY checkMultisample(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT coun
 }
 
 struct SubresourceInfo {
-  UINT width = 0, height = 1;
+  UINT width = 0, height = 1, texelBytes = 1;
   D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
   DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
   D3D11_USAGE usage = D3D11_USAGE_DEFAULT;
@@ -939,7 +941,8 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
     info.width = std::max(1u, desc.Width >> (index % desc.MipLevels));
     info.height = 1;
     info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
-    return info.format == DXGI_FORMAT_R8G8B8A8_UNORM || info.format == DXGI_FORMAT_B8G8R8A8_UNORM;
+    info.texelBytes = dxvk::umd::transferTexelBytes(info.format);
+    return info.texelBytes != 0;
   }
   if (info.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
     ComPtr<ID3D11Texture2D> texture;
@@ -952,7 +955,8 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
     info.width = desc.Width >> mip; if (!info.width) info.width = 1;
     info.height = desc.Height >> mip; if (!info.height) info.height = 1;
     info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
-    return info.format == DXGI_FORMAT_R8G8B8A8_UNORM || info.format == DXGI_FORMAT_B8G8R8A8_UNORM;
+    info.texelBytes = dxvk::umd::transferTexelBytes(info.format);
+    return info.texelBytes != 0;
   }
   return false;
 }
@@ -972,6 +976,7 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
   SubresourceInfo source, destination; D3D11_BOX box;
   if (!subresourceInfo(get(src), srcIndex, source) || !subresourceInfo(get(dst), dstIndex, destination)
       || source.dimension != destination.dimension || source.format != destination.format
+      || ((source.bindings | destination.bindings) & D3D11_BIND_DEPTH_STENCIL)
       || destination.usage == D3D11_USAGE_IMMUTABLE || !subresourceBox(source, input, box)) {
     device->error(E_INVALIDARG); return;
   }
@@ -999,8 +1004,14 @@ void APIENTRY updateResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT in
     device->error(E_INVALIDARG); return;
   }
   if (box.left == box.right || box.top == box.bottom || box.front == box.back) return;
-  if (!source || (destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D
-      && rowPitch < (box.right - box.left) * 4)) { device->error(E_INVALIDARG); return; }
+  uint64_t requiredBytes = 0;
+  // Do not assume RGBA8. Validate the last byte on both 32-bit and 64-bit
+  // callers before the backend can read rows from runtime-owned source data.
+  if (!source || !dxvk::umd::uploadSpan(box.right - box.left, box.bottom - box.top,
+      destination.texelBytes, rowPitch, destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D,
+      uint64_t(UINTPTR_MAX) - reinterpret_cast<uintptr_t>(source) + 1, requiredBytes)) {
+    device->error(E_INVALIDARG); return;
+  }
   try {
     device->context->UpdateSubresource(get(dst)->backend.Get(), index, input ? &box : nullptr,
       source, rowPitch, depthPitch);

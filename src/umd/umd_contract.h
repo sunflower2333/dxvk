@@ -13,6 +13,9 @@ enum RuntimeGap : uint32_t {
   CompleteShaderSemantics = 1 << 4,
   MultipleRenderTargets = 1 << 5,
   PrimaryAndDxgi = 1 << 6,
+  // Retired: the mandatory table is complete and ResetPrimitiveID /
+  // SetVertexPipelineOutput exist only under D3D10PSGP, never in a
+  // hardware UMD. The value stays reserved so a stale mask is obvious.
   LegacyPipelineCallbacks = 1 << 7,
   RuntimeThreading = 1 << 8,
 };

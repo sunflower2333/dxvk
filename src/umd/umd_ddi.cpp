@@ -479,6 +479,19 @@ bool owned(Device* device, RenderTarget* target) {
 SIZE_T APIENTRY resourceSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERESOURCE*) {
   return sizeof(Resource);
 }
+// The runtime calls every mandatory D3D10 device slot unconditionally; a null
+// entry is an access violation on first use, not a capability report. Reserve
+// the ordinary private resource slot so the runtime can allocate it, then fail
+// the open itself. Opening another owner's surface still needs the shared
+// allocation contract that runtimeMissingD3D10Requirements reports as
+// OpenedResources, so this completes the table without claiming the capability.
+SIZE_T APIENTRY openedResourceSize(D3D10DDI_HDEVICE, const D3D10DDIARG_OPENRESOURCE*) {
+  return sizeof(Resource);
+}
+void APIENTRY openResource(D3D10DDI_HDEVICE h, const D3D10DDIARG_OPENRESOURCE* args,
+    D3D10DDI_HRESOURCE, D3D10DDI_HRTRESOURCE) {
+  get(h)->error(args ? DXGI_DDI_ERR_UNSUPPORTED : E_INVALIDARG);
+}
 HRESULT createResourceData(Device* device,
     const D3D10DDIARG_CREATERESOURCE* args, Resource* resource,
     D3D10DDI_HRTRESOURCE runtime) {
@@ -1736,6 +1749,12 @@ void APIENTRY checkCounter(D3D10DDI_HDEVICE h, D3D10DDI_QUERY query,
   get(h)->error(query >= D3D10DDI_COUNTER_GPU_IDLE && query <= D3D10DDI_COUNTER_TEXTURE_CACHE_HIT_RATE
     ? DXGI_DDI_ERR_UNSUPPORTED : E_INVALIDARG);
 }
+// D3D10 removed the D3D9 widening text filter, so the runtime only ever
+// requests the identity size here. Accepting exactly that and rejecting any
+// other request is the entire contract, not a placeholder.
+void APIENTRY setTextFilterSize(D3D10DDI_HDEVICE h, UINT width, UINT height) {
+  if (width != 1 || height != 1) get(h)->error(DXGI_DDI_ERR_UNSUPPORTED);
+}
 void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
   std::shared_ptr<Device> owner;
   {
@@ -1860,6 +1879,8 @@ HRESULT createDdiDevice(
   table->pfnCalcPrivateResourceSize = deviceEntry<resourceSize>;
   table->pfnCreateResource = deviceEntry<createResource>;
   table->pfnDestroyResource = deviceEntry<destroyResource>;
+  table->pfnCalcPrivateOpenedResourceSize = deviceEntry<openedResourceSize>;
+  table->pfnOpenResource = deviceEntry<openResource>;
   table->pfnCalcPrivateShaderResourceViewSize = deviceEntry<shaderViewSize>;
   table->pfnCreateShaderResourceView = deviceEntry<createShaderView>;
   table->pfnDestroyShaderResourceView = deviceEntry<destroyShaderView>;
@@ -1956,6 +1977,7 @@ HRESULT createDdiDevice(
   table->pfnRelocateDeviceFuncs = deviceEntry<relocateDeviceFunctions>;
   table->pfnCheckCounterInfo = deviceEntry<counterInfo>;
   table->pfnCheckCounter = deviceEntry<checkCounter>;
+  table->pfnSetTextFilterSize = deviceEntry<setTextFilterSize>;
   table->pfnDestroyDevice = destroyDevice;
   if (dxgiTable) {
     *dxgiTable = {};

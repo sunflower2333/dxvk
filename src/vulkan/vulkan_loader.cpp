@@ -1,6 +1,10 @@
+#include <cwchar>
+#include <string>
 #include <tuple>
+#include <vector>
 
 #include "vulkan_loader.h"
+#include "vulkan_loader_config.h"
 
 #include "../util/log/log.h"
 
@@ -9,7 +13,67 @@
 
 namespace dxvk::vk {
 
+#ifdef _WIN32
+  // A package build names one private Khronos loader (umd_vulkan_loader). It
+  // is resolved next to the module this code is linked into, never through
+  // the application's DLL search path: a D3D UMD runs from the DriverStore,
+  // which is never on that path, and an emulated x64 or x86 process has no
+  // guaranteed matching-architecture public vulkan-1.dll. There is no
+  // fallback to winevulkan.dll or vulkan-1.dll.
+  static HMODULE loadPrivateVulkanLibrary(std::wstring& path) {
+    static const wchar_t name[] = L"" DXVK_PRIVATE_VULKAN_LOADER;
+    HMODULE self = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+          | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        name, &self))
+      return nullptr;
+    std::vector<wchar_t> buffer(32768);
+    DWORD length = GetModuleFileNameW(self, buffer.data(), DWORD(buffer.size()));
+    if (!length || length >= buffer.size())
+      return nullptr;
+    path.assign(buffer.data(), length);
+    const size_t slash = path.find_last_of(L'\\');
+    if (slash == std::wstring::npos)
+      return nullptr;
+    path.resize(slash + 1);
+    path += name;
+    // A same-name loader from another package or application directory must
+    // not be adopted silently.
+    auto sameModule = [&buffer, &path] (HMODULE module) {
+      DWORD size = GetModuleFileNameW(module, buffer.data(), DWORD(buffer.size()));
+      return size && size < buffer.size() && !_wcsicmp(buffer.data(), path.c_str());
+    };
+    HMODULE existing = GetModuleHandleW(name);
+    if (existing && !sameModule(existing))
+      return nullptr;
+    HMODULE library = LoadLibraryExW(path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (library && !sameModule(library)) {
+      FreeLibrary(library);
+      return nullptr;
+    }
+    return library;
+  }
+#endif
+
   static std::pair<HMODULE, PFN_vkGetInstanceProcAddr> loadVulkanLibrary() {
+#ifdef _WIN32
+    if (sizeof(DXVK_PRIVATE_VULKAN_LOADER) > 1) {
+      std::wstring path;
+      HMODULE library = loadPrivateVulkanLibrary(path);
+      auto proc = library ? GetProcAddress(library, "vkGetInstanceProcAddr") : nullptr;
+
+      if (!proc) {
+        if (library)
+          FreeLibrary(library);
+        Logger::err(str::format("Vulkan: private loader " DXVK_PRIVATE_VULKAN_LOADER " not usable at ", path.c_str()));
+        return { };
+      }
+
+      Logger::info(str::format("Vulkan: Found vkGetInstanceProcAddr in private loader ", path.c_str()));
+      return std::make_pair(library, reinterpret_cast<PFN_vkGetInstanceProcAddr>(proc));
+    }
+#endif
+
     static const std::array<const char*, 2> dllNames = {{
 #ifdef _WIN32
       "winevulkan.dll",

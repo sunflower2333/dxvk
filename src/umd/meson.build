@@ -11,7 +11,21 @@ umd_backend_probe = executable('dxvk-umd-backend-probe',
   include_directories : dxvk_include_path,
 )
 
-umd_development = shared_library('viogpudxvk', 'umd_ddi.cpp', 'umd_adapter.cpp', 'umd_contract.cpp', 'umd_shader.cpp', 'umd_runtime_query.cpp', 'umd_log.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp',
+# One flat DriverStore directory holds a build per architecture, so the file
+# name (and with it the PDB name) is chosen at link time, never by renaming.
+umd_library_name = get_option('umd_library_name')
+if (umd_library_name == '' or umd_library_name.contains('.') or umd_library_name.contains('/')
+    or umd_library_name.contains('\\') or umd_library_name.contains('"'))
+  error('umd_library_name must be a bare file name without the .dll extension')
+endif
+umd_build_conf = configuration_data()
+umd_build_conf.set('VIOGPU_DXVK_UMD_FILE', 'L"' + umd_library_name + '.dll"')
+umd_build_config = configure_file(
+  configuration : umd_build_conf,
+  output        : 'umd_build_config.h',
+)
+
+umd_development = shared_library(umd_library_name, 'umd_ddi.cpp', 'umd_adapter.cpp', 'umd_contract.cpp', 'umd_shader.cpp', 'umd_runtime_query.cpp', 'umd_log.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_vulkan_loader.cpp',
   link_with : [umd_backend],
   dependencies : [dxvk_dep, dxbc_spirv_dep, lib_gdi32, lib_dxgi],
   include_directories : dxvk_include_path,
@@ -87,7 +101,7 @@ umd_view_test = executable('dxvk-umd-view-test', '../../tests/umd-view.cpp',
   dependencies : [cpp.find_library('d3d11'), cpp.find_library('d3dcompiler')])
 
 umd_system_runtime_test = executable('dxvk-umd-system-runtime-test',
-  '../../tests/umd-system-runtime.cpp',
+  '../../tests/umd-system-runtime.cpp', umd_build_config,
   dependencies : [cpp.find_library('d3d11'), cpp.find_library('d3dcompiler'), cpp.find_library('user32')])
 
 umd_texture1d_test = executable('dxvk-umd-texture1d-test',

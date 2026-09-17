@@ -4,6 +4,8 @@ option('enable_d3d9',  type : 'boolean', value : true, description: 'Build D3D9'
 option('enable_d3d10', type : 'boolean', value : true, description: 'Build D3D10')
 option('enable_d3d11', type : 'boolean', value : true, description: 'Build D3D11')
 option('enable_umd', type : 'boolean', value : false, description: 'Build native Windows UMD development backend and tests')
+option('umd_library_name', type : 'string', value : 'viogpudxvk', description: 'File name, without .dll, of the native Windows UMD; one flat driver directory holds one per architecture')
+option('umd_vulkan_loader', type : 'string', value : '', description: 'Load only this Vulkan loader DLL from the directory of the module that loads it; empty searches winevulkan.dll and vulkan-1.dll')
 option('build_id',     type : 'boolean', value : false)
 option('native_glfw',  type : 'feature', value : 'auto', description: 'Enable GLFW WSI for DXVK Native')
 option('native_sdl2',  type : 'feature', value : 'auto', description: 'Enable SDL2 WSI for DXVK Native')

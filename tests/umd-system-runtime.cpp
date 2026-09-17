@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include "umd_build_config.h"
 
 using Microsoft::WRL::ComPtr;
 #define CHECK(c) do { if (!(c)) { std::fprintf(stderr, "system runtime line %d: %s\n", __LINE__, #c); std::exit(1); } } while (0)
@@ -22,7 +23,7 @@ int main(int argc, char** argv) {
   CHECK(length && length < 32768);
   std::wstring dll(executable, length);
   dll.resize(dll.find_last_of(L"\\/") + 1);
-  dll += L"viogpudxvk.dll";
+  dll += VIOGPU_DXVK_UMD_FILE;
   HMODULE candidate = LoadLibraryExW(dll.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
   CHECK(candidate);
   {

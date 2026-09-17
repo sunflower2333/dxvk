@@ -1,4 +1,10 @@
-param([string]$OutputDirectory = 'artifacts/umd')
+# LibraryName and VulkanLoader are for driver-package builds: one flat
+# DriverStore directory holds a UMD per architecture, and each resolves its
+# own private Vulkan loader beside itself. The defaults keep the development
+# build unchanged.
+param([string]$OutputDirectory = 'artifacts/umd',
+      [ValidatePattern('^[A-Za-z0-9_-]+$')][string]$LibraryName = 'viogpudxvk',
+      [ValidatePattern('^(|[A-Za-z0-9_-]+\.dll)$')][string]$VulkanLoader = '')
 $ErrorActionPreference = 'Stop'
 $sdkVersion = ($env:WindowsSDKVersion -replace '\\+$', '')
 if (-not $sdkVersion) { throw 'Run in the selected MSVC developer environment' }
@@ -32,13 +38,13 @@ cpu_family = '$cpu'
 cpu = '$arch'
 endian = 'little'
 "@ | Set-Content native-umd-cross.ini
-meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Denable_umd=true -Denable_d3d8=false -Denable_d3d9=false -Denable_d3d10=false
+meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Denable_umd=true -Denable_d3d8=false -Denable_d3d9=false -Denable_d3d10=false "-Dumd_library_name=$LibraryName" "-Dumd_vulkan_loader=$VulkanLoader"
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
 ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe src/umd/dxvk-umd-shader-test.exe src/umd/dxvk-umd-view-test.exe
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
 ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-native-lifetime-test.exe src/umd/dxvk-umd-runtime-gpu-test.exe src/umd/dxvk-umd-predication-test.exe src/umd/dxvk-umd-stream-output-test.exe src/umd/dxvk-umd-texture1d-test.exe
 if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build failed' }
-ninja -C build-umd src/umd/viogpudxvk.dll.p/umd_ddi.cpp.obj src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
+ninja -C build-umd "src/umd/$LibraryName.dll.p/umd_ddi.cpp.obj" src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
 if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 function Invoke-BoundedFixture([string]$Executable, [string]$Name) {
@@ -73,9 +79,9 @@ if ($arch -ne 'arm64') {
     & build-umd/src/umd/dxvk-umd-view-test.exe | Tee-Object (Join-Path $OutputDirectory 'view-test.txt')
     if ($LASTEXITCODE) { throw 'Native texture view/range/MSAA test failed' }
 }
-ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe src/umd/viogpudxvk.dll src/umd/dxvk-umd-ddi-probe.exe src/umd/dxvk-umd-system-runtime-test.exe src/umd/dxvk-umd-predication-probe.exe src/umd/dxvk-umd-stream-output-probe.exe
+ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe "src/umd/$LibraryName.dll" src/umd/dxvk-umd-ddi-probe.exe src/umd/dxvk-umd-system-runtime-test.exe src/umd/dxvk-umd-predication-probe.exe src/umd/dxvk-umd-stream-output-probe.exe
 if ($LASTEXITCODE) { throw 'DXVK UMD development build failed' }
-foreach ($name in @('viogpudxvk.dll', 'dxvk-umd-backend-probe.exe', 'dxvk-umd-ddi-probe.exe', 'dxvk-umd-predication-probe.exe', 'dxvk-umd-stream-output-probe.exe')) {
+foreach ($name in @("$LibraryName.dll", 'dxvk-umd-backend-probe.exe', 'dxvk-umd-ddi-probe.exe', 'dxvk-umd-predication-probe.exe', 'dxvk-umd-stream-output-probe.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
     $imports = & dumpbin /imports $path | Out-String
     if ($LASTEXITCODE -or $imports -match 'D3D11CreateDevice|D3D11CoreCreateDevice|D3D11CreateDeviceAndSwapChain') { throw "Forbidden D3D runtime import: $name" }
@@ -85,8 +91,13 @@ foreach ($name in @('viogpudxvk.dll', 'dxvk-umd-backend-probe.exe', 'dxvk-umd-dd
     Copy-Item $path $OutputDirectory
     $imports | Set-Content (Join-Path $OutputDirectory "$name.imports.txt")
 }
-$exports = & dumpbin /exports build-umd/src/umd/viogpudxvk.dll | Out-String
-if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
+# The linker writes the PDB beside the DLL (/Z7 with /DEBUG:FULL for MSVC);
+# ship it with the matching image so a crash in the UMD can be symbolized.
+$symbols = Join-Path 'build-umd/src/umd' "$LibraryName.pdb"
+if (-not (Test-Path -LiteralPath $symbols -PathType Leaf)) { throw "$LibraryName.dll has no PDB" }
+Copy-Item $symbols $OutputDirectory
+$exports = & dumpbin /exports "build-umd/src/umd/$LibraryName.dll" | Out-String
+if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bVioGpuDxvkQueryVulkanLoader\b' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
 foreach ($name in @('dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
@@ -102,6 +113,8 @@ if ($arch -ne 'arm64') {
 @"
 DXVK_COMMIT=$(git rev-parse HEAD)
 ARCH=$arch
+LIBRARY=$LibraryName.dll
+VULKAN_LOADER=$(if ($VulkanLoader) { "$VulkanLoader (private, beside the UMD)" } else { 'winevulkan.dll/vulkan-1.dll search' })
 STATUS=DDI development candidate; not registered or installable as the system UMD.
 Development DDIs include restricted SM4 VS/GS/PS, GS stream output, SO targets/stats/overflow, DrawAuto and predication. Null-GS passthrough and general shader interfaces remain pending. Same-source WARP and embedded Turnip SO probes verify bytes, append/reset, gaps, split buffers, overflow and predicated DrawAuto pixels; hardware execution remains required.
 Occlusion predication uses a synchronous CPU/GPU correctness fallback with a two-second query deadline; no efficient GPU conditional rendering claim. Same-source WARP and embedded Turnip DDI probes cover both outcomes, inversion, query reuse, unbinding and resource operations. Real target execution remains required.

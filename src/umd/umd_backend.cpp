@@ -97,6 +97,10 @@ HRESULT Backend::create(const AdapterLuid& luid,
     // The callback owner reaches VkDeviceCreateInfo before Turnip allocates any
     // internal BO. Native runtime creation never falls back to direct KMT.
     backend->device = backend->adapter->createDevice(runtime);
+    // The embedded renderer implements DDI operations using D3D11 facilities
+    // (notably NO_RASTERIZED_STREAM). Do not mislabel that implementation FL10.
+    // Adapter capability admission remains independent and fail-closed.
+    level = implementationFeatureLevel(level);
     if (level > D3D11Device::GetMaxFeatureLevel(*backend->device))
       return DXGI_ERROR_UNSUPPORTED;
 

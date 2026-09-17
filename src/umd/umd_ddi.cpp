@@ -10,6 +10,7 @@
 #include "umd_texture1d.h"
 #include "umd_transfer_policy.h"
 #include "umd_transfer_format.h"
+#include "umd_generate_mips.h"
 #include "umd_state.h"
 #include "umd_stream_output.h"
 #include "umd_output_merger.h"
@@ -691,9 +692,10 @@ void APIENTRY generateMips(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW obje
     if (!(support & D3D11_FORMAT_SUPPORT_MIP_AUTOGEN)) {
       device->error(E_INVALIDARG); return;
     }
-    // DXVK emits mip blits for this exact SRV range with its own GPU hazard
-    // tracking. No CPU readback, unrelated slices or global idle are needed.
-    device->context->GenerateMips(view->backend.Get());
+    // Keep view-local mip semantics even on backends which mishandle 1D
+    // array offsets. The helper uses ordered GPU copies, never CPU texels.
+    device->error(dxvk::umd::generateViewMips(
+      device->backend.Get(), device->context.Get(), view->backend.Get()));
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }

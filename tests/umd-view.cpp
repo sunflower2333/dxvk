@@ -94,8 +94,10 @@ int main() {
   // Generated mips have nowhere to live in a single-image wire format.
   sharedResource.MiscFlags |= D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP;
   CHECK(!textureMiscFlags(sharedResource, mipFlags, &sharedFlag) && !sharedFlag);
-  // An unknown misc flag stays rejected alongside a known one.
-  sharedResource.MiscFlags = D3D10_DDI_RESOURCE_MISC_SHARED | 0x40;
+  // A real D3D10 misc flag this driver does not implement stays rejected even
+  // in company it does, so sharing cannot smuggle one through.
+  sharedResource.MiscFlags =
+    D3D10_DDI_RESOURCE_MISC_SHARED | D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT;
   CHECK(!textureMiscFlags(sharedResource, mipFlags, &sharedFlag) && !sharedFlag);
   D3D10DDIARG_CREATESHADERRESOURCEVIEW native = {};
   native.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;

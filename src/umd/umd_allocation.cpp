@@ -170,16 +170,21 @@ HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
   if (allocation.m_owner != this || !allocation.m_handle) return E_INVALIDARG;
   if (publish) allocation.m_published = false;
   const auto& info = allocation.m_info;
-  if (!pixels || rowPitch < info.pitch
-      || uint64_t(info.height - 1) * rowPitch + info.pitch > std::numeric_limits<size_t>::max())
+  // Pitch is a stride, not a row length. They are equal for an allocation this
+  // bridge created, which is why one value served as both until an adopted
+  // allocation could arrive with padding: copying `pitch` bytes per row would
+  // then carry that padding across and demand the local side be as wide.
+  const uint64_t row = uint64_t(info.width) * 4;
+  if (!pixels || rowPitch < row || info.pitch < row
+      || uint64_t(info.height - 1) * rowPitch + row > std::numeric_limits<size_t>::max())
     return E_INVALIDARG;
   HRESULT hr = checkIdentity();
   if (FAILED(hr)) return hr;
   D3DDDICB_LOCK lock = {};
   lock.hAllocation = allocation.m_handle;
   lock.Flags.LockEntire = 1;
-  lock.Flags.WriteOnly = publish;
-  lock.Flags.ReadOnly = !publish;
+  lock.Flags.WriteOnly = publish ? 1 : 0;
+  lock.Flags.ReadOnly = publish ? 0 : 1;
   // Do not discard or ignore synchronization: VidSch may still consume the
   // last Present. A successful synchronized lock precedes every CPU access.
   const HRESULT locked = m_callbacks.pfnLockCb(m_device, &lock);
@@ -192,7 +197,7 @@ HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
     for (UINT y = 0; y < info.height; y++) {
       auto shared = static_cast<char*>(lock.pData) + size_t(y) * info.pitch;
       auto local = static_cast<char*>(pixels) + size_t(y) * rowPitch;
-      std::memcpy(publish ? shared : local, publish ? local : shared, info.pitch);
+      std::memcpy(publish ? shared : local, publish ? local : shared, size_t(row));
     }
   }
   D3DDDICB_UNLOCK unlock = {};

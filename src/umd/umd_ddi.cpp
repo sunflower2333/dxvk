@@ -839,6 +839,15 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
   }
   auto device = get(h);
   auto object = get(resource);
+  // Last chance to hand over writes this device made. Destroying the resource
+  // does not destroy the surface for whoever else has it open, and after the
+  // retirement below there is no live context to publish through. A failure
+  // here is the caller's to hear about; the destruction still proceeds.
+  if (object->shared && object->shared->state.dirty) {
+    const HRESULT hr = dxvk::umd::publishSharedSurface(device->backend.Get(),
+      device->context.Get(), device->memory, *object->shared, device->sharedEpoch);
+    if (FAILED(hr)) device->error(hr);
+  }
   auto retired = std::move(object->retirement);
   retired->resource.emplace(std::move(*object));
   object->~Resource();

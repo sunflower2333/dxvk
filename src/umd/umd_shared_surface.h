@@ -34,6 +34,14 @@ namespace dxvk::umd {
 // Within one epoch a surface is read at most once however many draws bind it,
 // which turns the per-frame cost from per-draw into per-surface.
 //
+// That removes a factor, not the problem. What remains is one full-surface
+// copy per bound shared surface per frame, so the cost still scales with total
+// shared area, and no policy here can do better: a plain shared resource
+// carries no notification of what another process changed, so there are no
+// dirty rectangles to copy instead of the whole image. The cost goes away only
+// when the kernel scans out the shared image and neither refresh nor publish
+// exists. This makes that day cheaper to reach; it does not substitute for it.
+//
 // The correctness argument for memoizing: a plain D3D shared resource carries
 // no cross-process synchronization contract at all. Callers that need one use
 // a keyed mutex, and the D3D10 DDI has no flag for that -- 0x100 is reserved,

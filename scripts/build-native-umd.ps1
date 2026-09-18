@@ -40,7 +40,7 @@ endian = 'little'
 "@ | Set-Content native-umd-cross.ini
 meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Denable_umd=true -Denable_d3d8=false -Denable_d3d9=false -Denable_d3d10=false "-Dumd_library_name=$LibraryName" "-Dumd_vulkan_loader=$VulkanLoader"
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
-ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe src/umd/dxvk-umd-shader-test.exe src/umd/dxvk-umd-view-test.exe
+ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe src/umd/dxvk-umd-shader-test.exe src/umd/dxvk-umd-view-test.exe src/umd/dxvk-umd-shared-policy-test.exe
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
 ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-native-lifetime-test.exe src/umd/dxvk-umd-runtime-gpu-test.exe src/umd/dxvk-umd-predication-test.exe src/umd/dxvk-umd-stream-output-test.exe src/umd/dxvk-umd-texture1d-test.exe
 if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build failed' }
@@ -78,6 +78,8 @@ if ($arch -ne 'arm64') {
     if ($LASTEXITCODE) { throw 'Native shader reconstruction test failed' }
     & build-umd/src/umd/dxvk-umd-view-test.exe | Tee-Object (Join-Path $OutputDirectory 'view-test.txt')
     if ($LASTEXITCODE) { throw 'Native texture view/range/MSAA test failed' }
+    & build-umd/src/umd/dxvk-umd-shared-policy-test.exe | Tee-Object (Join-Path $OutputDirectory 'shared-policy-test.txt')
+    if ($LASTEXITCODE) { throw 'Shared-surface refresh/publish policy test failed' }
 }
 ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe "src/umd/$LibraryName.dll" src/umd/dxvk-umd-ddi-probe.exe src/umd/dxvk-umd-system-runtime-test.exe src/umd/dxvk-umd-predication-probe.exe src/umd/dxvk-umd-stream-output-probe.exe
 if ($LASTEXITCODE) { throw 'DXVK UMD development build failed' }

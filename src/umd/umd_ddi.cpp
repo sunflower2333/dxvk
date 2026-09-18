@@ -14,8 +14,10 @@
 #include "umd_state.h"
 #include "umd_stream_output.h"
 #include "umd_output_merger.h"
+#include "umd_shared_surface.h"
 
 #include <wrl/client.h>
+#include <cstring>
 #include <memory>
 #include <new>
 #include <vector>
@@ -52,6 +54,25 @@ struct Device {
   Shader* geometryShader = nullptr;
   Shader* pixelShader = nullptr;
   InputLayout* inputLayout = nullptr;
+  // Shared surfaces bound to the pipeline right now, by stage and slot. A draw
+  // reads only these, so it refreshes only what it samples and dirties only
+  // what it renders to -- never a sweep of every shared surface the device
+  // owns. Held by shared_ptr because a view outlives its resource DDI.
+  std::array<std::array<std::shared_ptr<dxvk::umd::SharedSurface>,
+    D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT>, 3> boundShared;
+  std::array<UINT, 3> boundSharedHigh{};
+  std::array<std::shared_ptr<dxvk::umd::SharedSurface>,
+    D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> targetShared;
+  // Every shared surface this device created or opened, for the publish sweep
+  // that Flush and Present owe the other process. Weak, so a destroyed
+  // resource leaves nothing behind to publish into a freed allocation.
+  std::vector<std::weak_ptr<dxvk::umd::SharedSurface>> sharedSurfaces;
+  // Ownership epoch. Bumped wherever this device's work becomes visible to
+  // another process and vice versa, which is the boundary a refresh is
+  // memoized against. Never zero: SharedSurface::refreshed starts at zero to
+  // mean "never read".
+  uint64_t sharedEpoch = 1;
+  bool anySharedSurface = false;
   bool closing = false;
   std::atomic<bool> retired{false};
   HRESULT close() noexcept {
@@ -192,6 +213,10 @@ struct Resource {
   ComPtr<ID3D11Resource> backend;
   ComPtr<ID3D11Texture2D> presentReadback;
   dxvk::umd::RuntimeAllocation allocation;
+  // Set only for a resource created MISC_SHARED or opened from another
+  // process. Its allocation lives on the surface, not in the member above, so
+  // that a view holding the last reference keeps the backing alive.
+  std::shared_ptr<dxvk::umd::SharedSurface> shared;
   std::unique_ptr<ResourceRetirement> retirement;
 };
 struct ResourceRetirement final : dxvk::umd::RuntimeService::Retirement {
@@ -200,6 +225,10 @@ struct ResourceRetirement final : dxvk::umd::RuntimeService::Retirement {
     auto device = resource->owner;
     const HRESULT hr = resource->allocation.release();
     resource->presentReadback.Reset();
+    // A view may still hold the surface; its allocation retires with the last
+    // reference, not with this resource. An opened allocation is never
+    // deallocated here in any case -- it belongs to the process that made it.
+    resource->shared.reset();
     resource->backend.Reset();
     if (FAILED(hr)) device->error(hr);
   }
@@ -247,10 +276,12 @@ struct RenderTarget : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11RenderTargetView> backend;
   DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+  std::shared_ptr<dxvk::umd::SharedSurface> shared;
 };
 struct ShaderView : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11ShaderResourceView> backend;
+  std::shared_ptr<dxvk::umd::SharedSurface> shared;
 };
 struct Sampler : Child {
   Device* owner = nullptr;
@@ -476,31 +507,180 @@ bool owned(Device* device, RenderTarget* target) {
   return true;
 }
 
+// Record a surface for the publish sweep Flush and Present owe the other
+// process, dropping entries whose resource and views are both gone.
+void trackSharedSurface(Device* device,
+    const std::shared_ptr<dxvk::umd::SharedSurface>& surface) {
+  auto& list = device->sharedSurfaces;
+  size_t kept = 0;
+  for (size_t i = 0; i < list.size(); i++)
+    if (!list[i].expired()) list[kept++] = std::move(list[i]);
+  list.resize(kept);
+  list.push_back(surface);
+  device->anySharedSurface = true;
+}
+
+// Hand this device's writes to whoever else can see them. Every dirty surface
+// gets its attempt and the first failure is what is reported: stopping at that
+// failure would leave every surface after it stale as well, which is strictly
+// more corruption than the one that already went wrong.
+HRESULT publishSharedSurfaces(Device* device) {
+  if (!device->anySharedSurface) return S_OK;
+  HRESULT result = S_OK;
+  for (auto& entry : device->sharedSurfaces) {
+    auto surface = entry.lock();
+    if (!surface) continue;
+    const HRESULT hr = dxvk::umd::publishSharedSurface(device->backend.Get(),
+      device->context.Get(), device->memory, *surface, device->sharedEpoch);
+    if (FAILED(hr) && SUCCEEDED(result)) result = hr;
+  }
+  return result;
+}
+
+// Open the next ownership epoch, retiring every memoized refresh. Anything
+// another process wrote before this point must be read again before it is
+// sampled; see umd_shared_surface.h for why that boundary is the right one.
+void openSharedEpoch(Device* device) {
+  if (device->anySharedSurface)
+    device->sharedEpoch = dxvk::umd::nextSharedEpoch(device->sharedEpoch);
+}
+
+// Make a bound surface's cache current for this epoch before the pipeline
+// reads it. Reports through SetError and answers whether the draw may run.
+bool readSharedSurface(Device* device, const std::shared_ptr<dxvk::umd::SharedSurface>& surface) {
+  if (!surface) return true;
+  const HRESULT hr = dxvk::umd::refreshSharedSurface(device->backend.Get(),
+    device->context.Get(), device->memory, *surface, device->sharedEpoch);
+  if (FAILED(hr)) { device->error(hr); return false; }
+  return true;
+}
+
+// A write that defines every pixel of the surface. The cache becomes
+// authoritative with no read at all, which is the one case where this bridge
+// beats a refresh-before-every-use policy outright instead of deferring it.
+void wroteSharedSurface(Device* device, const std::shared_ptr<dxvk::umd::SharedSurface>& surface) {
+  if (!surface) return;
+  dxvk::umd::sharedWroteWhole(surface->state, device->sharedEpoch);
+}
+
+// A write that leaves some pixels as the owning process last left them, so the
+// cache has to hold those before it can be published back.
+bool wroteSharedRegion(Device* device, const std::shared_ptr<dxvk::umd::SharedSurface>& surface) {
+  if (!surface) return true;
+  if (!readSharedSurface(device, surface)) return false;
+  dxvk::umd::sharedWroteRegion(surface->state);
+  return true;
+}
+
+// The pixel layout a shared surface must have for AllocationInfo to describe
+// it: one linear image, one sample, one of the two formats the wire protocol
+// names, and no CPU mapping of the cache behind the publisher's back.
+bool sharedSurfaceShape(const D3D10DDIARG_CREATERESOURCE& args) {
+  return args.ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D
+      && args.MipLevels == 1 && args.ArraySize == 1
+      && args.SampleDesc.Count == 1 && !args.SampleDesc.Quality
+      && args.Usage == D3D10_DDI_USAGE_DEFAULT && !args.MapFlags
+      && (args.Format == DXGI_FORMAT_R8G8B8A8_UNORM
+          || args.Format == DXGI_FORMAT_B8G8R8A8_UNORM);
+}
+
+// Give a freshly created resource its kernel allocation and shared surface.
+// Runs after the cache exists, so a failure here leaves the caller to destroy
+// exactly what it staged.
+HRESULT createSharedResource(Device* device, Resource* resource,
+    const D3D10DDIARG_CREATERESOURCE& args, HANDLE runtime) {
+  if (!device->memory.available() || !runtime) return DXGI_ERROR_UNSUPPORTED;
+  auto surface = std::make_shared<dxvk::umd::SharedSurface>();
+  HRESULT hr = resource->backend.As(&surface->cache);
+  if (FAILED(hr)) return hr;
+  hr = device->memory.allocate(surface->allocation, runtime,
+    args.pMipInfoList[0].TexelWidth, args.pMipInfoList[0].TexelHeight, args.Format);
+  if (FAILED(hr)) return hr;
+  if (args.pInitialDataUP) {
+    // The cache already holds the caller's pixels while the allocation is
+    // still the kernel's zeros. The cache is authoritative and owes a publish;
+    // treating it as clean here would show another process an empty surface.
+    dxvk::umd::sharedWroteWhole(surface->state, device->sharedEpoch);
+  } else {
+    // Both sides are zero-initialised, so they already agree and the first
+    // read would copy nothing.
+    dxvk::umd::sharedRefreshed(surface->state, device->sharedEpoch);
+  }
+  trackSharedSurface(device, surface);
+  resource->shared = std::move(surface);
+  return S_OK;
+}
+
 SIZE_T APIENTRY resourceSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERESOURCE*) {
   return sizeof(Resource);
 }
-// The runtime calls every mandatory D3D10 device slot unconditionally; a null
-// entry is an access violation on first use, not a capability report. Reserve
-// the ordinary private resource slot so the runtime can allocate it, then fail
-// the open itself. Opening another owner's surface still needs the shared
-// allocation contract that runtimeMissingD3D10Requirements reports as
-// OpenedResources, so this completes the table without claiming the capability.
 SIZE_T APIENTRY openedResourceSize(D3D10DDI_HDEVICE, const D3D10DDIARG_OPENRESOURCE*) {
   return sizeof(Resource);
 }
-void APIENTRY openResource(D3D10DDI_HDEVICE h, const D3D10DDIARG_OPENRESOURCE* args,
-    D3D10DDI_HRESOURCE, D3D10DDI_HRTRESOURCE) {
-  get(h)->error(args ? DXGI_DDI_ERR_UNSUPPORTED : E_INVALIDARG);
+// Open a surface another process created: build a cache the pipeline can draw
+// with, and take a view of the kernel allocation that carries its pixels.
+// Nothing is copied here. The first use refreshes, because the owner's writes
+// are what the allocation holds and this cache has never read it.
+HRESULT openResourceData(Device* device, const D3D10DDIARG_OPENRESOURCE* args,
+    Resource* resource) {
+  resource->owner = device;
+  if (!args || !args->pOpenAllocationInfo) return E_INVALIDARG;
+  // One allocation only -- and that restriction is also what makes the WDK's
+  // pOpenAllocationInfo / pOpenAllocationInfo2 union safe to read. The two
+  // structures begin with the same hAllocation, pPrivateDriverData and
+  // PrivateDriverDataSize and differ only in what follows, so element zero
+  // decodes identically whichever one the runtime filled. Any higher count
+  // would need the element stride, and the stride is precisely what the union
+  // hides from a driver that negotiated neither shape explicitly.
+  if (args->NumAllocations != 1 || !device->memory.available())
+    return DXGI_ERROR_UNSUPPORTED;
+  const auto& opened = args->pOpenAllocationInfo[0];
+  if (!opened.hAllocation || !opened.pPrivateDriverData
+      || opened.PrivateDriverDataSize != sizeof(dxvk::umd::AllocationInfo))
+    return E_INVALIDARG;
+  dxvk::umd::AllocationInfo info;
+  std::memcpy(&info, opened.pPrivateDriverData, sizeof info);
+  const DXGI_FORMAT format = dxvk::umd::allocationFormat(info.format);
+  if (format == DXGI_FORMAT_UNKNOWN) return DXGI_ERROR_UNSUPPORTED;
+  try {
+    // Reserve the retirement node before any owner exists, for the same reason
+    // creation does: destruction must not have to allocate.
+    resource->retirement = std::make_unique<ResourceRetirement>();
+    auto surface = std::make_shared<dxvk::umd::SharedSurface>();
+    // adopt validates the rest of the wire metadata. Do that before anything
+    // sizes a copy from it: a private-data blob from another process is the
+    // only thing between this path and an out-of-bounds transfer.
+    HRESULT hr = device->memory.adopt(surface->allocation, opened.hAllocation,
+      args->hKMResource.handle, info);
+    if (FAILED(hr)) return hr;
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = info.width;
+    desc.Height = info.height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = format;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+    hr = device->backend->CreateTexture2D(&desc, nullptr, &surface->cache);
+    if (FAILED(hr)) return hr;
+    resource->backend = surface->cache;
+    trackSharedSurface(device, surface);
+    resource->shared = std::move(surface);
+    return S_OK;
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
 }
 HRESULT createResourceData(Device* device,
     const D3D10DDIARG_CREATERESOURCE* args, Resource* resource,
     D3D10DDI_HRTRESOURCE runtime) {
   resource->owner = device;
   UINT miscFlags = 0;
+  bool shared = false;
   if (!args || !args->pMipInfoList || !args->MipLevels || !args->ArraySize ||
       args->MipLevels > D3D11_REQ_MIP_LEVELS || args->ArraySize > D3D11_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION ||
       args->pPrimaryDesc ||
-      !dxvk::umd::textureMiscFlags(*args, miscFlags) || (args->MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK) ||
+      !dxvk::umd::textureMiscFlags(*args, miscFlags, &shared) || (args->MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK) ||
       (args->BindFlags & ~(D3D10_DDI_BIND_PIPELINE_MASK | D3D10_DDI_BIND_PRESENT))) {
     return E_INVALIDARG;
   }
@@ -515,6 +695,14 @@ HRESULT createResourceData(Device* device,
       || args->Usage != D3D10_DDI_USAGE_DEFAULT || args->MapFlags
       || !(args->BindFlags & D3D10_DDI_BIND_RENDER_TARGET)
       || (args->Format != DXGI_FORMAT_R8G8B8A8_UNORM && args->Format != DXGI_FORMAT_B8G8R8A8_UNORM))) {
+    return DXGI_ERROR_UNSUPPORTED;
+  }
+  // A presentable shared surface would need one allocation to serve both the
+  // present path's ownership rules and the shared cache's, which is the
+  // primary/DXGI contract this bridge still reports as missing. Refuse the
+  // combination rather than half-implement it.
+  if (shared && (presentable || !sharedSurfaceShape(*args) || !runtime.handle
+      || !device->memory.available())) {
     return DXGI_ERROR_UNSUPPORTED;
   }
   try {
@@ -570,14 +758,21 @@ HRESULT createResourceData(Device* device,
         args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight, args->Format);
       if (FAILED(hr)) resource->backend.Reset();
     }
+    if (hr == S_OK && shared) {
+      hr = createSharedResource(device, resource, *args, runtime.handle);
+      if (FAILED(hr)) { resource->shared.reset(); resource->backend.Reset(); }
+    }
     return hr == S_OK || FAILED(hr) ? hr : E_FAIL;
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }
 }
-void APIENTRY createResource(D3D10DDI_HDEVICE h,
-    const D3D10DDIARG_CREATERESOURCE* args, D3D10DDI_HRESOURCE out,
-    D3D10DDI_HRTRESOURCE runtime) {
-  auto device = get(h);
+// Creating and opening share one lifetime contract, so they share one body.
+// Both receive no DestroyResource when they fail, both publish into runtime
+// private storage that a nested callback may reclaim, and both must leave no
+// half-built owner behind. Keeping the two paths on the same code is what
+// stops them drifting apart on exactly those rules.
+template<typename Build>
+void publishNewResource(Device* device, D3D10DDI_HRESOURCE out, Build&& build) {
   HRESULT hr = S_OK;
   std::shared_ptr<const char> reservation;
   if (!out.pDrvPrivate || uintptr_t(out.pDrvPrivate) % alignof(Resource)) {
@@ -592,11 +787,10 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
     catch (...) { hr = E_FAIL; }
   if (FAILED(hr)) { device->error(hr); return; }
   {
-    // CreateResource failures receive no DestroyResource from the runtime.
     // Stage every backend/allocation owner locally and publish private storage
     // only when all steps succeeded. No runtime callback runs under the lock.
     Resource staged;
-    hr = createResourceData(device, args, &staged, runtime);
+    hr = build(&staged);
     if (hr == S_OK) {
       std::lock_guard<std::mutex> lock(resourceStorageMutex);
       const auto entry = resourceStorage.find(out.pDrvPrivate);
@@ -617,6 +811,21 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
     }
     device->error(hr);
   }
+}
+void APIENTRY createResource(D3D10DDI_HDEVICE h,
+    const D3D10DDIARG_CREATERESOURCE* args, D3D10DDI_HRESOURCE out,
+    D3D10DDI_HRTRESOURCE runtime) {
+  auto device = get(h);
+  publishNewResource(device, out, [&](Resource* staged) {
+    return createResourceData(device, args, staged, runtime);
+  });
+}
+void APIENTRY openResource(D3D10DDI_HDEVICE h, const D3D10DDIARG_OPENRESOURCE* args,
+    D3D10DDI_HRESOURCE out, D3D10DDI_HRTRESOURCE) {
+  auto device = get(h);
+  publishNewResource(device, out, [&](Resource* staged) {
+    return openResourceData(device, args, staged);
+  });
 }
 void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
   {
@@ -652,7 +861,11 @@ void APIENTRY createShaderView(D3D10DDI_HDEVICE h,
   HRESULT hr;
   {
     auto resource = get(args->hDrvResource)->backend;
+    // The view carries the surface, not a pointer back to the resource: a view
+    // can outlive its resource DDI, and binding needs the surface after that.
+    auto source = get(args->hDrvResource)->shared;
     hr = createViewStorage<ShaderView>(device, out.pDrvPrivate, [&](ShaderView& view) {
+      view.shared = source;
       D3D11_SHADER_RESOURCE_VIEW_DESC desc = {};
       if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D) {
         ComPtr<ID3D11Texture1D> texture;
@@ -724,6 +937,16 @@ void APIENTRY setShaderResources(D3D10DDI_HDEVICE h, UINT start, UINT count,
     if (view && (view->owner != device || !view->backend)) { device->error(E_INVALIDARG); return; }
     views[i] = view ? view->backend.Get() : nullptr;
   }
+  // Record which slots a shared surface now occupies, so a draw refreshes what
+  // it samples instead of sweeping every surface the device holds. The high
+  // watermark keeps that per-draw scan proportional to what was ever bound.
+  auto& bound = device->boundShared[unsigned(Stage)];
+  auto& high = device->boundSharedHigh[unsigned(Stage)];
+  for (UINT i = 0; i < count; i++) {
+    auto view = get(objects[i]);
+    bound[start + i] = view ? view->shared : nullptr;
+    if (bound[start + i] && start + i >= high) high = start + i + 1;
+  }
   try {
     if (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetShaderResources(start, count, views);
     else if (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetShaderResources(start, count, views);
@@ -785,7 +1008,9 @@ void APIENTRY createTarget(D3D10DDI_HDEVICE h,
   HRESULT hr;
   {
     auto resource = get(args->hDrvResource)->backend;
+    auto source = get(args->hDrvResource)->shared;
     hr = createViewStorage<RenderTarget>(device, out.pDrvPrivate, [&](RenderTarget& target) {
+      target.shared = source;
       D3D11_RENDER_TARGET_VIEW_DESC desc = {};
       if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D) {
         ComPtr<ID3D11Texture1D> texture;
@@ -811,7 +1036,11 @@ void APIENTRY destroyTarget(D3D10DDI_HDEVICE h, D3D10DDI_HRENDERTARGETVIEW targe
 }
 void APIENTRY clearTarget(D3D10DDI_HDEVICE h, D3D10DDI_HRENDERTARGETVIEW target, FLOAT color[4]) {
   auto device = get(h);
-  if (owned(device, get(target))) device->context->ClearRenderTargetView(get(target)->backend.Get(), color);
+  if (!owned(device, get(target))) return;
+  device->context->ClearRenderTargetView(get(target)->backend.Get(), color);
+  // A shared surface is one mip of one slice, so its view is the whole image
+  // and this clear defines all of it. No refresh is owed.
+  wroteSharedSurface(device, get(target)->shared);
 }
 SIZE_T APIENTRY depthViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEDEPTHSTENCILVIEW*) {
   return sizeof(DepthView);
@@ -878,8 +1107,11 @@ void APIENTRY clearDepthView(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILVIEW obje
 }
 void APIENTRY copyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, D3D10DDI_HRESOURCE src) {
   auto device = get(h);
-  if (owned(device, get(dst)) && owned(device, get(src)))
-    device->context->CopyResource(get(dst)->backend.Get(), get(src)->backend.Get());
+  if (!owned(device, get(dst)) || !owned(device, get(src))) return;
+  if (!readSharedSurface(device, get(src)->shared)) return;
+  device->context->CopyResource(get(dst)->backend.Get(), get(src)->backend.Get());
+  // CopyResource replaces the destination entirely.
+  wroteSharedSurface(device, get(dst)->shared);
 }
 
 void APIENTRY resolveResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstIndex,
@@ -1001,6 +1233,8 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
       || y > destination.height || box.bottom - box.top > destination.height - y || z) {
     device->error(E_INVALIDARG); return;
   }
+  if (!readSharedSurface(device, get(src)->shared)) return;
+  if (!wroteSharedRegion(device, get(dst)->shared)) return;
   try {
     device->context->CopySubresourceRegion(get(dst)->backend.Get(), dstIndex, x, y, z,
       get(src)->backend.Get(), srcIndex, input ? &box : nullptr);
@@ -1026,6 +1260,13 @@ void APIENTRY updateResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT in
       destination.texelBytes, rowPitch, destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D,
       uint64_t(UINTPTR_MAX) - reinterpret_cast<uintptr_t>(source) + 1, requiredBytes)) {
     device->error(E_INVALIDARG); return;
+  }
+  // Without a box the update replaces the whole subresource; with one it does
+  // not, and the untouched pixels are still the other process's.
+  if (input) {
+    if (!wroteSharedRegion(device, get(dst)->shared)) return;
+  } else {
+    wroteSharedSurface(device, get(dst)->shared);
   }
   try {
     device->context->UpdateSubresource(get(dst)->backend.Get(), index, input ? &box : nullptr,
@@ -1283,6 +1524,10 @@ void APIENTRY setRenderTargets(
   }
   std::array<ID3D11RenderTargetView*, slots> translated = {};
   std::array<dxvk::umd::OutputView, slots> views;
+  // Staged beside the translated bindings and committed with them: an early
+  // return here leaves the pipeline binding unchanged, so the record of which
+  // shared surfaces are bound must not change either.
+  std::array<std::shared_ptr<dxvk::umd::SharedSurface>, slots> staged;
   dxvk::umd::OutputShape shape = {};
   bool anyColor = false;
   for (UINT i = 0; i < count; i++) {
@@ -1304,6 +1549,7 @@ void APIENTRY setRenderTargets(
       }
     }
     translated[i] = object->backend.Get();
+    staged[i] = object->shared;
     anyColor = true;
   }
   if (depthView) {
@@ -1318,6 +1564,7 @@ void APIENTRY setRenderTargets(
   try {
     device->context->OMSetRenderTargets(count, count ? translated.data() : nullptr,
       depthView ? depthView->backend.Get() : nullptr);
+    device->targetShared = std::move(staged);
     device->targetBound = anyColor;
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
@@ -1683,13 +1930,35 @@ void APIENTRY setIndexBuffer(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE object, DXGI
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }
+// Make every shared surface this draw touches current, and note the ones it
+// will write. Only bound slots are considered: a device may hold many shared
+// surfaces while a given draw reads one of them.
+bool prepareSharedDraw(Device* device) {
+  if (!device->anySharedSurface) return true;
+  for (size_t stage = 0; stage < device->boundShared.size(); stage++) {
+    auto& bound = device->boundShared[stage];
+    for (UINT slot = 0; slot < device->boundSharedHigh[stage]; slot++)
+      if (!readSharedSurface(device, bound[slot])) return false;
+  }
+  for (auto& surface : device->targetShared) {
+    if (!surface) continue;
+    // A render target is read-modify-write as far as this bridge can tell:
+    // blending, a partial viewport and a scissor all leave pixels the owning
+    // process wrote, so the cache has to start from the allocation. A full
+    // clear is the one case that does not, and clearTarget says so directly.
+    if (!readSharedSurface(device, surface)) return false;
+    dxvk::umd::sharedWroteRegion(surface->state);
+  }
+  return true;
+}
+
 bool drawReady(Device* device, bool indexed = false) {
   const bool streamOnly = device->geometryShader && device->geometryShader->withStreamOutput;
   if (!device->vertexBound || (!streamOnly && (!device->pixelBound || !device->targetBound || !device->viewportBound))
       || !device->topologyBound || (indexed && !device->indexBound)) {
     device->error(E_INVALIDARG); return false;
   }
-  return prepareVertexShader(device);
+  return prepareVertexShader(device) && prepareSharedDraw(device);
 }
 void APIENTRY draw(D3D10DDI_HDEVICE h, UINT count, UINT start) {
   auto device = get(h);
@@ -1726,11 +1995,18 @@ void APIENTRY drawIndexedInstanced(D3D10DDI_HDEVICE h, UINT count, UINT instance
 }
 void APIENTRY flush(D3D10DDI_HDEVICE h) {
   auto device = get(h);
+  // Hand over this device's shared writes before the submission barrier. A
+  // publish is itself a synchronized readback, so it must happen while the
+  // caller can still service runtime callbacks, and the allocation has to
+  // carry them before anyone else is told the work is done.
+  const HRESULT published = publishSharedSurfaces(device);
   // D3D10 Flush permits only device-removed reporting. Backend command
   // recording AND Vulkan queue submission must finish while its caller can
   // service runtime callbacks; GPU completion is deliberately asynchronous.
-  if (FAILED(dxvk::umd::flushRuntimeSubmission(device->context.Get())))
+  if (FAILED(published) || FAILED(dxvk::umd::flushRuntimeSubmission(device->context.Get())))
     device->error(DXGI_ERROR_DEVICE_REMOVED);
+  // Anything another process wrote before this point must be read again.
+  openSharedEpoch(device);
 }
 void APIENTRY relocateDeviceFunctions(D3D10DDI_HDEVICE h, D3D10DDI_DEVICEFUNCS* functions) {
   if (!functions) { get(h)->error(E_INVALIDARG); return; }
@@ -1819,7 +2095,15 @@ HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
   try {
     return operation.owner->service->run([&] {
       DeviceOperation worker(operation.storage, operation.owner);
-      return presentData(operation.owner.get(), args);
+      auto device = operation.owner.get();
+      // Present is an ownership boundary like Flush: whatever this device drew
+      // into a shared surface has to be out in the allocation before the frame
+      // is handed over, and whatever anyone else drew must be read again after.
+      const HRESULT published = publishSharedSurfaces(device);
+      if (FAILED(published)) return published;
+      const HRESULT hr = presentData(device, args);
+      openSharedEpoch(device);
+      return hr;
     });
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }

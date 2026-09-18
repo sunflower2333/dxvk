@@ -87,6 +87,11 @@ ACCEPTANCE_GAPS = {
     "RuntimeThreading":
         "worker dispatch and Flush submission are implemented "
         "(umd_runtime_service.h); WARP fixtures are not native runtime proof",
+    "OpenedResources":
+        "create-shared, OpenResource and the refresh/publish coherence are "
+        "implemented (umd_shared_surface.h); no cross-process surface has been "
+        "opened on the target, and the epoch memoization is a policy only real "
+        "compositing can judge",
 }
 
 
@@ -225,8 +230,14 @@ def derive_gaps(sources, dxgi_filled):
 
     witnesses = {
         "OpenedResources": [
-            ("the OpenResource body never reaches the renderer",
-             "backend" not in open_resource),
+            # Not "the openResource body does no work": that was the original
+            # witness and it was a proxy for a stub, so it read clear the
+            # moment the body delegated to a helper, while the capability was
+            # still half written. Test the dependency the capability cannot be
+            # implemented without instead -- the runtime's allocation array is
+            # the only place an opened surface's identity comes from.
+            ("the open path never reads the runtime's allocation array",
+             "pOpenAllocationInfo" not in ddi),
             ("nothing can be created shared: D3D10_DDI_RESOURCE_MISC_SHARED is "
              "absent from the UMD",
              "D3D10_DDI_RESOURCE_MISC_SHARED" not in every),
@@ -359,6 +370,21 @@ def main() -> int:
            "DXGI base table complete" if not dxgi_missing else
            "GATE OPEN WITH NULL DXGI SLOTS - the runtime will fault: "
            + ", ".join(dxgi_missing))
+
+    # A flip chain's RotateResourceIdentities re-pairs its buffers with each
+    # other's allocations and moves no pixels, so every shared cache it touches
+    # is left holding the previous allocation's image. Whoever fills that slot
+    # owes each participant an invalidateSharedSurface; forgetting it is how
+    # the Mesa driver produces black or last-frame regions that march with the
+    # flip cadence, and it is silent until someone looks at a screen. The slot
+    # is null today, so this is a trap set for the commit that fills it.
+    rotates = "pfnRotateResourceIdentities" in dxgi_filled
+    invalidates = "invalidateSharedSurface(" in ddi
+    record("rotation-invalidates", not rotates or invalidates,
+           "no rotation DDI yet; shared caches cannot be re-paired" if not rotates
+           else "rotation invalidates every re-paired shared cache" if invalidates
+           else "pfnRotateResourceIdentities is published but no shared cache is "
+                "invalidated - re-paired buffers will show the previous frame")
 
     # The mask must match the source in both directions.  See the module
     # docstring: this replaced a check that only rejected one retired bit.

@@ -9,9 +9,24 @@ inline bool viewRange(UINT first, UINT count, UINT total) {
   return count && first < total && count <= total - first;
 }
 
-inline bool textureMiscFlags(const D3D10DDIARG_CREATERESOURCE& args, UINT& flags) {
+// `shared` reports D3D10_DDI_RESOURCE_MISC_SHARED, which is never a D3D11 misc
+// flag here: the embedded renderer has no cross-process image of its own, so
+// sharing is carried by a kernel allocation beside the cache rather than by
+// D3D11_RESOURCE_MISC_SHARED on it. See umd_shared_surface.h.
+inline bool textureMiscFlags(const D3D10DDIARG_CREATERESOURCE& args, UINT& flags,
+    bool* shared = nullptr) {
   flags = 0;
-  if (args.MiscFlags & ~D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP) return false;
+  if (shared) *shared = false;
+  constexpr UINT known = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP | D3D10_DDI_RESOURCE_MISC_SHARED;
+  if (args.MiscFlags & ~known) return false;
+  if (args.MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) {
+    // A shared surface is one linear image: AllocationInfo carries a single
+    // width, height and pitch, so a generated mip chain has nowhere to live in
+    // it. A caller that passes no out-parameter is asking about pipeline flags
+    // alone and must not be handed a surface it will not publish.
+    if (!shared || (args.MiscFlags & D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP)) return false;
+    *shared = true;
+  }
   if (!(args.MiscFlags & D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP)) return true;
   constexpr UINT required = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_SHADER_RESOURCE;
   if ((args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D

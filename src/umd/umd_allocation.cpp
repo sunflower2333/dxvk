@@ -15,7 +15,8 @@ RuntimeAllocation::RuntimeAllocation(RuntimeAllocation&& other) noexcept
   m_handle(std::exchange(other.m_handle, 0)),
   m_kernelResource(std::exchange(other.m_kernelResource, 0)),
   m_generation(std::exchange(other.m_generation, 0)),
-  m_info(other.m_info), m_published(std::exchange(other.m_published, false)) {}
+  m_info(other.m_info), m_published(std::exchange(other.m_published, false)),
+  m_opened(std::exchange(other.m_opened, false)) {}
 HRESULT RuntimeAllocation::release() { return m_owner ? m_owner->release(*this) : S_OK; }
 RuntimeMemory::~RuntimeMemory() { close(); }
 
@@ -99,11 +100,21 @@ HRESULT RuntimeMemory::allocateImpl(RuntimeAllocation& out, HANDLE resource,
   // data. Keep adapter/reset ownership separately; do not change that ABI.
   out.m_generation = m_identity ? m_identity->generation : 0;
   out.m_published = false;
+  out.m_opened = false;
   return S_OK;
 }
 
 HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   if (allocation.m_owner != this) return E_INVALIDARG;
+  if (allocation.m_opened) {
+    // A view, not an owner. Dropping it must not reach DeallocateCb: the
+    // allocation outlives this resource and the creating process still uses
+    // it. Retire the local state only.
+    allocation.m_owner = nullptr; allocation.m_handle = 0;
+    allocation.m_kernelResource = 0; allocation.m_generation = 0;
+    allocation.m_published = false; allocation.m_opened = false;
+    return S_OK;
+  }
   D3DDDICB_DEALLOCATE request = {};
   request.hResource = allocation.m_resource;
   const auto deallocate = m_callbacks.pfnDeallocateCb;
@@ -116,9 +127,48 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   return completed(deallocate(device, &request));
 }
 
-HRESULT RuntimeMemory::uploadImpl(RuntimeAllocation& allocation, const void* pixels, UINT rowPitch) {
+// Adopting is deliberately not allocating: no AllocateCb runs, so the balance
+// this object normally keeps with DeallocateCb does not exist. The creating
+// process owns the allocation; this device holds a view of it and the wire
+// metadata that describes its pixels. Validate that metadata here rather than
+// at every later transfer, because a hostile or mismatched private-data blob
+// is the only thing standing between the open path and an out-of-bounds copy.
+HRESULT RuntimeMemory::adoptImpl(RuntimeAllocation& out, D3DKMT_HANDLE allocation,
+    D3DKMT_HANDLE kernelResource, const AllocationInfo& info) {
+  if (!available()) return DXGI_ERROR_UNSUPPORTED;
+  if (out.m_owner || !allocation) return E_INVALIDARG;
+  if (info.magic != AllocationInfo{}.magic || info.version != AllocationInfo{}.version
+      || info.headerSize != AllocationInfo{}.headerSize || info.reserved
+      || !info.width || !info.height || info.width > 16384 || info.height > 16384
+      || (info.format != 1 && info.format != 3)
+      || info.pitch < uint64_t(info.width) * 4
+      || uint64_t(info.pitch) * info.height > info.size)
+    return E_INVALIDARG;
+  // Only the two allocation kinds whose pixels this bridge can interpret. A
+  // native or GPU-read-only allocation carries no CPU-visible linear image.
+  if (info.flags != 1 && info.flags != 2) return DXGI_ERROR_UNSUPPORTED;
+  const HRESULT hr = checkIdentity();
+  if (FAILED(hr)) return hr;
+  out.m_owner = this;
+  out.m_resource = nullptr;
+  out.m_handle = allocation;
+  out.m_kernelResource = kernelResource;
+  out.m_info = info;
+  out.m_generation = m_identity ? m_identity->generation : 0;
+  out.m_published = false;
+  out.m_opened = true;
+  return S_OK;
+}
+
+// One body for both directions of the shared-surface copy. Publishing writes
+// this device's cache into the kernel allocation; refreshing reads whatever
+// the owning process last left there. The lock flags, the synchronization
+// they imply and the balancing unlock are identical either way, and keeping
+// them in one place is what stops the two directions drifting apart.
+HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
+    UINT rowPitch, bool publish) {
   if (allocation.m_owner != this || !allocation.m_handle) return E_INVALIDARG;
-  allocation.m_published = false;
+  if (publish) allocation.m_published = false;
   const auto& info = allocation.m_info;
   if (!pixels || rowPitch < info.pitch
       || uint64_t(info.height - 1) * rowPitch + info.pitch > std::numeric_limits<size_t>::max())
@@ -128,9 +178,10 @@ HRESULT RuntimeMemory::uploadImpl(RuntimeAllocation& allocation, const void* pix
   D3DDDICB_LOCK lock = {};
   lock.hAllocation = allocation.m_handle;
   lock.Flags.LockEntire = 1;
-  lock.Flags.WriteOnly = 1;
+  lock.Flags.WriteOnly = publish;
+  lock.Flags.ReadOnly = !publish;
   // Do not discard or ignore synchronization: VidSch may still consume the
-  // last Present. A successful synchronized lock precedes every CPU write.
+  // last Present. A successful synchronized lock precedes every CPU access.
   const HRESULT locked = m_callbacks.pfnLockCb(m_device, &lock);
   if (FAILED(locked)) return locked;
   // Any callback-reported success acquired a lock, even when its status is
@@ -139,8 +190,9 @@ HRESULT RuntimeMemory::uploadImpl(RuntimeAllocation& allocation, const void* pix
   if (SUCCEEDED(hr) && (!lock.pData || lock.hAllocation != allocation.m_handle)) hr = E_FAIL;
   if (SUCCEEDED(hr)) {
     for (UINT y = 0; y < info.height; y++) {
-      std::memcpy(static_cast<char*>(lock.pData) + size_t(y) * info.pitch,
-        static_cast<const char*>(pixels) + size_t(y) * rowPitch, info.pitch);
+      auto shared = static_cast<char*>(lock.pData) + size_t(y) * info.pitch;
+      auto local = static_cast<char*>(pixels) + size_t(y) * rowPitch;
+      std::memcpy(publish ? shared : local, publish ? local : shared, info.pitch);
     }
   }
   D3DDDICB_UNLOCK unlock = {};
@@ -149,8 +201,16 @@ HRESULT RuntimeMemory::uploadImpl(RuntimeAllocation& allocation, const void* pix
   const HRESULT unlocked = completed(m_callbacks.pfnUnlockCb(m_device, &unlock));
   if (FAILED(unlocked)) hr = unlocked;
   if (SUCCEEDED(hr)) hr = checkIdentity();
-  allocation.m_published = hr == S_OK;
+  if (publish) allocation.m_published = hr == S_OK;
   return hr;
+}
+
+HRESULT RuntimeMemory::uploadImpl(RuntimeAllocation& allocation, const void* pixels, UINT rowPitch) {
+  return transferImpl(allocation, const_cast<void*>(pixels), rowPitch, true);
+}
+
+HRESULT RuntimeMemory::downloadImpl(RuntimeAllocation& allocation, void* pixels, UINT rowPitch) {
+  return transferImpl(allocation, pixels, rowPitch, false);
 }
 
 HRESULT RuntimeMemory::ensureContext() {

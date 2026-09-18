@@ -81,6 +81,22 @@ int main() {
   CHECK(!textureMiscFlags(invalidMip, mipFlags));
   invalidMip = mipResource; invalidMip.MiscFlags |= D3D10_DDI_RESOURCE_MISC_SHARED;
   CHECK(!textureMiscFlags(invalidMip, mipFlags));
+  // Shared surfaces: one linear image carried by a kernel allocation, never a
+  // D3D11 misc flag on the cache, so the reported flags stay empty.
+  bool sharedFlag = true;
+  auto sharedResource = mipResource;
+  sharedResource.MiscFlags = D3D10_DDI_RESOURCE_MISC_SHARED;
+  CHECK(textureMiscFlags(sharedResource, mipFlags, &sharedFlag));
+  CHECK(sharedFlag && mipFlags == 0);
+  // A caller that passes no out-parameter cannot publish the surface, so it
+  // must be refused rather than handed an ordinary unshared resource.
+  CHECK(!textureMiscFlags(sharedResource, mipFlags));
+  // Generated mips have nowhere to live in a single-image wire format.
+  sharedResource.MiscFlags |= D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP;
+  CHECK(!textureMiscFlags(sharedResource, mipFlags, &sharedFlag) && !sharedFlag);
+  // An unknown misc flag stays rejected alongside a known one.
+  sharedResource.MiscFlags = D3D10_DDI_RESOURCE_MISC_SHARED | 0x40;
+  CHECK(!textureMiscFlags(sharedResource, mipFlags, &sharedFlag) && !sharedFlag);
   D3D10DDIARG_CREATESHADERRESOURCEVIEW native = {};
   native.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
   native.Format = DXGI_FORMAT_R8G8B8A8_UNORM;

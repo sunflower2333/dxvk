@@ -87,6 +87,8 @@ umd_mrt_signature_test = executable('dxvk-umd-mrt-signature-test',
   ['../../tests/umd-mrt-signature.cpp', 'umd_shader.cpp'], dependencies : [dxbc_spirv_dep])
 umd_output_policy_test = executable('dxvk-umd-output-policy-test', '../../tests/umd-output-policy.cpp')
 
+umd_shared_policy_test = executable('dxvk-umd-shared-policy-test', '../../tests/umd-shared-policy.cpp')
+
 umd_query_test = executable('dxvk-umd-query-test', '../../tests/umd-query.cpp')
 
 umd_allocation_test = executable('dxvk-umd-allocation-test',

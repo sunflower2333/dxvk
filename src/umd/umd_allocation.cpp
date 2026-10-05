@@ -18,6 +18,22 @@ RuntimeAllocation::RuntimeAllocation(RuntimeAllocation&& other) noexcept
   m_info(other.m_info), m_published(std::exchange(other.m_published, false)),
   m_opened(std::exchange(other.m_opened, false)) {}
 HRESULT RuntimeAllocation::release() { return m_owner ? m_owner->release(*this) : S_OK; }
+bool RuntimeAllocation::canRotateWith(const RuntimeAllocation& other) const noexcept {
+  return m_owner == other.m_owner && bool(m_handle) == bool(other.m_handle)
+    && m_opened == other.m_opened && m_generation == other.m_generation
+    && m_info.flags == other.m_info.flags && m_info.format == other.m_info.format
+    && m_info.width == other.m_info.width && m_info.height == other.m_info.height;
+}
+void RuntimeAllocation::swapIdentity(RuntimeAllocation& other) noexcept {
+  using std::swap;
+  swap(m_handle, other.m_handle);
+  swap(m_kernelResource, other.m_kernelResource);
+  swap(m_generation, other.m_generation);
+  swap(m_info, other.m_info);
+  swap(m_published, other.m_published);
+  // Owner, runtime resource and opened/owned lifetime belong to the private
+  // resource object. canRotateWith excludes mixing their ownership kinds.
+}
 RuntimeMemory::~RuntimeMemory() { close(); }
 
 void RuntimeMemory::initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kernel,

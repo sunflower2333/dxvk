@@ -50,6 +50,11 @@ public:
   // holds a view for as long as its opened resource lives and must never
   // deallocate it; see RuntimeMemory::adopt.
   bool opened() const { return m_opened; }
+  // DXGI rotates kernel identities, not runtime resource handles. The latter
+  // remain the keys DeallocateCb uses after the runtime performs its rotation.
+  // Preflight the entire chain before making any mutation or callback.
+  bool canRotateWith(const RuntimeAllocation& other) const noexcept;
+  void swapIdentity(RuntimeAllocation& other) noexcept;
 private:
   friend class RuntimeMemory;
   RuntimeMemory* m_owner = nullptr;

@@ -63,6 +63,10 @@ umd_adapter_test = executable('dxvk-umd-adapter-test',
 native_entry_sources = ['../../tests/umd-native-entry.cpp', 'umd_adapter.cpp',
   'umd_runtime_query.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp']
 native_entry_dependencies = [dxbc_spirv_dep, cpp.find_library('d3d11')]
+umd_rotation_test = executable('dxvk-umd-rotation-test',
+  ['../../tests/umd-rotation.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
 umd_predication_test = executable('dxvk-umd-predication-test',
   ['../../tests/umd-predication.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],

@@ -44,6 +44,8 @@ ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-ada
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
 ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-native-lifetime-test.exe src/umd/dxvk-umd-runtime-gpu-test.exe src/umd/dxvk-umd-predication-test.exe src/umd/dxvk-umd-stream-output-test.exe src/umd/dxvk-umd-texture1d-test.exe
 if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build failed' }
+ninja -C build-umd src/umd/dxvk-umd-rotation-test.exe
+if ($LASTEXITCODE) { throw 'Production DXGI rotation fixture build failed' }
 ninja -C build-umd "src/umd/$LibraryName.dll.p/umd_ddi.cpp.obj" src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
 if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
@@ -60,6 +62,7 @@ function Invoke-BoundedFixture([string]$Executable, [string]$Name) {
     if ($process.ExitCode) { throw "$Name failed: $(Get-Content -LiteralPath $err -Raw)" }
 }
 if ($arch -ne 'arm64') {
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-rotation-test.exe rotation-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-runtime-gpu-test.exe runtime-gpu-test
     & build-umd/src/umd/dxvk-umd-identity-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-query-test.txt')
     if ($LASTEXITCODE) { throw 'Runtime identity callback consumer test failed' }
@@ -101,7 +104,7 @@ Copy-Item $symbols $OutputDirectory
 $exports = & dumpbin /exports "build-umd/src/umd/$LibraryName.dll" | Out-String
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bVioGpuDxvkQueryVulkanLoader\b' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
-foreach ($name in @('dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe')) {
+foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
     # Include ARM64 fixtures for execution by the target validation owner.
     $path = Join-Path 'build-umd/src/umd' $name

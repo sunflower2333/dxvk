@@ -57,7 +57,9 @@ try {
     Check-Exit 'actual native texture transfer fixture'
     & cl @flags "$root/tests/umd-transfer-policy.cpp" /Fe:transfer-policy.exe
     Check-Exit 'upload arithmetic fixture'
-    foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe','texture1d.exe','texture-transfer.exe','transfer-policy.exe')) {
+    & cl @flags "$root/tests/umd-rotation.cpp" @shaderObjects @ddiObjects d3d11.lib /Fe:rotation.exe
+    Check-Exit 'published DXGI rotation fixture'
+    foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe','texture1d.exe','texture-transfer.exe','transfer-policy.exe','rotation.exe')) {
         $headers = (& dumpbin /headers $name | Out-String)
         Check-Exit "PE inspection $name"
         $machine = @{arm64='AA64';x64='8664';x86='14C'}[$Architecture]

@@ -363,3 +363,26 @@ ARM64artifact10272751005 into probe-7c0b9e3-arm64, verified STATUSsource/arch
 and DLL/probe hashes. Existing frozen artifacts and VKD3D source/pins unchanged.
 No device actions, new backend GPU run or runtime-activation claim. Final docs
 checkpoint describes the remaining SO/shared/negotiation/presentation work.
+
+2026-10-05: Resumed per user's DX8-DX11 DXVK UMD priority. Selected the
+existing dxvk-umd plan explicitly and recovered current source/package state.
+Main driver tree is dirty with unrelated work; DXVK and paired UMD checkouts
+are clean. Auditing primary/DXGI ownership as the next concrete source gap.
+
+2026-10-05: Implemented published DXGI rotation with full-chain preflight,
+stable runtime resource handles, reusable scratch copies for private/present
+textures, and old-backing publish plus invalidation for shared surfaces.
+Added production DDI/WARP regression and wired Windows/ARM64 build paths.
+Loadability/integration checks and 172822 transfer/1125 shared-policy checks
+pass. Local ARM64 syntax check initially lacked WRL winrt include path;
+correcting the header path rather than changing production code.
+User authorizes personal CI builds and target testing. Android SSH responds;
+Windows SSH port22 currently times out at banner, so inspect the existing VM
+and forwarding state before guest testing; never start another VM.
+
+2026-10-05: Production rotation/DDI/allocation plus regression pass the local
+ARM64 syntax check against the actual extracted SDK/WDK. Disposable lowercase
+WRL aliases fixed Linux filesystem casing and were removed after the check.
+Prepared work/native-dxgi-rotation-20261005 for personal CI. Authoritative device
+control confirms the registered Windows VM is stopped; connectivity worker is
+starting only that VM with its live saved configuration unchanged.

@@ -6,6 +6,19 @@ runtime, with correct hardware rendering and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+Build and execute the published native DXGI rotation contract in personal
+Windows CI on ARM64/x64/x86, then run its exact ARM64 artifact in the existing
+Windows guest. Review runtime callback/reentrancy cases before package changes.
+Keep runtime admission closed until its remaining capabilities and hardware
+acceptance are complete. Preserve the active Windows desktop and VM settings.
+
+## 2026-10-05 continuation phases
+- [complete] Recover current DXVK/KMD package state and choose the next source gap.
+- [in_progress] Implement and test the selected native runtime ownership contract.
+- [pending] Compile the actual production DDI on supported architectures.
+- [pending] Record exact validation and update the paired package if justified.
+
+## Previous next-step checkpoint
 GS7c0b9e3 CI34620365858 ALL5PASS. Both original/rebuilt GS16payloadwords
 match including actual XOR/sample processing. Source closes native GS/create/bind and
 GS CB/SRV/sampler slots, with real DXVK stage compilation and linkage.

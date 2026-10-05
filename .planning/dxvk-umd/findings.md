@@ -326,3 +326,32 @@ per-slot strides. SOSetTargets must clear all higher slots regardless of its
 clear hint and preserve offsets/append semantics. A future full SO change
 must allow no-PS/no-color-target capture and runtime-owned counters; merely
 forwarding DrawAuto behind current drawReady would still reject that path.
+
+## 2026-10-05 resumed DX8-DX11 UMD gate
+- User explicitly prioritizes DXVK as the native VIOGPU KMD/UMD driver gate.
+- DXVK checkout dxvk-umd-ci is clean at a677ab0 on work/driver-ci-umd-20260917.
+- Paired driver checkout gg-dxvk-umd is clean on work/viogpu-dxvk-umd-20260917.
+- Shared-surface create/open/coherence was added after the plan's September 12
+  checkpoint; OpenedResources is now an acceptance gap, not an absent stub.
+- Eight admission gaps remain. DXGI base table currently fills only Present;
+  runtime rotation and primary ownership are material source gaps.
+- Main gunyah-guest-drivers-windows checkout contains unrelated dirty haptics,
+  INF and WDDM edits; continue in the existing independent clean checkouts.
+- No relevant memory-registry entries exist. Recovery uses project files only.
+- Initial broad file search was excessively noisy; use bounded project paths.
+- One guessed paired-workflow filename was absent; discover workflow names
+  before reading. No code changes or remote actions have occurred yet.
+
+- Rotation now advances the DXGI base table from 1/7 to 2/7; all eight
+  admission gaps intentionally remain. Private/present textures rotate pixels
+  through one cached scratch resource so existing views keep their identity.
+  Shared buffers publish dirty pixels before changing backing, then invalidate
+  each cache, avoiding a GPU copy for clean allocation-only rotation.
+- RuntimeAllocation rotates kernel handle/metadata/publication state while
+  keeping runtime hResource stable for DeallocateCb, matching Microsoft ROS
+  sample and the existing Mesa implementation.
+- Linux GCC and Clang sanitizer policy suites each pass 172822 upload-span
+  and 1125 shared-state checks. Windows runtime tests remain pending CI.
+- Local SDK WRL lives under winrt; its lower-case includes reference mixed-case
+  WeakReference.h. Use disposable lowercase aliases for syntax checks rather
+  than changing SDK or source. Earlier two attempts were header-path failures.

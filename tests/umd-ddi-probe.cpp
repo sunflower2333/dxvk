@@ -242,10 +242,10 @@ int main(int argc, char** argv) {
   callbacks.pfnSetErrorCb = setError;
   D3D10DDI_DEVICEFUNCS table = {};
   DXGI_DDI_BASE_FUNCTIONS dxgiFunctions = {};
+  DXGI_DDI_BASE_CALLBACKS dxgi = {};
   HRESULT hr;
   if (adapterMode) {
     D3DDDI_DEVICECALLBACKS kernel = {};
-    DXGI_DDI_BASE_CALLBACKS dxgi = {};
     D3D10DDIARG_CREATEDEVICE args = {};
     args.Interface = D3D10_0_DDI_INTERFACE_VERSION;
     args.Version = D3D10_0_DDI_BUILD_VERSION << 16;

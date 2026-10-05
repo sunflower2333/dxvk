@@ -269,9 +269,11 @@ int main() {
     CHECK(functions.pfnCreateDevice(active, &create) == E_INVALIDARG);
     CHECK(functions.pfnCloseAdapter(active) == S_OK);
     CHECK(functions.pfnCloseAdapter(active) == E_INVALIDARG);
-    // Device survives adapter close; original error callback and core handle
-    // remain valid after the runtime overwrites the source callback structure.
-    core.pfnSetErrorCb = nullptr; kernel = {}; dxgi = {};
+    // Device survives adapter close; copied core/kernel callbacks remain valid
+    // after the runtime overwrites those source tables. DXGI keeps its
+    // runtime-owned callback table alive for the device and may update entries
+    // in place between calls, so keep that table populated here.
+    core.pfnSetErrorCb = nullptr; kernel = {};
     D3D10DDI_COUNTER_INFO counters = {};
     table.pfnCheckCounterInfo(create.hDrvDevice, &counters);
     CHECK(dxgiFunctions.pfnPresent);

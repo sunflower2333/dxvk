@@ -2170,7 +2170,9 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
         || old.ArraySize != scratchShape.ArraySize || old.Format != scratchShape.Format
         || old.SampleDesc.Count != scratchShape.SampleDesc.Count
         || old.SampleDesc.Quality != scratchShape.SampleDesc.Quality) {
-      scratch.Reset();
+      // Keep the replaced image alive until after the registry lock is gone:
+      // its final backend release may itself issue a runtime callback.
+      auto previousScratch = std::move(scratch);
       const HRESULT hr = backend->CreateTexture2D(&scratchShape, nullptr, &scratch);
       if (FAILED(hr)) return hr;
       if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;

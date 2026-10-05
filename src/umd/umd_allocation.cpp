@@ -46,7 +46,7 @@ void RuntimeMemory::initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kern
   m_callbacks.pfnUnlockCb = kernel.pfnUnlockCb;
   m_callbacks.pfnCreateContextCb = kernel.pfnCreateContextCb;
   m_callbacks.pfnDestroyContextCb = kernel.pfnDestroyContextCb;
-  m_dxgi.pfnPresentCb = dxgi ? dxgi->pfnPresentCb : nullptr;
+  m_dxgi = dxgi;
   m_identity = std::move(identity);
   m_service = std::move(service);
   m_removed = false;
@@ -74,7 +74,7 @@ bool RuntimeMemory::available() const {
   return m_device && m_callbacks.pfnAllocateCb && m_callbacks.pfnDeallocateCb
       && m_callbacks.pfnLockCb && m_callbacks.pfnUnlockCb
       && m_callbacks.pfnCreateContextCb && m_callbacks.pfnDestroyContextCb
-      && m_dxgi.pfnPresentCb;
+      && m_dxgi && m_dxgi->pfnPresentCb;
 }
 
 HRESULT RuntimeMemory::allocateImpl(RuntimeAllocation& out, HANDLE resource,
@@ -273,7 +273,7 @@ HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG
   request.hContext = m_context;
   // The opaque DXGI context carries the runtime's destination and timing.
   // Do not substitute a global scanout escape or override its sync interval.
-  hr = completed(m_dxgi.pfnPresentCb(m_device, &request));
+  hr = completed(m_dxgi->pfnPresentCb(m_device, &request));
   return FAILED(hr) ? hr : checkIdentity();
 }
 

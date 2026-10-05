@@ -124,7 +124,10 @@ private:
   HRESULT checkIdentity();
   HANDLE m_device = nullptr;
   D3DDDI_DEVICECALLBACKS m_callbacks = {};
-  DXGI_DDI_BASE_CALLBACKS m_dxgi = {};
+  // DXGI owns this table and may replace its callback addresses whenever no
+  // thread is inside the UMD. Keep the table pointer, as required by the DXGI
+  // DDI, instead of snapshotting pfnPresentCb at device creation.
+  const DXGI_DDI_BASE_CALLBACKS* m_dxgi = nullptr;
   HANDLE m_context = nullptr;
   std::shared_ptr<const AdapterIdentity> m_identity;
   std::shared_ptr<RuntimeService> m_service;

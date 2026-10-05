@@ -126,6 +126,10 @@ static HRESULT APIENTRY present(HANDLE device, DXGIDDICB_PRESENT* args) {
   maybeReset('P');
   return presentResult;
 }
+static HRESULT APIENTRY presentReplacement(HANDLE device, DXGIDDICB_PRESENT* args) {
+  calls.push_back('Q');
+  return present(device, args);
+}
 
 static void sequence(const char* expected) {
   CHECK(calls.size() == std::strlen(expected));
@@ -182,6 +186,11 @@ int main() {
   CHECK(!std::memcmp(backing, pixels, 12) && !std::memcmp(backing + 12, pixels + 16, 12));
   CHECK(memory.present(allocation, args) == S_OK); sequence("CP");
   CHECK(memory.present(allocation, args) == S_OK); sequence("P");
+  // DXGI can relocate its callback entry points between DDI calls. The UMD
+  // must follow the runtime-owned table rather than a creation-time copy.
+  dxgi.pfnPresentCb = presentReplacement;
+  CHECK(memory.present(allocation, args) == S_OK); sequence("QP");
+  dxgi.pfnPresentCb = present;
   auto bad = args; bad.Flags.Flip = 1;
   CHECK(memory.present(allocation, bad) == E_INVALIDARG);
   bad = args; bad.SrcSubResourceIndex = 1;

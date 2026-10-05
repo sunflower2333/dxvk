@@ -355,3 +355,21 @@ forwarding DrawAuto behind current drawReady would still reject that path.
 - Local SDK WRL lives under winrt; its lower-case includes reference mixed-case
   WeakReference.h. Use disposable lowercase aliases for syntax checks rather
   than changing SDK or source. Earlier two attempts were header-path failures.
+
+2026-10-05 exact rotation validation: offline CI37310474949 executed the
+production callback on x64 and x86: 1281 checks / 43 synchronized locks each.
+Its ARM64 artifact11345428856, SHA256
+9c4f107af80d7a3c4a86614cc6d37e9c65705f6da34fc198d5105ca8df0bc1f7,
+also passed those checks in the existing native ARM64 Windows guest.
+All use explicit test-only WARP; admission remains closed. Evidence is retained
+under workspace artifacts/dxvk-native-rotation-20261005/. Full embedded backend
+CI37310476652 and paired candidate pin integration remain pending.
+
+Full CI37310476652 subsequently passed all six jobs, including native ARM64
+execution of rotation (1281), runtime GPU (852), runtime entry (2637), device
+lifetime (9075) and allocation (5154) fixtures. The eight admission gaps remain.
+Paired gg-dxvk-umd reserves58522 and older Mesa sources; preserve its baseline
+and treat its new package solely as candidate integration evidence. Current
+native export set lacks D3D9 OpenAdapter, and native build disables D3D8/D3D9
+cores. Full DX8-DX11 support therefore remains unfinished. Detailed source audit:
+workspace .planning/dxvk-umd-remote-20261005/dx8-dx9-audit.md.

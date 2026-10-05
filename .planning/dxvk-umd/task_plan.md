@@ -2,21 +2,23 @@
 
 ## Goal
 Embed DXVK translation in a real VIOGPU D3D9/10/11 UMD, loaded by the Windows
-runtime, with correct hardware rendering and full Display+Render integration.
+runtime, with correct hardware rendering, DX8 compatibility proven through
+the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-Build and execute the published native DXGI rotation contract in personal
-Windows CI on ARM64/x64/x86, then run its exact ARM64 artifact in the existing
-Windows guest. Review runtime callback/reentrancy cases before package changes.
+Exact 4f59adf ARM64 rotation artifact from successful CI37310474949 passed
+1281 checks in the existing Windows guest. Full native UMD CI37310476652
+passed all six jobs. Complete paired candidate pin/fixture staging CI and
+record exact package receipts (paired5798e077, CI37312228456).
 Keep runtime admission closed until its remaining capabilities and hardware
 acceptance are complete. Preserve the active Windows desktop and VM settings.
 
 ## 2026-10-05 continuation phases
 - [complete] Recover current DXVK/KMD package state and choose the next source gap.
-- [in_progress] Implement and test the selected native runtime ownership contract.
-- [pending] Compile the actual production DDI on supported architectures.
-- [pending] Record exact validation and update the paired package if justified.
+- [complete] Implement and test the selected native runtime ownership contract.
+- [complete] Compile the actual production DDI on supported architectures.
+- [in_progress] Record exact validation and update the paired package if justified.
 
 ## Previous next-step checkpoint
 GS7c0b9e3 CI34620365858 ALL5PASS. Both original/rebuilt GS16payloadwords
@@ -176,12 +178,27 @@ main explicitly asks not to stop at CPU OpenAdapter harness.
 - [pending] Complete sharing, synchronization, presentation and full native acceptance.
 
 ## Constraints
-Own this independent DXVK checkout. VKD3D continuation now belongs to the
-separate vkd3d-native-runtime agent; preserve its existing docs and pins.
-No remote access until main grants a test window. Preserve existing driver and desktop. Parent owns all shared worktree
-and main-plan edits. This thread pins PWF_PLAN_ROOT to this directory.
+Use the independent DXVK and paired driver checkouts; preserve unrelated
+dirty work in gunyah-guest-drivers-windows and existing VKD3D docs/pins.
+The user authorizes personal CI and remote testing. Keep the two SSH channels
+separate, use only the existing registered VM, and preserve its live saved
+6656MiB memory configuration. Complex remote work uses a script and scp; no
+base64 commands. Backups are copy-only and partition changes are forbidden.
+Preserve driver58623 and the active desktop; the older paired58522 baseline
+is a candidate package and must not replace it. This thread selects
+PWF_PLAN_ROOT=/home/sunf/droidvm-repos/dxvk-umd-ci/.planning/dxvk-umd explicitly.
 
 ## Errors
+- Follow-up search used two obsolete source/script filenames; discovered
+  current umd_adapter.cpp and umd_contract.cpp before continuing.
+- A documentation glob used an obsolete directory and zsh rejected no matches;
+  use the already verified DX8/DX9 audit and explicit discovered paths.
+- ARM64 validation artifact has per-fixture outputs and arm64-runtime.log,
+  not the guessed arm64-runtime-results.json; use discovered evidence names.
+- Guest receipt used Get-Content strings carrying filesystem metadata;
+  preserve raw evidence, normalize locally, use File.ReadAllText in runner.
+- Guest-evidence planning patch had mismatched context and made no changes;
+  reread the exact text and applied the corrected patch.
 - GS local run caught obsolete shader check56 expecting any undeclared PS
   signature entry to fail. Microsoft's documented union contract permits
   unused entries; replaced it with explicit unused-generic acceptance while

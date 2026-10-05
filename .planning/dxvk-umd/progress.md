@@ -386,3 +386,50 @@ WRL aliases fixed Linux filesystem casing and were removed after the check.
 Prepared work/native-dxgi-rotation-20261005 for personal CI. Authoritative device
 control confirms the registered Windows VM is stopped; connectivity worker is
 starting only that VM with its live saved configuration unchanged.
+
+2026-10-05: Pushed rotation and review repairs through4f59adf to
+work/native-dxgi-rotation-20261005 on sunflower2333/dxvk. Personal native offline
+and full native UMD workflows dispatched. Review found/fixed reentrant private
+storage reads and final identity commits; added callback retirement/poisoning,
+nested rotation and exact deallocation-ownership checks. No remaining concrete
+review findings. Local x64 syntax fallback is blocked by extracted new MSVC STL
+using __builtin_verbose_trap unsupported by local Clang; use actual MSVC CI.
+Windows guest is running, SSH22 restored; installed driver58623 and Mesa
+b36366b remain unchanged. Current saved RAM6656MiB was preserved by daemon
+start. Await architecture runtime checks and exact ARM64 artifact.
+
+2026-10-05: Native offline CI37310474949 SUCCESS on exact4f59adf: Linux
+sanitizer contracts, x64/x86 production-DDI WARP execution, ARM64 production
+DDI/fixture compilation. Full native UMD CI37310476652 has passed identity and
+shader CPU jobs; backend architecture compilation remains in progress.
+Downloaded artifact is pending native ARM64 guest regression execution.
+
+2026-10-05: Exact ARM64 rotation artifact11345428856 verified by SHA256 and
+PE machine before guest execution. Passed1281checks/43synchronized locks,
+exit0. The same production-DDI checks pass on x64/x86 in offlineCI37310474949.
+Remote runner recorded desktop PIDs and explicit WARP/no-install/no-hardware
+acceptance limits. Pulling JSON/stdout/stderr into retained local evidence.
+Full native backend CI37310476652 is still building all three architectures.
+
+Guest evidence collected and checked: source/hash/exit/stdout match; stderr is
+empty; DWM5384/Explorer3704 retained. PowerShell Get-Content attached filesystem
+metadata to its string, bloating the raw JSON. Preserved the original and wrote
+a compact normalized receipt; fixed future runner reads with File.ReadAllText.
+No identical workload rerun. Paired audit found that the ARM64 fixture-copy list
+must gain rotation.exe alongside both source pins; preparing this candidate
+integration without changing its older58522/Mesa baseline or installing it.
+
+2026-10-05: Full native UMD CI37310476652 SUCCESS on exact4f59adf, all six
+jobs: embedded backendARM64/x64/x86, identity, shaderCPU and nativeARM64runtime.
+Paired worker is preparing the exact source pins and ARM64 fixture staging,
+then personal signed-package CI; installation remains out of this checkpoint.
+
+Promoted the DX8/DX9 source audit into docs/native-dx8-dx9-roadmap-20261005.md
+so the missing typed adapter bridge, exact-adapter D3D9 core, system-runtime
+DX8 proof and packaging entry points survive outside local remote-test notes.
+
+Paired5798e077 pushed to personal work/native-dxgi-rotation-20261005 and direct
+signed-package CI37312228456 dispatched. Both exact source pins and ARM64
+rotation fixture staging are included. Existing73package tests and diff check
+pass. Package version58522/Mesa pins/admission gaps remain preserved. Retain
+receipts under workspace artifacts/dxvk-native-rotation-20261005/paired-ci-37312228456/.

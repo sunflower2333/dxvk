@@ -36,3 +36,32 @@ hardware acceptance.
 Contract references are the selected WDK `dxgiddi.h`, Microsoft's render-only
 sample `RosUmdDevice::RotateResourceIdentities`, and the existing Mesa D3D10
 UMD rotation implementation in this workspace.
+
+## Exact validation
+
+Source `4f59adf77cf3d6207c85af85f7a39adff3d8e367` passed personal-fork
+[offline CI37310474949](https://github.com/sunflower2333/dxvk/actions/runs/37310474949).
+Both x64 and x86 executed the production callback: 1281 checks and 43 synchronized
+locks passed. The actual ARM64 production DDI and regression compiled in the
+same run. Local GCC and Clang sanitizer policy suites each passed 172822 transfer
+checks and 1125 shared-state checks.
+
+ARM64 artifact `11345428856` from that exact source executed successfully in the
+existing Windows guest at 2026-10-05T12:42:20Z, exit 0, with the same 1281 checks.
+The runner verified native ARM64 PE machine and executable SHA256
+`9c4f107af80d7a3c4a86614cc6d37e9c65705f6da34fc198d5105ca8df0bc1f7` before execution.
+DWM PID5384 and Explorer PID3704 remained present. Local workspace evidence is
+under `artifacts/dxvk-native-rotation-20261005/guest-4f59adf/`; the raw guest
+receipt, normalized receipt, stdout/stderr and digests are retained. Normalization
+only strips PowerShell filesystem metadata attached to the stdout string.
+
+This guest test explicitly uses Microsoft WARP. The installed driver58623,
+driver registration and existing VM configuration were preserved.
+[Native UMD CI37310476652](https://github.com/sunflower2333/dxvk/actions/runs/37310476652)
+also passed on the exact source: full ARM64/x64/x86 embedded DXVK builds,
+identity and shader checks, and native ARM64 fixture execution. The runtime
+admission gate remains closed after those checks.
+
+The [DX8/DX9 audit](native-dx8-dx9-roadmap-20261005.md) records the separate
+native D3D9 bridge and DX8 system-runtime proof still required for the broader
+DX8-DX11 goal.

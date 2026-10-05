@@ -23,7 +23,12 @@ new allocation; clean shared rotation needs no GPU image copies.
 explicit test-only WARP backend and controlled allocation/lock/present callbacks.
 It checks repeated three-buffer order, exact readback pixels, present allocation
 handles, existing RTVs, old-backing publication, failed-publish retry and invalid
-chains. The test is built for ARM64/x64/x86 and executed on x64/x86 in Windows
+chains. It also models the runtime's rotated kernel association, verifies the
+exact resource retired by DeallocateCb, rejects nested scratch reuse and retires
+a resource with immediately poisoned private storage during a publish callback.
+Snapshot reads and the callback-free identity commit hold the resource registry
+lock; local COM references keep backend objects alive across nested retirement.
+The test is built for ARM64/x64/x86 and executed on x64/x86 in Windows
 CI; the ARM64 artifact is also eligible for native ARM64 runner/guest execution.
 These checks establish DDI semantics, not ordinary runtime activation or Turnip
 hardware acceptance.

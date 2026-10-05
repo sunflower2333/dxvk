@@ -40,6 +40,7 @@ struct Device {
   ComPtr<ID3D11DeviceContext> context;
   ComPtr<ID3D11Query> predicate;
   ComPtr<ID3D11Texture2D> rotationScratch;
+  std::atomic<bool> rotationActive{false};
   BOOL predicateValue = FALSE;
   bool suppressCommands = false;
   D3D10DDI_HRTCORELAYER runtime;
@@ -2066,11 +2067,29 @@ void APIENTRY destroyDevice(D3D10DDI_HDEVICE h) {
 // point at them. Private/presentable images rotate their pixels through one
 // reusable GPU scratch image; shared caches instead reload their new backing.
 HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITIES* args) {
+  // A runtime callback can reenter DXGI while this worker is paused. Reusing
+  // the same scratch image in a nested rotation would overwrite the first
+  // buffer saved by its suspended parent.
+  if (device->rotationActive.exchange(true)) return DXGI_ERROR_WAS_STILL_DRAWING;
+  struct RotationScope {
+    Device* device;
+    ~RotationScope() { device->rotationActive = false; }
+  } rotation{device};
+  ComPtr<ID3D11Device> backend;
+  ComPtr<ID3D11DeviceContext> context;
+  ComPtr<ID3D11Texture2D> scratch;
+  {
+    std::lock_guard<std::mutex> lock(deviceStorageMutex);
+    if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
+    backend = device->backend; context = device->context; scratch = device->rotationScratch;
+  }
+  if (!backend || !context) return DXGI_ERROR_DEVICE_REMOVED;
   struct Participant {
     Resource* resource;
     std::shared_ptr<const char> reservation;
     ComPtr<ID3D11Texture2D> texture;
     std::shared_ptr<dxvk::umd::SharedSurface> shared;
+    D3DKMT_HANDLE allocation;
   };
   std::vector<Participant> chain;
   chain.reserve(args->Resources);
@@ -2078,18 +2097,17 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
   for (UINT i = 0; i < args->Resources; ++i) {
     auto resource = reinterpret_cast<Resource*>(args->pResources[i]);
     std::shared_ptr<const char> reservation;
-    {
-      std::lock_guard<std::mutex> lock(resourceStorageMutex);
-      const auto entry = resourceStorage.find(resource);
-      if (entry == resourceStorage.end() || entry->second.owner != device
-          || entry->second.phase != ResourcePhase::Live) return E_INVALIDARG;
-      reservation = entry->second.reservation;
-    }
+    // Registry membership and all private-byte reads are one critical section.
+    // A pinned reservation identifies storage reuse but does not own the bytes.
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    const auto entry = resourceStorage.find(resource);
+    if (entry == resourceStorage.end() || entry->second.owner != device
+        || entry->second.phase != ResourcePhase::Live) return E_INVALIDARG;
+    reservation = entry->second.reservation;
     for (const auto& previous : chain) {
       if (previous.resource == resource) return E_INVALIDARG;
       auto& allocation = resource->shared ? resource->shared->allocation : resource->allocation;
-      auto& previousAllocation = previous.shared ? previous.shared->allocation : previous.resource->allocation;
-      if (allocation.handle() && allocation.handle() == previousAllocation.handle())
+      if (allocation.handle() && allocation.handle() == previous.allocation)
         return E_INVALIDARG;
     }
     ComPtr<ID3D11Texture2D> texture;
@@ -2101,6 +2119,9 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
     else {
       const auto& first = chain.front();
       auto& allocation = resource->shared ? resource->shared->allocation : resource->allocation;
+      const auto firstEntry = resourceStorage.find(first.resource);
+      if (firstEntry == resourceStorage.end() || firstEntry->second.reservation != first.reservation)
+        return DXGI_ERROR_DEVICE_REMOVED;
       auto& firstAllocation = first.shared ? first.shared->allocation : first.resource->allocation;
       if (desc.Width != shape.Width || desc.Height != shape.Height
           || desc.MipLevels != shape.MipLevels || desc.ArraySize != shape.ArraySize
@@ -2111,12 +2132,12 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
           || !allocation.canRotateWith(firstAllocation)) return E_INVALIDARG;
       if (first.shared && first.shared == resource->shared) return E_INVALIDARG;
     }
-    chain.push_back({resource, std::move(reservation), std::move(texture), resource->shared});
+    const auto allocation = resource->shared ? resource->shared->allocation.handle() : resource->allocation.handle();
+    chain.push_back({resource, std::move(reservation), std::move(texture), resource->shared, allocation});
   }
   if (chain.size() < 2) return S_OK;
-  auto stillLive = [&] {
+  auto stillLiveLocked = [&] {
     if (device->retired) return false;
-    std::lock_guard<std::mutex> lock(resourceStorageMutex);
     for (const auto& participant : chain) {
       const auto entry = resourceStorage.find(participant.resource);
       if (entry == resourceStorage.end() || entry->second.owner != device
@@ -2125,13 +2146,17 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
     }
     return true;
   };
+  auto stillLive = [&] {
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    return stillLiveLocked();
+  };
   if (chain.front().shared) {
     // Publish to each OLD allocation before rotating. Publishing dirty cache
     // pixels after the swap would overwrite another buffer's frame. Holding
     // the surface also keeps its backing alive across reentrant callbacks.
     for (const auto& participant : chain) {
-      const HRESULT hr = dxvk::umd::publishSharedSurface(device->backend.Get(),
-        device->context.Get(), device->memory, *participant.shared, device->sharedEpoch);
+      const HRESULT hr = dxvk::umd::publishSharedSurface(backend.Get(),
+        context.Get(), device->memory, *participant.shared, device->sharedEpoch);
       if (FAILED(hr)) return hr;
       if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
     }
@@ -2139,26 +2164,33 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
     D3D11_TEXTURE2D_DESC scratchShape = shape;
     scratchShape.BindFlags = 0; scratchShape.MiscFlags = 0;
     D3D11_TEXTURE2D_DESC old = {};
-    if (device->rotationScratch) device->rotationScratch->GetDesc(&old);
-    if (!device->rotationScratch || old.Width != scratchShape.Width
+    if (scratch) scratch->GetDesc(&old);
+    if (!scratch || old.Width != scratchShape.Width
         || old.Height != scratchShape.Height || old.MipLevels != scratchShape.MipLevels
         || old.ArraySize != scratchShape.ArraySize || old.Format != scratchShape.Format
         || old.SampleDesc.Count != scratchShape.SampleDesc.Count
         || old.SampleDesc.Quality != scratchShape.SampleDesc.Quality) {
-      ComPtr<ID3D11Texture2D> scratch;
-      const HRESULT hr = device->backend->CreateTexture2D(&scratchShape, nullptr, &scratch);
+      scratch.Reset();
+      const HRESULT hr = backend->CreateTexture2D(&scratchShape, nullptr, &scratch);
       if (FAILED(hr)) return hr;
       if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
-      device->rotationScratch = std::move(scratch);
+      std::lock_guard<std::mutex> lock(deviceStorageMutex);
+      if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
+      device->rotationScratch = scratch;
     }
-    device->context->CopyResource(device->rotationScratch.Get(), chain.front().texture.Get());
-    for (size_t i = 0; i + 1 < chain.size(); ++i)
-      device->context->CopyResource(chain[i].texture.Get(), chain[i + 1].texture.Get());
-    device->context->CopyResource(chain.back().texture.Get(), device->rotationScratch.Get());
+    context->CopyResource(scratch.Get(), chain.front().texture.Get());
+    if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+    for (size_t i = 0; i + 1 < chain.size(); ++i) {
+      context->CopyResource(chain[i].texture.Get(), chain[i + 1].texture.Get());
+      if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+    }
+    context->CopyResource(chain.back().texture.Get(), scratch.Get());
     if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
   }
   // Adjacent swaps implement [A,B,C] -> [B,C,A] with no allocation, release or
   // runtime callback after preflight. Runtime resource handles stay in place.
+  std::lock_guard<std::mutex> lock(resourceStorageMutex);
+  if (!stillLiveLocked()) return DXGI_ERROR_DEVICE_REMOVED;
   for (size_t i = 0; i + 1 < chain.size(); ++i) {
     auto& left = chain[i]; auto& right = chain[i + 1];
     auto& a = left.shared ? left.shared->allocation : left.resource->allocation;

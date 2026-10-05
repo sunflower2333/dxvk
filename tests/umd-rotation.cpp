@@ -10,6 +10,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <functional>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 static unsigned checks, locks, releases;
@@ -25,8 +29,13 @@ struct Backing {
   HANDLE runtime;
   D3DKMT_HANDLE allocation;
   std::vector<uint32_t> pixels;
+  bool live = true;
 };
 static std::vector<Backing> backings;
+static std::unordered_map<HANDLE,D3DKMT_HANDLE> runtimeBacking;
+static std::unordered_map<DXGI_DDI_HRESOURCE,HANDLE> runtimeResources;
+static std::unordered_set<HANDLE> retiredResources;
+static std::function<void()> lockAction;
 static void runtimeCaller() { CHECK(GetCurrentThreadId() == caller); }
 static HRESULT APIENTRY query(HANDLE, const D3DDDICB_QUERYADAPTERINFO* args) {
   runtimeCaller(); CHECK(args && args->PrivateDriverDataSize == 160);
@@ -46,24 +55,31 @@ static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
   std::memcpy(&info, args->pAllocationInfo->pPrivateDriverData, sizeof(info));
   const auto id = D3DKMT_HANDLE(100 + backings.size());
   backings.push_back({args->hResource, id, std::vector<uint32_t>(size_t(info.size/4))});
+  CHECK(runtimeBacking.emplace(args->hResource,id).second);
   args->pAllocationInfo->hAllocation = id; args->hKMResource = id + 1000;
   return S_OK;
 }
 static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* args) {
   runtimeCaller(); CHECK(device == &deviceCookie && args->hResource);
   CHECK(!args->NumAllocations && !args->HandleList);
+  CHECK(retiredResources.erase(args->hResource) == 1);
   // Runtime resource handles remain stable across rotation. The runtime owns
   // their kernel association, not the driver's private allocation wrapper.
+  const auto association = runtimeBacking.find(args->hResource);
+  CHECK(association != runtimeBacking.end());
   bool found = false;
-  for (const auto& backing : backings) found |= backing.runtime == args->hResource;
-  CHECK(found); ++releases; return S_OK;
+  for (auto& backing : backings) if (backing.allocation == association->second) {
+    CHECK(backing.live); backing.live = false; found = true;
+  }
+  CHECK(found); runtimeBacking.erase(association); ++releases; return S_OK;
 }
 static HRESULT APIENTRY lock(HANDLE device, D3DDDICB_LOCK* args) {
   runtimeCaller(); CHECK(device == &deviceCookie && args->Flags.LockEntire);
   CHECK(!args->Flags.Discard && !args->Flags.IgnoreSync); ++locks;
   if (FAILED(lockResult)) return lockResult;
+  if (lockAction) std::exchange(lockAction, {})();
   for (auto& backing : backings) if (backing.allocation == args->hAllocation) {
-    args->pData = backing.pixels.data(); return S_OK;
+    CHECK(backing.live); args->pData = backing.pixels.data(); return S_OK;
   }
   CHECK(false); return E_FAIL;
 }
@@ -127,7 +143,17 @@ struct Fixture {
     DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITIES args{};
     args.hDevice = reinterpret_cast<DXGI_DDI_HDEVICE>(device.pDrvPrivate);
     args.Resources = UINT(resources.size()); args.pResources = resources.data();
-    return dxgi.pfnRotateResourceIdentities(&args);
+    const HRESULT hr = dxgi.pfnRotateResourceIdentities(&args);
+    if (hr == S_OK && resources.size() > 1 && runtimeResources.count(resources.front())) {
+      // The Microsoft runtime rotates its resource-to-allocation association
+      // after the DDI succeeds. Model that independently for DeallocateCb.
+      const auto first = runtimeBacking.at(runtimeResources.at(resources.front()));
+      for (size_t i=0; i+1<resources.size(); ++i)
+        runtimeBacking.at(runtimeResources.at(resources[i])) =
+          runtimeBacking.at(runtimeResources.at(resources[i+1]));
+      runtimeBacking.at(runtimeResources.at(resources.back())) = first;
+    }
+    return hr;
   }
 };
 struct Texture {
@@ -135,12 +161,20 @@ struct Texture {
   Storage storage;
   D3D10DDI_HRESOURCE handle;
   char runtime;
+  bool live = true;
   Texture(Fixture& fixture, const D3D10DDIARG_CREATERESOURCE& desc)
   : owner(fixture), storage(fixture.f.pfnCalcPrivateResourceSize(fixture.device, &desc)),
     handle(storage.handle<D3D10DDI_HRESOURCE>()) {
     fixture.f.pfnCreateResource(fixture.device, &desc, handle, {&runtime}); CHECK(lastError == S_OK);
+    if (runtimeBacking.count(&runtime)) runtimeResources.emplace(dxgi(),&runtime);
   }
-  ~Texture() { owner.f.pfnDestroyResource(owner.device, handle); }
+  void retire() {
+    CHECK(live); live = false;
+    if (runtimeBacking.count(&runtime)) CHECK(retiredResources.insert(&runtime).second);
+    owner.f.pfnDestroyResource(owner.device,handle);
+    runtimeResources.erase(dxgi());
+  }
+  ~Texture() { if (live) retire(); }
   DXGI_DDI_HRESOURCE dxgi() const { return reinterpret_cast<DXGI_DDI_HRESOURCE>(handle.pDrvPrivate); }
 };
 static void readPixels(Fixture& fixture, Texture& source, Texture& staging, uint32_t expected) {
@@ -185,6 +219,7 @@ static void chainChecks(Fixture& fixture, bool shared, bool presentable) {
     lockResult = DXGI_ERROR_WAS_STILL_DRAWING;
     CHECK(fixture.rotate(resources) == DXGI_ERROR_WAS_STILL_DRAWING);
     lockResult = S_OK;
+    lockAction = [&] { CHECK(fixture.rotate(resources) == DXGI_ERROR_WAS_STILL_DRAWING); };
   }
   for (unsigned round=1; round<=6; ++round) {
     CHECK(fixture.rotate(resources) == S_OK);
@@ -218,6 +253,25 @@ static void chainChecks(Fixture& fixture, bool shared, bool presentable) {
   }
   fixture.f.pfnDestroyRenderTargetView(fixture.device,target);
 }
+static void retirementCheck(Fixture& fixture) {
+  D3D10DDI_MIPINFO mip{2,2,1,2,2,1};
+  uint32_t pixels[] = {0xff0000ff,0xff0000ff,0xff0000ff,0xff0000ff};
+  D3D10_DDIARG_SUBRESOURCE_UP initial{pixels,8,16};
+  D3D10DDIARG_CREATERESOURCE desc{};
+  desc.pMipInfoList = &mip; desc.pInitialDataUP = &initial;
+  desc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D; desc.Usage = D3D10_DDI_USAGE_DEFAULT;
+  desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+  desc.MipLevels = 1; desc.ArraySize = 1; desc.MiscFlags = D3D10_DDI_RESOURCE_MISC_SHARED;
+  desc.BindFlags = D3D10_DDI_BIND_RENDER_TARGET;
+  Texture first(fixture,desc), second(fixture,desc);
+  lockAction = [&] {
+    second.retire();
+    // Runtime storage may be overwritten immediately after DestroyResource.
+    std::memset(second.storage.bytes.get(),0xcc,
+      fixture.f.pfnCalcPrivateResourceSize(fixture.device,&desc));
+  };
+  CHECK(fixture.rotate({first.dxgi(),second.dxgi()}) == DXGI_ERROR_DEVICE_REMOVED);
+}
 int main() {
   caller = GetCurrentThreadId();
   Fixture fixture;
@@ -228,5 +282,8 @@ int main() {
   CHECK(fixture.dxgi.pfnRotateResourceIdentities(&bad) == E_INVALIDARG);
   chainChecks(fixture,false,false); chainChecks(fixture,false,true); chainChecks(fixture,true,false);
   CHECK(releases == 6 && lastError == S_OK);
+  retirementCheck(fixture);
+  CHECK(releases == 8 && runtimeBacking.empty() && runtimeResources.empty()
+    && retiredResources.empty() && lastError == S_OK);
   std::printf("PASS native DXGI rotation: %u checks, %u synchronized locks; WARP only, admission closed\n",checks,locks);
 }

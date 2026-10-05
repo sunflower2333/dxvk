@@ -5,6 +5,7 @@
 #include "umd_runtime_service.h"
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 namespace dxvk::umd {
 
@@ -67,8 +68,9 @@ private:
   bool m_opened = false;
 };
 
-// Only the callback fields used by this D3D10.0 bridge are copied. Copying a
-// whole current-SDK callback table could read past an older runtime's table.
+// Only the kernel callback fields used by this D3D10.0 bridge are copied;
+// copying a whole current-SDK table could read past an older runtime's table.
+// The DXGI callback table is retained live, as required by its separate ABI.
 class RuntimeMemory {
 public:
   RuntimeMemory() = default;
@@ -101,8 +103,11 @@ public:
     D3DKMT_HANDLE kernelResource, const AllocationInfo& info) {
     return call([&] { return adoptImpl(out, allocation, kernelResource, info); });
   }
-  HRESULT present(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args) {
-    return call([&] { return presentImpl(source, args); });
+  // The pinned allocation may outlive the resource whose runtime storage was
+  // reclaimed by a callback. Revalidate that resource before submitting it.
+  HRESULT present(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args,
+    const std::function<bool()>& live = {}) {
+    return call([&] { return presentImpl(source, args, live); });
   }
   HRESULT close() { return !m_context ? S_OK : call([&] { return closeImpl(); }); }
 private:
@@ -118,7 +123,8 @@ private:
   HRESULT downloadImpl(RuntimeAllocation& allocation, void* pixels, UINT rowPitch);
   HRESULT transferImpl(RuntimeAllocation& allocation, void* pixels, UINT rowPitch,
     bool publish);
-  HRESULT presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args);
+  HRESULT presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args,
+    const std::function<bool()>& live);
   HRESULT closeImpl();
   HRESULT ensureContext();
   HRESULT checkIdentity();

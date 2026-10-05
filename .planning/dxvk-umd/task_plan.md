@@ -7,10 +7,16 @@ the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-Exact 4f59adf ARM64 rotation artifact from successful CI37310474949 passed
-1281 checks in the existing Windows guest. Full native UMD CI37310476652
-passed all six jobs. Complete paired candidate pin/fixture staging CI and
-record exact package receipts (paired5798e077, CI37312228456).
+Rotation4f59adf passed all source CI and 1281 checks in the existing guest.
+Callback-table retention/fixture lifetime af84b74 passed offline37335070338
+and full37335069804, including native ARM64 execution. The additional Present
+ownership/cancellation and nested-call repair is reviewed, with local identity,
+runtime identity and shader sanitizer checks69/180/147PASS. Commit/push this
+source, run exact offline/full CI, and integrate its exact paired candidate pin.
+Paired61d03f05 fixes VS18/WDK17 runner mismatch and job-specific contracts;
+full checker and73package tests pass. Dispatch replacement paired CI concurrently,
+retain signed/native-load/source receipts, and run the changed ARM64 lifetime
+fixture in the existing guest. Mesa exact-source CI37312838033 remains pinned.
 Keep runtime admission closed until its remaining capabilities and hardware
 acceptance are complete. Preserve the active Windows desktop and VM settings.
 
@@ -18,6 +24,7 @@ acceptance are complete. Preserve the active Windows desktop and VM settings.
 - [complete] Recover current DXVK/KMD package state and choose the next source gap.
 - [complete] Implement and test the selected native runtime ownership contract.
 - [complete] Compile the actual production DDI on supported architectures.
+- [in_progress] Repair Present ownership across retirement and nested rotation.
 - [in_progress] Record exact validation and update the paired package if justified.
 
 ## Previous next-step checkpoint
@@ -189,6 +196,34 @@ is a candidate package and must not replace it. This thread selects
 PWF_PLAN_ROOT=/home/sunf/droidvm-repos/dxvk-umd-ci/.planning/dxvk-umd explicitly.
 
 ## Errors
+- A source-service read guessed a .cpp file for the header-only helper; no
+  edits depended on that failed read. Completed independent review is retained.
+- Focused local native suite reached shader validation before finding the
+  tracked DXBC submodule uninitialized. Initialize the exact gitlink; no source
+  workaround or submodule source change is required.
+- A status/log read ran at the non-git workspace root; it was read-only and
+  made no changes. Use explicit checkout workdir or git -C for status commands.
+- Paired37336134109 contract checker still expected one Windows ARM64 runner
+  after the split. Agent updates job-specific runner/dependency/signed-load
+  contracts and runs the full checker before replacement dispatch.
+- A combined notes/source comment update matched the wrong wrapped findings
+  line and applied nothing; corrected against the existing exact text.
+- A resume documentation patch used split-line context absent from the current
+  rotation document and made no changes; corrected at its verified audit link.
+- Remote-runner read used the DXVK checkout rather than the workspace root,
+  and a guessed paired verifier-script name was absent. Those read-only failures
+  did not affect source or validation; use exact discovered paths thereafter.
+- Resume search guessed two workflow filenames and a fixture-script filename;
+  rg --files located build-native-umd.yml, native-offline-contracts.yml and
+  test-umd-mrt.ps1. No edits or CI action depended on those guessed paths.
+- Paired37318070394 failed on missing WDK Microsoft.DriverKit.Build.Tasks.18.0
+  under MSBuild18.10. Keep matching VS17 cross-build and separate native checks;
+  do not rename task binaries or force unsupported WDK task versions.
+- Callback retention8dbcc93 CI exposed a constructor-local DXGI table in the
+  rotation fixture, plus two other fixture lifetime assumptions. af84b74 keeps
+  DXGI tables alive for the device and preserves in-place callback relocation.
+- Paired CI37312228456 could not download expired Mesa artifacts. Exact-source
+  rebuild37312838033 passed; d5e482c4 updates all consumer run-ID references.
 - Follow-up search used two obsolete source/script filenames; discovered
   current umd_adapter.cpp and umd_contract.cpp before continuing.
 - A documentation glob used an obsolete directory and zsh rejected no matches;

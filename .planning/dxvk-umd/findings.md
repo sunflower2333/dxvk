@@ -373,3 +373,41 @@ and treat its new package solely as candidate integration evidence. Current
 native export set lacks D3D9 OpenAdapter, and native build disables D3D8/D3D9
 cores. Full DX8-DX11 support therefore remains unfinished. Detailed source audit:
 workspace .planning/dxvk-umd-remote-20261005/dx8-dx9-audit.md.
+
+2026-10-05 callback-table continuation: Microsoft supporting-the-dxgi-ddi.md
+and WDK dxgiddi.h require retaining the runtime DXGI table pointer, as callback
+addresses can move between UMD calls. af84b74 fixes fixture lifetime after
+8dbcc93 implements that production contract. Exact x64/x86 offline DDI
+execution has passed; remaining architecture/full CI is monitored separately.
+The kernel/core callback slots remain copied, with a live DXGI exception.
+
+Paired37318070394 final job failed before KMD compilation: VS18/MSBuild18.10
+on windows-11-arm requests WDK tasks18.0, while pinned WDK26100 supplies17.0.
+Existing gg-zero-copy proves windows-2022/x64 MSBuild ARM64 cross-build plus
+separate native ARM64 fixture and signed-package load jobs. Adapt that CI
+plumbing while preserving target/source/version pins and all load checks.
+
+Present review found raw Resource/allocation reads across reentrant backend
+and LockCb operations; DestroyResource can reclaim/poison that private storage.
+A focused resource reservation/independent state repair is in progress before
+final source promotion. The DXGI callback-pointer contract remains correct.
+
+Current source implements all mandatory D3D10 hardware table slots, bounded
+GS/SO/DrawAuto and synchronous predication, opened shared resources and identity
+text filtering. Old runtime-entry notes and contract comments claiming missing
+slots or unconditional OpenResource failure were stale; corrected those facts
+without changing the eight admission gaps. Full semantics/Turnip acceptance,
+primary/full DXGI, D3D11 typed ABI and native D3D9 remain open.
+
+Present repair review also found same-surface nested Present while readback is
+mapped, plus Present/rotation mutual reentry while allocation metadata changes.
+Use a per-surface busy guard, reject rotation chains containing an active
+Present, and reject Present while device rotation is active. Resource retirement
+still needs independently held backing and reservation checks after callbacks.
+
+Independent follow-up: per-surface Present exclusion alone does not protect
+the device's shared publication sweep; a nested Present for a different source
+can remap the same shared staging texture. Use device-wide Present exclusion
+and mutual rotation exclusion. Also validate the independent resource
+reservation after RuntimeMemory's identity/context callbacks, immediately
+before PresentCb; a pinned allocation can outlive a logically retired Resource.

@@ -1,7 +1,10 @@
 # Native runtime allocation and submission backing
 
-The native CreateDevice entry now copies its original runtime callbacks before
-creating the embedded DXVK backend. It supplies the matching Mesa private v1
+The native CreateDevice entry copies the kernel callback slots it uses before
+creating the embedded DXVK backend. The DXGI callback table remains owned by
+the runtime: the UMD retains its pointer and reads the current Present callback
+at each call, as DXGI may change callback addresses between UMD entries.
+CreateDevice supplies the matching Mesa private v1
 callback owner in VkDeviceCreateInfo. Turnip's first internal buffer allocation,
 all later backend BO allocation/map operations and queue RenderCb submissions
 therefore use the same runtime device and native context. An unsupported ICD
@@ -42,7 +45,10 @@ development artifacts until the parent assembles/signs the full driver package.
 
 Regression links the actual native DDI and runtime allocator sources. Its
 controlled backend allocates/maps/submits/releases a BO during CreateDevice,
-after overwriting the caller's callback table. It checks failed backend creation,
+after overwriting the caller's copied kernel callback table. The DXGI table stays
+alive through device destruction; an allocation regression replaces PresentCb
+in that table after initialization and checks that the new address is used.
+It checks failed backend creation,
 map renaming, alias/stale-token ownership, reset, malformed callback success,
 replaced submit buffers, invalid owners/ranges, failed release and recursive
 retirement at every kernel callback. WARP is used only for fixture device

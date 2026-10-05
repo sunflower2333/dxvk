@@ -28,8 +28,11 @@ retains its bounded test purpose.
   WAS_STILL_DRAWING instead of recursing or deadlocking.
 - Exact D3D10.0 typed tables and runtime-supplied private storage are used.
   D3D11 unions, unsupported threading flags and underspecified original
-  callbacks are rejected. Only used callback slots are retained; no current
-  SDK table is blindly copied over an older runtime's allocation.
+  callbacks are rejected. Only used kernel/core callback slots are copied; no
+  current SDK table is blindly copied over an older runtime's allocation.
+  DXGI requires retaining its runtime-owned callback table pointer because its
+  callback addresses can change between UMD entries. That table stays live for
+  the device, and Present reads its current callback slot.
 - Successful device creation publishes local D3D and DXGI tables together
   after validation. Failure cleans the placement-created backend. A registry
   prevents duplicate creation in live/creating storage and protects
@@ -50,7 +53,8 @@ Both tests use controlled QueryAdapterInfo replies. Their backend provider is
 WARP; the shipped DLL has neither replacement.
 
 The successful fixture checks allocation, synchronized readback/publication,
-original runtime resource/device/core/DXGI handles, table-copy lifetime, pixel
+original runtime resource/device/core/DXGI handles, copied kernel/core table
+lifetime and live DXGI table lifetime, pixel
 bytes, generation change during creation, close during creation, duplicate
 CreateDevice, nested queries, nested context destruction, cleanup and storage
 reuse after failed creation. This proves those production code paths under a
@@ -67,19 +71,21 @@ rejects public D3D11 creation imports from the production DLL.
 ## Remaining implementation sequence
 
 1. Complete the chosen D3D10 feature contract before removing any admission
-   gap. Missing callback families are geometry shaders with stream output,
-   SO targets/DrawAuto, real predication, opened resources, text filtering and
-   version-specific vertex pipeline hooks. Non-null entries also need the
-   remaining resource dimensions, shader semantics and multiple render targets.
-   Upstream DXVK predication is a stub and cannot be declared implemented by
-   forwarding to it.
+   gap. The mandatory hardware device table is populated, including bounded
+   stream output/DrawAuto, synchronous predication, opened shared resources and
+   identity text-filter handling. Those paths still need complete semantics
+   and runtime/Turnip acceptance. Remaining requirements include resource
+   dimensions, shader semantics, full multiple-render-target behavior and
+   null-GS stream-output passthrough. ResetPrimitiveID and
+   SetVertexPipelineOutput belong to D3D10PSGP rather than this hardware table.
 2. Use the coordinated KMD/Mesa shared resource protocol for original runtime
    allocations, exact adapter/reset ownership, share/open, lifetime and
    synchronization. OpenResource failure must clean its own partially created
    objects because the runtime will not call DestroyResource after failure.
    Do not substitute DXVK's Wine metadata escape or an unowned Vulkan import.
 3. Finish primary/backbuffer and full DXGI base operations, including mode,
-   presentation and allocation ownership. Retain the present windowed blit
+   presentation and allocation ownership. Present and resource rotation now
+   occupy two of the seven base callback slots. Retain the present windowed blit
    path as a bounded baseline; it is not primary/flip or zero-copy acceptance.
 4. Implement an actual WDK D3D11 table with signature-specific wrappers and
    negotiated flags; do not copy D3D10 table bytes into the D3D11 union. Admit

@@ -36,6 +36,7 @@ static std::unordered_map<HANDLE,D3DKMT_HANDLE> runtimeBacking;
 static std::unordered_map<DXGI_DDI_HRESOURCE,HANDLE> runtimeResources;
 static std::unordered_set<HANDLE> retiredResources;
 static std::function<void()> lockAction;
+static std::function<void()> contextAction;
 static void runtimeCaller() { CHECK(GetCurrentThreadId() == caller); }
 static HRESULT APIENTRY query(HANDLE, const D3DDDICB_QUERYADAPTERINFO* args) {
   runtimeCaller(); CHECK(args && args->PrivateDriverDataSize == 160);
@@ -87,7 +88,9 @@ static HRESULT APIENTRY unlock(HANDLE device, const D3DDDICB_UNLOCK* args) {
   runtimeCaller(); CHECK(device == &deviceCookie && args->NumAllocations == 1); return S_OK;
 }
 static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* args) {
-  runtimeCaller(); CHECK(device == &deviceCookie); args->hContext = &contextCookie; return S_OK;
+  runtimeCaller(); CHECK(device == &deviceCookie);
+  if (contextAction) std::exchange(contextAction, {})();
+  args->hContext = &contextCookie; return S_OK;
 }
 static HRESULT APIENTRY destroyContext(HANDLE device, const D3DDDICB_DESTROYCONTEXT* args) {
   runtimeCaller(); CHECK(device == &deviceCookie && args->hContext == &contextCookie); return S_OK;
@@ -232,7 +235,15 @@ static void chainChecks(Fixture& fixture, bool shared, bool presentable) {
         DXGI_DDI_ARG_PRESENT args{};
         args.hDevice = reinterpret_cast<DXGI_DDI_HDEVICE>(fixture.device.pDrvPrivate);
         args.hSurfaceToPresent = resources[i]; args.pDXGIContext = &dxgiCookie; args.Flags.Blt = 1;
+        // Present's synchronized upload may reenter rotation. Keep the
+        // mapped source allocation's identity fixed until Present unwinds.
+        lockAction = [&] {
+          CHECK(fixture.rotate(resources) == DXGI_ERROR_WAS_STILL_DRAWING);
+          auto nested = args; nested.hSurfaceToPresent = resources[(i+1)%3];
+          CHECK(fixture.dxgi.pfnPresent(&nested) == DXGI_ERROR_WAS_STILL_DRAWING);
+        };
         CHECK(fixture.dxgi.pfnPresent(&args) == S_OK);
+        CHECK(!lockAction);
         CHECK(presented == backings[firstBacking+(i+round)%3].allocation);
       }
     }
@@ -275,6 +286,35 @@ static void retirementCheck(Fixture& fixture) {
   };
   CHECK(fixture.rotate({first.dxgi(),second.dxgi()}) == DXGI_ERROR_DEVICE_REMOVED);
 }
+static void contextRetirementCheck(Fixture& fixture) {
+  D3D10DDI_MIPINFO mip{2,2,1,2,2,1};
+  uint32_t pixels[] = {0xff0000ff,0xff0000ff,0xff0000ff,0xff0000ff};
+  D3D10_DDIARG_SUBRESOURCE_UP initial{pixels,8,16};
+  D3D10DDIARG_CREATERESOURCE desc{};
+  desc.pMipInfoList = &mip; desc.pInitialDataUP = &initial;
+  desc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D; desc.Usage = D3D10_DDI_USAGE_DEFAULT;
+  desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+  desc.MipLevels = 1; desc.ArraySize = 1;
+  desc.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT;
+  Texture source(fixture,desc);
+  const auto before = releases;
+  contextAction = [&] {
+    source.retire();
+    std::memset(source.storage.bytes.get(),0xcc,
+      fixture.f.pfnCalcPrivateResourceSize(fixture.device,&desc));
+    CHECK(releases == before);
+  };
+  DXGI_DDI_ARG_PRESENT args{};
+  args.hDevice = reinterpret_cast<DXGI_DDI_HDEVICE>(fixture.device.pDrvPrivate);
+  args.hSurfaceToPresent = source.dxgi(); args.pDXGIContext = &dxgiCookie; args.Flags.Blt = 1;
+  presented = 0;
+  // The first CreateContext callback happens after upload but before PresentCb.
+  // Retirement there must cancel submission and leave one balanced allocation.
+  CHECK(fixture.dxgi.pfnPresent(&args) == DXGI_ERROR_DEVICE_REMOVED);
+  CHECK(!contextAction && presented == 0 && releases == before + 1);
+  for (SIZE_T i=0; i<fixture.f.pfnCalcPrivateResourceSize(fixture.device,&desc); ++i)
+    CHECK(static_cast<const unsigned char*>(source.storage.bytes.get())[i] == 0xcc);
+}
 int main() {
   caller = GetCurrentThreadId();
   Fixture fixture;
@@ -283,10 +323,11 @@ int main() {
   CHECK(fixture.dxgi.pfnRotateResourceIdentities(&bad) == E_INVALIDARG);
   bad.hDevice = reinterpret_cast<DXGI_DDI_HDEVICE>(fixture.device.pDrvPrivate); bad.Resources = 2;
   CHECK(fixture.dxgi.pfnRotateResourceIdentities(&bad) == E_INVALIDARG);
+  contextRetirementCheck(fixture);
   chainChecks(fixture,false,false); chainChecks(fixture,false,true); chainChecks(fixture,true,false);
-  CHECK(releases == 6 && lastError == S_OK);
+  CHECK(releases == 7 && lastError == S_OK);
   retirementCheck(fixture);
-  CHECK(releases == 8 && runtimeBacking.empty() && runtimeResources.empty()
+  CHECK(releases == 9 && runtimeBacking.empty() && runtimeResources.empty()
     && retiredResources.empty() && lastError == S_OK);
   std::printf("PASS native DXGI rotation: %u checks, %u synchronized locks; WARP only, admission closed\n",checks,locks);
 }

@@ -24,7 +24,7 @@ static constexpr bool complete = false;
 #endif
 
 static char adapterCookie, deviceCookie, coreCookie, resourceCookie, contextCookie, dxgiCookie;
-static unsigned allocations, deallocations, presents, contextDestroys;
+static unsigned allocations, deallocations, presents, contextDestroys, unlocks;
 static uint32_t publishedPixels[4];
 static LUID expected = {0x92345678, -81};
 static uint64_t generation = 19, capabilities = 3;
@@ -33,6 +33,7 @@ static D3D10DDI_HADAPTER active = {};
 static D3D10_2DDI_ADAPTERFUNCS functions = {};
 static D3D10DDIARG_CREATEDEVICE* activeCreate;
 static D3D10DDI_DEVICEFUNCS* activeTable;
+static DXGI_DDI_BASE_FUNCTIONS* activeDxgi;
 enum class Action { None, QueryAgain, Close, Reset, DuplicateCreate };
 static Action queryAction, backendAction;
 static bool destroyOnError;
@@ -41,6 +42,25 @@ static SIZE_T activeResourceBytes;
 static HRESULT allocationResult = S_OK, deallocationResult = S_OK;
 static bool zeroAllocation, destroyResourceOnDeallocate, destroyResourceOnError;
 static bool cancelResourceCreation;
+static bool destroyResourceOnLock, destroyResourceOnPresent;
+static bool presentAgainOnLock, presentAgainOnPresent;
+
+static void presentAgain() {
+  DXGI_DDI_ARG_PRESENT request = {};
+  request.hDevice = reinterpret_cast<UINT_PTR>(activeCreate->hDrvDevice.pDrvPrivate);
+  request.hSurfaceToPresent = reinterpret_cast<UINT_PTR>(activeResource.pDrvPrivate);
+  request.pDXGIContext = &dxgiCookie; request.Flags.Blt = 1;
+  CHECK(activeDxgi->pfnPresent(&request) == DXGI_ERROR_WAS_STILL_DRAWING);
+}
+
+static void retireActiveResource() {
+  const auto before = deallocations;
+  activeTable->pfnDestroyResource(activeCreate->hDrvDevice, activeResource);
+  // Runtime storage can disappear immediately after nested DestroyResource.
+  // The kernel allocation must remain owned until the outer Present unwinds.
+  std::memset(activeResource.pDrvPrivate, 0xcc, activeResourceBytes);
+  CHECK(deallocations == before);
+}
 
 static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
   checkRuntime();
@@ -69,11 +89,21 @@ static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* arg
 static HRESULT APIENTRY lock(HANDLE device, D3DDDICB_LOCK* args) {
   checkRuntime();
   CHECK(device == &deviceCookie && args && args->hAllocation == 123);
+  if (presentAgainOnLock) {
+    presentAgainOnLock = false;
+    presentAgain();
+  }
+  if (destroyResourceOnLock) {
+    destroyResourceOnLock = false;
+    retireActiveResource();
+  }
   args->pData = publishedPixels; return S_OK;
 }
 static HRESULT APIENTRY unlock(HANDLE device, const D3DDDICB_UNLOCK* args) {
   checkRuntime();
-  CHECK(device == &deviceCookie && args && args->NumAllocations == 1); return S_OK;
+  CHECK(device == &deviceCookie && args && args->NumAllocations == 1);
+  CHECK(args->phAllocations && *args->phAllocations == 123);
+  ++unlocks; return S_OK;
 }
 static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* args) {
   checkRuntime();
@@ -89,6 +119,14 @@ static HRESULT APIENTRY present(HANDLE device, DXGIDDICB_PRESENT* args) {
   checkRuntime();
   CHECK(device == &deviceCookie && args && args->hSrcAllocation == 123);
   CHECK(args->hContext == &contextCookie && args->pDXGIContext == &dxgiCookie); ++presents;
+  if (presentAgainOnPresent) {
+    presentAgainOnPresent = false;
+    presentAgain();
+  }
+  if (destroyResourceOnPresent) {
+    destroyResourceOnPresent = false;
+    retireActiveResource();
+  }
   return S_OK;
 }
 
@@ -237,6 +275,7 @@ int main() {
   kernel.pfnCreateContextCb = createContext; kernel.pfnDestroyContextCb = destroyContext;
   DXGI_DDI_BASE_CALLBACKS dxgi = {}; dxgi.pfnPresentCb = present;
   DXGI_DDI_BASE_FUNCTIONS dxgiFunctions = {};
+  activeDxgi = &dxgiFunctions;
   D3D10DDI_DEVICEFUNCS table = {};
   D3D10DDIARG_CREATEDEVICE create = {};
   create.Interface = size.Interface; create.Version = size.Version;
@@ -335,6 +374,40 @@ int main() {
     CHECK(dxgiFunctions.pfnPresent(&presentation) == S_OK && presents == 2);
     table.pfnDestroyResource(create.hDrvDevice, resource);
     CHECK(deallocations == 4 && errors == 5);
+
+    // Present owns its allocation/readback independently of runtime private
+    // bytes. LockCb can destroy and poison the source before upload resumes;
+    // the lock is balanced, no PresentCb follows, and retirement frees once.
+    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
+    CHECK(allocations == 6 && errors == 5);
+    const auto unlocksBefore = unlocks;
+    presentAgainOnLock = true;
+    destroyResourceOnLock = true;
+    CHECK(dxgiFunctions.pfnPresent(&presentation) == DXGI_ERROR_DEVICE_REMOVED);
+    CHECK(!destroyResourceOnLock && !presentAgainOnLock
+      && presents == 2 && unlocks == unlocksBefore + 1);
+    CHECK(deallocations == 5 && errors == 5);
+    for (SIZE_T i = 0; i < resourceBytes; ++i)
+      CHECK(static_cast<unsigned char*>(resource.pDrvPrivate)[i] == 0xcc);
+    table.pfnDestroyResource(create.hDrvDevice, resource);
+    CHECK(deallocations == 5);
+
+    // The final PresentCb is another retirement boundary. It may reclaim the
+    // same storage, and the resumed DDI must report removal and free once.
+    table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
+    CHECK(allocations == 7 && errors == 5);
+    presentAgainOnPresent = true;
+    destroyResourceOnPresent = true;
+    CHECK(dxgiFunctions.pfnPresent(&presentation) == DXGI_ERROR_DEVICE_REMOVED);
+    CHECK(!destroyResourceOnPresent && !presentAgainOnPresent
+      && presents == 3 && deallocations == 6 && errors == 5);
+    for (SIZE_T i = 0; i < resourceBytes; ++i)
+      CHECK(static_cast<unsigned char*>(resource.pDrvPrivate)[i] == 0xcc);
+    auto invalidPresent = presentation;
+    invalidPresent.hSurfaceToPresent = 1;
+    CHECK(dxgiFunctions.pfnPresent(&invalidPresent) == E_INVALIDARG && presents == 3);
+    table.pfnDestroyResource(create.hDrvDevice, resource);
+    CHECK(deallocations == 6);
     destroyOnError = true;
     table.pfnDestroyDevice(create.hDrvDevice);
     CHECK(errors == 6 && contextDestroys == 1);

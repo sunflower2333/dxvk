@@ -190,6 +190,9 @@ int main() {
   // must follow the runtime-owned table rather than a creation-time copy.
   dxgi.pfnPresentCb = presentReplacement;
   CHECK(memory.present(allocation, args) == S_OK); sequence("QP");
+  dxgi.pfnPresentCb = nullptr;
+  CHECK(!memory.available());
+  CHECK(memory.present(allocation, args) == DXGI_ERROR_UNSUPPORTED); sequence("");
   dxgi.pfnPresentCb = present;
   auto bad = args; bad.Flags.Flip = 1;
   CHECK(memory.present(allocation, bad) == E_INVALIDARG);

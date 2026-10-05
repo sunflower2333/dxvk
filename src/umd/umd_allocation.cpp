@@ -253,7 +253,9 @@ HRESULT RuntimeMemory::ensureContext() {
   return S_OK;
 }
 
-HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args) {
+HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args,
+    const std::function<bool()>& live) {
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (!available()) return DXGI_ERROR_UNSUPPORTED;
   // Initial windowed blit path only. Primary/flip, opened shared resources,
   // stereo and explicit destinations require their own ownership support.
@@ -262,10 +264,13 @@ HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG
       || args.hDstResource || !args.pDXGIContext || args.Flags.Value != 1)
     return E_INVALIDARG;
   HRESULT hr = checkIdentity();
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(hr)) return hr;
   hr = ensureContext();
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(hr)) return hr;
   hr = checkIdentity();
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(hr)) return hr;
   DXGIDDICB_PRESENT request = {};
   request.hSrcAllocation = source.m_handle;
@@ -273,8 +278,13 @@ HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG
   request.hContext = m_context;
   // The opaque DXGI context carries the runtime's destination and timing.
   // Do not substitute a global scanout escape or override its sync interval.
-  hr = completed(m_dxgi->pfnPresentCb(m_device, &request));
-  return FAILED(hr) ? hr : checkIdentity();
+  const auto present = m_dxgi ? m_dxgi->pfnPresentCb : nullptr;
+  if (!present) return DXGI_ERROR_UNSUPPORTED;
+  hr = completed(present(m_device, &request));
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (FAILED(hr)) return hr;
+  hr = checkIdentity();
+  return live && !live() ? DXGI_ERROR_DEVICE_REMOVED : hr;
 }
 
 HRESULT RuntimeMemory::closeImpl() {

@@ -62,6 +62,43 @@ also passed on the exact source: full ARM64/x64/x86 embedded DXVK builds,
 identity and shader checks, and native ARM64 fixture execution. The runtime
 admission gate remains closed after those checks.
 
+## Runtime callback table lifetime
+
+The DXGI runtime owns its callback table and may replace callback addresses
+between UMD entries. The UMD retains that table pointer and Present reads its
+current callback slot. Kernel/core callbacks remain copied before entering the
+embedded backend. Fixtures therefore keep the DXGI table alive through device
+destruction while still testing kernel/core table copying.
+
+Source `af84b74d69df73d3863bae7cf377e53af586ebb9` passed
+[offline CI37335070338](https://github.com/sunflower2333/dxvk/actions/runs/37335070338):
+Linux sanitizer contracts, actual x64/x86 production DDI execution, and ARM64
+compilation. The allocation fixture changes PresentCb after initialization and
+verifies the replacement is invoked. Rotation still passes 1281 checks and 43
+synchronized locks on x64/x86.
+[Full CI37335069804](https://github.com/sunflower2333/dxvk/actions/runs/37335069804)
+also passed all six jobs on that exact source, including ARM64/x64/x86 embedded
+backend builds and native ARM64 fixture execution. Evidence is retained under
+`artifacts/dxvk-native-rotation-20261005/ci-37335070338/`.
+
+## Present retirement and nested calls
+
+Present now pins its allocation, readback texture and backend references outside
+the runtime's resource private storage. A registry reservation identifies the
+original live resource even if a callback destroys it and reuses that address.
+Resource retirement cancels the outer Present, balances acquired locks and
+defers allocation release until the operation unwinds. The allocator rechecks
+that reservation after identity/context callbacks, before calling PresentCb.
+
+A device guard rejects nested Present and rotation while presentation is
+active. Present also rejects entry during rotation, protecting staging maps
+and allocation identities across callback reentry. The shared publication
+sweep pins its surface list before callbacks can change the weak registry.
+The production fixtures cover immediate private-storage poisoning from LockCb,
+CreateContextCb and PresentCb, no submission after early retirement, balanced
+release, and nested Present/rotation rejection. CI validation of this additional
+repair is recorded separately from the earlier source checkpoints above.
+
 The [DX8/DX9 audit](native-dx8-dx9-roadmap-20261005.md) records the separate
 native D3D9 bridge and DX8 system-runtime proof still required for the broader
 DX8-DX11 goal.

@@ -433,3 +433,95 @@ signed-package CI37312228456 dispatched. Both exact source pins and ARM64
 rotation fixture staging are included. Existing73package tests and diff check
 pass. Package version58522/Mesa pins/admission gaps remain preserved. Retain
 receipts under workspace artifacts/dxvk-native-rotation-20261005/paired-ci-37312228456/.
+
+2026-10-05 continuation: Mesa artifacts in historical34757244563 had expired.
+Exact-source rebuild37312838033 passed ARM64/x64/x86 and source regressions,
+with three fresh artifacts. Paired d5e482c4 updates the dependency run-ID in
+both workflows and opengl/package.py, preserving source/version. Replacement
+CI37318070394 passed all dependencies including OpenGL ABI and DXVK matrix,
+but final build job failed; paired worker is diagnosing its completed logs.
+
+DXGI audit found callback entry points may move between UMD calls.8dbcc93 now
+retains the runtime-owned DXGI table; allocation regression replaces PresentCb
+after initialization. CI exposed fixture table lifetime errors; af84b74 makes
+rotation's table a fixture member, keeps ddi-probe table in device scope, and
+stops clearing DXGI in the native-entry fixture. Generic push builds PASS;
+new native/offline CI dispatched. No driver installation or additional guest
+workload performed. Service503 interrupted three workers; all resumed.
+
+2026-10-05 resumed after compaction: recovered exact source/CI and agent state
+from selected plan. Offline x64/x86 production DDI fixtures now PASS onaf84;
+full architecture/native execution is pending. Paired final-build failure is
+VS18 versus pinned WDK17 tasks, before source compilation. Delegate minimal
+cross-build/native-check split based on proven gg-zero-copy implementation.
+Read-only contract review confirms live DXGI table requirement and finds a
+separate pre-existing reentrant Present private-resource lifetime defect;
+delegate focused production/regression repair before final paired promotion.
+Clarified kernel/core copy versus live DXGI table in runtime documentation.
+Project catchup emitted no additional recovery context; memory lookup had no
+relevant registry hits. No remote configuration/install changes performed.
+
+Offline37335070338 is now SUCCESS onaf84b74 for Linux sanitizers plus actual
+x64/x86 DDI fixture execution and ARM64 compilation. Reviewer retains exact
+source/artifact receipts; full37335069804 remains active without failures.
+Reviewed paired CI diff: StaticOnly retains catalog/file/signature/installer
+checks on x64, while separate signed-runtime-abi on Windows ARM64 runs every
+native/EC/x86 GL/CL/D3D/DXVK load. New ARM64 functional job uses the exact pinned
+DXVK script and source guard. Requested always-retained output/hash artifacts.
+
+Paired e0449321 now preserves native functional/signed runtime checks in
+separate ARM64 jobs, and selects matching VS17/x64 MSBuild for ARM64 targets.
+All73package tests, YAML parse and diff check PASS. Agent dispatches a direct
+CI run to validate this toolchain repair independently of the pending Present
+source repair; current paired DXVK pin remains4f59adf. Added callback-table
+lifetime and exact offline validation to the rotation checkpoint document.
+
+Refreshed stale runtime-entry implementation sequence against actual source:
+mandatory hardware D3D10 slots exist, bounded SO/predication/shared-open paths
+are implemented, and DXGI has2/7callbacks. Corrected the inaccurate contract
+comment that OpenResource always fails; production gap mask is unchanged.
+No new feature level or hardware/runtime acceptance is claimed.
+
+Exactaf84 full source37335069804 SUCCESS, all six jobs, including native ARM64
+runtime fixtures. The pending Present repair now covers separately owned
+allocation/readback and live resource reservation; LockCb/final PresentCb tests
+destroy and immediately poison private storage, requiring balanced locks,
+single deallocation and no post-retirement Present. Independent reviews found
+nested Present/readback reuse and mutual Present/rotation identity hazards;
+implementer adds busy/rotation guards before final review and CI dispatch.
+Paired37336134109 exposed the inherited checker assumption of one ARM64 job;
+agent repairs job-specific contracts and verifies all checks before rerun.
+
+Further independent review confirms that a device-wide Present guard is needed
+to protect shared publication from nested different-source Present, and a
+bounded resource-liveness validator must run after identity/CreateContext
+callbacks before PresentCb. These are explicit cancellation/ownership cases,
+not hypothetical warnings. Paired full contract checker now PASS after its
+job-specific repair; postpone repeated paired dispatch until final source pin
+is ready so source and package validation can proceed concurrently.
+
+Paired61d03f05 now enforces VS17/x64 product build, mandatory native ARM64
+functional and signed-load jobs, and full non-StaticOnly runtime invocation.
+Full contract checker,73package tests, YAML parse and diff check PASS.
+Known-failed37336134109 was cancelled as superseded by its diagnosed checker
+repair, avoiding redundant4fbackend builds; no observation timeout was used.
+No new paired dispatch until the reviewed final DXVK source commit is ready.
+
+2026-10-06: Final focused Present diff reviewed independently by root and
+rotation reviewer: separate allocation/readback owners, registry reservation
+checks after identity/context/Present callbacks, device-wide nested Present and
+rotation exclusion, and pinned shared sweep. Actual production fixtures now
+cover LockCb/CreateContextCb/PresentCb retirement with immediate0xccpoisoning,
+no early-retirement PresentCb, balanced release and nested calls. Diff check
+PASS; local WDK loadability policy101slots and identity sanitizers69/180PASS.
+Full local native suite initially found an uninitialized tracked shader-parser
+submodule; initialize its exact gitlink before finishing local checks.
+Full af84 ARM64 artifact evidence is retained and its ten fixture hashes agree.
+
+Tracked shader-parser213d2b859e83d91670ada15cc773e2c90c7c8b61 is initialized
+and matches the gitlink. scripts/test-native-umd.sh now PASS under ASan/UBSan:
+69identity,180runtime identity,147shader checks. WDK loadability policy passes
+101/101 mandatory device slots, DXGI2/7 and unchanged closed admission.
+Independent reviewer and root final source review have no concrete remaining
+findings for this repair. Windows fixtures still require exact-source CI;
+prepare source commit and concurrent final paired candidate validation.

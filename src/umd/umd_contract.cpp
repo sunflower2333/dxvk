@@ -8,8 +8,9 @@ uint32_t dxvk::umd::runtimeMissingD3D10Requirements() noexcept {
   // recorded here: d3d10umddi.h declares them only under D3D10PSGP, so a
   // hardware UMD has no such fields to fill and LegacyPipelineCallbacks is
   // genuinely retired. A complete table is a prerequisite for admission, not
-  // admission itself: OpenResource still fails, and the capabilities below
-  // are still missing, so no native feature level may be advertised.
+  // admission itself: opened resources still need complete runtime/Turnip
+  // acceptance, as do the capabilities below, so no native feature level
+  // may be advertised.
   // Non-null callbacks also reject texture dimensions, primary and shared
   // ownership and several shader semantics. The float MRT slice is
   // implemented, but full MRT formats/semantics and target validation remain

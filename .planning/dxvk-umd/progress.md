@@ -1830,3 +1830,107 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
   continuity; fixture compile/run was not reached. Root renames clipVertices
   and freezes freshpreflight03 cb2c99ee30d29b046e1d30843fdb6bdd03f8c5cc911aed35286f9040d8929f5e;
   independent target build is pending. Positivefixture/oracle behavior retains.
+
+### Committed clip-plane native contracts and candidate CI
+
+- Corrected clip preflight03 strictly compiles the probe and passes220595 native
+  checks; build verifier independently links all57 frozen/archive/after-run inputs
+  to48efb7d. Committed worktree01 has the identical cb2c99ee archive and independently
+  verifies220595 checks, native ARM64 PE/COFF and retained signedSYS/desktop.
+- Four committed compiled controls01 fail their intended invalid-index or
+  coefficient/index snapshot assertions. Independent receipts retain exact source
+  mutations, all57 input links, native PE/COFF, original probe objects and fixture
+  assertion logs. No assertion is weakened; failing harness exits use _Exit.
+- Single automatic CI37533397261 builds exact48efb7d. Source/Linux/sanitizer gates
+  pass independently. ARM64 artifact11445755987 ZIP2b2a9e13, DLLd40485e9 and
+  probeab77d09c are verified ready for the controlled GPU probe; other CI jobs
+  remain pending. Added clip mode to the bounded interactive wrappers and exact
+  rational CPU acceptance helper. Native parsing and GPU35/36 remain open.
+
+### Clip CI passes; first hardware pixel failure retained
+
+- Exact48efb7d single automatic37533397261 all6SUCCESS. Independent build verifier
+  checks five ZIP/API digests,57Git/archive source links, three PE architectures/
+  220595checks,14actual ARM64 execution hashes/PASS outputs/empty stderr, Linux
+  sanitizers/semantic gates and actual private core/backend compile and DLL link.
+- Frozen three clip wrappers native PowerShell parse/hash PASS. Exact CI candidate
+  staged without installation/registration. Targetclip35 diagnostics1 fails the
+  first new stage67 pixel with clip mask0: x0/y0 actualff091725 vsff739a4c.
+  Duration26.3768348s; all eight prior readback summaries pass. Independent failed
+  evidence verifier links all8payloads3scripts/nativeARM64/LimitedUSER1 and checks
+  signedSYS/desktop/58readiness fields unchanged,15residency refs/15evictions/0left,
+  no device-loss log. Archive2dea31a5430c7e05972cd9e2f336bd249fbc3651c9f3ccc7e53c08583c529930
+  and original failure receipts remain retained; clip36 was not launched.
+- Local diagnostic-only25a9edd adds complete clip pixel logging without changing
+  geometry, coefficients, expected pixels or checksums. The build subagent owns
+  fresh native strict compile/link against exact48efb7d candidate and57committed
+  frozen source inputs. No diagnostic CI push or GPU acceptance is claimed.
+- Diagnostic25a9edd native linked probe independently verifies57source inputs,
+  strict /W4 /WX /MT, AA64 PE, UMD/GDI/KERNEL32-only imports and six invalidCLI
+  checks. Probe e0a54fe6 and b1bb0014 evidence receipt retained; exact candidate,
+  signedSYS and desktop unchanged. Targetclip-diagnostic01 reproduces the first
+  stage67 failure and retains all64pixels: every pixel is backgroundff091725.
+  Duration20.8718953s; eight prior slices pass, exact8payloads3scripts/native
+  LimitedUSER1 and58readiness fields independently verify. Failure receipt retained.
+- Local diagnosticd79b3bb tests one inherited state reset, NORMALIZENORMALS=0,
+  before unlit clip draws without a NORMAL declaration. Geometry, clip coefficients,
+  pixel logging and CPUoracle stay unchanged. Frozen57 archivea326bde1 is with the
+  build verifier for a fresh linked probe; target test and diagnosis still pending.
+- Diagnostic02 build verifier and root reviewed re-execution link all57 committed
+  inputs, strict ARM64 compile/link, originalexe3506c13b/staticimports, sixCLI and
+  read-only checks, evidence46171ae3, exactCI48ef candidate/SYS/desktop. GPU run
+  reproduces64backgroundpixels atstage67 in22.7688432s; all eight prior slices pass.
+  Failurearchive7a6c49ff and independent8payload/3script/58readiness receipts retained.
+  All eight frozen acceptance helpers remain unchanged. Normalization reset has no effect.
+- Localdiagnostic03 d230cb0 removes the ineffective reset and forces clip enable1
+  then disable0 before the identical draw. Frozen57 archivecfd9dea5 is delegated
+  for fresh strict native build/link and source/continuity verification. GPU pending;
+  no production fix, clip acceptance, ordinary-runtime admission or CI push claimed.
+- Diagnostic03 native build/root review verify57sources, originalexe9be5d14a and
+  evidencef87da22f with strict ARM64/staticimports/CLI/continuity. Target run records
+  enable1/disable0 and still64backgroundpixels in20.6867262s. Eight prior slices and
+  8payloads/3scripts/58readiness fields independently verify; archived50365e3 retained.
+  Live CI refresh confirms exact48efb7d all6SUCCESS and four redundant workflows disabled.
+- Diagnostic04 e980efa8 removes the ineffective refresh and uses the known passing
+  FLOAT3 POSITION/NORMAL/COLOR stride28 layout with normals0,0,1 and lighting0.
+  Positions/colors/planes/640pixel oracle remain identical. Frozen57 archive1d032587
+  is delegated for native build verification; GPU pending, no accepted fix claimed.
+- Diagnostic04 strict native/root verification links all57 inputs, originalexe36bc48bb
+  and evidence587b4b88, unchanged candidate/SYS/desktop. Target run PASS in27.5857693s:
+  640clip/ac340bd5,4864totalpixels,1056bytes/5bd18a08,88renders, ctx1/1alloc15/15lock14/14,
+  residency15/15remaining0wrong0. Every640rawpixel matches the unchanged rational oracle;
+  exact8payloads/3scripts/LimitedUSER1, driver/desktop/58readiness and eight frozen helpers
+  verify. Archivead5ca979 retained. This diagnostic layout has normals/stride28/color24;
+  it does not prove which difference fixes the original compact-layout failure.
+- Diagnostic05 eade97ce removes only NORMAL declaration/count3->2 while preserving all
+  vertexbytes/stride28/color24/state/oracles. Frozen57 archivef983b81d, strict ARM64 probe
+  73efdd3f and evidencea36c52bf independently verify; root reviewed verifier logic stays
+  identical apart from pins. All target build processes ended before fresh GPU05 starts.
+
+- Diagnostic05 GPU PASS in31.2372503s:640clip/ac340bd5,4864total+1056bytes,88renders,
+  balancedctx/alloc/lock/residency/wrongthread0, retainedSYS/desktop/58readiness. All640
+  pixels and eight unchanged helpers verify; removingNORMAL alone has no effect.
+- Diagnostic06 95ce11cd retainsstride28/noNORMAL but restorescoloroffset12, with
+  unusedpadding aftercolor. Frozen57 archivee2beeb66 is delegated for native build.
+  Positions/colors/state/plane/640pixel oracle stay identical; no production fix claimed.
+
+- Diagnostic06 originalexe2ab80439/native evidence4520e041 verify57sources/strictARM64
+  and continuity. GPU run reproduces all64clearpixels in25.1943667s atcoloroffset12,
+  even withstride28. Independent failure/8payload/3script/58readiness and frozenhelpers
+  checks pass; prior eight slices retained. Stride alone does not explain the failure.
+- Diagnostic07 25da07dc inserts one unused zeroDWORD beforecolor (offset16), retaining
+  FLOAT3 POSITION/stride28/noNORMAL/state/geometry/oracles. Frozen57 archived754f966
+  is delegated for fresh native build verification; GPU pending.
+
+- Diagnostic07 nativeexe94e13af9/evidence0f0d9d3e verifies57sources; target
+  all64pixels3f800000 atstage67 (23.6047045s) match unusedfloat1 atoffset24,
+  differing from expectedff739a4c. Fresh failure-only verifier retains original
+  logs/archivec763da2c and confirms8payloads/3scripts/58readiness/SYS/desktop.
+- Vertex-input equality final divisor loop overwrites earlier inequality.
+  Production helper preserves it with &&eq; 342 actual helper checks cover all
+  metadata/binding/attribute/divisor fields and forced colliding cache keys.
+  Clang/GCC sanitizer positives and reverted-fix negative controls pass, each
+  with342checks. Existing identity69/runtimeidentity180/backend49/shader147
+  sanitizer gates pass. Exact compact probe restored
+  from25a9edd. Source proof verifies helper differs only by that short circuit;
+  new CI/native build/compact GPU acceptance remain pending.

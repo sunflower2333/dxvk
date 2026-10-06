@@ -44,6 +44,8 @@ ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-ada
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
 ninja -C build-umd src/umd/dxvk-umd-runtime-backend-test.exe
 if ($LASTEXITCODE) { throw 'Runtime backend descriptor test build failed' }
+ninja -C build-umd src/umd/dxvk-umd-vertex-input-test.exe
+if ($LASTEXITCODE) { throw 'Vertex input equality test build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d9-device-test.exe
 if ($LASTEXITCODE) { throw 'Typed D3D9 device lifecycle test build failed' }
 ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-native-lifetime-test.exe src/umd/dxvk-umd-runtime-gpu-test.exe src/umd/dxvk-umd-predication-test.exe src/umd/dxvk-umd-stream-output-test.exe src/umd/dxvk-umd-texture1d-test.exe
@@ -67,6 +69,7 @@ function Invoke-BoundedFixture([string]$Executable, [string]$Name) {
 }
 if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-runtime-backend-test.exe runtime-backend-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-vertex-input-test.exe vertex-input-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-rotation-test.exe rotation-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-runtime-gpu-test.exe runtime-gpu-test
     & build-umd/src/umd/dxvk-umd-identity-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-query-test.txt')
@@ -127,7 +130,7 @@ foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.ex
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }
     Copy-Item $path $OutputDirectory
 }
-foreach ($name in @('dxvk-umd-runtime-backend-test.exe', 'dxvk-umd-d3d9-backend-test.exe', 'dxvk-umd-d3d9-device-test.exe')) {
+foreach ($name in @('dxvk-umd-runtime-backend-test.exe', 'dxvk-umd-d3d9-backend-test.exe', 'dxvk-umd-d3d9-device-test.exe', 'dxvk-umd-vertex-input-test.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
     $headers = & dumpbin /headers $path | Out-String
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }

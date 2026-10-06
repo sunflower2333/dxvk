@@ -1393,3 +1393,69 @@ final probe preflight02 is frozen. Pixeloracle uses exact rational half-space
 equations at D3D9 integer sample centers with identity transforms and z=.5,w=1.
 The x/y planes put boundaries between samples to avoid edge-rule ambiguity.
 Ten stages67..76 expect640pixels/ac340bd5 and4864total; controls/CI/GPU pending.
+
+## 2026-10-07 clip hardware failure and next query audit
+
+Exact48efb7d CI/native contracts all pass, but targetclip35 fails disabled-plane
+stage67 corner pixel (actual clear color). The complete failed archive independently
+verifies eight prior slices, exact8payloads3scripts/LimitedUSER1, signedSYS/desktop
+and58readiness fields unchanged. No second acceptance run was launched. Diagnostic
+local25a9edd changes only retained clip pixel logging; original geometry/CPUoracle
+and failure artifacts remain unchanged. Raw pixel evidence and a renderer/probe
+fix must precede any clip acceptance claim.
+
+Local Microsoft d3dumddi CreateQuery/IssueQuery/GetQueryData docs identify a later
+mandatory contract: GetQueryData must preserve S_FALSE for pending work. Generic
+native operation currently normalizes positive non-S_OK to E_FAIL, so query pending
+must be handled specifically with owned result storage and publication only after
+successful completion. Native Begin=1/End=2 differ from public D3DISSUE flags and
+need explicit mapping. Native hQuery is driver-created, device-owned and retired;
+caller GetQueryData pData has no byte-count field, requiring an exact per-type size.
+Existing D3D9 core supports VCACHE/EVENT/OCCLUSION/TIMESTAMP/DISJOINT/FREQ. Its cached
+EVENT path writes one bool byte, so a native BOOL result requires owned zeroed data
+and TRUE normalization only after actual S_OK completion. No query code/caps changed.
+
+Diagnostic02 d79b3bb proves NORMALIZENORMALS=0 does not change the failure: all64
+raw pixels remain ff091725 at stage67/mask0. All prior slices, signedSYS/desktop
+and58readiness fields remain unchanged; no device loss. Root code audit confirms
+CLIPPLANEENABLE 1->0 marks ClipPlanes dirty, so diagnostic03 d230cb0 forces a fresh
+zero-plane constant upload while retaining the identical geometry and640pixel oracle.
+Its fresh strict native build and all57source/archive/build/after-run links pass;
+this is a controlled experiment, not an accepted production fix.
+Diagnostic03 records that exact enable1/disable0 refresh and reproduces all64clear
+pixels. Thus neither that refresh nor the normalization reset changes the observed
+failure. Diagnostic04 changes only vertex layout to the passing fixed-function
+POSITION/NORMAL/COLOR layout, with normal0,0,1 and lighting0. This also changes
+stride/color offset, so a changed outcome requires further isolation; it would not
+prove a missing-normal shader defect by itself. Original pixel oracle remains strict.
+Diagnostic04 passes all640 exact pixels with visible counts64/32/32/32/16/64/0/0/64/64,
+ac340bd5, all4864pixels and1056transferbytes. Plane coefficient/index/enable behavior
+works with the POSITION/NORMAL/COLOR layout; failure remains layout dependent.
+Diagnostic05 removes only the NORMAL element while retaining the identical28byte
+stride, coloroffset24 and hostnormal0,0,1bytes. Its result will separate missing-normal
+declaration handling from the padding/color-offset changes in diagnostic04.
+
+Diagnostic05 with NORMAL omitted still passes all640pixels and balanced GPU ownership.
+Remaining layout factors are stride16vs28 and coloroffset12vs24; diagnostic06 holds
+stride28 fixed and restorescoloroffset12. Original compact failure also occurred with
+both the CI-built and nativeMSVC-built probes, limiting a single-compiler explanation.
+
+Diagnostic06 reproduces all64clearpixels when color is restoredtooffset12 while
+stride stays28. Failure tracks color placement relative to FLOAT3 POSITION; native
+declaration conversion copies each Stream/Offset/Type/Method/Usage/Index explicitly
+into D3DVERTEXELEMENT9 before core creation. Diagnostic07 tests a single DWORD gap
+with coloroffset16, FLOAT3 POSITION and identical homogeneous geometry/oracles.
+
+Diagnostic07 changes the failure to all64pixels3f800000, precisely the float1
+bit pattern in unused padding atoffset24. Together with diagnostics04/05
+passingcolor24 and06 failingcolor12 atconstantstride28, this points to stale
+input-layout reuse rather than clip-coefficient math. Native MSVC14.44 xhash
+_Find_last checks same-bucket equality without checking full hashes. D3D9
+BindInputLayout emits a zero-divisor INSTANCE binding for missing shader inputs.
+DxvkGraphicsPipelineVertexInputState::eq final loop lacks &&eq, allowing that
+matching divisor to erase header/binding/attribute mismatches; a later divisor
+can similarly erase an earlier divisor mismatch. This is a confirmed source
+defect. Runtime causality still needs a new UMD and the unchanged compact probe.
+The portable tested helper retains all old comparison fields/arrays and changes
+only the short circuit; production eq delegates directly to it. No Mesa patch,
+layout workaround, caps/export change or ordinary-runtime admission is included.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+bash scripts/test-native-vertex-input.sh
 dxvk_test_dir=$(mktemp -d /tmp/dxvk-umd-tests.XXXXXX)
 trap 'rm -f "$dxvk_test_dir/identity" "$dxvk_test_dir/runtime-identity" "$dxvk_test_dir/runtime-backend" "$dxvk_test_dir/shader"; rmdir "$dxvk_test_dir"' EXIT
 clang++ -std=c++17 -g -O1 -Wall -Wextra -Werror -fsanitize=address,undefined \

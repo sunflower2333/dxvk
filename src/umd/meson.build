@@ -74,6 +74,11 @@ umd_runtime_backend_test = executable('dxvk-umd-runtime-backend-test',
   '../../tests/umd-runtime-backend.cpp',
 )
 
+umd_vertex_input_test = executable('dxvk-umd-vertex-input-test',
+  '../../tests/umd-vertex-input.cpp',
+  include_directories : [dxvk_include_path, include_directories('../dxvk')],
+)
+
 umd_d3d9_backend_test = executable('dxvk-umd-d3d9-backend-test',
   '../../tests/umd-d3d9-backend.cpp',
   link_with : [umd_development],

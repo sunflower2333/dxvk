@@ -17,10 +17,44 @@ five ZIP digests, three architectures/216868checks and14native ARM64 hashes
 independently verify. Targetbuffer-transfer33/34 diagnostics1/0 pass4224pixels
 and1056bytes each,78renders and balancedcallbacks/residency, retaining signedSYS,
 desktop and58readiness fields. Checkpoint docs/native-d3d9-buffer-transfer-20261007.md.
-Next typed SetClipPlane: uncommitted preflight01 passes220595checks; final probe
-preflight02 retains a strict shadow-warning failure; corrected preflight03 is
-with the build verifier. Independent CPU homogeneous equations
-expect640newclip pixels/ac340bd5,4864total. Committed controls/CI/GPU remain open.
+Typed SetClipPlane source48efb7d50334a05488f78ef93ea418bf54a68b26 is pushed.
+Corrected native preflight03 and committed worktree01 each pass220595checks;
+all57inputs independently link to Git. Four compiled native semantic controls
+verify invalid indices, callback rereads, aliased indices and reversed coefficients.
+Single automatic CI37533397261 all6SUCCESS: five ZIP digests, three architectures/
+220595 checks,14native execution hashes, Linux gates and actual build/link logs
+independently verify. Independent rational homogeneous equations expect640newclip
+pixels/ac340bd5,4864total. Targetclip35 diagnostics1 fails first new stage67 pixel
+with mask0: (0,0) backgroundff091725 instead offf739a4c. All eight prior slices pass;
+8payloads/3native-parsed wrappers/LimitedUSER1 and signedSYS/desktop/58readiness
+fields independently verify. Failed archive and receipts retained; clip36 not run.
+Diagnostic-only sources25a9edd andd79b3bb are native built and independently linked
+through all57inputs; targetdiagnostic01/02 both retain64backgroundpixels atstage67.
+NORMALIZENORMALS=0 has no effect. Diagnostic02 duration22.7688432s, all eight prior
+slices pass and signedSYS/desktop/58readiness fields stay unchanged. Diagnostic03
+d230cb0 fresh constant refresh also has no effect: all64pixels remain clear,
+duration20.6867262s, prior slices/driver/desktop/readiness retained. Diagnostic04
+e980efa8 POSITION/NORMAL/COLOR layout passes all640clip pixels/ac340bd5,4864total
+and1056bytes with88renders, balanced lifetimes/residency, unchanged signedSYS/desktop/
+58readiness fields. This layout change is diagnostic, not an accepted compact-layout fix.
+Diagnostic05 eade97ce removes only NORMAL and also passes the identical640pixel
+oracle,4864total+1056bytes,88renders with balanced callbacks/residency and retained
+SYS/desktop/readiness. This isolates the failure away from NORMAL declaration alone.
+Diagnostic06 95ce11cd restores coloroffset12 at the same stride28 and reproduces
+all64clearpixels (25.1943667s), with prior slices/driver/desktop/readiness retained.
+Local25da07dc keeps FLOAT3 POSITION/stride28/noNORMAL, inserts one unused zeroDWORD
+before color (offset16), and preserves geometry/640pixel oracle. Strict native
+build07 and independent failure verification pass: all64pixels are3f800000,
+the unused float1 atoffset24, rather than expectedff739a4c. Driver/desktop and
+58readiness fields stay unchanged. Source audit finds vertex-input equality
+can overwrite a header/binding/attribute or earlier-divisor mismatch with a
+later matching divisor. Missing fixed-function attributes use a zero-divisor
+binding, and native MSVC hash lookup compares same-bucket keys without testing
+full hashes. A short-circuit fix uses a portable production helper, tested with
+342 checks and forced cache collisions; reverting the fix fails the exact
+color-offset oracle. Original stride16/color12 probe is restored byte-for-byte
+from25a9edd. New committed source, CI/native build and compact GPU acceptance
+are pending; no clip or ordinary-runtime acceptance is claimed.
 Keep ordinary DX8-DX11 rendering/presentation and the full goal active.
 
 ## Earlier checkpoints

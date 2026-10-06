@@ -9,6 +9,7 @@ if ($status -notmatch "(?m)^DXVK_COMMIT=$($env:GITHUB_SHA)\r?$" -or $status -not
     throw 'Artifact source or architecture does not match this CI run'
 }
 $cases = [ordered]@{
+    'dxvk-umd-vertex-input-test.exe' = 'vertex input equality PASS checks=\d+; colliding layouts retained, no GPU runtime'
     'dxvk-umd-runtime-backend-test.exe' = 'runtime backend ownership PASS checks=\d+; CPU descriptor and lifetime contracts'
     'dxvk-umd-d3d9-backend-test.exe' = 'D3D9 backend rejection PASS checks=\d+; no GPU construction or runtime admission'
     'dxvk-umd-d3d9-adapter-test.exe' = 'native D3D9 adapter PASS checks=\d+; mock runtime, no rendering or admission'

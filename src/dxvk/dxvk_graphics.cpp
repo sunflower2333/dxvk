@@ -4,6 +4,7 @@
 
 #include "dxvk_device.h"
 #include "dxvk_graphics.h"
+#include "dxvk_vertex_input.h"
 #include "dxvk_pipemanager.h"
 
 namespace dxvk {
@@ -150,41 +151,7 @@ namespace dxvk {
 
 
   bool DxvkGraphicsPipelineVertexInputState::eq(const DxvkGraphicsPipelineVertexInputState& other) const {
-    bool eq = iaInfo.topology                         == other.iaInfo.topology
-           && iaInfo.primitiveRestartEnable           == other.iaInfo.primitiveRestartEnable
-           && viInfo.vertexBindingDescriptionCount    == other.viInfo.vertexBindingDescriptionCount
-           && viInfo.vertexAttributeDescriptionCount  == other.viInfo.vertexAttributeDescriptionCount
-           && viDivisorInfo.vertexBindingDivisorCount == other.viDivisorInfo.vertexBindingDivisorCount
-           && viUseDynamicVertexStrides               == other.viUseDynamicVertexStrides;
-
-    for (uint32_t i = 0; i < viInfo.vertexBindingDescriptionCount && eq; i++) {
-      const auto& a = viBindings[i];
-      const auto& b = other.viBindings[i];
-
-      eq = a.binding    == b.binding
-        && a.stride     == b.stride
-        && a.inputRate  == b.inputRate;
-    }
-
-    for (uint32_t i = 0; i < viInfo.vertexAttributeDescriptionCount && eq; i++) {
-      const auto& a = viAttributes[i];
-      const auto& b = other.viAttributes[i];
-
-      eq = a.location   == b.location
-        && a.binding    == b.binding
-        && a.format     == b.format
-        && a.offset     == b.offset;
-    }
-
-    for (uint32_t i = 0; i < viDivisorInfo.vertexBindingDivisorCount; i++) {
-      const auto& a = viDivisors[i];
-      const auto& b = other.viDivisors[i];
-
-      eq = a.binding    == b.binding
-        && a.divisor    == b.divisor;
-    }
-
-    return eq;
+    return equalVertexInputState(*this, other);
   }
 
 

@@ -30,6 +30,7 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/test-native-umd.sh 2>&1 | tee native-existing.txt
+          CXX=g++ bash scripts/test-native-vertex-input.sh 2>&1 | tee native-vertex-input-gcc.txt
           bash scripts/test-umd-transfer.sh 2>&1 | tee transfer-gcc.txt
           CXX=clang++ bash scripts/test-umd-transfer.sh 2>&1 | tee transfer-clang.txt
           bash scripts/test-umd-mrt.sh 2>&1 | tee mrt-gcc.txt
@@ -41,6 +42,7 @@ jobs:
           name: dxvk-native-contracts-${{ github.sha }}
           path: |
             native-existing.txt
+            native-vertex-input-gcc.txt
             transfer-*.txt
             mrt-*.txt
           retention-days: 7

@@ -39,9 +39,16 @@ including384buffer621cd685, diagnostics1/0, durations8.316949s/10.8154619s.
 Each has24nonempty submits,ctx1/1alloc15/15lock14/14residency15/15remaining0
 wrong-thread0. All8payloads3scripts/LimitedUSERsession1 verify. Freshreadiness
 keeps signed58624/oem17/binding0002/PnP0/SYSsha,DWM1552/Explorer6464 and58fields
-unchanged; both owned tasks removedexit0. Next implement typeddepth/stencil
-resources, native binding/clear/lifetime and occlusion/stencil pixels.
-Then remaining state/resource contracts and runtime
+unchanged; both owned tasks removedexit0. Typeddepth/stencil source2d285542 now implements resources/binding/clear/lifetime.
+Committed native182260checks and four semantic controls independently verify56
+inputs. Single consolidatedCI37515057679 all6SUCCESS; fiveZIPdigests,
+threePEarchitectures/182260checks and14nativeARM64execution hashes verify.
+Exactdepth29/30 diagnostics1/0 pass2368pixels each, including896depth eac96ea5.
+Durations14.5854506s/14.7961268s;38nonempty submits,ctx1/1alloc14/14lock13/13
+residency14/14remaining0wrong-thread0. All8payloads3scripts/LimitedUSER1 verify;
+freshsigned58624/oem17/binding0002/PnP0/SYSsha,DWM1552/Explorer6464 and58fields
+retain; ownedtasks removedexit0. Next fixed-function transforms/material/light
+contracts and untransformed geometry pixel acceptance, followed by resources and
 presentation/reset, with ordinary system-runtime DX8-DX11 rendering acceptance.
 Keep the full goal active; no Finish, production exports/caps or paired pins
 until mandatory contracts and actual ordinary-runtime acceptance are complete.
@@ -618,5 +625,6 @@ gates and native fixture/semantic controls remain required.
 - [complete] Audit and implement typed VB/IB/range locks/streams/indexed drawing against local DDI docs.
 - [complete] Verify exact source6ca8770 native controls, consolidated cd4f5e2 architecture CI and buffer GPU pixels.
 - [complete] Record independently verified buffer hardware and EWDK build checkpoints.
-- [in_progress] Implement typed depth/stencil ownership and native clear semantics with occlusion/stencil pixel oracles.
+- [complete] Implement typed depth/stencil ownership and native clear semantics; exact targetdepth29/30 pixel/readiness proofs pass.
+- [in_progress] Implement missing typed fixed-function transform/material/light contracts and actual untransformed geometry pixel acceptance.
 - [pending] Complete remaining state/resource/presentation/reset and ordinary DX8-DX11 acceptance.

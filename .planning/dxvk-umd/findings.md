@@ -1240,3 +1240,61 @@ native controlled/semantic and actual target GPU gates before acceptance.
   empty rectangles, disjoint scissor and combined color/depth/stencil. Every
   case initializes distinguishable color/depth/stencil before rendering; no
   production caps/exports/registration or package pins change.
+
+### Independently verified committed depth contracts and runner preparation
+
+- Exact source2d28554271e2326c0baa7bfc578adb04d9e98e2c native ARM64 positive
+ 182260checks compiles6.8519516s/runs0.1222363s. EXEsha
+ b63169c0c10cf00daa88a86e977e957e7e0462c4c5d2c5c4bb941c63ab702cb7.
+ All56Git/source-archive/after-run inputs, nativeAA64/static runtime, signed
+ 58624/oem17 and desktop metadata independently verify asworktree01.
+- Four single-mutation controls compile and fail their intended assertions:
+ no-unbind5329line326; no-type-check4159line515; wrong-clear-flags2823line524;
+ clear-reread3167line859. Each fixture exit1 and probe/compiler exit0 verifies.
+ Evidenceartifacts/dxvk-native-d3d9-depth-20261007/native-fixtures-verification-01.txt.
+- Native PowerShell parser reports zero errors for three frozen depth GPU
+ runners; guest SHA256 hashes match depth-runner-scripts-01. GPU execution
+ remains pending the actual ARM64 renderer/backend artifact. Single automatic
+ consolidatedCI37515057679 runs; Linux/CPU checks pass, backend builds pending.
+
+### Next mandatory D3D9 gaps audited from local Microsoft docs
+
+- SetTransform/MultiplyTransform contain inline TransformType/Matrix, while
+ SetMaterial contains inline Diffuse/Ambient/Specular/Emissive/Power. Native
+ SetLight uses DATA/ENABLE/DISABLE bit flags and a separate optional pointed
+ D3DDDI_LIGHT payload, which must be snapshotted after device serialization.
+ These remain absent from the typed table; general DX8/DX9 fixed-function
+ acceptance cannot be inferred from transformed diffuse quad rendering.
+- Native BufferBlt specifies destination byteOffset and source byteRange;
+ SYSTEMMEM/managed buffer creation and notify/upload ownership remain absent.
+ Audit this next resource gate before advertising buffer/copy capabilities.
+- Production source remains pinned2d285542 during CI; no later source slice,
+ ordinary runtime activation, registration or package pin update is claimed.
+
+
+### Accepted depth/stencil checkpoint and next fixed-function work
+
+- Exact2d285542 consolidatedCI37515057679 all6SUCCESS independently verifies
+  all5rawZIPdigests, three PE architectures/182260device checks and14native
+  ARM64execution hashes. Root refreshes live CI after the GPU acceptance.
+- Exact targetdepth29/30 diagnostics1/0 independently pass2368pixels each,
+  including896depth/stencil pixels eac96ea5. Durations14.5854506s/14.7961268s;
+ 38nonempty rendercallbacks,ctx1/1alloc14/14lock13/13residency14/14remaining0
+ wrong-thread0. All8payloads3frozen scripts/nativeARM64/LimitedUSERsession1
+ verify; both ownedtasks removedexit0. Fresh readiness retains signed58624/
+ oem17/binding0002/PnP0/SYSsha,DWM1552/Explorer6464/starttimes and58selected
+ fields with zero delta. GPU archiveSHA c2e1f6f00d07d28909885a57cb27c28cd680b423306153d69c9184b9a01d3177 /
+ ef88465062eaa84cd63502641880b4b4c17a16076e1210f0acb39c6283058220.
+ Evidence artifacts/dxvk-native-d3d9-depth-20261007/depth-29 anddepth-30.
+- Preparation initially caught a copied expected-hash mismatch before starting
+ depth29; compare against the actual retained receipt and frozen hashes, then
+ start only after every preparation check passes. No failed GPU run occurred.
+- Correct the earlier SetLight documentation audit: local docs call DataType
+ bitwise flags, but actual target26100d3dumddi.h defines ENABLE=0,DISABLE=1,
+ DATA=2. Follow the exact typed enum and validate unsupported values; audit
+ CreateLight/DestroyLight lifetime along with separate optional light snapshots.
+- Next missing typed callbacks: SetTransform/MultiplyTransform, SetMaterial,
+ CreateLight/SetLight/DestroyLight. Add untransformed geometry and actual GPU
+ lighting acceptance. SYSTEMMEM/managedBufferBlt, other resources, queries,
+ presentation/reset and ordinary system-runtime DX8-DX11 remain mandatory.
+ No production caps/exports/registration/installation or paired pins change.

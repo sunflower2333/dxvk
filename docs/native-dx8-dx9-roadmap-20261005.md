@@ -60,8 +60,16 @@ signed base vertices. Consolidated cd4f5e2 CI37509470022 passes all6jobs;
 164072native device checks perarchitecture and four target semantic controls
 verify. Actual targetbuffer27/28 verify1472pixels each, including384buffer
 pixels621cd685,24nonempty submissions and balanced callbacks/residency,
-diagnostics1/0 with unchanged signed58624/desktop/readiness. Depth/stencil,
-remaining state/resource semantics, presentation/reset and ordinary
+diagnostics1/0 with unchanged signed58624/desktop/readiness.
+The [depth/stencil checkpoint](native-d3d9-depth-20261007.md) adds owned
+D16/D24S8 attachments and independent native color/depth/stencil clearing,
+including preclipped and computed rectangles. Exact2d285542 consolidated
+CI37515057679 passes all6jobs and182260device checks perarchitecture; four
+compiled semantic controls verify. Targetdepth29/30 verify2368pixels each,
+including896depth/stencil pixels eac96ea5,38nonempty submissions and balanced
+callbacks/residency, diagnostics1/0. Signed58624/DWM1552/Explorer6464 and58
+readiness fields remain unchanged through both runs. Remaining fixed-function
+state/resource semantics, presentation/reset and ordinary
 system-runtime acceptance remain open.
 Production OpenAdapter and rendering caps remain closed; the historical table
 is not an inventory of the new static core or device bridge.

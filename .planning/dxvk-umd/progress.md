@@ -818,3 +818,9 @@ leak on late D3D9 allocation failure; add local ownership guards before the
 final architecture validation. Successful destruction remains unchanged.
 Removed only the11verified generated support libraries and empty staging
 directories; retained reusable archive, guest toolchain and all evidence.
+
+CIeffb654 full37411400537 and offline37411402396 failed canonical WDK type
+compilation after neutral RuntimeGpu header removed a transitive D3D10 include.
+The raw query header needs d3d9types before d3dumddi. CPU ownership and shader
+jobs passed. Fix that explicit dependency, retain failed diagnostics, and run
+the final source including e46f10f constructor guards.

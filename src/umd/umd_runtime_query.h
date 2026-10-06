@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <d3d9types.h>
 #include <d3dumddi.h>
 #include "umd_runtime_identity.h"
 

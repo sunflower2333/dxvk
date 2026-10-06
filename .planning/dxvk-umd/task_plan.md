@@ -242,6 +242,10 @@ is a candidate package and must not replace it. This thread selects
 PWF_PLAN_ROOT=/home/sunf/droidvm-repos/dxvk-umd-ci/.planning/dxvk-umd explicitly.
 
 ## Errors
+- Embedded effb654 full37411400537/offline37411402396 failed Windows
+  compilation because the newly independent query/identity header included
+  d3dumddi before D3D9 types. Add canonical d3d9types before the DDI header;
+  retain failed logs and validate the repaired exact source.
 - Generated local support-staging cleanup using rm -rf was rejected before
   mutation by command policy. List the known generated .lib files and delete
   only those files, followed by empty directories; preserve all archives.

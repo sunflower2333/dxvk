@@ -555,3 +555,45 @@ fixed-function creation, but only deleted in the successful object's destructor.
 A late constructor failure can keep the DxvkDevice/runtime owner alive.
 Use local unique_ptr guards until construction commits; preserve existing
 successful destruction and module-detachment behavior.
+
+Source9b4168b offline37412714285 passed all four jobs. Full37412713033
+compiled all three embedded architecture cores but failed DLL linking:
+D3D9GlobalAnnotationList::s_instance was defined in excluded d3d9_main.cpp.
+The definition belongs in d3d9_annotation.cpp, shared by public API and embedded
+targets; moving it resolves ownership without embedding public API exports.
+Retained failed logs under the embedded evidence directory.
+
+Guest native ARM64 runtime header/owner fixture reports49PASS at exact9b4168b,
+compile/link0.8069173s, execution0.0603778s and runner1.0122613s. Receipt lists
+ten source inputs; all must be checked against Git plus executable/PE and
+driver/desktop continuity before claiming independent evidence verification.
+
+Guest receipt verification is complete: all10inputs match exact9b4168b Git
+blobs; EXE SHA256 matches, LLVM confirms nativeARM64 and no D3D/DXGI/Vulkan/
+dynamic CRT imports, compiler/run stderr empty and58623/desktop retained.
+Full replacement37415595130 runs exact2a4095c; identity/shader CPU jobsPASS.
+
+Next-device audit against local official WDK docs: CREATEDEVICE preserves the
+incoming opaque runtime hDevice then returns a unique driver handle. Its
+pCommandBuffer/allocation/patch-list fields are obsolete; obtain actual backing
+through CreateContextCb. Devices must not have an arbitrary hardcoded count
+limit. DestroyDevice must unlock allocations before DeallocateCb and release
+all device tracking. AllowMultithreading and AllowFlipBatching need separately
+supported semantics rather than passing raw Flags.Value as COM behavior flags.
+
+Resource bridge audit: CREATERESOURCE hResource is also in/out; runtime
+and driver handles must be distinct. SurfCount includes mip/face surfaces and
+must map to explicit resource/subresource ownership. Shared allocations must
+be created atomically in one AllocateCb and destroyed with runtime hResource,
+NumAllocations0; RuntimeGpu's internal Vulkan BO allocations are not sufficient
+proof of shared D3D9 resource semantics. Keep sharing/primary caps closed.
+References: workspace reference/codes/windows-driver-docs-ddi/wdk-ddi-src/
+content/{d3dumddi,d3dukmdt}; CreateDevice/DestroyDevice/CreateResource pages.
+
+Final2a4095c evidence verificationPASS: full37415595130 ALL6SUCCESS, all
+three native DLL architecture/import/export policies,42429adapter/49owner/
+45DLL-rejection checks per architecture, and all13nativeARM64 executable
+hashes tied to downloaded artifacts.166retained CI files hashed. Public API
+Windows37415565405 and package37415565396 alsoPASS at exact2a.
+The embedded checkpoint does not establish successful target construction,
+typed device/resource/rendering semantics or ordinary DX8/DX9 activation.

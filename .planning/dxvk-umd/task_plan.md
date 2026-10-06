@@ -7,19 +7,19 @@ the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-Typed native D3D9 development adapter is implemented, with zero rendering caps
-and no production OpenAdapter. Guest ARM64 fixture passed42429checks with
-warning-free source compilation; all nine source hashes and PE verification
-are being retained. Compile/link18.006s, fixture3.503s, runner28.599s.
-Installed58623 and DWM1644/Explorer5828 retained. Sourceaac5172 is pushed;
-offline37408748554 is all fourPASS, including x64/x86 DDI execution and
-ARM64 compilation. Full37408749906 is all sixPASS on that exact commit,
-including embedded builds and native ARM64 execution (42429 D3D9 checks).
-All148 full CI artifact files are retained/hashed, and independent PE/import/
-export checks PASS. The private D3D9 core, common exact-LUID factory and
-offscreen initializer are implemented locally; new ownership49 sanitizer
-checks PASS. Next validate exact-source architecture CI. Native device DDIs,
-rendering/admission and target GPU construction remain open.
+Implement typed native D3D9 device/resource/state/clear/draw/readback DDIs
+using the now validated embedded core. Production OpenAdapter/rendering caps
+remain closed and successful target GPU construction remains unproven.
+Embedded source2a4095c full37415595130 ALL6PASS: three builds and native ARM64
+execution with42429adapter/49owner/45DLL-rejection checks per architecture.
+166retained CI files hashed; independent PE/import/export checks and all13
+native ARM64 execution-to-download EXE hashesPASS. Normal API Windows37415565405
+and package37415565396PASS. Source9b4168b offline37412714285 ALL4PASS.
+Guest ARM64 header/owner fixture49PASS, compile/link0.807s/run0.060s; all ten
+exact Git inputs, EXE/PE and installed58623/desktop continuity verified.
+Earlier typed adapteraac5172 full37408749906/offline37408748554 alsoPASS;
+its guest42429check fixture and all148retained CI files remain verified.
+See docs/native-d3d9-embedded-20261006.md for scope, evidence and next ABI work.
 
 ## Validated D3D10 Checkpoint
 Rotation4f59adf passed all source CI and 1281 checks in the existing guest.
@@ -70,8 +70,14 @@ The next rendering slice remains embedded D3D9 with exact runtime ownership.
 ## 2026-10-06 embedded D3D9 continuation
 - [complete] Audit shared runtime identity/selection and offscreen construction.
 - [complete] Implement the embedded renderer without public factory or implicit WSI.
-- [in_progress] Validate negative controls, architecture builds and runtime ownership.
-- [pending] Record source/evidence and the remaining typed device/rendering gates.
+- [complete] Validate negative controls, architecture builds and runtime ownership.
+- [complete] Record source/evidence and the remaining typed device/rendering gates.
+
+## Next typed D3D9 device continuation
+- [pending] Implement device creation/destruction with raw runtime handles and callback dispatch.
+- [pending] Add typed offscreen resource/state/clear/draw/readback ownership.
+- [pending] Validate failure/reentry/teardown on all architectures and actual target GPU.
+- [pending] Implement runtime presentation/reset and prove ordinary DX8/DX9 acceptance.
 
 ## Previous next-step checkpoint (historical)
 GS7c0b9e3 CI34620365858 ALL5PASS. Both original/rebuilt GS16payloadwords
@@ -234,14 +240,19 @@ main explicitly asks not to stop at CPU OpenAdapter harness.
 Use the independent DXVK and paired driver checkouts; preserve unrelated
 dirty work in gunyah-guest-drivers-windows and existing VKD3D docs/pins.
 The user authorizes personal CI and remote testing. Keep the two SSH channels
-separate, use only the existing registered VM, and preserve its live saved
-6656MiB memory configuration. Complex remote work uses a script and scp; no
+separate, use only the existing registered VM, and preserve its configured
+memory size without a task-specific cap. Complex remote work uses a script and scp; no
 base64 commands. Backups are copy-only and partition changes are forbidden.
 Preserve driver58623 and the active desktop; the older paired58522 baseline
 is a candidate package and must not replace it. This thread selects
 PWF_PLAN_ROOT=/home/sunf/droidvm-repos/dxvk-umd-ci/.planning/dxvk-umd explicitly.
 
 ## Errors
+- Embedded9b4168b full37412713033 compiled all three cores but failed DLL
+  linking because the annotation singleton lived in excluded d3d9_main.cpp.
+  Source2a4095c moves it into shared d3d9_annotation.cpp; full37415595130 ALL6PASS.
+- Two combined manual patches failed on wrapped planning anchors without
+  changing files; corrected exact anchors before applying the source repair.
 - Embedded effb654 full37411400537/offline37411402396 failed Windows
   compilation because the newly independent query/identity header included
   d3dumddi before D3D9 types. Add canonical d3d9types before the DDI header;

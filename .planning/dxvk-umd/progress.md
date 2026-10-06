@@ -824,3 +824,42 @@ compilation after neutral RuntimeGpu header removed a transitive D3D10 include.
 The raw query header needs d3d9types before d3dumddi. CPU ownership and shader
 jobs passed. Fix that explicit dependency, retain failed diagnostics, and run
 the final source including e46f10f constructor guards.
+
+Resumed the embedded D3D9 continuation with the pinned plan and clean9b4168b.
+Collected offline37412714285 ALL4PASS and full37412713033 failure: ARM64,
+x64 and x86 all compiled then failed the same missing annotation singleton.
+Moved its definition into d3d9_annotation.cpp, shared by public/embedded
+targets. Retained full failed diagnostics. Guest output transfer completed;
+receipt49PASS/0.807s compile/0.060s run awaits independent input/PE checks.
+No installed driver, guest desktop or VM configuration changed.
+Two combined patches failed on wrapped plan/progress anchors; neither changed
+files before the corrected patch applied.
+
+Pushed annotation link repair2a4095c with session trailers; replacement
+full37415595130 runs that exact source. Identity jobPASS; architecture builds
+continue. Added reusable guest and full CI verification scripts. Guest
+verificationPASS: exact Git input hashes10, executable hash/nativeARM64 PE,
+49checks, empty compiler/run stderr and installed58623/desktop continuity.
+Drafted embedded renderer checkpoint and updated adapter/roadmap links;
+final architecture/DLL/nativeARM64 evidence remains pending.
+
+Full37415595130 identity/shader/x64/x86 jobsPASS; ARM64 build continues.
+x64/x86 artifacts11390954382/11390859803 are published and downloading.
+The standard API build also completed its x86 phase and is building x64,
+providing regression coverage for the moved shared annotation definition.
+Recorded official next-device/resource contract requirements in findings.
+
+Full37415595130 ALL6PASS at exact2a4095c, including native ARM64 execution.
+All three architecture logs confirm42429adapter/49owner/45DLL-rejection checks.
+Normal public API Windows37415565405 and package37415565396 alsoPASS at2a.
+Downloaded x64/x86 and native ARM64 validation outputs; ARM64 core download
+still running. Retained full logs/status/artifact metadata (four artifacts).
+Independent PE/import/export verification is the remaining validation step.
+
+Independent final verificationPASS: three actual DLL PE architectures,
+required development exports, absent production OpenAdapter/public D3D factory
+exports and forbidden factory imports. All13nativeARM64 executed EXE hashes
+match downloaded artifacts;166retained CI files hashed. Guest49check receipt
+was already verified. Finalized embedded checkpoint/roadmap/planning records
+and marked the bounded embedded continuation complete. Next remains actual
+typed D3D9 device/resource/rendering implementation and target GPU proof.

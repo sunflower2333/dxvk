@@ -67,9 +67,10 @@ toolchain remains reusable and unchanged.
 
 ## Next Implementation
 
-Embed the existing D3D9 translation core with exact runtime LUID/Turnip
-selection, runtime callbacks before Vulkan device creation, and an offscreen
-construction path without an implicit swapchain. Implement typed D3D9 device
+The [embedded renderer checkpoint](native-d3d9-embedded-20261006.md) adds
+exact runtime LUID/Turnip selection, copied runtime callbacks before Vulkan
+device creation, and an offscreen path without an implicit swapchain.
+Successful target construction remains unproven. Implement typed D3D9 device
 and resource/state/render/readback DDIs before exposing rendering caps or
 production `OpenAdapter`. Runtime-owned presentation/reset and independent
 DX8 system-runtime acceptance follow. See the

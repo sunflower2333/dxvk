@@ -10,6 +10,10 @@ The 2026-10-06 [typed adapter checkpoint](native-d3d9-adapter-20261006.md)
 adds identity/caps/lifetime development contracts. It keeps rendering caps
 zero, CreateDevice unavailable and production OpenAdapter absent. The table
 below describes the earlier rendering/package baseline.
+The [embedded renderer checkpoint](native-d3d9-embedded-20261006.md) now adds
+the private D3D9 core, common exact-LUID/runtime owner factory and offscreen
+initializer. Typed device/rendering DDIs and successful target construction
+remain open; the historical table is not an inventory of the new static core.
 
 | Path | Current evidence | Meaning |
 | --- | --- | --- |
@@ -68,4 +72,5 @@ before this adapter slice can become a rendering acceptance result.
 - GG's candidate pipeline currently accepts only a closed-admission, unregistered DXVK candidate (`flat_package.py:195`) and verifies D3D10 exports (`build_candidate_umds.ps1:172`). Extend those contracts deliberately when D3D9 is implemented; keep successful compile/load/probe results distinct from native runtime rendering acceptance.
 - Local Microsoft references: `windows-driver-docs/.../display/initializing-communication-with-the-direct3d-user-mode-display-driver.md` describes the D3DDDI handshake; `enabling-support-for-the-direct3d-version-11-ddi.md` defines ordered registry slots. The `required-direct3d-9-capabilities.md` 9_1/9_2/9_3 tables concern level-9 capability exposure; they are not a complete D3D9 API/SM3 conformance checklist.
 
-No production source, registration or remote VM changed during this audit.
+The initial 2026-10-05 audit changed no source, registration or remote VM.
+Subsequent development and validation are recorded in the checkpoints above.

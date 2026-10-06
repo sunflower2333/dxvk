@@ -1360,3 +1360,49 @@ hash-verified against the original task config, retained under scripts/.
 - --draw adds192 quad/scissor/partial-color-write pixels plus original192 clear
   pixels; independently computed draw checksum53a03d45. Full production CI and
   hardware draw proof next; ordinary admission/caps/paired pins unchanged.
+
+### Committed draw source and architecture CI
+
+Sourcec874d55af7928c1ebcce3d0a4ec6c6311580f3a5 pushed. All52 native fixture
+inputs match committed Git bytes. Full renderer37477931517 and offline
+37477937872 dispatched on this exact source; offline all4SUCCESS, full identity
+and shader jobs SUCCESS, renderer architectures still running. API37477846431
+and package37477846467 also linked. Source/CI JSON retained under draw artifacts.
+Draw harness mode supports the strict384-pixel oracle and retains independent
+Limited task/scripts/source/payload/teardown verification. Android SSH8022 and
+ADB5555 healthy; root observes same VM10130/6656MiB, no VM/config/image change.
+
+### Exact draw production gates and candidate staging
+
+Full37477931517 all6SUCCESS and offline37477937872 all4SUCCESS; API
+37477846431/package37477846467 SUCCESS. Downloaded all four full artifacts;
+independent verifier passes three PE architectures, imports/exports closed,
+42429 adapter/49 backend/45 reject/89329 device checks and14 actual ARM64
+execution hashes. Exact ARM64artifact11421036350 is sourcec874d55; candidate
+UMDsha f4061b32d91fc136ce975ed9af8a706cd6d3f3037482a86b9483010c98ce80b8,
+probesha31767d9126c95c4f7f599f85d3f69963128412ada40dbd47eda429ec6e58741a.
+Archiveb4d31a30754e6f16fec89c7b49a4f3faea7467d1590773d4eb2662a71150b038
+and all three staged payloads independently verify in the guest. No registry
+or installation. Fresh Limited USER/session1 draw20 prepared with identical
+UMD/probe source, matchedMesa8443 and three verified script hashes. Actual
+quad/scissor/colour-mask run next; no target draw acceptance yet.
+
+### Verified hardware D3D9 draw20/21 and next shader work
+
+- Sourcec874d55 full37477931517 all6SUCCESS/offline37477937872 all4SUCCESS;
+  API37477846431/package37477846467 SUCCESS. Downloaded3architectures and
+  14 actual native ARM64 execution hashes independently verified.
+- Exact c874 UMD/probe with matchedMesa8443 and installed58624 pass target20/21,
+  diagnostics1/0. Both independently verify384pixels (192clearffefa655,
+  192draw53a03d45), intact padded readback, nonzero vertex-start and three
+  quad/scissor/colour-mask stages. Six nonempty KMT submits succeed; context1/1,
+  allocation10/10, lock9/9, residency10/10 and wrong-thread0. Elapsed3.7381376s
+  and2.9324823s; eight payloads/three scripts/nativeARM64/Limited USER session1.
+- Evidence archives22b0e6fcb1a61c60e8c294bf4a1364b1288ae6201f498faf5c64402f276e375f
+  and92c86b386e833d37c120234037b9a875ed0559a7accbb48b749457d9832a913e
+  independently verified. Both owned tasks removed. Fresh exact signed58624/
+  oem17/SYSsha/PnP0/binding0002 and DWM1552/Explorer4184 retained;54 native
+  render-failure/reset/epoch/timeout/admission values unchanged after both runs.
+- Record offscreen draw acceptance only. Next typed programmable shader and
+  constant ownership; textures/buffers, presentation/reset and ordinary DX8-DX11
+  system-runtime acceptance remain open. Full goal active, no caps/pins widened.

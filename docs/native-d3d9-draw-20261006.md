@@ -36,7 +36,35 @@ The `--draw` target probe retains the original192-pixel clear oracle and adds
 Expected draw checksum is `53a03d45`, computed independently from the pixel
 cases. It checks a nonzero vertex-start offset, updates to already-bound user
 memory, padded readback guards, actual nonempty submissions and balanced
-lifetimes. Full production architecture CI and target draw proof are pending.
+lifetimes. Exact source `c874d55af7928c1ebcce3d0a4ec6c6311580f3a5`
+passes full CI37477931517 (all six jobs), offline37477937872 (all four),
+API37477846431 and package37477846467. Downloaded ARM64/x64/x86 artifacts
+independently verify their PE architecture, closed exports/imports,
+42429 adapter/49 backend/45 rejection/89329 device checks per architecture
+and 14 hashes from actual ARM64 execution.
+
+Target runs `draw-c874d55-58624-20` and `-21` pass with Mesa diagnostics
+enabled and disabled respectively. Each independently verifies all384 pixels:
+192 clear pixels (`ffefa655`) and192 quad/scissor/colour-mask pixels
+(`53a03d45`), intact padding, vertex-start1 and three draw stages. Six nonempty
+KMT submissions succeed; context1/1, allocations10/10, locks9/9, residency10/10
+and zero wrong-thread callbacks balance. Elapsed times are3.7381376s and
+2.9324823s. The eight payload hashes, native ARM64 executable, three script
+hashes and Limited USER/session1 token verify independently for both runs.
+
+The exact UMD hash is
+`f4061b32d91fc136ce975ed9af8a706cd6d3f3037482a86b9483010c98ce80b8`;
+the same-source probe hash is
+`31767d9126c95c4f7f599f85d3f69963128412ada40dbd47eda429ec6e58741a`.
+Matched Mesa remains8443c71; installed signed KMD remains58624/oem17,
+PnP0/binding0002 with SYS hash
+`d48e118a89b83df49e1da2f4b26e57b13d7f40ee6a42ad19ff6ea0328989650a`.
+Fresh readiness records retain DWM1552/Explorer4184 and show no new native
+render-failure/reset/epoch/timeout/admission values. Both owned tasks are
+removed. No driver installation, production registration or paired pin changes.
+Evidence archive hashes are
+`22b0e6fcb1a61c60e8c294bf4a1364b1288ae6201f498faf5c64402f276e375f`
+and `92c86b386e833d37c120234037b9a875ed0559a7accbb48b749457d9832a913e`.
 
 Textures/buffers, programmable shaders, indexed/multistream/edge-flag drawing,
 depth/stencil, remaining legacy state, sharing/queries, presentation/reset and

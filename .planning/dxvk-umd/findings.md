@@ -967,3 +967,23 @@ Non-null DrawPrimitive edge flags describe line-fill triangle edges and need
 a separate path; this slice accepts the fast path only. Multi-stream/buffer
 and indexed draw remain explicit gates. The clear/readback slice18/19 remains
 verified; new quad/scissor/colour-mask checks have no target receipt yet.
+
+### Verified hardware D3D9 draw20/21 and next shader work
+
+- Sourcec874d55 full37477931517 all6SUCCESS/offline37477937872 all4SUCCESS;
+  API37477846431/package37477846467 SUCCESS. Downloaded3architectures and
+  14 actual native ARM64 execution hashes independently verified.
+- Exact c874 UMD/probe with matchedMesa8443 and installed58624 pass target20/21,
+  diagnostics1/0. Both independently verify384pixels (192clearffefa655,
+  192draw53a03d45), intact padded readback, nonzero vertex-start and three
+  quad/scissor/colour-mask stages. Six nonempty KMT submits succeed; context1/1,
+  allocation10/10, lock9/9, residency10/10 and wrong-thread0. Elapsed3.7381376s
+  and2.9324823s; eight payloads/three scripts/nativeARM64/Limited USER session1.
+- Evidence archives22b0e6fcb1a61c60e8c294bf4a1364b1288ae6201f498faf5c64402f276e375f
+  and92c86b386e833d37c120234037b9a875ed0559a7accbb48b749457d9832a913e
+  independently verified. Both owned tasks removed. Fresh exact signed58624/
+  oem17/SYSsha/PnP0/binding0002 and DWM1552/Explorer4184 retained;54 native
+  render-failure/reset/epoch/timeout/admission values unchanged after both runs.
+- Record offscreen draw acceptance only. Next typed programmable shader and
+  constant ownership; textures/buffers, presentation/reset and ordinary DX8-DX11
+  system-runtime acceptance remain open. Full goal active, no caps/pins widened.

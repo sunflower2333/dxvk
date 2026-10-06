@@ -20,9 +20,19 @@ Limited USER/session1 and driver/desktop continuity independently verify.
 Failed16/17 receipts remain immutable. Probe offline37472553344 all4PASS.
 Typed declaration/state/UMstream/nonindexed draw worktree is implemented.
 Native fixture89329PASS and three compiled semantic mutations independently
-verify. Next commit and build all architecture production gates, then run the
-strict384-pixel clear+draw oracle in the existing VM. Draws, presentation/reset and ordinary DX8-DX11 remain open; keep the
-full goal active. Do not widen caps, production exports or paired binary pins.
+verify. Sourcec874d55 full37477931517 all6PASS/offline37477937872 all4PASS;
+three architecture artifacts and14 actual ARM64 execution hashes independently
+verify. Target draw20/21 both independently PASS384 pixels, clearffefa655 /
+draw53a03d45, six nonempty KMT submits and balanced ctx1/1 alloc10/10 lock9/9
+residency10/10 wrong0, diagnostics1/0. Eight payloads, three scripts, native
+ARM64 and Limited USER/session1 verify. Fresh signed58624/oem17/PnP0/SYSsha
+and DWM1552/Explorer4184 continuity retain all54 sensitive readiness values.
+Next implement typed programmable VS/PS create/bind/delete and constant uploads
+with bounded caller snapshots and renderer-worker ownership; validate native
+fixture, compiled semantic controls, all architecture CI and real shader pixels.
+Textures/buffers, indexed/multistream drawing, presentation/reset and ordinary
+DX8-DX11 remain open. Keep the full goal active; no caps, production exports
+or paired binary pin widening until their mandatory contracts are ready.
 
 Matched Mesa8443c71 fixes the measured missing runtime bridge on pinned3e50dd4.
 Full ARM64 CI37453384744 all3PASS; multiarchitecture37453381660 all4PASS.

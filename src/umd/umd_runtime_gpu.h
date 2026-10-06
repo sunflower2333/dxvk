@@ -1,6 +1,6 @@
 #pragma once
 
-#include "umd_adapter.h"
+#include "umd_adapter_identity.h"
 #include "umd_runtime_bridge.h"
 #include "umd_runtime_service.h"
 #include <map>

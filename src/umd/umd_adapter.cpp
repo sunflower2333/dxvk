@@ -180,7 +180,7 @@ HRESULT open(D3D10DDIARG_OPENADAPTER* args, bool modern, bool development) {
     if (FAILED(hr)) return hr;
     auto identity = std::make_shared<dxvk::umd::AdapterIdentity>();
     std::memcpy(&identity->luid, reply.luid.data(), sizeof(LUID));
-    identity->runtime = args->hRTAdapter;
+    identity->runtime = args->hRTAdapter.handle;
     identity->query = query;
     identity->generation = reply.generation;
     identity->capabilities = reply.capabilities;

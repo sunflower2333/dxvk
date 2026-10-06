@@ -47,7 +47,7 @@ HRESULT dxvk::umd::createAdapterDevice(
     const std::shared_ptr<const AdapterIdentity>& identity, D3D10DDIARG_CREATEDEVICE* args) {
   deviceCalls++;
   CHECK(identity && std::memcmp(&identity->luid, &expectedLuid, sizeof(LUID)) == 0);
-  CHECK(identity->runtime.handle == &adapterCookie);
+  CHECK(identity->runtime == &adapterCookie);
   CHECK(args->hRTDevice.handle == &deviceCookie);
   CHECK(args->hRTCoreLayer.handle == &coreCookie);
   CHECK(args->hDrvDevice.pDrvPrivate == &privateCookie);

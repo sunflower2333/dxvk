@@ -1,15 +1,11 @@
 #pragma once
 
 #include "../d3d11/d3d11_device.h"
-#include "umd_identity.h"
-#include "umd_runtime_bridge.h"
+#include "umd_gpu_backend.h"
 
 namespace dxvk::umd {
 
-struct Backend {
-  Rc<DxvkInstance> instance;
-  Rc<DxvkAdapter> adapter;
-  Rc<DxvkDevice> device;
+struct Backend : GpuBackend {
   Com<ID3D11Device> d3d;
   Com<ID3D11DeviceContext> context;
 

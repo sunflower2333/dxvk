@@ -207,7 +207,7 @@ static std::unique_ptr<Fixture> setup() {
   f->input.pfnCreateContextCb = createContext; f->input.pfnDestroyContextCb = destroyContext;
   f->input.pfnEscapeCb = escape; f->input.pfnRenderCb = render;
   f->identity = std::make_shared<dxvk::umd::AdapterIdentity>();
-  f->identity->luid = f->luid; f->identity->runtime.handle = &f->adapter;
+  f->identity->luid = f->luid; f->identity->runtime = &f->adapter;
   f->identity->query = query; f->identity->generation = f->generation; f->identity->capabilities = 3;
   f->gpu = RuntimeGpu::create(&f->device, f->input, f->identity);
   f->bridge = f->gpu->backend();

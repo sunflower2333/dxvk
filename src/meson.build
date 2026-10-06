@@ -22,7 +22,7 @@ if get_option('enable_d3d10')
   subdir('d3d10')
 endif
 
-if get_option('enable_d3d9')
+if get_option('enable_d3d9') or get_option('enable_umd')
   subdir('d3d9')
 endif
 

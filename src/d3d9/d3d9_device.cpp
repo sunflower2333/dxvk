@@ -441,7 +441,7 @@ namespace dxvk {
   UINT STDMETHODCALLTYPE D3D9DeviceEx::GetNumberOfSwapChains() {
     // This only counts the implicit swapchain...
 
-    return 1;
+    return m_implicitSwapchain != nullptr ? 1 : 0;
   }
 
 
@@ -8996,6 +8996,31 @@ namespace dxvk {
     SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
 
     return D3D_OK;
+  }
+
+
+  HRESULT D3D9DeviceEx::InitializeNativeOffscreen() {
+    D3D9DeviceLock lock = LockDevice();
+    if (!m_parent->IsNativeRenderer() || m_implicitSwapchain != nullptr)
+      return D3DERR_INVALIDCALL;
+
+    D3DPRESENT_PARAMETERS defaults = {};
+    defaults.Windowed = TRUE;
+    ResetState(&defaults);
+    const D3DVIEWPORT9 viewport = {0, 0, 1, 1, 0.0f, 1.0f};
+    const RECT scissor = {0, 0, 1, 1};
+    SetViewport(&viewport);
+    SetScissorRect(&scissor);
+    return FlushRuntimeSubmission();
+  }
+
+
+  HRESULT D3D9DeviceEx::FlushRuntimeSubmission() {
+    D3D9DeviceLock lock = LockDevice();
+    ExecuteFlush(false);
+    SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
+    return m_dxvkDevice->synchronizeSubmission() == VK_SUCCESS
+      ? D3D_OK : D3DERR_DEVICELOST;
   }
 
 

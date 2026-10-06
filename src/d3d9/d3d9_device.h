@@ -1101,6 +1101,10 @@ namespace dxvk {
 
     HRESULT InitialReset(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode);
 
+    HRESULT InitializeNativeOffscreen();
+
+    HRESULT FlushRuntimeSubmission();
+
     /**
      * \brief Returns the allocator used for unmappable system memory texture data
      */

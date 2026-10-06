@@ -24,6 +24,10 @@ namespace dxvk {
         const D3D9ON12_ARGS* pOverrideList,
               uint32_t       OverrideCount);
 
+    // Private renderer parent: one already selected adapter, no singleton,
+    // display enumeration, DPI mutation or public device factory.
+    D3D9InterfaceEx(Rc<DxvkInstance> instance, Rc<DxvkAdapter> adapter);
+
     ~D3D9InterfaceEx();
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);
@@ -163,6 +167,8 @@ namespace dxvk {
 
     Rc<DxvkInstance> GetInstance() { return m_instance; }
 
+    bool IsNativeRenderer() const { return m_nativeRenderer; }
+
     bool HasFormatsUnlocked() const { return m_unlockAdditionalFormats; }
 
     void EnableAdditionalFormats() {
@@ -177,6 +183,7 @@ namespace dxvk {
     }
 
     Rc<DxvkInstance>              m_instance;
+    bool                         m_nativeRenderer = false;
 
     DxvkLegacyD3DInterfaceBridge  m_legacyD3DBridge;
     D3DCompatibilityFlags         m_d3dCompatibility;

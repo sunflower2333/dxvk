@@ -139,7 +139,7 @@ struct Fixture {
     args.DXGIBaseDDI.pDXGIBaseCallbacks = &callbacks;
     args.DXGIBaseDDI.pDXGIDDIBaseFunctions = &dxgi;
     auto identity = std::make_shared<dxvk::umd::AdapterIdentity>();
-    identity->luid = luid; identity->runtime.handle = &deviceCookie; identity->query = query;
+    identity->luid = luid; identity->runtime = &deviceCookie; identity->query = query;
     identity->generation = 19; identity->capabilities = 3;
     CHECK(dxvk::umd::createAdapterDevice(identity, &args) == S_OK);
     CHECK(dxgi.pfnRotateResourceIdentities && dxgi.pfnPresent);

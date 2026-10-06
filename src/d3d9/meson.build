@@ -14,7 +14,6 @@ d3d9_shaders = files([
 ])
 
 d3d9_src = [
-  'd3d9_main.cpp',
   'd3d9_interface.cpp',
   'd3d9_adapter.cpp',
   'd3d9_monitor.cpp',
@@ -53,6 +52,18 @@ d3d9_src = [
   'd3d9_shader_analysis.cpp',
 ]
 
+d3d9_shader_headers = glsl_generator.process(d3d9_shaders)
+
+if get_option('enable_umd')
+  d3d9_umd_core = static_library('dxvk-d3d9-umd-core',
+    d3d9_src, d3d9_shader_headers,
+    dependencies : [dxbc_spirv_dep, dxvk_dep],
+    include_directories : dxvk_include_path,
+  )
+endif
+
+if get_option('enable_d3d9')
+
 d3d9_ld_args      = []
 d3d9_link_depends = []
 
@@ -61,7 +72,7 @@ if platform != 'windows'
   d3d9_link_depends += files('d3d9.sym')
 endif
 
-d3d9_dll = shared_library(dxvk_name_prefix+'d3d9', d3d9_src, glsl_generator.process(d3d9_shaders), d3d9_res,
+d3d9_dll = shared_library(dxvk_name_prefix+'d3d9', d3d9_src, 'd3d9_main.cpp', d3d9_shader_headers, d3d9_res,
   dependencies        : [ dxbc_spirv_dep, dxvk_dep ],
   include_directories : dxvk_include_path,
   install             : true,
@@ -81,4 +92,5 @@ if platform != 'windows'
     filebase: dxvk_pkg_prefix + 'd3d9',
     subdirs:  'dxvk',
   )
+endif
 endif

@@ -254,7 +254,7 @@ int main() {
   callbacks.pfnUnlockCb = unlock; requestedFormat = 3;
   auto identity = std::make_shared<dxvk::umd::AdapterIdentity>();
   identity->luid = luid; identity->generation = generation;
-  identity->capabilities = capabilities; identity->runtime.handle = &adapterCookie;
+  identity->capabilities = capabilities; identity->runtime = &adapterCookie;
   identity->query = query;
   for (char phase : {'A', 'L', 'U', 'C', 'P'}) {
     RuntimeMemory bound;

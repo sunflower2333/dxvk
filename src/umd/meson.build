@@ -1,5 +1,6 @@
-umd_backend = static_library('dxvk-umd-backend', 'umd_backend.cpp',
-  link_with : [d3d11_umd_core],
+umd_backend = static_library('dxvk-umd-backend',
+  'umd_backend.cpp', 'umd_gpu_backend.cpp', 'umd_d3d9_backend.cpp',
+  link_with : [d3d11_umd_core, d3d9_umd_core],
   dependencies : [dxvk_dep, dxbc_spirv_dep, lib_gdi32, lib_dxgi],
   include_directories : dxvk_include_path,
 )
@@ -62,6 +63,15 @@ umd_adapter_test = executable('dxvk-umd-adapter-test',
 
 umd_d3d9_adapter_test = executable('dxvk-umd-d3d9-adapter-test',
   '../../tests/umd-d3d9-adapter.cpp', 'umd_d3d9_adapter.cpp', 'umd_runtime_query.cpp',
+)
+
+umd_runtime_backend_test = executable('dxvk-umd-runtime-backend-test',
+  '../../tests/umd-runtime-backend.cpp',
+)
+
+umd_d3d9_backend_test = executable('dxvk-umd-d3d9-backend-test',
+  '../../tests/umd-d3d9-backend.cpp',
+  link_with : [umd_development],
 )
 
 native_entry_sources = ['../../tests/umd-native-entry.cpp', 'umd_adapter.cpp',

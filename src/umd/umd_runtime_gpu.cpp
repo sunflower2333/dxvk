@@ -129,7 +129,7 @@ HRESULT RuntimeGpu::context() {
     D3DDDICB_ESCAPE escape = {};
     escape.hDevice = m_device; escape.hContext = m_context;
     escape.pPrivateDriverData = &reply; escape.PrivateDriverDataSize = sizeof(reply);
-    hr = exact(cb.pfnEscapeCb(m_identity->runtime.handle, &escape));
+    hr = exact(cb.pfnEscapeCb(m_identity->runtime, &escape));
     if (!m_live) return DXGI_ERROR_DEVICE_REMOVED;
   }
   if (hr == S_OK && (!reply.header.valid(sizeof(reply)) || reply.opcode != 1 || reply.flags
@@ -394,7 +394,7 @@ int32_t MWD_CALL RuntimeGpu::completed(void* ptr, uint32_t* out) {
   Fence info; info.expected = self.m_info.generation;
   D3DDDICB_ESCAPE request = {}; request.hDevice = self.m_device; request.hContext = self.m_context;
   request.pPrivateDriverData = &info; request.PrivateDriverDataSize = sizeof(info);
-  HRESULT hr = exact(self.m_callbacks.pfnEscapeCb(self.m_identity->runtime.handle, &request));
+  HRESULT hr = exact(self.m_callbacks.pfnEscapeCb(self.m_identity->runtime, &request));
   if (!call.live(true)) return DXGI_ERROR_DEVICE_REMOVED;
   if (hr == S_OK && (!info.header.valid(sizeof(info)) || info.opcode != 2 || info.flags || info.reserved
       || info.expected != self.m_info.generation || info.generation != info.expected

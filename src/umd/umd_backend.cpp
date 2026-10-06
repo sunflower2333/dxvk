@@ -58,45 +58,8 @@ HRESULT Backend::create(const AdapterLuid& luid,
 
   try {
     auto backend = std::make_unique<Backend>();
-    backend->instance = new DxvkInstance(0);
-
-    // Check every candidate and reject ambiguous identities. Driver ID is
-    // checked independently: a matching LUID on a software ICD is not proof
-    // of the requested Turnip device.
-    for (uint32_t i = 0; i < backend->instance->adapterCount(); i++) {
-      auto adapter = backend->instance->enumAdapters(i);
-      const auto info = adapter->info();
-      AdapterLuid candidate;
-      std::memcpy(candidate.data(), info.deviceLuid, candidate.size());
-      if (!matchesAdapter(luid, info.luidIsValid, candidate,
-                          VK_DRIVER_ID_MESA_TURNIP, info.driverId))
-        continue;
-      if (backend->adapter)
-        return DXGI_ERROR_UNSUPPORTED;
-      backend->adapter = adapter;
-    }
-    if (!backend->adapter)
-      return DXGI_ERROR_NOT_FOUND;
-
-    if (runtime) {
-      if (!runtime->owner || runtime->create.owner != runtime->owner.get()
-          || runtime->create.sType != MWD_STYPE_DEVICE || runtime->create.pNext
-          || !mwd_callbacks_valid(runtime->create.callbacks)) return E_INVALIDARG;
-      mwd_support support = {MWD_STYPE_SUPPORT, nullptr, 0, 0, 0, 0};
-      VkPhysicalDeviceProperties2 properties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-      properties.pNext = &support;
-      backend->instance->vki()->vkGetPhysicalDeviceProperties2(backend->adapter->handle(), &properties);
-      if (support.magic != MWD_RUNTIME_MAGIC || support.version != MWD_RUNTIME_ABI_VERSION
-          || support.size != sizeof(mwd_callbacks) || support.flags != 1) return DXGI_ERROR_UNSUPPORTED;
-      mwd_context_info contextInfo = {};
-      const HRESULT ready = runtime->create.callbacks->context(runtime->create.owner, &contextInfo);
-      if (ready != S_OK) return FAILED(ready) ? ready : E_FAIL;
-      if (std::memcmp(contextInfo.luid, luid.data(), luid.size()) || !contextInfo.generation
-          || !contextInfo.context_id || !contextInfo.queue_id) return DXGI_ERROR_DEVICE_REMOVED;
-    }
-    // The callback owner reaches VkDeviceCreateInfo before Turnip allocates any
-    // internal BO. Native runtime creation never falls back to direct KMT.
-    backend->device = backend->adapter->createDevice(runtime);
+    const HRESULT initialized = backend->initialize(luid, 0, runtime);
+    if (FAILED(initialized)) return initialized;
     // The embedded renderer implements DDI operations using D3D11 facilities
     // (notably NO_RASTERIZED_STREAM). Do not mislabel that implementation FL10.
     // Adapter capability admission remains independent and fail-closed.

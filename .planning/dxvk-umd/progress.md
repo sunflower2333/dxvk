@@ -811,3 +811,10 @@ private parent and offscreen state/submission initialization. Development
 construction/teardown helper publishes no COM renderer or typed device DDI.
 Added portable ownership and actual DLL rejection fixtures; wired full builds
 and ARM64 execution. Local sanitizers69/180/49/147PASS. Architecture CI next.
+
+Adapter docs checkpointd2c2e05 and embedded sourceeffb654 pushed. Requested
+full/offline CI for sourceeffb. Cleanup audit then found a constructor helper
+leak on late D3D9 allocation failure; add local ownership guards before the
+final architecture validation. Successful destruction remains unchanged.
+Removed only the11verified generated support libraries and empty staging
+directories; retained reusable archive, guest toolchain and all evidence.

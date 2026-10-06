@@ -74,11 +74,17 @@ namespace dxvk {
     if (canSWVP)
       Logger::info("D3D9DeviceEx: Using extended constant set for software vertex processing.");
 
+    // Keep helpers owned during construction: later resource creation may
+    // fail, before this object's destructor can drain and release them.
+    std::unique_ptr<D3D9UserDefinedAnnotation> annotation;
     if (m_dxvkDevice->debugFlags().test(DxvkDebugFlag::Markers))
-      m_annotation = new D3D9UserDefinedAnnotation(this);
+      annotation = std::make_unique<D3D9UserDefinedAnnotation>(this);
+    m_annotation = annotation.get();
 
-    m_initializer      = new D3D9Initializer(this);
-    m_converter        = new D3D9FormatHelper(m_dxvkDevice);
+    auto initializer = std::make_unique<D3D9Initializer>(this);
+    m_initializer = initializer.get();
+    auto converter = std::make_unique<D3D9FormatHelper>(m_dxvkDevice);
+    m_converter = converter.get();
 
     EmitCs([
       cDevice = m_dxvkDevice
@@ -151,6 +157,9 @@ namespace dxvk {
     BindFFUbershader<D3D9ShaderType::PixelShader>();
 
     m_unlockAdditionalFormats = m_parent->HasFormatsUnlocked();
+    annotation.release();
+    initializer.release();
+    converter.release();
   }
 
 

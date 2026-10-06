@@ -548,3 +548,10 @@ The concrete device remains internal; the development probe returns only
 swapchain count and destroys it synchronously. An active caller dispatcher is
 required across constructor worker joins and destruction. This source slice
 does not wire typed CreateDevice or claim successful target GPU construction.
+
+Failure-path review found existing D3D9 constructor raw helper ownership:
+annotation/initializer/converter are allocated before constant-buffer and
+fixed-function creation, but only deleted in the successful object's destructor.
+A late constructor failure can keep the DxvkDevice/runtime owner alive.
+Use local unique_ptr guards until construction commits; preserve existing
+successful destruction and module-detachment behavior.

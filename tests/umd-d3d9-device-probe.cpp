@@ -1244,7 +1244,8 @@ public:
         hr = api.pfnSetViewport(m_driverDevice,&clipViewport); if (FAILED(hr)) return hr;
         for (const auto clipState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_ZENABLE,0},
           {D3DDDIRS_STENCILENABLE,0},{D3DDDIRS_SCISSORTESTENABLE,0},
-          {D3DDDIRS_LIGHTING,0},{D3DDDIRS_COLORVERTEX,1},{D3DDDIRS_CLIPPLANEENABLE,0}}) {
+          {D3DDDIRS_LIGHTING,0},{D3DDDIRS_NORMALIZENORMALS,0},
+          {D3DDDIRS_COLORVERTEX,1},{D3DDDIRS_CLIPPLANEENABLE,0}}) {
           hr = state(clipState.State,clipState.Value); if (FAILED(hr)) return hr;
         }
         D3DMATRIX identity = {}; identity._11 = identity._22 = identity._33 = identity._44 = 1.0f;

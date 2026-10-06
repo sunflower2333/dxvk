@@ -4,6 +4,7 @@
 #include "../src/umd/umd_runtime_identity.h"
 #include <d3dkmthk.h>
 #include <d3d9.h>
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -75,8 +76,22 @@ public:
     D3DKMT_CREATEDEVICE device = {}; device.hAdapter = m_adapter;
     hr = result(D3DKMTCreateDevice(&device));
     std::printf("KMT_CREATE_DEVICE hr=%08lx\n", static_cast<unsigned long>(hr));
-    if (SUCCEEDED(hr)) m_device = device.hDevice;
-    return hr;
+    if (FAILED(hr)) return hr;
+    m_device = device.hDevice;
+    UINT version = 0;
+    D3DKMT_QUERYADAPTERINFO query = {};
+    query.hAdapter = m_adapter; query.Type = KMTQAITYPE_DRIVERVERSION;
+    query.pPrivateDriverData = &version; query.PrivateDriverDataSize = sizeof(version);
+    hr = result(D3DKMTQueryAdapterInfo(&query));
+    if (FAILED(hr) || version < KMT_DRIVERVERSION_WDDM_2_0) return FAILED(hr) ? hr : E_FAIL;
+    // This harness is the runtime owner of its raw KMT device. The real
+    // Microsoft runtime supplies the corresponding residency services.
+    D3DKMT_CREATEPAGINGQUEUE paging = {};
+    paging.hDevice = m_device; paging.Priority = D3DDDI_PAGINGQUEUE_PRIORITY_NORMAL;
+    hr = result(D3DKMTCreatePagingQueue(&paging));
+    m_pagingQueue = paging.hPagingQueue; m_pagingSync = paging.hSyncObject;
+    std::printf("KMT_PAGING_QUEUE hr=%08lx version=%u\n", static_cast<unsigned long>(hr), unsigned(version));
+    return FAILED(hr) ? hr : m_pagingQueue && m_pagingSync ? S_OK : E_FAIL;
   }
   HRESULT create() {
     D3DDDI_ADAPTERCALLBACKS callbacks = {}; callbacks.pfnQueryAdapterInfoCb = query;
@@ -250,6 +265,15 @@ public:
       m_context = 0;
     }
     if (m_device) {
+      if (m_pagingQueue) {
+        D3DDDI_DESTROYPAGINGQUEUE paging = {}; paging.hPagingQueue = m_pagingQueue;
+        const HRESULT cleanup = result(D3DKMTDestroyPagingQueue(&paging));
+        if (FAILED(cleanup)) return cleanup;
+        m_pagingQueue = m_pagingSync = 0;
+      }
+      std::printf("KMT_RESIDENCY references=%u evictions=%u remaining=%zu\n",
+        residencyReferences, residencyEvictions, m_resident.size());
+      if (!m_resident.empty() || residencyReferences != residencyEvictions) hr = E_FAIL;
       D3DKMT_DESTROYDEVICE request = {}; request.hDevice = m_device;
       const HRESULT cleanup = result(D3DKMTDestroyDevice(&request));
       if (FAILED(cleanup)) hr = cleanup;
@@ -273,6 +297,43 @@ private:
     return runtime;
   }
   static HRESULT result(NTSTATUS status) { return status < 0 ? HRESULT_FROM_NT(status) : S_OK; }
+  HRESULT resident(D3DDDICB_RENDER& args) {
+    if (!m_pagingQueue || !m_pagingSync || !args.pNewAllocationList
+        || args.NumAllocations > args.NewAllocationListSize) return E_INVALIDARG;
+    // Reserve ownership storage before any successful kernel residency call.
+    try { m_resident.reserve(m_resident.size() + args.NumAllocations); }
+    catch (...) { return E_OUTOFMEMORY; }
+    for (UINT i = 0; i < args.NumAllocations; ++i) {
+      const D3DKMT_HANDLE allocation = args.pNewAllocationList[i].hAllocation;
+      if (std::find(m_resident.begin(), m_resident.end(), allocation) != m_resident.end()) continue;
+      D3DDDI_MAKERESIDENT request = {};
+      request.hPagingQueue = m_pagingQueue; request.NumAllocations = 1; request.AllocationList = &allocation;
+      // This bounded probe keeps all live references; none can be trimmed.
+      request.Flags.CantTrimFurther = 1;
+      const NTSTATUS status = D3DKMTMakeResident(&request);
+      std::printf("KMT_MAKE_RESIDENT allocation=%u status=%08lx fence=%llu count=%u\n",
+        allocation, static_cast<unsigned long>(status), request.PagingFenceValue, request.NumAllocations);
+      if (status != 0 && status != 0x103) return status < 0 ? result(status) : E_FAIL;
+      m_resident.push_back(allocation); ++residencyReferences;
+      if (request.NumAllocations != 1 || (status == 0x103 && !request.PagingFenceValue)) return E_FAIL;
+      if (status == 0x103) m_pendingPaging = (std::max)(m_pendingPaging, request.PagingFenceValue);
+    }
+    if (!m_pendingPaging) return S_OK;
+    const HANDLE event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!event) return HRESULT_FROM_WIN32(GetLastError());
+    D3DKMT_WAITFORSYNCHRONIZATIONOBJECTFROMCPU wait = {};
+    wait.hDevice = m_device; wait.ObjectCount = 1;
+    wait.ObjectHandleArray = &m_pagingSync; wait.FenceValueArray = &m_pendingPaging; wait.hAsyncEvent = event;
+    const NTSTATUS status = D3DKMTWaitForSynchronizationObjectFromCpu(&wait);
+    const DWORD completed = status == 0 ? WaitForSingleObject(event, 5000) : WAIT_FAILED;
+    CloseHandle(event);
+    std::printf("KMT_PAGING_WAIT status=%08lx fence=%llu completed=%u\n",
+      static_cast<unsigned long>(status), m_pendingPaging, completed);
+    if (status != 0) return status < 0 ? result(status) : E_FAIL;
+    if (completed != WAIT_OBJECT_0) return E_FAIL;
+    m_pendingPaging = 0;
+    return S_OK;
+  }
   static HRESULT APIENTRY query(HANDLE handle, const D3DDDICB_QUERYADAPTERINFO* args) {
     auto s = self(handle);
     if (!s || handle != &s->m_adapterOwner || !args) return E_INVALIDARG;
@@ -316,7 +377,18 @@ private:
   }
   static HRESULT APIENTRY deallocate(HANDLE handle, const D3DDDICB_DEALLOCATE* args) {
     auto s = self(handle);
-    if (!s || handle != &s->m_deviceOwner || !args || args->hResource || !args->NumAllocations) return E_INVALIDARG;
+    if (!s || handle != &s->m_deviceOwner || !args || args->hResource
+        || !args->NumAllocations || !args->HandleList) return E_INVALIDARG;
+    for (UINT i = 0; i < args->NumAllocations; ++i) {
+      const auto found = std::find(s->m_resident.begin(), s->m_resident.end(), args->HandleList[i]);
+      if (found == s->m_resident.end()) continue;
+      D3DKMT_EVICT evict = {}; evict.hDevice = s->m_device;
+      evict.NumAllocations = 1; evict.AllocationList = &args->HandleList[i];
+      const NTSTATUS status = D3DKMTEvict(&evict);
+      std::printf("KMT_EVICT allocation=%u status=%08lx\n", args->HandleList[i], static_cast<unsigned long>(status));
+      if (status != 0) return status < 0 ? result(status) : E_FAIL;
+      s->m_resident.erase(found); ++s->residencyEvictions;
+    }
     D3DKMT_DESTROYALLOCATION request = {};
     request.hDevice = s->m_device; request.AllocationCount = args->NumAllocations; request.phAllocationList = args->HandleList;
     const HRESULT hr = result(D3DKMTDestroyAllocation(&request));
@@ -357,6 +429,8 @@ private:
       std::printf("D3D9_KMT_RENDER_CB rejected hr=80070057\n");
       return E_INVALIDARG;
     }
+    const HRESULT residency = s->resident(*args);
+    if (FAILED(residency)) return residency;
     D3DKMT_RENDER request = {}; request.hContext = s->m_context;
     request.CommandLength = args->CommandLength; request.CommandOffset = args->CommandOffset;
     request.AllocationCount = args->NumAllocations; request.PatchLocationCount = args->NumPatchLocations;
@@ -384,11 +458,15 @@ private:
   Owner m_adapterOwner{this}, m_deviceOwner{this}, m_contextOwner{this};
   DWORD m_thread = GetCurrentThreadId();
   D3DKMT_HANDLE m_adapter = 0, m_device = 0, m_context = 0;
+  D3DKMT_HANDLE m_pagingQueue = 0, m_pagingSync = 0;
+  UINT64 m_pendingPaging = 0;
+  std::vector<D3DKMT_HANDLE> m_resident;
   HANDLE m_driverAdapter = nullptr, m_driverDevice = nullptr;
   D3DDDI_ADAPTERFUNCS m_adapterFuncs = {};
   D3DDDI_DEVICEFUNCS m_deviceFuncs = {};
   unsigned queries = 0, contexts = 0, contextCloses = 0, allocations = 0, deallocations = 0;
   unsigned locks = 0, unlocks = 0, renders = 0, escapes = 0, wrongThreads = 0;
+  unsigned residencyReferences = 0, residencyEvictions = 0;
 };
 
 int wmain(int argc, WCHAR** argv) {

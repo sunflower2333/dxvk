@@ -63,6 +63,8 @@ try {
     Check-Exit 'typed D3D9 adapter fixture'
     & cl @flags "$root/tests/umd-d3d9-device.cpp" "$root/src/umd/umd_d3d9_adapter.cpp" "$root/src/umd/umd_d3d9_device.cpp" umd_runtime_query.obj umd_runtime_gpu.obj /Fe:d3d9-device.exe
     Check-Exit 'typed D3D9 device lifecycle fixture'
+    & cl @flags /W4 /WX /external:anglebrackets /external:W0 /c "$root/tests/umd-d3d9-device-probe.cpp"
+    Check-Exit 'real KMT D3D9 hardware probe compilation'
     foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe','texture1d.exe','texture-transfer.exe','transfer-policy.exe','rotation.exe','d3d9-adapter.exe','d3d9-device.exe')) {
         $headers = (& dumpbin /headers $name | Out-String)
         Check-Exit "PE inspection $name"
@@ -86,6 +88,7 @@ try {
         executed=(!$CompileOnly); backend='WARP test-only injection into actual native DDI'
         viogpu_gpu_test=$false; native_runtime_admission=$false; installation=$false
         d3d9_backend='controlled backend; actual typed lifecycle/dispatch/cleanup; zero caps and ordinary runtime admission closed'
+        d3d9_hardware_probe='compile only; explicit adapter LUID and KMT enumeration; no GPU execution'
     } | ConvertTo-Json | Set-Content -Encoding utf8 receipt.json
 }
 finally { Pop-Location }

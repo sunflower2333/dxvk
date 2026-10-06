@@ -4,6 +4,46 @@
 #include <d3dkmthk.h>
 #include <cstdio>
 #include <cstring>
+#include <vector>
+
+static void printLuid(const LUID& luid) {
+  const auto bytes = reinterpret_cast<const unsigned char*>(&luid);
+  for (unsigned i = 0; i < sizeof(LUID); i++) std::printf("%02x", unsigned(bytes[i]));
+}
+
+static bool parseLuid(const WCHAR* text, LUID& luid) {
+  if (wcslen(text) != 2 * sizeof(LUID)) return false;
+  auto bytes = reinterpret_cast<unsigned char*>(&luid);
+  for (unsigned i = 0; i < 2 * sizeof(LUID); i++) {
+    const WCHAR c = text[i];
+    unsigned digit;
+    if (c >= L'0' && c <= L'9') digit = c - L'0';
+    else if (c >= L'a' && c <= L'f') digit = c - L'a' + 10;
+    else if (c >= L'A' && c <= L'F') digit = c - L'A' + 10;
+    else return false;
+    if (!(i & 1)) bytes[i / 2] = static_cast<unsigned char>(digit << 4);
+    else bytes[i / 2] |= static_cast<unsigned char>(digit);
+  }
+  return luid.LowPart || luid.HighPart;
+}
+
+static int listAdapters() {
+  D3DKMT_ENUMADAPTERS2 request = {};
+  NTSTATUS status = D3DKMTEnumAdapters2(&request);
+  if (status < 0 || !request.NumAdapters) return 1;
+  std::vector<D3DKMT_ADAPTERINFO> adapters(request.NumAdapters);
+  request.pAdapters = adapters.data();
+  status = D3DKMTEnumAdapters2(&request);
+  if (status < 0) return 1;
+  bool failed = request.NumAdapters > adapters.size();
+  for (size_t i = 0; i < request.NumAdapters && i < adapters.size(); i++) {
+    std::printf("KMT_ENUM luid="); printLuid(adapters[i].AdapterLuid);
+    std::printf(" present_sources=%u\n", unsigned(adapters[i].NumOfSources));
+    D3DKMT_CLOSEADAPTER close = {}; close.hAdapter = adapters[i].hAdapter;
+    if (D3DKMTCloseAdapter(&close) < 0) failed = true;
+  }
+  return failed ? 1 : 0;
+}
 
 class KmtRuntime9 {
 public:
@@ -12,18 +52,18 @@ public:
   KmtRuntime9(const KmtRuntime9&) = delete;
   KmtRuntime9& operator=(const KmtRuntime9&) = delete;
 
-  HRESULT open(const WCHAR* display) {
-    D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME adapter = {};
-    if (wcsncpy_s(adapter.DeviceName, display, _TRUNCATE)) return E_INVALIDARG;
-    HRESULT hr = result(D3DKMTOpenAdapterFromGdiDisplayName(&adapter));
+  HRESULT open(const LUID& luid) {
+    D3DKMT_OPENADAPTERFROMLUID adapter = {}; adapter.AdapterLuid = luid;
+    HRESULT hr = result(D3DKMTOpenAdapterFromLuid(&adapter));
+    std::printf("KMT_OPEN hr=%08lx\n", static_cast<unsigned long>(hr));
     if (FAILED(hr)) return hr;
     m_adapter = adapter.hAdapter;
     std::printf("KMT_ADAPTER luid=");
-    const auto bytes = reinterpret_cast<const unsigned char*>(&adapter.AdapterLuid);
-    for (unsigned i = 0; i < sizeof(LUID); i++) std::printf("%02x", unsigned(bytes[i]));
+    printLuid(luid);
     std::printf("\n");
     D3DKMT_CREATEDEVICE device = {}; device.hAdapter = m_adapter;
     hr = result(D3DKMTCreateDevice(&device));
+    std::printf("KMT_CREATE_DEVICE hr=%08lx\n", static_cast<unsigned long>(hr));
     if (SUCCEEDED(hr)) m_device = device.hDevice;
     return hr;
   }
@@ -212,9 +252,17 @@ private:
 
 int wmain(int argc, WCHAR** argv) {
   std::setvbuf(stdout, nullptr, _IONBF, 0);
-  if (argc > 2) return 2;
+  if (argc == 2 && !wcscmp(argv[1], L"--list-adapters")) {
+    try { return listAdapters(); }
+    catch (...) { return 1; }
+  }
+  LUID luid = {};
+  if (argc != 2 || !parseLuid(argv[1], luid)) {
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes>|--list-adapters\n");
+    return 2;
+  }
   KmtRuntime9 runtime;
-  HRESULT hr = runtime.open(argc == 2 ? argv[1] : L"\\\\.\\DISPLAY1");
+  HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
   if (SUCCEEDED(hr)) hr = runtime.verify();
   const HRESULT closed = runtime.close();

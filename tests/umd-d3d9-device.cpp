@@ -90,6 +90,17 @@ struct Fixture {
   std::vector<uint8_t> constantBytes;
   UINT constantFirst = 0, constantCount = 0;
   char constantType = 0;
+  unsigned textureCreates = 0, textureCloses = 0, textureSets = 0;
+  bool nullTexture = false;
+  HRESULT textureResult = S_OK, copyResult = S_OK;
+  D3DTEXTURESTAGESTATETYPE textureState = D3DTSS_COLOROP;
+  D3DSAMPLERSTATETYPE samplerState = D3DSAMP_ADDRESSU;
+  UINT textureStage = 0;
+  DWORD textureValue = 0;
+  bool lastSampler = false;
+  std::vector<RECT> copySources, copyDestinations;
+  std::vector<UINT> copyWidths;
+  std::vector<std::vector<uint8_t>> uploads;
   void runtime() const { CHECK(callbacksValid && GetCurrentThreadId() == caller); }
 };
 static Fixture* f;
@@ -185,7 +196,19 @@ struct dxvk::umd::D3D9Backend::State {
   D3D9SurfaceResource* target = nullptr;
   D3D9VertexDeclaration* declaration = nullptr;
   std::array<D3D9Shader*, 2> shaders = {};
+  std::array<D3D9TextureResource*, 20> textures = {};
 };
+
+struct dxvk::umd::D3D9TextureResource::State {
+  unsigned liveLevels = 0, bindings = 0;
+};
+dxvk::umd::D3D9TextureResource::D3D9TextureResource() : m_state(std::make_unique<State>()) {
+  CHECK(GetCurrentThreadId() != f->caller); ++f->textureCreates;
+}
+dxvk::umd::D3D9TextureResource::~D3D9TextureResource() {
+  CHECK(GetCurrentThreadId() != f->caller && !m_state->liveLevels && !m_state->bindings);
+  ++f->textureCloses;
+}
 
 struct dxvk::umd::D3D9Shader::State {
   D3D9ShaderStage stage = D3D9ShaderStage::Vertex;
@@ -209,11 +232,13 @@ struct dxvk::umd::D3D9SurfaceResource::State {
   std::vector<uint8_t> bytes;
   RECT area = {};
   bool locked = false;
+  unsigned* textureLevels = nullptr;
 };
 dxvk::umd::D3D9SurfaceResource::D3D9SurfaceResource() : m_state(std::make_unique<State>()) { }
 dxvk::umd::D3D9SurfaceResource::~D3D9SurfaceResource() {
   CHECK(GetCurrentThreadId() != f->caller);
   CHECK(!m_state->locked);
+  if (m_state->textureLevels) --*m_state->textureLevels;
   ++f->surfaceCloses;
 }
 dxvk::umd::D3D9Backend::D3D9Backend() : m_state(std::make_unique<State>()) { }
@@ -222,6 +247,8 @@ dxvk::umd::D3D9Backend::~D3D9Backend() {
   CHECK(f->surfaceCreates == f->surfaceCloses && !m_state->target);
   CHECK(f->declarationCreates == f->declarationCloses && !m_state->declaration);
   CHECK(f->shaderCreates == f->shaderCloses && !m_state->shaders[0] && !m_state->shaders[1]);
+  CHECK(f->textureCreates == f->textureCloses);
+  for (const auto texture : m_state->textures) CHECK(!texture);
   ++f->backendCloses;
   if (!f->adapterValid) {
     uint32_t fence = 99;
@@ -405,15 +432,30 @@ HRESULT dxvk::umd::D3D9Backend::clear(D3DCOLOR color, UINT count, const RECT* re
   return S_OK;
 }
 HRESULT dxvk::umd::D3D9Backend::copySurface(D3D9SurfaceResource& destination, const RECT& destinationRect,
-    D3D9SurfaceResource& source, const RECT& sourceRect) {
+    D3D9SurfaceResource& source, const RECT& sourceRect, const D3D9SurfaceUpload* upload) {
   CHECK(GetCurrentThreadId() != f->caller);
   ++f->copies;
   auto& dst = *destination.m_state;
   auto& src = *source.m_state;
+  f->copySources.push_back(sourceRect); f->copyDestinations.push_back(destinationRect);
+  f->copyWidths.push_back(src.desc.width);
+  f->uploads.emplace_back();
+  if (upload) {
+    const size_t size = size_t(sourceRect.bottom - sourceRect.top) * upload->pitch;
+    const auto data = static_cast<const uint8_t*>(upload->data);
+    f->uploads.back().assign(data, data + size);
+  }
+  if (f->copyResult != S_OK) return f->copyResult;
   if (dst.desc.systemMemory && src.desc.systemMemory) return flush();
   const size_t bytes = size_t(sourceRect.right - sourceRect.left) * 4;
   for (LONG row = 0; row < sourceRect.bottom - sourceRect.top; ++row) {
     auto from = src.bytes.data() + (size_t(row + sourceRect.top) * src.desc.width + sourceRect.left) * 4;
+    if (src.desc.systemData) {
+      const auto data = upload ? static_cast<const uint8_t*>(upload->data) + size_t(row) * upload->pitch
+        : static_cast<const uint8_t*>(src.desc.systemData) + size_t(row + sourceRect.top)
+          * src.desc.systemPitch + size_t(sourceRect.left) * 4;
+      std::memcpy(from, data, bytes);
+    }
     auto to = dst.bytes.data() + (size_t(row + destinationRect.top) * dst.desc.width + destinationRect.left) * 4;
     std::memcpy(to, from, bytes);
     if (dst.desc.systemData)
@@ -421,6 +463,45 @@ HRESULT dxvk::umd::D3D9Backend::copySurface(D3D9SurfaceResource& destination, co
         * dst.desc.systemPitch + size_t(destinationRect.left) * 4, from, bytes);
   }
   return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::createTexture(const D3D9SurfaceDesc* levels, UINT count,
+    std::unique_ptr<D3D9TextureResource>& output,
+    std::vector<std::unique_ptr<D3D9SurfaceResource>>& surfaces) {
+  CHECK(GetCurrentThreadId() != f->caller && count);
+  if (f->nullTexture) return S_OK;
+  auto texture = std::make_unique<D3D9TextureResource>();
+  std::vector<std::unique_ptr<D3D9SurfaceResource>> views;
+  for (UINT i = 0; i < count; ++i) {
+    std::unique_ptr<D3D9SurfaceResource> level;
+    const HRESULT hr = createSurface(levels[i], level);
+    if (hr != S_OK) return hr;
+    if (level) { level->m_state->textureLevels = &texture->m_state->liveLevels; ++texture->m_state->liveLevels; }
+    views.push_back(std::move(level));
+  }
+  surfaces = std::move(views); output = std::move(texture);
+  return f->textureResult;
+}
+HRESULT dxvk::umd::D3D9Backend::setTexture(UINT stage, D3D9TextureResource* texture) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  const size_t slot = stage < 16 ? stage : 16 + stage - D3DVERTEXTEXTURESAMPLER0;
+  CHECK(slot < m_state->textures.size());
+  ++f->textureSets;
+  if (f->stateResult != S_OK && !(f->stateResult == D3DERR_DEVICELOST && !texture)) return f->stateResult;
+  if (m_state->textures[slot]) --m_state->textures[slot]->m_state->bindings;
+  m_state->textures[slot] = texture;
+  if (texture) ++texture->m_state->bindings;
+  f->textureStage = stage;
+  return f->stateResult;
+}
+HRESULT dxvk::umd::D3D9Backend::setTextureStageState(UINT stage, D3DTEXTURESTAGESTATETYPE state, DWORD value) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  f->textureStage = stage; f->textureState = state; f->textureValue = value; f->lastSampler = false;
+  return f->stateResult;
+}
+HRESULT dxvk::umd::D3D9Backend::setSamplerState(UINT stage, D3DSAMPLERSTATETYPE state, DWORD value) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  f->textureStage = stage; f->samplerState = state; f->textureValue = value; f->lastSampler = true;
+  return f->stateResult;
 }
 HRESULT dxvk::umd::D3D9Backend::lockSurface(D3D9SurfaceResource& resource, const RECT* area,
     DWORD, D3DLOCKED_RECT& output) {
@@ -489,6 +570,9 @@ static void createDevice() {
   expectedTable.pfnBlt = f->table.pfnBlt;
   expectedTable.pfnLock = f->table.pfnLock;
   expectedTable.pfnUnlock = f->table.pfnUnlock;
+  expectedTable.pfnSetTexture = f->table.pfnSetTexture;
+  expectedTable.pfnSetTextureStageState = f->table.pfnSetTextureStageState;
+  expectedTable.pfnTexBlt = f->table.pfnTexBlt;
   expectedTable.pfnCreateVertexShaderDecl = f->table.pfnCreateVertexShaderDecl;
   expectedTable.pfnSetVertexShaderDecl = f->table.pfnSetVertexShaderDecl;
   expectedTable.pfnDeleteVertexShaderDecl = f->table.pfnDeleteVertexShaderDecl;
@@ -1115,7 +1199,206 @@ static void shaderContracts() {
   }
 }
 
+static D3DDDIARG_CREATERESOURCE textureArgs(HANDLE cookie, D3DDDI_SURFACEINFO* levels,
+    UINT count, bool system = false, bool target = false) {
+  auto args = resourceArgs(cookie, levels, count, target);
+  args.Flags.Texture = 1; args.MipLevels = count;
+  args.Pool = system ? D3DDDIPOOL_SYSTEMMEM : D3DDDIPOOL_VIDEOMEMORY;
+  return args;
+}
+
+static void textureContracts() {
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    CHECK(f->table.pfnSetTexture && f->table.pfnSetTextureStageState && f->table.pfnTexBlt);
+    char cookie;
+    D3DDDI_SURFACEINFO levels[3] = {{5,3,UINT_MAX,nullptr,UINT_MAX,UINT_MAX},
+      {2,1,UINT_MAX,nullptr,UINT_MAX,UINT_MAX}, {1,1,UINT_MAX,nullptr,UINT_MAX,UINT_MAX}};
+    auto args = textureArgs(&cookie, levels, 3);
+    auto prior = snapshot(args);
+    for (const UINT count : {0u,2u,4u,33u,UINT_MAX}) {
+      args.MipLevels = count; prior = snapshot(args);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG && snapshot(args) == prior);
+    }
+    args.MipLevels = 3;
+    for (const UINT flag : {4u,0x10u,0x800u,0x20000u,0x40000u}) {
+      args.Flags.Value = 0x10000 | flag; prior = snapshot(args);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG && snapshot(args) == prior);
+    }
+    args.Flags.Value = 0x10000;
+    for (unsigned i = 0; i < 3; ++i) {
+      const UINT width = levels[i].Width;
+      levels[i].Width = width + 1; prior = snapshot(args);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG && snapshot(args) == prior);
+      levels[i].Width = width;
+    }
+    prior = snapshot(args);
+    f->failSurfaceAttempt = 2;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == E_OUTOFMEMORY && snapshot(args) == prior);
+    CHECK(f->textureCreates == f->textureCloses && f->surfaceCreates == f->surfaceCloses);
+    f->failSurfaceAttempt = 0;
+    for (const HRESULT hr : {S_FALSE, E_OUTOFMEMORY}) {
+      f->textureResult = hr;
+      CHECK(f->table.pfnCreateResource(f->device, &args) == (hr == S_FALSE ? E_FAIL : hr));
+      CHECK(snapshot(args) == prior && f->textureCreates == f->textureCloses && f->surfaceCreates == f->surfaceCloses);
+    }
+    f->textureResult = S_OK; f->nullTexture = true;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == E_FAIL && snapshot(args) == prior);
+    f->nullTexture = false; f->nullSurface = true;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == E_FAIL && snapshot(args) == prior);
+    f->nullSurface = false;
+    f->descriptions.clear();
+    f->queryHook = [&] {
+      auto nested = textureArgs(reinterpret_cast<HANDLE>(UINT_PTR(2)), reinterpret_cast<D3DDDI_SURFACEINFO*>(UINT_PTR(1)), 3);
+      CHECK(f->table.pfnCreateResource(f->device, &nested) == D3DERR_WASSTILLDRAWING);
+      levels[0].Width = 999; levels[1].Height = 999;
+      args.pSurfList = reinterpret_cast<D3DDDI_SURFACEINFO*>(UINT_PTR(1)); args.MipLevels = 1;
+      CHECK(f->table.pfnSetTexture(f->device, 0, nullptr) == D3DERR_WASSTILLDRAWING);
+    };
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE texture = args.hResource;
+    CHECK(f->descriptions.size() == 3 && f->descriptions[0].width == 5
+      && f->descriptions[1].width == 2 && f->descriptions[1].height == 1 && !f->descriptions[0].lockable);
+    CHECK(texture != &cookie && texture != f->device);
+    for (const UINT stage : {0u,15u,UINT(D3DVERTEXTEXTURESAMPLER0),UINT(D3DVERTEXTEXTURESAMPLER3)})
+      CHECK(f->table.pfnSetTexture(f->device, stage, texture) == S_OK);
+    for (const UINT stage : {16u,255u,256u,261u,UINT_MAX})
+      CHECK(f->table.pfnSetTexture(f->device, stage, texture) == E_INVALIDARG);
+    CHECK(f->table.pfnSetTexture(f->device, 0, &cookie) == E_INVALIDARG);
+    CHECK(f->table.pfnSetTexture(f->device, 0, f->device) == E_INVALIDARG);
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = texture;
+    CHECK(f->table.pfnLock(f->device, &mapping) == E_INVALIDARG);
+    const auto closes = f->textureCloses;
+    f->stateResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnDestroyResource(f->device, texture) == E_OUTOFMEMORY && f->textureCloses == closes);
+    f->stateResult = S_OK; f->flushResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnDestroyResource(f->device, texture) == E_OUTOFMEMORY && f->textureCloses == closes);
+    CHECK(f->table.pfnSetTexture(f->device, 7, texture) == S_OK);
+    f->flushResult = S_OK;
+    CHECK(f->table.pfnDestroyResource(f->device, texture) == S_OK && f->textureCloses == closes + 1);
+    CHECK(f->table.pfnSetTexture(f->device, 0, texture) == E_INVALIDARG);
+    CHECK(f->table.pfnDestroyResource(f->device, texture) == E_INVALIDARG);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char srcCookie, dstCookie;
+    std::array<std::vector<uint8_t>,3> bytes = {std::vector<uint8_t>(96,0xa1),std::vector<uint8_t>(16,0xb2),std::vector<uint8_t>(8,0xc3)};
+    D3DDDI_SURFACEINFO srcLevels[3] = {{5,3,UINT_MAX,bytes[0].data(),32,UINT_MAX},
+      {2,1,UINT_MAX,bytes[1].data(),16,UINT_MAX}, {1,1,UINT_MAX,bytes[2].data(),8,UINT_MAX}};
+    D3DDDI_SURFACEINFO dstLevels[2] = {{2,1,UINT_MAX,nullptr,UINT_MAX,UINT_MAX}, {1,1,UINT_MAX,nullptr,UINT_MAX,UINT_MAX}};
+    auto source = textureArgs(&srcCookie, srcLevels, 3, true);
+    auto destination = textureArgs(&dstCookie, dstLevels, 2);
+    CHECK(f->table.pfnCreateResource(f->device, &source) == S_OK);
+    CHECK(f->table.pfnCreateResource(f->device, &destination) == S_OK);
+    CHECK(f->table.pfnSetTexture(f->device, 0, source.hResource) == E_INVALIDARG);
+    D3DDDIARG_TEXBLT copy = {destination.hResource,source.hResource,UINT_MAX,{0,0},{0,0,5,3}};
+    f->queryHook = [&] {
+      for (auto& level : bytes) std::fill(level.begin(),level.end(),0xdd);
+      copy.hSrcResource = nullptr; copy.SrcRect.right = 999; copy.DstPoint.x = 999;
+      CHECK(f->table.pfnDestroyResource(f->device, destination.hResource) == D3DERR_WASSTILLDRAWING);
+    };
+    CHECK(f->table.pfnTexBlt(f->device, &copy) == S_OK);
+    CHECK(f->copies == 2 && f->copyWidths == std::vector<UINT>({2,1}));
+    CHECK(f->uploads == std::vector<std::vector<uint8_t>>({std::vector<uint8_t>(8,0xb2),std::vector<uint8_t>(4,0xc3)}));
+    CHECK(f->copySources[0].right == 2 && f->copySources[1].right == 1);
+    for (UINT i = 0; i < 2; ++i) {
+      char readCookie; auto readback = resourceArgs(&readCookie, &dstLevels[i], 1);
+      CHECK(f->table.pfnCreateResource(f->device, &readback) == S_OK);
+      D3DDDIARG_BLT read = {}; read.hSrcResource = destination.hResource; read.SrcSubResourceIndex = i;
+      read.hDstResource = readback.hResource; read.SrcRect = read.DstRect = {0,0,LONG(dstLevels[i].Width),1};
+      CHECK(f->table.pfnBlt(f->device, &read) == S_OK);
+      D3DDDIARG_LOCK mapping = {}; mapping.hResource = readback.hResource;
+      CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+      for (UINT j = 0; j < dstLevels[i].Width * 4; ++j) CHECK(static_cast<uint8_t*>(mapping.pSurfData)[j] == (i ? 0xc3 : 0xb2));
+      D3DDDIARG_UNLOCK unlock = {}; unlock.hResource = readback.hResource;
+      CHECK(f->table.pfnUnlock(f->device, &unlock) == S_OK);
+      CHECK(f->table.pfnDestroyResource(f->device, readback.hResource) == S_OK);
+    }
+    copy = {destination.hResource,source.hResource,0,{0,0},{0,0,5,3}};
+    const auto count = f->copies;
+    copy.DstPoint.x = 1;
+    CHECK(f->table.pfnTexBlt(f->device, &copy) == E_INVALIDARG && f->copies == count);
+    copy.DstPoint.x = 0; copy.SrcRect.left = -1;
+    CHECK(f->table.pfnTexBlt(f->device, &copy) == E_INVALIDARG && f->copies == count);
+    copy.SrcRect.left = 0;
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = source.hResource; mapping.SubResourceIndex = 1; mapping.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && mapping.Pitch == 16 && mapping.pSurfData == bytes[1].data());
+    CHECK(f->table.pfnTexBlt(f->device, &copy) == E_INVALIDARG && f->copies == count);
+    D3DDDIARG_UNLOCK unlock = {}; unlock.hResource = source.hResource; unlock.SubResourceIndex = 1; unlock.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnUnlock(f->device, &unlock) == S_OK);
+    f->copyResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnTexBlt(f->device, &copy) == E_OUTOFMEMORY && f->copies == count + 1);
+    f->copyResult = S_OK;
+    CHECK(f->table.pfnTexBlt(f->device, &copy) == S_OK && f->copies == count + 3);
+    CHECK(f->table.pfnSetTexture(f->device, 0, destination.hResource) == S_OK);
+    // Device teardown unbinds textures before releasing any mip or parent.
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    const std::array<D3DDDITEXTURESTAGESTATETYPE,13> native = {D3DDDITSS_ADDRESSU,D3DDDITSS_ADDRESSV,D3DDDITSS_ADDRESSW,
+      D3DDDITSS_BORDERCOLOR,D3DDDITSS_MAGFILTER,D3DDDITSS_MINFILTER,D3DDDITSS_MIPFILTER,D3DDDITSS_MIPMAPLODBIAS,
+      D3DDDITSS_MAXMIPLEVEL,D3DDDITSS_MAXANISOTROPY,D3DDDITSS_SRGBTEXTURE,D3DDDITSS_ELEMENTINDEX,D3DDDITSS_DMAPOFFSET};
+    const std::array<D3DSAMPLERSTATETYPE,13> publicStates = {D3DSAMP_ADDRESSU,D3DSAMP_ADDRESSV,D3DSAMP_ADDRESSW,
+      D3DSAMP_BORDERCOLOR,D3DSAMP_MAGFILTER,D3DSAMP_MINFILTER,D3DSAMP_MIPFILTER,D3DSAMP_MIPMAPLODBIAS,
+      D3DSAMP_MAXMIPLEVEL,D3DSAMP_MAXANISOTROPY,D3DSAMP_SRGBTEXTURE,D3DSAMP_ELEMENTINDEX,D3DSAMP_DMAPOFFSET};
+    for (UINT stage : {0u,15u,UINT(D3DVERTEXTEXTURESAMPLER0),UINT(D3DVERTEXTEXTURESAMPLER3)}) {
+      for (size_t i = 0; i < native.size(); ++i) {
+        D3DDDIARG_TEXTURESTAGESTATE args = {stage,native[i],0x80000123};
+        CHECK(f->table.pfnSetTextureStageState(f->device, &args) == S_OK);
+        CHECK(f->lastSampler && f->samplerState == publicStates[i] && f->textureStage == stage && f->textureValue == 0x80000123);
+      }
+    }
+    D3DDDIARG_TEXTURESTAGESTATE args = {7,D3DDDITSS_TEXTURETRANSFORMFLAGS,0xdeadbeef};
+    f->queryHook = [&] { args.Stage = 9; args.State = D3DDDITSS_MINFILTER; args.Value = 0; };
+    CHECK(f->table.pfnSetTextureStageState(f->device, &args) == S_OK);
+    CHECK(!f->lastSampler && f->textureState == D3DTSS_TEXTURETRANSFORMFLAGS && f->textureStage == 7 && f->textureValue == 0xdeadbeef);
+    for (auto state : {D3DDDITSS_TEXTUREMAP,D3DDDITSS_DISABLETEXTURECOLORKEY,D3DDDITSS_TEXTURECOLORKEYVAL,D3DDDITSS_FORCE_DWORD}) {
+      args = {0,state,1}; CHECK(f->table.pfnSetTextureStageState(f->device, &args) == E_INVALIDARG);
+    }
+    args = {8,D3DDDITSS_COLOROP,D3DTOP_MODULATE};
+    CHECK(f->table.pfnSetTextureStageState(f->device, &args) == E_INVALIDARG);
+    args = {D3DVERTEXTEXTURESAMPLER0,D3DDDITSS_COLOROP,D3DTOP_MODULATE};
+    CHECK(f->table.pfnSetTextureStageState(f->device, &args) == E_INVALIDARG);
+    args = {D3DDMAPSAMPLER,D3DDDITSS_MINFILTER,D3DTEXF_POINT};
+    CHECK(f->table.pfnSetTextureStageState(f->device, &args) == E_INVALIDARG);
+    f->stateResult = S_FALSE; args = {0,D3DDDITSS_MINFILTER,D3DTEXF_POINT};
+    CHECK(f->table.pfnSetTextureStageState(f->device, &args) == E_FAIL);
+    f->stateResult = S_OK; closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie; D3DDDI_SURFACEINFO level = {2,2,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto args = textureArgs(&cookie, &level, 1);
+    const auto prior = snapshot(args);
+    f->surfaceHook = [] { ++f->generation; };
+    CHECK(f->table.pfnCreateResource(f->device, &args) == D3DERR_DEVICELOST && snapshot(args) == prior);
+    CHECK(f->textureCreates == f->textureCloses && f->surfaceCreates == f->surfaceCloses);
+    --f->generation;
+    CHECK(f->table.pfnSetTexture(f->device, 0, nullptr) == D3DERR_DEVICELOST);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture a; initialize(a); createDevice();
+    char cookie; D3DDDI_SURFACEINFO level = {2,2,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto args = textureArgs(&cookie, &level, 1, false, true);
+    CHECK(a.table.pfnCreateResource(a.device, &args) == S_OK);
+    D3DDDIARG_SETRENDERTARGET target = {0,args.hResource,0};
+    CHECK(a.table.pfnSetRenderTarget(a.device, &target) == S_OK);
+    CHECK(a.table.pfnSetTexture(a.device, D3DVERTEXTEXTURESAMPLER1, args.hResource) == S_OK);
+    Fixture b; initialize(b); createDevice();
+    CHECK(b.table.pfnSetTexture(b.device, 0, args.hResource) == E_INVALIDARG);
+    CHECK(b.table.pfnDestroyResource(b.device, args.hResource) == E_INVALIDARG);
+    closeDevice(); closeAdapter(); f = &a;
+    f->stateResult = D3DERR_DEVICELOST;
+    CHECK(a.table.pfnDestroyResource(a.device, args.hResource) == S_OK);
+    closeDevice(); closeAdapter();
+  }
+}
+
 int main() {
+  textureContracts();
   shaderContracts();
   ownedServiceStartup();
   resourceContracts();

@@ -26,6 +26,12 @@ struct D3D9SurfaceResource::State {
 D3D9SurfaceResource::D3D9SurfaceResource() : m_state(std::make_unique<State>()) { }
 D3D9SurfaceResource::~D3D9SurfaceResource() = default;
 
+struct D3D9TextureResource::State {
+  Com<IDirect3DTexture9> texture;
+};
+D3D9TextureResource::D3D9TextureResource() : m_state(std::make_unique<State>()) { }
+D3D9TextureResource::~D3D9TextureResource() = default;
+
 struct D3D9VertexDeclaration::State {
   Com<IDirect3DVertexDeclaration9> declaration;
 };
@@ -141,6 +147,40 @@ HRESULT D3D9Backend::setRenderTarget(D3D9SurfaceResource* target) {
   return hr;
 }
 
+HRESULT D3D9Backend::createTexture(const D3D9SurfaceDesc* levels, UINT count,
+    std::unique_ptr<D3D9TextureResource>& output,
+    std::vector<std::unique_ptr<D3D9SurfaceResource>>& outputSurfaces) {
+  auto texture = std::make_unique<D3D9TextureResource>();
+  const auto& desc = levels[0];
+  HRESULT hr = m_state->d3d->CreateTexture(desc.width, desc.height, count,
+    desc.renderTarget ? D3DUSAGE_RENDERTARGET : 0, desc.format,
+    desc.systemMemory ? D3DPOOL_SYSTEMMEM : D3DPOOL_DEFAULT,
+    &texture->m_state->texture, nullptr);
+  if (hr != S_OK || !texture->m_state->texture) return FAILED(hr) ? hr : E_FAIL;
+  if (texture->m_state->texture->GetLevelCount() != count) return E_FAIL;
+  std::vector<std::unique_ptr<D3D9SurfaceResource>> surfaces;
+  surfaces.reserve(count);
+  for (UINT i = 0; i < count; ++i) {
+    auto surface = std::make_unique<D3D9SurfaceResource>();
+    surface->m_state->desc = levels[i];
+    hr = texture->m_state->texture->GetSurfaceLevel(i, &surface->m_state->surface);
+    if (hr != S_OK || !surface->m_state->surface) return FAILED(hr) ? hr : E_FAIL;
+    surfaces.push_back(std::move(surface));
+  }
+  outputSurfaces = std::move(surfaces);
+  output = std::move(texture);
+  return S_OK;
+}
+HRESULT D3D9Backend::setTexture(UINT stage, D3D9TextureResource* texture) {
+  return m_state->d3d->SetTexture(stage, texture ? texture->m_state->texture.ptr() : nullptr);
+}
+HRESULT D3D9Backend::setTextureStageState(UINT stage, D3DTEXTURESTAGESTATETYPE state, DWORD value) {
+  return m_state->d3d->SetTextureStageState(stage, state, value);
+}
+HRESULT D3D9Backend::setSamplerState(UINT stage, D3DSAMPLERSTATETYPE state, DWORD value) {
+  return m_state->d3d->SetSamplerState(stage, state, value);
+}
+
 HRESULT D3D9Backend::clear(D3DCOLOR color, UINT count, const RECT* rects, bool computeRects) {
   if (computeRects) {
     std::vector<D3DRECT> areas;
@@ -202,17 +242,27 @@ HRESULT D3D9Backend::unlockSurface(D3D9SurfaceResource& resource, bool upload) {
 }
 
 HRESULT D3D9Backend::copySurface(D3D9SurfaceResource& destination, const RECT& destinationRect,
-                               D3D9SurfaceResource& source, const RECT& sourceRect) {
+                               D3D9SurfaceResource& source, const RECT& sourceRect,
+                               const D3D9SurfaceUpload* upload) {
   auto& dst = *destination.m_state;
   auto& src = *source.m_state;
   if (src.desc.systemMemory && dst.desc.systemMemory)
     return flush(); // The runtime performs the system-to-system copy itself.
   if (src.desc.systemMemory) {
-    if (src.desc.systemData) {
-      D3DLOCKED_RECT mapping;
-      HRESULT hr = lockSurface(source, nullptr, 0, mapping);
+    if (upload || src.desc.systemData) {
+      D3DLOCKED_RECT mapping = {};
+      HRESULT hr = src.surface->LockRect(&mapping, &sourceRect, 0);
       if (FAILED(hr)) return hr;
-      hr = unlockSurface(source);
+      const auto data = upload ? upload->data : static_cast<const uint8_t*>(src.desc.systemData)
+        + size_t(sourceRect.top) * src.desc.systemPitch + size_t(sourceRect.left) * 4;
+      const UINT pitch = upload ? upload->pitch : src.desc.systemPitch;
+      if (!mapping.pBits || mapping.Pitch <= 0) {
+        src.surface->UnlockRect();
+        return E_FAIL;
+      }
+      copyRows(mapping.pBits, UINT(mapping.Pitch), data, pitch,
+               UINT(sourceRect.right - sourceRect.left) * 4, UINT(sourceRect.bottom - sourceRect.top));
+      hr = src.surface->UnlockRect();
       if (FAILED(hr)) return hr;
     }
     const POINT point = {destinationRect.left, destinationRect.top};

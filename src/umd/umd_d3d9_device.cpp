@@ -38,6 +38,8 @@ struct Surface {
 };
 struct Resource {
   HANDLE runtime = nullptr;
+  // Member order releases mip surfaces before their owning texture.
+  std::unique_ptr<dxvk::umd::D3D9TextureResource> texture;
   std::vector<Surface> surfaces;
 };
 struct Declaration {
@@ -61,6 +63,7 @@ struct Device {
   std::unordered_map<HANDLE, std::unique_ptr<Declaration>> declarations;
   std::unordered_map<HANDLE, std::unique_ptr<Shader>> shaders;
   std::array<HANDLE, 2> boundShaders = {};
+  std::array<HANDLE, 20> boundTextures = {};
   HANDLE declaration = nullptr;
   const void* userVertices = nullptr;
   UINT userStride = 0;
@@ -81,6 +84,8 @@ struct Device {
         if (declaration) backend->setVertexDeclaration(nullptr);
         if (boundShaders[0]) backend->setShader(ShaderStage::Vertex, nullptr);
         if (boundShaders[1]) backend->setShader(ShaderStage::Pixel, nullptr);
+        for (UINT i = 0; i < boundTextures.size(); ++i)
+          if (boundTextures[i]) backend->setTexture(i < 16 ? i : D3DVERTEXTEXTURESAMPLER0 + i - 16, nullptr);
         if (!resources.empty() || !declarations.empty() || !shaders.empty()) backend->flush();
       } } catch (...) { hr = E_FAIL; }
       resources.clear();
@@ -88,6 +93,7 @@ struct Device {
       declarations.clear();
       shaders.clear();
       boundShaders = {};
+      boundTextures = {};
       declaration = nullptr;
       userVertices = nullptr;
       userStride = 0;
@@ -167,31 +173,43 @@ bool validArea(const RECT& area, const dxvk::umd::D3D9SurfaceDesc& desc) {
 
 HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   if (!args || !args->hResource || !args->pSurfList || !args->SurfCount) return E_INVALIDARG;
-  // Snapshot the complete group before the first runtime callback. Fields
-  // reserved for absent usage flags intentionally do not affect admission.
   const auto input = *args;
-  if (input.Flags.Value & ~(UINT(1) | UINT(0x80))) return E_INVALIDARG;
+  if (input.Flags.Value & ~(UINT(1) | UINT(0x80) | UINT(0x10000))) return E_INVALIDARG;
   const bool target = input.Flags.RenderTarget != 0;
-  if (input.Flags.NotLockable && !target) return E_INVALIDARG;
+  const bool texture = input.Flags.Texture != 0;
+  if (input.Flags.NotLockable && !target && !texture) return E_INVALIDARG;
   if (target && (input.MultisampleType != D3DDDIMULTISAMPLE_NONE || input.MultisampleQuality))
     return E_INVALIDARG;
   if (input.Pool != D3DDDIPOOL_SYSTEMMEM && input.Pool != D3DDDIPOOL_VIDEOMEMORY
       && input.Pool != D3DDDIPOOL_LOCALVIDMEM && input.Pool != D3DDDIPOOL_NONLOCALVIDMEM)
     return E_INVALIDARG;
   if (target && input.Pool == D3DDDIPOOL_SYSTEMMEM) return E_INVALIDARG;
+  if (texture && (!input.MipLevels || input.MipLevels != input.SurfCount || input.MipLevels > 32
+      || (input.Flags.NotLockable && input.Pool == D3DDDIPOOL_SYSTEMMEM))) return E_INVALIDARG;
   const auto format = static_cast<D3DFORMAT>(input.Format);
   if (format != D3DFMT_A8R8G8B8 && format != D3DFMT_X8R8G8B8) return E_INVALIDARG;
-  try {
-    std::vector<dxvk::umd::D3D9SurfaceDesc> descriptions;
+  std::vector<dxvk::umd::D3D9SurfaceDesc> descriptions;
+  return preparedOperation(handle, [&](Device&) {
+    // Serialize before reading pointed metadata: nested callbacks must not
+    // inspect an in-progress caller's surface list. Reserved fields for
+    // absent usage flags retain their native meaning.
+    const uint64_t listBytes = uint64_t(input.SurfCount) * sizeof(D3DDDI_SURFACEINFO);
+    if (listBytes > UINTPTR_MAX - reinterpret_cast<uintptr_t>(input.pSurfList)) return E_INVALIDARG;
     descriptions.reserve(input.SurfCount);
     for (UINT i = 0; i < input.SurfCount; ++i) {
       const auto info = input.pSurfList[i];
       dxvk::umd::D3D9SurfaceDesc desc;
       desc.width = info.Width; desc.height = info.Height; desc.format = format;
       desc.renderTarget = target; desc.systemMemory = input.Pool == D3DDDIPOOL_SYSTEMMEM;
-      desc.lockable = !input.Flags.NotLockable;
+      desc.lockable = !input.Flags.NotLockable && (!texture || desc.systemMemory);
       if (!desc.width || !desc.height || desc.width > UINT(INT_MAX / 4) || desc.height > UINT(INT_MAX))
         return E_INVALIDARG;
+      if (texture && i) {
+        const auto& previous = descriptions.back();
+        if ((previous.width == 1 && previous.height == 1)
+            || desc.width != std::max(1u, previous.width / 2)
+            || desc.height != std::max(1u, previous.height / 2)) return E_INVALIDARG;
+      }
       if (info.pSysMem) {
         if (!desc.systemMemory || info.SysMemPitch < desc.width * 4 || info.SysMemPitch > UINT(INT_MAX))
           return E_INVALIDARG;
@@ -201,7 +219,8 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       }
       descriptions.push_back(desc);
     }
-    return operation(handle, [&](Device& device) {
+    return S_OK;
+  }, [&](Device& device) {
       if (!device.runtimeResources.emplace(input.hResource).second) return E_INVALIDARG;
       struct Reservation {
         Device& device; HANDLE runtime; bool published = false;
@@ -210,12 +229,25 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       auto resource = std::make_unique<Resource>();
       resource->runtime = input.hResource;
       resource->surfaces.reserve(descriptions.size());
-      for (const auto& desc : descriptions) {
-        Surface entry; entry.desc = desc;
-        const HRESULT hr = result(device.backend->createSurface(desc, entry.backend));
+      if (texture) {
+        std::vector<std::unique_ptr<dxvk::umd::D3D9SurfaceResource>> levels;
+        const HRESULT hr = result(device.backend->createTexture(descriptions.data(), input.MipLevels,
+          resource->texture, levels));
         if (FAILED(hr)) return hr;
-        if (!entry.backend) return E_FAIL;
-        resource->surfaces.push_back(std::move(entry));
+        if (!resource->texture || levels.size() != descriptions.size()) return E_FAIL;
+        for (size_t i = 0; i < levels.size(); ++i) {
+          if (!levels[i]) return E_FAIL;
+          Surface entry; entry.desc = descriptions[i]; entry.backend = std::move(levels[i]);
+          resource->surfaces.push_back(std::move(entry));
+        }
+      } else {
+        for (const auto& desc : descriptions) {
+          Surface entry; entry.desc = desc;
+          const HRESULT hr = result(device.backend->createSurface(desc, entry.backend));
+          if (FAILED(hr)) return hr;
+          if (!entry.backend) return E_FAIL;
+          resource->surfaces.push_back(std::move(entry));
+        }
       }
       const auto runtime = device.gpu->backend();
       const HRESULT status = runtime.create.callbacks->status(runtime.create.owner);
@@ -227,9 +259,7 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       args->hResource = token;
       reservation.published = true;
       return S_OK;
-    });
-  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
-    catch (...) { return E_FAIL; }
+  });
 }
 
 HRESULT APIENTRY destroyResource(HANDLE handle, HANDLE token) {
@@ -242,6 +272,12 @@ HRESULT APIENTRY destroyResource(HANDLE handle, HANDLE token) {
       const HRESULT hr = result(device.backend->setRenderTarget(nullptr));
       if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
       device.target = nullptr;
+    }
+    for (UINT i = 0; i < device.boundTextures.size(); ++i) {
+      if (device.boundTextures[i] != token) continue;
+      const HRESULT hr = result(device.backend->setTexture(i < 16 ? i : D3DVERTEXTEXTURESAMPLER0 + i - 16, nullptr));
+      if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+      device.boundTextures[i] = nullptr;
     }
     // The backend joins recording/submission before runtime backing expires.
     const HRESULT hr = result(device.backend->flush());
@@ -340,6 +376,142 @@ HRESULT APIENTRY unlockResource(HANDLE handle, const D3DDDIARG_UNLOCK* args) {
     const HRESULT hr = result(device.backend->unlockSurface(*item->backend));
     if (SUCCEEDED(hr)) item->locked = false;
     return hr;
+  });
+}
+
+bool textureSlot(UINT stage, UINT& slot) {
+  if (stage < 16) { slot = stage; return true; }
+  if (stage >= D3DVERTEXTEXTURESAMPLER0 && stage <= D3DVERTEXTEXTURESAMPLER3) {
+    slot = 16 + stage - D3DVERTEXTEXTURESAMPLER0;
+    return true;
+  }
+  return false;
+}
+
+HRESULT APIENTRY setTexture(HANDLE handle, UINT stage, HANDLE token) {
+  UINT slot = 0;
+  if (!textureSlot(stage, slot)) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.resources.find(token);
+    if (token) {
+      if (entry == device.resources.end() || !entry->second->texture
+          || entry->second->surfaces[0].desc.systemMemory) return E_INVALIDARG;
+      for (const auto& level : entry->second->surfaces)
+        if (level.locked) return E_INVALIDARG;
+    }
+    const HRESULT hr = result(device.backend->setTexture(stage, token ? entry->second->texture.get() : nullptr));
+    if (SUCCEEDED(hr)) device.boundTextures[slot] = token;
+    return hr;
+  });
+}
+
+bool textureStageState(D3DDDITEXTURESTAGESTATETYPE input, D3DTEXTURESTAGESTATETYPE& state) {
+#define D3D9_TEXTURE_STATE(name) case D3DDDITSS_##name: state = D3DTSS_##name; return true
+  switch (input) {
+    D3D9_TEXTURE_STATE(COLOROP); D3D9_TEXTURE_STATE(COLORARG1); D3D9_TEXTURE_STATE(COLORARG2);
+    D3D9_TEXTURE_STATE(ALPHAOP); D3D9_TEXTURE_STATE(ALPHAARG1); D3D9_TEXTURE_STATE(ALPHAARG2);
+    D3D9_TEXTURE_STATE(BUMPENVMAT00); D3D9_TEXTURE_STATE(BUMPENVMAT01);
+    D3D9_TEXTURE_STATE(BUMPENVMAT10); D3D9_TEXTURE_STATE(BUMPENVMAT11);
+    D3D9_TEXTURE_STATE(TEXCOORDINDEX); D3D9_TEXTURE_STATE(BUMPENVLSCALE);
+    D3D9_TEXTURE_STATE(BUMPENVLOFFSET); D3D9_TEXTURE_STATE(TEXTURETRANSFORMFLAGS);
+    D3D9_TEXTURE_STATE(COLORARG0); D3D9_TEXTURE_STATE(ALPHAARG0);
+    D3D9_TEXTURE_STATE(RESULTARG); D3D9_TEXTURE_STATE(CONSTANT);
+    default: return false;
+  }
+#undef D3D9_TEXTURE_STATE
+}
+bool samplerState(D3DDDITEXTURESTAGESTATETYPE input, D3DSAMPLERSTATETYPE& state) {
+#define D3D9_SAMPLER_STATE(name) case D3DDDITSS_##name: state = D3DSAMP_##name; return true
+  switch (input) {
+    D3D9_SAMPLER_STATE(ADDRESSU); D3D9_SAMPLER_STATE(ADDRESSV); D3D9_SAMPLER_STATE(ADDRESSW);
+    D3D9_SAMPLER_STATE(BORDERCOLOR); D3D9_SAMPLER_STATE(MAGFILTER); D3D9_SAMPLER_STATE(MINFILTER);
+    D3D9_SAMPLER_STATE(MIPFILTER); D3D9_SAMPLER_STATE(MIPMAPLODBIAS); D3D9_SAMPLER_STATE(MAXMIPLEVEL);
+    D3D9_SAMPLER_STATE(MAXANISOTROPY); D3D9_SAMPLER_STATE(SRGBTEXTURE);
+    D3D9_SAMPLER_STATE(ELEMENTINDEX); D3D9_SAMPLER_STATE(DMAPOFFSET);
+    default: return false;
+  }
+#undef D3D9_SAMPLER_STATE
+}
+HRESULT APIENTRY setTextureStageState(HANDLE handle, const D3DDDIARG_TEXTURESTAGESTATE* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  D3DTEXTURESTAGESTATETYPE textureState = D3DTSS_COLOROP;
+  D3DSAMPLERSTATETYPE sampleState = D3DSAMP_ADDRESSU;
+  const bool sample = samplerState(input.State, sampleState);
+  UINT slot = 0;
+  if (sample ? !textureSlot(input.Stage, slot)
+             : (input.Stage >= 8 || !textureStageState(input.State, textureState))) return E_INVALIDARG;
+  // Native colorkey and TEXTUREMAP are not public API state enums. They need
+  // dedicated semantics; never cast them to D3DTSS or D3DSAMP.
+  return operation(handle, [&](Device& device) {
+    return sample ? device.backend->setSamplerState(input.Stage, sampleState, input.Value)
+                  : device.backend->setTextureStageState(input.Stage, textureState, input.Value);
+  });
+}
+
+HRESULT APIENTRY texBlt(HANDLE handle, const D3DDDIARG_TEXBLT* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  struct Copy {
+    Surface* source;
+    Surface* destination;
+    RECT sourceRect, destinationRect;
+    std::vector<uint8_t> upload;
+  };
+  std::vector<Copy> copies;
+  return preparedOperation(handle, [&](Device& device) {
+    const auto src = device.resources.find(input.hSrcResource);
+    const auto dst = device.resources.find(input.hDstResource);
+    if (src == device.resources.end() || dst == device.resources.end()
+        || !src->second->texture || !dst->second->texture || input.DstPoint.x < 0 || input.DstPoint.y < 0)
+      return E_INVALIDARG;
+    auto& sources = src->second->surfaces;
+    auto& destinations = dst->second->surfaces;
+    if (sources[0].desc.format != destinations[0].desc.format || !validArea(input.SrcRect, sources[0].desc))
+      return E_INVALIDARG;
+    // Match dimensions, not level numbers: a smaller destination starts at a
+    // corresponding source mip. CubeMapFace is reserved for these 2D textures.
+    size_t first = 0;
+    while (first < sources.size() && (sources[first].desc.width != destinations[0].desc.width
+        || sources[first].desc.height != destinations[0].desc.height)) ++first;
+    if (first == sources.size()) return E_INVALIDARG;
+    const size_t count = std::min(sources.size() - first, destinations.size());
+    copies.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+      auto& source = sources[first + i];
+      auto& destination = destinations[i];
+      if (source.locked || destination.locked) return E_INVALIDARG;
+      const uint64_t divisor = uint64_t(1) << (first + i);
+      RECT from = {LONG(uint64_t(input.SrcRect.left) / divisor), LONG(uint64_t(input.SrcRect.top) / divisor),
+        LONG(std::min<uint64_t>(source.desc.width, (uint64_t(input.SrcRect.right) + divisor - 1) / divisor)),
+        LONG(std::min<uint64_t>(source.desc.height, (uint64_t(input.SrcRect.bottom) + divisor - 1) / divisor))};
+      const LONG x = LONG(UINT(input.DstPoint.x) >> i), y = LONG(UINT(input.DstPoint.y) >> i);
+      const int64_t right = int64_t(x) + from.right - from.left, bottom = int64_t(y) + from.bottom - from.top;
+      if (!validArea(from, source.desc) || right > INT_MAX || bottom > INT_MAX) return E_INVALIDARG;
+      RECT to = {x, y, LONG(right), LONG(bottom)};
+      if (!validArea(to, destination.desc)) return E_INVALIDARG;
+      Copy copy{&source, &destination, from, to, {}};
+      if (source.desc.systemData && !destination.desc.systemMemory) {
+        const size_t pitch = size_t(from.right - from.left) * 4;
+        const size_t rows = size_t(from.bottom - from.top);
+        if (rows > SIZE_MAX / pitch) return E_INVALIDARG;
+        copy.upload.resize(pitch * rows);
+        auto data = static_cast<const uint8_t*>(source.desc.systemData)
+          + size_t(from.top) * source.desc.systemPitch + size_t(from.left) * 4;
+        for (size_t row = 0; row < rows; ++row)
+          std::memcpy(copy.upload.data() + row * pitch, data + row * source.desc.systemPitch, pitch);
+      }
+      copies.push_back(std::move(copy));
+    }
+    return S_OK;
+  }, [&](Device& device) {
+    for (const auto& copy : copies) {
+      const dxvk::umd::D3D9SurfaceUpload upload{copy.upload.data(), UINT(copy.sourceRect.right - copy.sourceRect.left) * 4};
+      const HRESULT hr = result(device.backend->copySurface(*copy.destination->backend, copy.destinationRect,
+        *copy.source->backend, copy.sourceRect, copy.upload.empty() ? nullptr : &upload));
+      if (FAILED(hr)) return hr;
+    }
+    return S_OK;
   });
 }
 
@@ -652,6 +824,11 @@ HRESULT APIENTRY drawPrimitive(HANDLE handle, const D3DDDIARG_DRAWPRIMITIVE* arg
         || !device.userVertices || !device.userStride) return E_INVALIDARG;
     if (declaration->second->streams != 1
         || declaration->second->streamZeroSize > device.userStride) return E_INVALIDARG;
+    for (const auto binding : device.boundTextures) {
+      if (!binding) continue;
+      for (const auto& level : device.resources.at(binding)->surfaces)
+        if (level.locked) return E_INVALIDARG;
+    }
     stride = device.userStride;
     if (!count) return S_OK;
     const uint64_t offset = uint64_t(input.VStart) * stride;
@@ -756,6 +933,9 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnBlt = blt;
   table.pfnLock = lockResource;
   table.pfnUnlock = unlockResource;
+  table.pfnSetTexture = setTexture;
+  table.pfnSetTextureStageState = setTextureStageState;
+  table.pfnTexBlt = texBlt;
   table.pfnCreateVertexShaderDecl = createVertexDeclaration;
   table.pfnSetVertexShaderDecl = setVertexDeclaration;
   table.pfnDeleteVertexShaderDecl = destroyVertexDeclaration;

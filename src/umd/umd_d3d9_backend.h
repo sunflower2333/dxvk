@@ -3,6 +3,7 @@
 #include "umd_identity.h"
 #include "umd_runtime_bridge.h"
 #include <d3d9.h>
+#include <vector>
 
 namespace dxvk::umd {
 
@@ -26,6 +27,24 @@ private:
   friend class D3D9Backend;
   struct State;
   std::unique_ptr<State> m_state;
+};
+
+class D3D9TextureResource {
+public:
+  D3D9TextureResource();
+  ~D3D9TextureResource();
+  D3D9TextureResource(const D3D9TextureResource&) = delete;
+  D3D9TextureResource& operator=(const D3D9TextureResource&) = delete;
+private:
+  friend class D3D9Backend;
+  struct State;
+  std::unique_ptr<State> m_state;
+};
+
+// Cropped, tightly bounded caller snapshot, owned by the DDI until copy ends.
+struct D3D9SurfaceUpload {
+  const void* data = nullptr;
+  UINT pitch = 0;
 };
 
 class D3D9VertexDeclaration {
@@ -65,10 +84,17 @@ public:
   HRESULT flush() noexcept;
   HRESULT createSurface(const D3D9SurfaceDesc& desc,
                         std::unique_ptr<D3D9SurfaceResource>& result);
+  HRESULT createTexture(const D3D9SurfaceDesc* levels, UINT count,
+                        std::unique_ptr<D3D9TextureResource>& texture,
+                        std::vector<std::unique_ptr<D3D9SurfaceResource>>& surfaces);
+  HRESULT setTexture(UINT stage, D3D9TextureResource* texture);
+  HRESULT setTextureStageState(UINT stage, D3DTEXTURESTAGESTATETYPE state, DWORD value);
+  HRESULT setSamplerState(UINT stage, D3DSAMPLERSTATETYPE state, DWORD value);
   HRESULT setRenderTarget(D3D9SurfaceResource* target);
   HRESULT clear(D3DCOLOR color, UINT count, const RECT* rects, bool computeRects);
   HRESULT copySurface(D3D9SurfaceResource& destination, const RECT& destinationRect,
-                      D3D9SurfaceResource& source, const RECT& sourceRect);
+                      D3D9SurfaceResource& source, const RECT& sourceRect,
+                      const D3D9SurfaceUpload* upload = nullptr);
   HRESULT lockSurface(D3D9SurfaceResource& surface, const RECT* area,
                       DWORD flags, D3DLOCKED_RECT& result);
   HRESULT unlockSurface(D3D9SurfaceResource& surface, bool upload = true);

@@ -576,7 +576,24 @@ only that source SHA with depth1 before creating the isolated candidate.
 
 ## Typed D3D9 texture continuation
 - [complete] Independently verify shader23/24 and checkpoint unchanged binary pins.
-- [in_progress] Implement coherent2D mip ownership, native sampler/state mapping and TexBlt.
-- [pending] Validate creation/snapshots/reentry/retirement and semantic controls on native ARM64.
+- [complete] Implement bounded coherent2D mip ownership, native sampler/state mapping and TexBlt.
+- [in_progress] Validate creation/snapshots/reentry/retirement and semantic controls on native ARM64.
 - [pending] Compile all architectures and verify actual GPU texture/mip pixels.
 - [pending] Continue remaining resources/drawing/presentation and ordinary DX8-DX11 acceptance.
+
+### Texture worktree and access interruption
+Coherent static2D RGBA8/XRGB mip chains, typed PS/VS texture bindings,
+explicit native sampler/TSS mapping, common-level TexBlt, cropped externalCPU
+snapshots before callbacks and worker unbind/flush/release are implemented.
+Native fixture covers partial creation, metadata/pixel mutation, mip matching,
+retryable deletion, reset/reentry and foreign handles. GPU --texture oracle
+adds512pixels/8sample cases, checksumd3afb9c5, to prior576pixels (1088total).
+First native CPU fixture source56files/archivec21418ff transferred before
+WindowsSSH22 became unavailable; no compile/run result received, so no PASS
+claim. AndroidSSH8022/ADB remain healthy. Daemon and root verify only existing
+VM10130,6656MiB/8CPUs, same active image. Screenshot shows live desktop and
+user ISO transfer. Ports22/8122/2222 and directADB-forward22 time out; existing
+forwards and guestMAC/IP neighbor records present. Diagnose access while
+compiling via CI; no second VM, reboot, image or configured setting changes.
+Local Microsoft DDI docs are in reference/codes/windows-driver-docs-ddi,
+revision7515063cea4c9e98db6a92986c5b4ddb0463fd16; prefer these for contracts.

@@ -514,11 +514,11 @@ public:
         checked = 0; checksum = 2166136261u;
         for (UINT stage = 10; stage <= 17; ++stage) {
           const UINT mip = stage == 11 ? 1 : stage == 12 ? 2 : 0;
-          const bool small = stage == 13 || stage == 14;
+          const bool smallDestination = stage == 13 || stage == 14;
           const UINT address = stage == 15 ? D3DTADDRESS_BORDER : stage == 17 ? D3DTADDRESS_WRAP : D3DTADDRESS_CLAMP;
           const float uv = stage >= 15 ? -0.375f : stage == 14 ? 0.5f : (stage == 11 || stage == 13) ? 0.75f : 0.375f;
           for (auto& vertex : verticesWithUv) { vertex.u = uv; vertex.v = (stage == 11 || stage == 13) ? 0.25f : uv; }
-          hr = api.pfnSetTexture(m_driverDevice,0,small ? textureSmall.hResource : textureFull.hResource);
+          hr = api.pfnSetTexture(m_driverDevice,0,smallDestination ? textureSmall.hResource : textureFull.hResource);
           if (FAILED(hr)) return hr;
           hr = sampler(D3DDDITSS_MAXMIPLEVEL,mip); if (FAILED(hr)) return hr;
           hr = sampler(D3DDDITSS_ADDRESSU,address); if (FAILED(hr)) return hr;
@@ -528,7 +528,7 @@ public:
           fill.FillColor = 0xff17293b;
           hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
           std::printf("D3D9_TEXTURE_DRAW stage=%u chain=%s mip=%u address=%u filter=%s\n",
-            stage,small ? "small" : "full",mip,address,stage == 14 ? "linear" : "point");
+            stage,smallDestination ? "small" : "full",mip,address,stage == 14 ? "linear" : "point");
           hr = draw(stage); if (FAILED(hr)) return hr;
         }
         if (textureData != originalTextureData) return E_FAIL;

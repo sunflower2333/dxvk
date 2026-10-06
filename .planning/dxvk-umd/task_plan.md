@@ -597,3 +597,9 @@ forwards and guestMAC/IP neighbor records present. Diagnose access while
 compiling via CI; no second VM, reboot, image or configured setting changes.
 Local Microsoft DDI docs are in reference/codes/windows-driver-docs-ddi,
 revision7515063cea4c9e98db6a92986c5b4ddb0463fd16; prefer these for contracts.
+
+Offline37497502780 compiles typed production DDI on all three architectures,
+then catches the Windows `small` macro collision in the new probe. Rename
+that local variable; no sampler implementation or pixel expectation changes.
+Full37497509867 still builds the original source. Replacement exact-source
+gates and native fixture/semantic controls remain required.

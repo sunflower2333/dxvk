@@ -1077,3 +1077,11 @@ image; exact installed bytes are required before attributing its source.
 - Resume read used a nonexistent src/dxvk_native_runtime path and briefly read
   tests from workspace instead of pinned repo. Discover src/umd and use exact
   project cwd; neither error affected edits, binaries or acceptance evidence.
+
+### Texture probe Windows compile contract
+
+Offline37497502780 identifies `small` as a Windows macro collision on x64,
+ARM64 and x86 after production device/controlled fixture compilation succeeds.
+Rename the new probe local to `smallDestination`; preserve the `small` receipt
+string and all 1088 pixel expectations. Complete replacement architecture,
+native controlled/semantic and actual target GPU gates before acceptance.

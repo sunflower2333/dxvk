@@ -1494,3 +1494,13 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
 - Resume read used a nonexistent src/dxvk_native_runtime path and briefly read
   tests from workspace instead of pinned repo. Discover src/umd and use exact
   project cwd; neither error affected edits, binaries or acceptance evidence.
+
+### Texture source CI compile repair
+
+- Source4beab5c is pushed. Offline37497502780 compiles the production device
+  and controlled fixture on all three architectures, then rejects the new
+  hardware probe because Windows defines `small` as `char`. Rename only that
+  local to `smallDestination`, retaining all geometry/pixel expectations.
+- Full37497509867 identity/shaderCPU pass; backend/native execution pending.
+  No texture fixture or GPU acceptance is claimed. The existing Windows
+  desktop continues its user-owned ISO transfer; diagnose SSH separately.

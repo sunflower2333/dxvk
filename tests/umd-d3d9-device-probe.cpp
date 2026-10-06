@@ -136,7 +136,7 @@ public:
   }
   HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false,
                           bool buffers = false, bool depthStencil = false, bool fixedFunction = false,
-                          bool bufferTransfer = false, bool clipPlanes = false) {
+                          bool bufferTransfer = false, bool clipPlanes = false, bool gpuQueries = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -201,6 +201,13 @@ public:
           std::printf("D3D9_CLIP_PIXEL stage=%u x=%u y=%u value=%08x\n",stage,x,y,actual);
         }
       }
+      if (stage >= 77 && stage <= 79 && SUCCEEDED(status)) {
+        for (UINT y = 0; y < 8; ++y) for (UINT x = 0; x < 8; ++x) {
+          UINT actual;
+          std::memcpy(&actual,backing.data() + 16 + size_t(y) * pitch + x * 4,4);
+          std::printf("D3D9_QUERY_PIXEL stage=%u x=%u y=%u value=%08x\n",stage,x,y,actual);
+        }
+      }
       for (UINT y = 0; y < 8 && SUCCEEDED(status); ++y) {
         for (UINT x = 0; x < 8; ++x) {
           UINT actual;
@@ -256,6 +263,11 @@ public:
               : stage == 70 ? y < 4 : stage == 71 ? x < 4 && y < 4
               : stage != 73 && stage != 74;
             expected = visible ? clipColors[stage-67] : 0xff091725;
+          }
+          if (stage >= 77 && stage <= 79) {
+            const UINT queryColors[] = {0xffbd5c83,0xff43a6c2,0xff73b248};
+            const bool visible = stage == 77 || (stage == 78 && x >= 1 && x < 5 && y >= 2 && y < 6);
+            expected = visible ? queryColors[stage-77] : 0xff091725;
           }
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
@@ -1307,6 +1319,154 @@ public:
         hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,clipDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
         std::printf("D3D9_CLIP_READBACK PASS pixels=%u checksum=%08x padding=retained coefficients=xyzw lifetime=snapshot indices=0/3/5 enable=disable/update/sparse/intersection\n",checked,checksum);
       }
+      if (gpuQueries) {
+        if (!api.pfnCreateQuery || !api.pfnIssueQuery || !api.pfnGetQueryData || !api.pfnDestroyQuery) return E_FAIL;
+        const D3DDDIQUERYTYPE queryTypes[] = {D3DDDIQUERYTYPE_EVENT,D3DDDIQUERYTYPE_OCCLUSION,
+          D3DDDIQUERYTYPE_TIMESTAMP,D3DDDIQUERYTYPE_TIMESTAMP,D3DDDIQUERYTYPE_TIMESTAMPDISJOINT,
+          D3DDDIQUERYTYPE_TIMESTAMPFREQ};
+        const UINT querySizes[] = {sizeof(BOOL),sizeof(UINT),sizeof(UINT64),sizeof(UINT64),sizeof(BOOL),sizeof(UINT64)};
+        std::array<HANDLE,6> queryHandles = {};
+        char unsupportedOwner;
+        D3DDDIARG_CREATEQUERY unsupported = {D3DDDIQUERYTYPE_VCACHE,&unsupportedOwner};
+        const HRESULT unsupportedResult = api.pfnCreateQuery(m_driverDevice,&unsupported);
+        std::printf("D3D9_QUERY_UNSUPPORTED type=%u hr=%08lx output=retained\n",UINT(unsupported.QueryType),static_cast<unsigned long>(unsupportedResult));
+        // The matched Adreno backend has no NVIDIA-specific VCACHE hints.
+        if (unsupportedResult != D3DERR_NOTAVAILABLE || unsupported.hQuery != &unsupportedOwner) return E_FAIL;
+        for (UINT id = 0; id < queryHandles.size(); ++id) {
+          D3DDDIARG_CREATEQUERY query = {queryTypes[id],nullptr};
+          hr = api.pfnCreateQuery(m_driverDevice,&query);
+          std::printf("D3D9_QUERY_CREATE id=%u type=%u bytes=%u hr=%08lx\n",id,UINT(queryTypes[id]),querySizes[id],static_cast<unsigned long>(hr));
+          if (hr != S_OK || !query.hQuery) return FAILED(hr) ? hr : E_FAIL;
+          queryHandles[id] = query.hQuery;
+          std::array<uint8_t,32> output; output.fill(0xc1);
+          const auto before = output;
+          const D3DDDIARG_GETQUERYDATA get = {query.hQuery,output.data() + 5};
+          const HRESULT pending = api.pfnGetQueryData(m_driverDevice,&get);
+          std::printf("D3D9_QUERY_UNISSUED id=%u hr=%08lx guards=retained\n",id,static_cast<unsigned long>(pending));
+          if (pending != S_FALSE || output != before) return E_FAIL;
+        }
+        auto issue = [&](UINT id,UINT flags) -> HRESULT {
+          D3DDDIARG_ISSUEQUERY args = {}; args.hQuery = queryHandles[id]; args.Flags.Value = flags;
+          const HRESULT status = api.pfnIssueQuery(m_driverDevice,&args);
+          std::printf("D3D9_QUERY_ISSUE id=%u flags=%u hr=%08lx\n",id,flags,static_cast<unsigned long>(status));
+          return status == S_OK ? S_OK : FAILED(status) ? status : E_FAIL;
+        };
+        if (issue(0,1) != E_INVALIDARG) return E_FAIL;
+        const ULONGLONG queryDeadline = GetTickCount64() + 8000;
+        UINT completions = 0;
+        auto complete = [&](UINT id,UINT caseId,UINT64& value) -> HRESULT {
+          std::array<uint8_t,32> output; output.fill(0xc1);
+          const auto before = output;
+          const D3DDDIARG_GETQUERYDATA get = {queryHandles[id],output.data() + 5};
+          UINT polls = 0;
+          HRESULT status;
+          do {
+            ++polls;
+            status = api.pfnGetQueryData(m_driverDevice,&get);
+            if (status == S_FALSE) {
+              if (output != before || GetTickCount64() >= queryDeadline) return E_FAIL;
+              Sleep(1);
+            }
+          } while (status == S_FALSE);
+          if (status != S_OK) return FAILED(status) ? status : E_FAIL;
+          for (UINT i = 0; i < output.size(); ++i)
+            if ((i < 5 || i >= 5 + querySizes[id]) && output[i] != 0xc1) return E_FAIL;
+          value = 0;
+          std::memcpy(&value,output.data() + 5,querySizes[id]);
+          const auto completed = output;
+          output.fill(0xc1);
+          if (api.pfnGetQueryData(m_driverDevice,&get) != S_OK || output != completed) return E_FAIL;
+          const D3DDDIARG_GETQUERYDATA poll = {queryHandles[id],nullptr};
+          if (api.pfnGetQueryData(m_driverDevice,&poll) != S_OK) return E_FAIL;
+          ++completions;
+          std::printf("D3D9_QUERY_RESULT case=%u id=%u type=%u bytes=%u polls=%u value=%llu data=",caseId,id,UINT(queryTypes[id]),querySizes[id],polls,static_cast<unsigned long long>(value));
+          for (UINT i = 0; i < querySizes[id]; ++i) std::printf("%02x",UINT(completed[5 + i]));
+          std::printf(" guards=retained cached=exact poll=complete\n");
+          return S_OK;
+        };
+        struct QueryVertex { float x,y,z; D3DCOLOR color; };
+        static_assert(sizeof(QueryVertex) == 16);
+        const D3DDDIVERTEXELEMENT queryElements[] = {{0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0},
+          {0,12,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+        D3DDDIARG_CREATEVERTEXSHADERDECL queryDeclaration = {2,nullptr};
+        hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&queryDeclaration,queryElements); if (FAILED(hr)) return hr;
+        hr = api.pfnSetVertexShaderDecl(m_driverDevice,queryDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        const D3DDDIARG_SETSTREAMSOURCEUM queryStream = {0,sizeof(QueryVertex)};
+        const D3DDDIARG_VIEWPORTINFO queryViewport = {0,0,8,8};
+        hr = api.pfnSetViewport(m_driverDevice,&queryViewport); if (FAILED(hr)) return hr;
+        D3DMATRIX identity = {}; identity._11 = identity._22 = identity._33 = identity._44 = 1.0f;
+        for (const auto type : {D3DTS_WORLD,D3DTS_VIEW,D3DTS_PROJECTION}) {
+          const D3DDDIARG_SETTRANSFORM transform = {type,identity};
+          hr = api.pfnSetTransform(m_driverDevice,&transform); if (FAILED(hr)) return hr;
+        }
+        for (const auto queryState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_ZENABLE,0},
+          {D3DDDIRS_STENCILENABLE,0},{D3DDDIRS_LIGHTING,0},{D3DDDIRS_COLORVERTEX,1}}) {
+          hr = state(queryState.State,queryState.Value); if (FAILED(hr)) return hr;
+        }
+        const D3DDDIARG_SETCLIPPLANE reject = {5,{0,0,0,-1}};
+        hr = api.pfnSetClipPlane(m_driverDevice,&reject); if (FAILED(hr)) return hr;
+        hr = issue(4,1); if (FAILED(hr)) return hr;
+        hr = issue(2,2); if (FAILED(hr)) return hr;
+        hr = issue(0,2); if (FAILED(hr)) return hr;
+        const UINT queryColors[] = {0xffbd5c83,0xff43a6c2,0xff73b248};
+        const UINT queryCounts[] = {64,16,0};
+        checked = 0; checksum = 2166136261u;
+        for (UINT stage = 77; stage <= 79; ++stage) {
+          hr = state(D3DDDIRS_CLIPPLANEENABLE,stage == 79 ? 32 : 0); if (FAILED(hr)) return hr;
+          hr = state(D3DDDIRS_SCISSORTESTENABLE,stage == 78 ? 1 : 0); if (FAILED(hr)) return hr;
+          const RECT scissor = {1,2,5,6};
+          hr = api.pfnSetScissorRect(m_driverDevice,&scissor); if (FAILED(hr)) return hr;
+          QueryVertex queryVertices[5] = {{1000,1000,.5f,0xff000000},
+            {-2,2,.5f,queryColors[stage-77]},{2,2,.5f,queryColors[stage-77]},
+            {-2,-2,.5f,queryColors[stage-77]},{2,-2,.5f,queryColors[stage-77]}};
+          hr = api.pfnSetStreamSourceUm(m_driverDevice,&queryStream,queryVertices); if (FAILED(hr)) return hr;
+          fill.FillColor = 0xff091725;
+          hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
+          hr = state(D3DDDIRS_SCENECAPTURE,1); if (FAILED(hr)) return hr;
+          hr = issue(1,1); if (FAILED(hr)) return hr;
+          std::array<uint8_t,32> pendingBytes; pendingBytes.fill(0xc1);
+          const auto before = pendingBytes;
+          const D3DDDIARG_GETQUERYDATA begun = {queryHandles[1],pendingBytes.data() + 5};
+          const HRESULT pending = api.pfnGetQueryData(m_driverDevice,&begun);
+          std::printf("D3D9_QUERY_BEGUN stage=%u hr=%08lx guards=retained\n",stage,static_cast<unsigned long>(pending));
+          if (pending != S_FALSE || pendingBytes != before) return E_FAIL;
+          hr = api.pfnDrawPrimitive(m_driverDevice,&primitive,nullptr);
+          std::printf("D3D9_QUERY_DRAW stage=%u hr=%08lx\n",stage,static_cast<unsigned long>(hr));
+          if (FAILED(hr)) return hr;
+          hr = issue(1,2); if (FAILED(hr)) return hr;
+          hr = state(D3DDDIRS_SCENECAPTURE,0); if (FAILED(hr)) return hr;
+          hr = api.pfnFlush(m_driverDevice); if (FAILED(hr)) return hr;
+          UINT64 count = 0;
+          hr = complete(1,stage,count); if (FAILED(hr)) return hr;
+          if (count != queryCounts[stage-77]) return E_FAIL;
+          hr = readback(stage); if (FAILED(hr)) return hr;
+        }
+        hr = issue(3,2); if (FAILED(hr)) return hr;
+        hr = issue(4,2); if (FAILED(hr)) return hr;
+        hr = issue(5,2); if (FAILED(hr)) return hr;
+        hr = issue(0,2); if (FAILED(hr)) return hr;
+        hr = issue(0,2); if (FAILED(hr)) return hr;
+        hr = api.pfnFlush(m_driverDevice); if (FAILED(hr)) return hr;
+        UINT64 event = 0,first = 0,last = 0,disjoint = 0,frequency = 0;
+        hr = complete(0,80,event); if (FAILED(hr) || event != TRUE) return FAILED(hr) ? hr : E_FAIL;
+        hr = complete(2,81,first); if (FAILED(hr)) return hr;
+        hr = complete(3,82,last); if (FAILED(hr) || last < first) return FAILED(hr) ? hr : E_FAIL;
+        hr = complete(4,83,disjoint); if (FAILED(hr) || disjoint != FALSE) return FAILED(hr) ? hr : E_FAIL;
+        hr = complete(5,84,frequency); if (FAILED(hr) || !frequency) return FAILED(hr) ? hr : E_FAIL;
+        hr = issue(0,2); if (FAILED(hr)) return hr;
+        hr = api.pfnFlush(m_driverDevice); if (FAILED(hr)) return hr;
+        hr = complete(0,85,event); if (FAILED(hr) || event != TRUE) return FAILED(hr) ? hr : E_FAIL;
+        for (UINT id = 0; id < queryHandles.size(); ++id) {
+          hr = api.pfnDestroyQuery(m_driverDevice,queryHandles[id]);
+          std::printf("D3D9_QUERY_DESTROY id=%u hr=%08lx\n",id,static_cast<unsigned long>(hr));
+          if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+          const D3DDDIARG_GETQUERYDATA stale = {queryHandles[id],nullptr};
+          if (api.pfnDestroyQuery(m_driverDevice,queryHandles[id]) != E_INVALIDARG
+              || api.pfnGetQueryData(m_driverDevice,&stale) != E_INVALIDARG) return E_FAIL;
+        }
+        hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,queryDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        std::printf("D3D9_QUERY_READBACK PASS pixels=%u checksum=%08x queries=6 completions=%u occlusion=64/16/0 event=full-BOOL timestamps=ordered frequency=positive disjoint=false guards=retained cached=exact lifetime=owned\n",checked,checksum,completions);
+      }
     }
     hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
     if (FAILED(hr)) return hr;
@@ -1547,7 +1707,8 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  const bool clipPlanes = argc == 3 && !wcscmp(argv[2], L"--clip-planes");
+  const bool gpuQueries = argc == 3 && !wcscmp(argv[2], L"--queries");
+  const bool clipPlanes = gpuQueries || (argc == 3 && !wcscmp(argv[2], L"--clip-planes"));
   const bool bufferTransfer = clipPlanes || (argc == 3 && !wcscmp(argv[2], L"--buffer-transfer"));
   const bool fixedFunction = bufferTransfer || (argc == 3 && !wcscmp(argv[2], L"--fixed-function"));
   const bool depthStencil = fixedFunction || (argc == 3 && !wcscmp(argv[2], L"--depth"));
@@ -1557,17 +1718,17 @@ int wmain(int argc, WCHAR** argv) {
   const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer|--clip-planes]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer|--clip-planes|--queries]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer,clipPlanes) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer,clipPlanes,gpuQueries) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    clipPlanes ? "CLIP" : bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    clipPlanes ? "typed homogeneous clip-plane draw/readback pixels" : bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    gpuQueries ? "QUERY" : clipPlanes ? "CLIP" : bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    gpuQueries ? "typed GPU query completion/occlusion/timestamp/readback" : clipPlanes ? "typed homogeneous clip-plane draw/readback pixels" : bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

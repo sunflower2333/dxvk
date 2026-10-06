@@ -57,6 +57,12 @@ struct Shader {
   ShaderStage stage;
   std::unique_ptr<dxvk::umd::D3D9Shader> backend;
 };
+struct Query {
+  D3DQUERYTYPE type;
+  UINT bytes = 0;
+  bool ended = false;
+  std::unique_ptr<dxvk::umd::D3D9QueryResource> backend;
+};
 struct Device {
   std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>(true);
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
@@ -68,6 +74,7 @@ struct Device {
   std::unordered_set<HANDLE> runtimeResources;
   std::unordered_map<HANDLE, std::unique_ptr<Declaration>> declarations;
   std::unordered_map<HANDLE, std::unique_ptr<Shader>> shaders;
+  std::unordered_map<HANDLE, std::unique_ptr<Query>> queries;
   std::array<HANDLE, 2> boundShaders = {};
   std::array<HANDLE, 20> boundTextures = {};
   HANDLE declaration = nullptr;
@@ -108,12 +115,13 @@ struct Device {
         if (indices) backend->setIndices(nullptr);
         for (const auto& light : lights)
           if (light.second.enabled) backend->setLightEnabled(light.second.slot, false);
-        if (!resources.empty() || !declarations.empty() || !shaders.empty()) backend->flush();
+        if (!resources.empty() || !declarations.empty() || !shaders.empty() || !queries.empty()) backend->flush();
       } } catch (...) { hr = E_FAIL; }
       resources.clear();
       runtimeResources.clear();
       declarations.clear();
       shaders.clear();
+      queries.clear();
       boundShaders = {};
       boundTextures = {};
       declaration = nullptr;
@@ -772,6 +780,111 @@ HRESULT APIENTRY destroyVertexDeclaration(HANDLE handle, HANDLE token) {
   }, true);
 }
 
+bool queryDescription(D3DDDIQUERYTYPE input, D3DQUERYTYPE& type, UINT& bytes) {
+  switch (input) {
+    case D3DDDIQUERYTYPE_VCACHE: type = D3DQUERYTYPE_VCACHE; bytes = sizeof(D3DDEVINFO_VCACHE); break;
+    case D3DDDIQUERYTYPE_EVENT: type = D3DQUERYTYPE_EVENT; bytes = sizeof(BOOL); break;
+    case D3DDDIQUERYTYPE_OCCLUSION: type = D3DQUERYTYPE_OCCLUSION; bytes = sizeof(UINT); break;
+    case D3DDDIQUERYTYPE_TIMESTAMP: type = D3DQUERYTYPE_TIMESTAMP; bytes = sizeof(UINT64); break;
+    case D3DDDIQUERYTYPE_TIMESTAMPDISJOINT: type = D3DQUERYTYPE_TIMESTAMPDISJOINT; bytes = sizeof(BOOL); break;
+    case D3DDDIQUERYTYPE_TIMESTAMPFREQ: type = D3DQUERYTYPE_TIMESTAMPFREQ; bytes = sizeof(UINT64); break;
+    default: return false;
+  }
+  return true;
+}
+
+HRESULT APIENTRY createQuery(HANDLE handle, D3DDDIARG_CREATEQUERY* args) {
+  if (!args) return E_INVALIDARG;
+  const auto queryType = args->QueryType;
+  D3DQUERYTYPE type = D3DQUERYTYPE_EVENT;
+  UINT bytes = 0;
+  if (!queryDescription(queryType, type, bytes)) return D3DERR_NOTAVAILABLE;
+  return operation(handle, [&](Device& device) {
+    auto query = std::make_unique<Query>();
+    query->type = type; query->bytes = bytes;
+    const HRESULT hr = result(device.backend->createQuery(type, query->backend));
+    if (FAILED(hr)) return hr;
+    if (!query->backend) return E_FAIL;
+    const auto runtime = device.gpu->backend();
+    const HRESULT status = result(runtime.create.callbacks->status(runtime.create.owner));
+    if (FAILED(status)) return status;
+    std::lock_guard<std::mutex> lock(devicesMutex);
+    if (!nextHandle) return E_OUTOFMEMORY;
+    const HANDLE token = reinterpret_cast<HANDLE>(nextHandle++);
+    device.queries.emplace(token, std::move(query));
+    args->hQuery = token;
+    return S_OK;
+  });
+}
+
+HRESULT APIENTRY issueQuery(HANDLE handle, const D3DDDIARG_ISSUEQUERY* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  // Native Begin/End bits have the opposite values to D3DISSUE_BEGIN/END.
+  if (input.Flags.Value != 1 && input.Flags.Value != 2) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.queries.find(input.hQuery);
+    if (entry == device.queries.end()) return E_INVALIDARG;
+    auto& query = *entry->second;
+    const bool begin = input.Flags.Begin != 0;
+    if (begin && query.type != D3DQUERYTYPE_OCCLUSION && query.type != D3DQUERYTYPE_TIMESTAMPDISJOINT)
+      return E_INVALIDARG;
+    const HRESULT hr = result(device.backend->issueQuery(*query.backend, begin ? D3DISSUE_BEGIN : D3DISSUE_END));
+    if (FAILED(hr)) return hr;
+    const auto runtime = device.gpu->backend();
+    const HRESULT status = result(runtime.create.callbacks->status(runtime.create.owner));
+    if (FAILED(status)) return status;
+    query.ended = !begin;
+    return S_OK;
+  });
+}
+
+HRESULT APIENTRY getQueryData(HANDLE handle, const D3DDDIARG_GETQUERYDATA* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  alignas(UINT64) std::array<uint8_t, sizeof(D3DDEVINFO_VCACHE)> data = {};
+  bool pending = false;
+  const HRESULT hr = preparedOperation(handle, [&](Device& device) {
+    const auto entry = device.queries.find(input.hQuery);
+    if (entry == device.queries.end()) return E_INVALIDARG;
+    if (input.pData && entry->second->bytes > UINTPTR_MAX - reinterpret_cast<uintptr_t>(input.pData))
+      return E_INVALIDARG;
+    return S_OK;
+  }, [&](Device& device) {
+    auto& query = *device.queries.at(input.hQuery);
+    // Avoid the core's implicit issue-on-first-GetData behavior at the DDI.
+    if (!query.ended) { pending = true; return S_OK; }
+    const HRESULT fetched = device.backend->getQueryData(*query.backend,
+      input.pData ? data.data() : nullptr, input.pData ? query.bytes : 0);
+    if (fetched != S_OK && fetched != S_FALSE) return result(fetched);
+    const auto runtime = device.gpu->backend();
+    const HRESULT status = result(runtime.create.callbacks->status(runtime.create.owner));
+    if (FAILED(status)) return status;
+    if (fetched == S_FALSE) { pending = true; return S_OK; }
+    if (query.type == D3DQUERYTYPE_EVENT) {
+      // Cached core EVENT data writes one bool byte; the native ABI requires
+      // the complete four-byte BOOL TRUE, only after actual completion.
+      const BOOL completed = TRUE;
+      std::memcpy(data.data(), &completed, sizeof(completed));
+    }
+    if (input.pData) std::memcpy(input.pData, data.data(), query.bytes);
+    return S_OK;
+  });
+  // S_FALSE is a query-completion result; all other DDIs retain strict S_OK.
+  return hr == S_OK && pending ? S_FALSE : hr;
+}
+
+HRESULT APIENTRY destroyQuery(HANDLE handle, HANDLE token) {
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.queries.find(token);
+    if (entry == device.queries.end()) return E_INVALIDARG;
+    const HRESULT hr = result(device.backend->flush());
+    if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+    device.queries.erase(entry);
+    return hr;
+  }, true);
+}
+
 HRESULT createShader(HANDLE handle, ShaderStage stage, UINT bytes,
                      const UINT* input, HANDLE* output) {
   if (!input || bytes < 8 || bytes % sizeof(DWORD) || bytes > 4u * 1024u * 1024u)
@@ -1350,6 +1463,10 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnMultiplyTransform = setTransform<D3DDDIARG_MULTIPLYTRANSFORM, true>;
   table.pfnSetMaterial = setMaterial;
   table.pfnSetClipPlane = setClipPlane;
+  table.pfnCreateQuery = createQuery;
+  table.pfnIssueQuery = issueQuery;
+  table.pfnGetQueryData = getQueryData;
+  table.pfnDestroyQuery = destroyQuery;
   table.pfnCreateLight = createLight;
   table.pfnSetLight = setLight;
   table.pfnDestroyLight = destroyLight;

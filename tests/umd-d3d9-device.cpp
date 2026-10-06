@@ -106,6 +106,15 @@ struct Fixture {
   std::vector<uint8_t> constantBytes;
   UINT constantFirst = 0, constantCount = 0;
   char constantType = 0;
+  unsigned queryCreates = 0, queryCloses = 0, queryIssues = 0, queryReads = 0;
+  HRESULT queryCreateResult = S_OK, queryIssueResult = S_OK, queryDataResult = S_OK;
+  bool nullQuery = false, queryThrowAllocation = false, queryThrowOther = false;
+  bool querySingleByteEvent = false;
+  D3DQUERYTYPE queryType = D3DQUERYTYPE_EVENT;
+  DWORD queryIssueFlags = 0;
+  UINT queryDataBytes = 0;
+  std::array<uint8_t, sizeof(D3DDEVINFO_VCACHE)> queryBytes = {};
+  std::function<void()> queryCreateHook, queryIssueHook, queryDataHook;
   unsigned textureCreates = 0, textureCloses = 0, textureSets = 0;
   bool nullTexture = false;
   HRESULT textureResult = S_OK, copyResult = S_OK;
@@ -354,6 +363,16 @@ dxvk::umd::D3D9Shader::~D3D9Shader() {
   CHECK(GetCurrentThreadId() != f->caller); ++f->shaderCloses;
 }
 
+struct dxvk::umd::D3D9QueryResource::State {
+  D3DQUERYTYPE type = D3DQUERYTYPE_EVENT;
+};
+dxvk::umd::D3D9QueryResource::D3D9QueryResource() : m_state(std::make_unique<State>()) {
+  CHECK(GetCurrentThreadId() != f->caller); ++f->queryCreates;
+}
+dxvk::umd::D3D9QueryResource::~D3D9QueryResource() {
+  CHECK(GetCurrentThreadId() != f->caller); ++f->queryCloses;
+}
+
 struct dxvk::umd::D3D9VertexDeclaration::State { };
 dxvk::umd::D3D9VertexDeclaration::D3D9VertexDeclaration() : m_state(std::make_unique<State>()) {
   CHECK(GetCurrentThreadId() != f->caller); ++f->declarationCreates;
@@ -382,6 +401,7 @@ dxvk::umd::D3D9Backend::~D3D9Backend() {
   CHECK(f->surfaceCreates == f->surfaceCloses && !m_state->target && !m_state->depth);
   CHECK(f->declarationCreates == f->declarationCloses && !m_state->declaration);
   CHECK(f->shaderCreates == f->shaderCloses && !m_state->shaders[0] && !m_state->shaders[1]);
+  CHECK(f->queryCreates == f->queryCloses);
   CHECK(f->textureCreates == f->textureCloses);
   for (const auto texture : m_state->textures) CHECK(!texture);
   CHECK(f->bufferCreates == f->bufferCloses && !m_state->indices);
@@ -433,6 +453,39 @@ HRESULT dxvk::umd::D3D9Backend::flush() noexcept {
   CHECK(GetCurrentThreadId() != f->caller); ++f->backendFlushes;
   if (f->flushResult != S_OK) return f->flushResult;
   return m_state->bridge.create.callbacks->status(m_state->bridge.create.owner);
+}
+
+HRESULT dxvk::umd::D3D9Backend::createQuery(D3DQUERYTYPE type,
+    std::unique_ptr<D3D9QueryResource>& output) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->queryThrowAllocation) throw std::bad_alloc();
+  if (f->queryThrowOther) throw 1;
+  if (f->queryCreateResult != S_OK) return f->queryCreateResult;
+  if (f->nullQuery) return S_OK;
+  auto query = std::make_unique<D3D9QueryResource>();
+  query->m_state->type = type; f->queryType = type;
+  if (f->queryCreateHook) { auto hook = std::move(f->queryCreateHook); hook(); }
+  output = std::move(query);
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::issueQuery(D3D9QueryResource&, DWORD flags) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  ++f->queryIssues; f->queryIssueFlags = flags;
+  if (f->queryIssueHook) { auto hook = std::move(f->queryIssueHook); hook(); }
+  return f->queryIssueResult;
+}
+HRESULT dxvk::umd::D3D9Backend::getQueryData(D3D9QueryResource& query, void* data, UINT bytes) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  CHECK((data && bytes > 0 && bytes <= f->queryBytes.size()) || (!data && !bytes));
+  ++f->queryReads; f->queryDataBytes = bytes;
+  // Write private output even on pending/failure to catch premature publication.
+  if (data) {
+    if (query.m_state->type == D3DQUERYTYPE_EVENT && f->querySingleByteEvent)
+      *static_cast<uint8_t*>(data) = 1;
+    else std::memcpy(data, f->queryBytes.data(), bytes);
+  }
+  if (f->queryDataHook) { auto hook = std::move(f->queryDataHook); hook(); }
+  return f->queryDataResult;
 }
 
 HRESULT dxvk::umd::D3D9Backend::createVertexDeclaration(const D3DVERTEXELEMENT9* elements,
@@ -788,6 +841,10 @@ static void createDevice() {
   expectedTable.pfnMultiplyTransform = f->table.pfnMultiplyTransform;
   expectedTable.pfnSetMaterial = f->table.pfnSetMaterial;
   expectedTable.pfnSetClipPlane = f->table.pfnSetClipPlane;
+  expectedTable.pfnCreateQuery = f->table.pfnCreateQuery;
+  expectedTable.pfnIssueQuery = f->table.pfnIssueQuery;
+  expectedTable.pfnGetQueryData = f->table.pfnGetQueryData;
+  expectedTable.pfnDestroyQuery = f->table.pfnDestroyQuery;
   expectedTable.pfnCreateLight = f->table.pfnCreateLight;
   expectedTable.pfnSetLight = f->table.pfnSetLight;
   expectedTable.pfnDestroyLight = f->table.pfnDestroyLight;
@@ -2482,7 +2539,188 @@ static void clipPlaneContracts() {
   closeAdapter();
 }
 
+static void queryContracts() {
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    CHECK(f->table.pfnCreateQuery && f->table.pfnIssueQuery && f->table.pfnGetQueryData && f->table.pfnDestroyQuery);
+    char cookie;
+    D3DDDIARG_CREATEQUERY args = {D3DDDIQUERYTYPE_EVENT, &cookie};
+    const auto original = snapshot(args);
+    CHECK(f->table.pfnCreateQuery(f->device, nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnCreateQuery(nullptr, &args) == E_INVALIDARG && snapshot(args) == original);
+    for (const auto type : {D3DDDIQUERYTYPE_RESOURCEMANAGER, D3DDDIQUERYTYPE_VERTEXSTATS,
+        D3DDDIQUERYTYPE_PIPELINETIMINGS, static_cast<D3DDDIQUERYTYPE>(UINT_MAX)}) {
+      args.QueryType = type; const auto before = snapshot(args);
+      CHECK(f->table.pfnCreateQuery(f->device, &args) == D3DERR_NOTAVAILABLE && snapshot(args) == before);
+    }
+    args.QueryType = D3DDDIQUERYTYPE_EVENT;
+    for (const HRESULT failure : {S_FALSE, E_FAIL, E_OUTOFMEMORY, D3DERR_NOTAVAILABLE,
+        DXGI_ERROR_WAS_STILL_DRAWING}) {
+      f->queryCreateResult = failure;
+      const HRESULT expected = failure == S_FALSE ? E_FAIL
+        : failure == DXGI_ERROR_WAS_STILL_DRAWING ? D3DERR_WASSTILLDRAWING : failure;
+      CHECK(f->table.pfnCreateQuery(f->device, &args) == expected && snapshot(args) == original);
+    }
+    f->queryCreateResult = S_OK; f->nullQuery = true;
+    CHECK(f->table.pfnCreateQuery(f->device, &args) == E_FAIL && snapshot(args) == original);
+    f->nullQuery = false; f->queryThrowAllocation = true;
+    CHECK(f->table.pfnCreateQuery(f->device, &args) == E_OUTOFMEMORY && snapshot(args) == original);
+    f->queryThrowAllocation = false; f->queryThrowOther = true;
+    CHECK(f->table.pfnCreateQuery(f->device, &args) == E_FAIL && snapshot(args) == original);
+    f->queryThrowOther = false;
+    CHECK(f->queryCreates == 0);
+
+    const D3DDDIQUERYTYPE types[] = {D3DDDIQUERYTYPE_VCACHE, D3DDDIQUERYTYPE_EVENT,
+      D3DDDIQUERYTYPE_OCCLUSION, D3DDDIQUERYTYPE_TIMESTAMP,
+      D3DDDIQUERYTYPE_TIMESTAMPDISJOINT, D3DDDIQUERYTYPE_TIMESTAMPFREQ};
+    const D3DQUERYTYPE coreTypes[] = {D3DQUERYTYPE_VCACHE, D3DQUERYTYPE_EVENT,
+      D3DQUERYTYPE_OCCLUSION, D3DQUERYTYPE_TIMESTAMP,
+      D3DQUERYTYPE_TIMESTAMPDISJOINT, D3DQUERYTYPE_TIMESTAMPFREQ};
+    const UINT sizes[] = {16, 4, 4, 8, 4, 8};
+    for (unsigned index = 0; index < 6; index++) {
+      args = {types[index], &cookie};
+      f->queryHook = [&] {
+        auto nested = args;
+        CHECK(f->table.pfnCreateQuery(f->device, &nested) == D3DERR_WASSTILLDRAWING);
+        CHECK(nested.hQuery == &cookie);
+        CHECK(f->table.pfnDestroyDevice(f->device) == D3DERR_WASSTILLDRAWING);
+        args.QueryType = static_cast<D3DDDIQUERYTYPE>(UINT_MAX);
+      };
+      CHECK(f->table.pfnCreateQuery(f->device, &args) == S_OK);
+      const HANDLE token = args.hQuery;
+      CHECK(token && token != &cookie && f->queryType == coreTypes[index]);
+      std::array<uint8_t, 32> output, alternate; output.fill(0xa5); alternate.fill(0x93);
+      const auto untouched = output, untouchedAlternate = alternate;
+      D3DDDIARG_GETQUERYDATA get = {token, output.data() + 5};
+      const auto reads = f->queryReads;
+      CHECK(f->table.pfnGetQueryData(f->device, &get) == S_FALSE && output == untouched && f->queryReads == reads);
+      CHECK(f->table.pfnGetQueryData(f->device, nullptr) == E_INVALIDARG);
+      D3DDDIARG_ISSUEQUERY issue = {}; issue.hQuery = token;
+      CHECK(f->table.pfnIssueQuery(f->device, nullptr) == E_INVALIDARG);
+      for (const UINT flags : {0u, 3u, 4u, UINT_MAX}) {
+        issue.Flags.Value = flags;
+        CHECK(f->table.pfnIssueQuery(f->device, &issue) == E_INVALIDARG);
+      }
+      issue.Flags.Value = 1;
+      const bool begin = index == 2 || index == 4;
+      CHECK(f->table.pfnIssueQuery(f->device, &issue) == (begin ? S_OK : E_INVALIDARG));
+      if (begin) CHECK(f->queryIssueFlags == D3DISSUE_BEGIN);
+      CHECK(f->table.pfnGetQueryData(f->device, &get) == S_FALSE && output == untouched && f->queryReads == reads);
+      issue.Flags.Value = 2;
+      f->queryHook = [&] {
+        CHECK(f->table.pfnGetQueryData(f->device, &get) == D3DERR_WASSTILLDRAWING);
+        CHECK(f->table.pfnDestroyQuery(f->device, token) == D3DERR_WASSTILLDRAWING);
+        std::thread concurrent([&] {
+          CHECK(f->table.pfnGetQueryData(f->device, &get) == D3DERR_WASSTILLDRAWING);
+        }); concurrent.join();
+        issue.hQuery = nullptr; issue.Flags.Value = 1;
+      };
+      CHECK(f->table.pfnIssueQuery(f->device, &issue) == S_OK && f->queryIssueFlags == D3DISSUE_END);
+      issue.hQuery = token; issue.Flags.Value = 2;
+      for (unsigned i = 0; i < f->queryBytes.size(); i++) f->queryBytes[i] = uint8_t(17 + i + index);
+      f->querySingleByteEvent = index == 1;
+      for (const HRESULT failure : {S_FALSE, HRESULT(2), E_FAIL, E_OUTOFMEMORY,
+          D3DERR_NOTAVAILABLE, DXGI_ERROR_WAS_STILL_DRAWING}) {
+        f->queryDataResult = failure;
+        const HRESULT expected = failure == HRESULT(2) ? E_FAIL
+          : failure == DXGI_ERROR_WAS_STILL_DRAWING ? D3DERR_WASSTILLDRAWING : failure;
+        CHECK(f->table.pfnGetQueryData(f->device, &get) == expected && output == untouched);
+        CHECK(f->queryDataBytes == sizes[index]);
+      }
+      f->queryDataResult = S_OK;
+      f->queryHook = [&] {
+        CHECK(f->table.pfnGetQueryData(f->device, &get) == D3DERR_WASSTILLDRAWING);
+        get.hQuery = nullptr; get.pData = alternate.data() + 5;
+      };
+      CHECK(f->table.pfnGetQueryData(f->device, &get) == S_OK);
+      auto expected = untouched;
+      if (index == 1) { const BOOL value = TRUE; std::memcpy(expected.data() + 5, &value, 4); }
+      else std::memcpy(expected.data() + 5, f->queryBytes.data(), sizes[index]);
+      CHECK(output == expected && alternate == untouchedAlternate);
+      // Cached EVENT completion still writes the full native BOOL.
+      output = untouched; get = {token, output.data() + 5};
+      CHECK(f->table.pfnGetQueryData(f->device, &get) == S_OK && output == expected);
+      get = {token, nullptr};
+      CHECK(f->table.pfnGetQueryData(f->device, &get) == S_OK && f->queryDataBytes == 0);
+      get.pData = reinterpret_cast<void*>(UINTPTR_MAX - 1);
+      const auto beforeInvalid = f->queryReads;
+      CHECK(f->table.pfnGetQueryData(f->device, &get) == E_INVALIDARG && f->queryReads == beforeInvalid);
+      get = {token, output.data() + 5};
+      for (const HRESULT failure : {S_FALSE, E_OUTOFMEMORY, DXGI_ERROR_WAS_STILL_DRAWING}) {
+        f->queryIssueResult = failure;
+        const HRESULT expectedIssue = failure == S_FALSE ? E_FAIL
+          : failure == DXGI_ERROR_WAS_STILL_DRAWING ? D3DERR_WASSTILLDRAWING : failure;
+        CHECK(f->table.pfnIssueQuery(f->device, &issue) == expectedIssue);
+        CHECK(f->table.pfnGetQueryData(f->device, &get) == S_OK);
+      }
+      f->queryIssueResult = S_OK;
+      CHECK(f->table.pfnIssueQuery(f->device, &issue) == S_OK);
+      f->queryDataResult = S_FALSE; output = untouched;
+      CHECK(f->table.pfnGetQueryData(f->device, &get) == S_FALSE && output == untouched);
+      f->queryDataResult = S_OK;
+      f->flushResult = S_FALSE;
+      CHECK(f->table.pfnDestroyQuery(f->device, token) == E_FAIL);
+      CHECK(f->table.pfnGetQueryData(f->device, &get) == S_OK);
+      f->flushResult = S_OK;
+      CHECK(f->table.pfnDestroyQuery(f->device, token) == S_OK);
+      CHECK(f->table.pfnDestroyQuery(f->device, token) == E_INVALIDARG);
+      CHECK(f->table.pfnGetQueryData(f->device, &get) == E_INVALIDARG);
+      CHECK(f->queryCreates == f->queryCloses);
+    }
+    closeDevice(); closeAdapter();
+  }
+  // Backend completion followed by a reset must not publish a token or data.
+  for (unsigned phase = 0; phase < 4; phase++) {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie; D3DDDIARG_CREATEQUERY args = {D3DDDIQUERYTYPE_EVENT, &cookie};
+    if (!phase) f->queryCreateHook = [] { f->queryHook = [] { ++f->generation; }; };
+    const HRESULT created = f->table.pfnCreateQuery(f->device, &args);
+    if (!phase) CHECK(created == D3DERR_DEVICELOST && args.hQuery == &cookie && f->queryCreates == f->queryCloses);
+    else {
+      CHECK(created == S_OK);
+      D3DDDIARG_ISSUEQUERY issue = {}; issue.hQuery = args.hQuery; issue.Flags.End = 1;
+      if (phase == 1) f->queryIssueHook = [] { f->queryHook = [] { ++f->generation; }; };
+      const HRESULT issued = f->table.pfnIssueQuery(f->device, &issue);
+      if (phase == 1) CHECK(issued == D3DERR_DEVICELOST);
+      else {
+        CHECK(issued == S_OK);
+        std::array<uint8_t, 12> output; output.fill(0xa5); const auto before = output;
+        D3DDDIARG_GETQUERYDATA get = {args.hQuery, output.data() + 3};
+        f->queryDataResult = phase == 2 ? S_OK : S_FALSE;
+        f->queryDataHook = [] { f->queryHook = [] { ++f->generation; }; };
+        CHECK(f->table.pfnGetQueryData(f->device, &get) == D3DERR_DEVICELOST && output == before);
+        const auto reads = f->queryReads;
+        CHECK(f->table.pfnGetQueryData(f->device, &get) == D3DERR_DEVICELOST && f->queryReads == reads);
+      }
+      CHECK(f->table.pfnDestroyQuery(f->device, args.hQuery) == D3DERR_DEVICELOST);
+      CHECK(f->queryCreates == f->queryCloses);
+    }
+    const HANDLE stale = f->device;
+    closeDevice();
+    CHECK(f->table.pfnCreateQuery(stale, &args) == E_INVALIDARG);
+    closeAdapter();
+  }
+  {
+    Fixture a; initialize(a); createDevice();
+    D3DDDIARG_CREATEQUERY args = {D3DDDIQUERYTYPE_OCCLUSION, nullptr};
+    CHECK(a.table.pfnCreateQuery(a.device, &args) == S_OK);
+    const HANDLE foreign = args.hQuery;
+    Fixture b; initialize(b); createDevice();
+    D3DDDIARG_GETQUERYDATA get = {foreign, nullptr};
+    D3DDDIARG_ISSUEQUERY issue = {}; issue.hQuery = foreign; issue.Flags.End = 1;
+    CHECK(b.table.pfnGetQueryData(b.device, &get) == E_INVALIDARG);
+    CHECK(b.table.pfnIssueQuery(b.device, &issue) == E_INVALIDARG);
+    CHECK(b.table.pfnDestroyQuery(b.device, foreign) == E_INVALIDARG);
+    closeDevice(); closeAdapter();
+    f = &a; issue.Flags.Value = 1;
+    CHECK(a.table.pfnIssueQuery(a.device, &issue) == S_OK);
+    // Closing a device also retires a still-begun query on its worker.
+    closeDevice(); CHECK(a.queryCreates == a.queryCloses); closeAdapter();
+  }
+}
+
 int main() {
+  queryContracts();
   bufferTransferContracts();
   fixedFunctionContracts();
   depthContracts();

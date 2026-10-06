@@ -46,6 +46,27 @@ struct D3D9Shader::State {
 D3D9Shader::D3D9Shader() : m_state(std::make_unique<State>()) { }
 D3D9Shader::~D3D9Shader() = default;
 
+struct D3D9QueryResource::State {
+  Com<IDirect3DQuery9> query;
+};
+D3D9QueryResource::D3D9QueryResource() : m_state(std::make_unique<State>()) { }
+D3D9QueryResource::~D3D9QueryResource() = default;
+
+HRESULT D3D9Backend::createQuery(D3DQUERYTYPE type, std::unique_ptr<D3D9QueryResource>& output) {
+  auto query = std::make_unique<D3D9QueryResource>();
+  const HRESULT hr = m_state->d3d->CreateQuery(type, &query->m_state->query);
+  if (hr != S_OK || !query->m_state->query) return FAILED(hr) ? hr : E_FAIL;
+  output = std::move(query);
+  return S_OK;
+}
+HRESULT D3D9Backend::issueQuery(D3D9QueryResource& query, DWORD flags) {
+  return query.m_state->query->Issue(flags);
+}
+HRESULT D3D9Backend::getQueryData(D3D9QueryResource& query, void* data, UINT bytes) {
+  if (data && bytes != query.m_state->query->GetDataSize()) return E_INVALIDARG;
+  return query.m_state->query->GetData(data, bytes, 0);
+}
+
 struct D3D9BufferResource::State {
   Com<IDirect3DVertexBuffer9> vertex;
   Com<IDirect3DIndexBuffer9> index;

@@ -1974,3 +1974,13 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
   ordered timestamp pair, disjoint/frequency and owned stale-token cleanup.
   Fresh preflight02 frozen57inputs/archive0e9aa70a has exactly5changedfiles,
   delegated for native fixture/probe compile verification; queryGPU/CI pending.
+
+- Query preflight02 strict nativeARM64 fixture/probe compile passes272881,
+  compile7.6697069s/run0.121894s, zeroWarnings. All57frozen/build/after-run
+  inputs,52Gitbase+5changed, exactPE/COFF/staticKERNEL32 and installedSYS/
+  desktop/acceptedcandidate verify. Evidence8c2a77ed, fixture30bda184 and
+  probeCOFF709d485d retained. Six fresh one-expression controls are frozen
+  from that archive and delegated; originalpositive remains immutable.
+  Independent query CPU oracle derives192pixels/57872e55 and occlusion64/16/0
+  before any GPU run. New query wrapper/verifier copies preserve all accepted
+  clip helpers and add raw completion/cached/pending/frequency/timestamp checks.

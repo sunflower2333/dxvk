@@ -93,6 +93,18 @@ private:
   std::unique_ptr<State> m_state;
 };
 
+class D3D9QueryResource {
+public:
+  D3D9QueryResource();
+  ~D3D9QueryResource();
+  D3D9QueryResource(const D3D9QueryResource&) = delete;
+  D3D9QueryResource& operator=(const D3D9QueryResource&) = delete;
+private:
+  friend class D3D9Backend;
+  struct State;
+  std::unique_ptr<State> m_state;
+};
+
 class D3D9Backend {
 public:
   D3D9Backend();
@@ -141,6 +153,9 @@ public:
   HRESULT setShaderConstantF(D3D9ShaderStage stage, UINT first, UINT count, const float* values);
   HRESULT setShaderConstantI(D3D9ShaderStage stage, UINT first, UINT count, const INT* values);
   HRESULT setShaderConstantB(D3D9ShaderStage stage, UINT first, UINT count, const BOOL* values);
+  HRESULT createQuery(D3DQUERYTYPE type, std::unique_ptr<D3D9QueryResource>& result);
+  HRESULT issueQuery(D3D9QueryResource& query, DWORD flags);
+  HRESULT getQueryData(D3D9QueryResource& query, void* data, UINT bytes);
   HRESULT setTransform(D3DTRANSFORMSTATETYPE state, const D3DMATRIX& matrix, bool multiply);
   HRESULT setMaterial(const D3DMATERIAL9& material);
   HRESULT setClipPlane(UINT index, const float* plane);

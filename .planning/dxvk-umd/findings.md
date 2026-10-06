@@ -1120,3 +1120,97 @@ native controlled/semantic and actual target GPU gates before acceptance.
   Native controlled checks use the separate portableMSVC14.44/26100toolchain.
 - Continue typedvertex/index buffers and indexed/resource-stream drawing;
   ordinary DX8-DX11 admission/presentation/reset remainopen. Fullgoalactive.
+
+### Native buffer development and actual EWDK compiler recovery
+
+- User confirms EWDK mounts; verify actual required reads/build, not descriptor
+  size alone. D: read-only/MSVC14.50.35717/WDK28000 are present. Actual native
+  and x64 compiler builds failC1510 with unreadable clui.dll. Build subagent
+  traces UDF extents18283870208/18287994880 beyond physical17912889344bytes,
+  matches official ISO raw ranges, recovers19missing files beside67readable
+  originals in an owned compiler copy. Fresh C1b9 KMD build is running; original
+  ISO/mount/VM/installed driver are preserved. Independent verification pending.
+- Root implements typed worker-owned vertex/index buffers, dynamic usage,
+  byte-range locks, multiple streams and indexed drawing in053e39f. Linear
+  reserved metadata and index FVF are ignored; SYSTEMMEM buffers stay outside
+  this slice. Resource creation snapshots metadata before callback and rechecks
+  identity before publication; retryable failure keeps output/ownership intact.
+- Controlled preflight01 has164072PASS on native ARM64, separate uncommitted
+  four-file provenance. Committed worktree01 probe preflight catches /W4 /WX
+  local shadow warnings; frozen failed receipt retained. 6ca8770 renames only
+  probe locals. Final56Git inputs and four one-contract mutations are frozen
+  asworktree02; native execution and full/offline CI are running.
+- GPU oracle adds6cases stages18-23: separate streams3/7, byte binding and
+  declaration offsets, missing final stride padding, both index formats,
+  negative/positive BaseVertexIndex, nonzero StartIndex and dynamic
+  NoOverwrite-range/whole-Discard updates. Each draw follows a fresh clear
+  so a no-op cannot inherit the preceding result. Expected384buffer pixels
+  checksum621cd685, total1472including existing texture/shader/draw/clear.
+  Actual GPU execution remains pending; ordinary DX8-DX11 admission staysopen.
+
+### Verified EWDK build, buffer controls and consolidated CI
+
+- Requested build subagent independently verifies EWDK C1b9 production KMD:
+  all9steps9.1133401s,118Git/tree/archive/after-build sources,86compiler files
+  (19exact recovered/67mounted originals),55matching official metadata ranges.
+  ARM64 Native410624byteSYSsha b773c84e8df806293a87a6e27c019c4e0995f51cbc660c871b826ce60947ae9e;
+  onlyntoskrnl/HAL imports. Root independently rechecks local SYSsha/PE/CFG/NX/
+  ASLR. Signed58624/oem17/DWM/Explorer retained; unsigned and uninstalled.
+  Reusableownedcompiler C:\Users\Public\EwdkNativeCompiler-01\bin; EwdkRootD:,
+  CompilerHostarm64, originalkit28000headers/libs. Exact handoff/evidence under
+  artifacts/dxvk-ewdk-target-build-20261007. No full-ISO hash claim.
+- Exact6ca8770 native positive164072PASS compile6.8425305s/run0.1118603s;
+  executable622fab39331e6ca31ecab921ad68fcffa48a15ea0aab3edc6faefe85dbe66ce2.
+  Four compiled one-contract controls independently caught at expectedchecks
+  16153/20142/21059/16978 forrange/unbind/identity/index-reread. All56Git/archive/
+  after-run inputs, nativePE and installed-driver/desktop links independently
+  verify. Offline37508904695 all4SUCCESS before consolidation.
+- User requests disabling redundant CI. cd4f5e2 changes only6workflow files:
+  one automatic nativeUMD workflow includes unique Linux encoder sanitizer/
+  negative controls inidentity. LegacyAPI/package/WDDM/source-transfer workflows
+  disabled inGitHub; targeted offline/runtime controlsmanual. Redundant active
+  runs canceled; latestpush creates exactlyonerun37509470022. Root verifies
+  YAML/triggers/threearchitectures/nativeARM64 job plus56source matches6ca.
+  Subagent continues independent consolidated-build verification; root owns
+  actualGPUbuffer execution. Production source/caps/exports remain unchanged.
+- GPU runners3local/nativeparse/hash links verify; actualGPU buffer execution
+  remains pending compiledARM64candidate. Fullgoal staysactive.
+
+### Next depth/stencil contract audit while buffer CI completes
+
+- LocalMicrosoft PFND3DDDI_SETDEPTHSTENCIL requires retaining an owned depth
+  resource in the device context; native clear handles TARGET/ZBUFFER/STENCIL
+  and COMPUTERECTS independently. Clear remarks distinguish zero preclipped
+  rectangles (no-op) from zero computed rectangles (whole viewport), and
+  require clipping only for computed rectangles.
+- Current clear backend uses publicClear only for computed rectangles and
+  ColorFill for preclipped color rectangles. Depth/stencil support must add a
+  private renderer path for preclipped depth/stencil, preserving those native
+  semantics instead of sending already-clipped rectangles through publicClear
+  and applying viewport/scissor again.
+- Next slice should type D16/D24S8/default-pool depth surfaces, their binding/
+  clear/lifetime and render-state mapping; actual occlusion/stencil pixel
+  oracles and semantic controls are required before any caps/admission change.
+  No depth/stencil source change or acceptance is claimed here.
+
+### Verified buffer target acceptance and next depth/stencil slice
+
+- Independent build verifier passes consolidatedcd4f5e2 run37509470022 all6jobs,
+  all5GitHub artifactZIP digests, three native PE architectures,164072device
+  checks perarchitecture and14actual native ARM64 execution hashes.
+- Actual buffer27/28 diagnostics1/0 each independently verify1472pixels:
+  clear192ffefa655,draw19253a03d45,shader1921384c5a5,texture512d3afb9c5,
+  buffer384621cd685. Durations8.316949s/10.8154619s;24nonempty submits,
+  ctx1/1alloc15/15lock14/14residency15/15remaining0wrong-thread0.
+  Eight payload hashes/nativeARM64 and three frozen scripts match; Limited
+  USER/session1 and tasks removedexit0. Fresh before/after readiness verifies
+  signed58624/oem17/binding0002/PnP0/SYSsha,DWM1552/Explorer6464 and58selected
+  fields unchanged through both bounded runs. Longer-term Explorer stability
+  and ordinary runtime activation remain open. Evidence underbuffer27/28;
+  archiveSHA41d0e786d1e83bd89ce59cc58e19b4d0c26c5ed3c192acec962473893d37d0ad /
+  d7fa6e392568707c1bc59f95af36dbbee0a22229799bb837568381e4b30bd0ce.
+- Next implement D16/D24S8 native resource ownership, SetDepthStencil, independent
+  TARGET/ZBUFFER/STENCIL clearing and actual depth/stencil pixel acceptance.
+  Preclipped clear must avoid a second viewport/scissor clip; computed clear
+  must use the actual intersection, including empty/outside scissor rectangles.
+  No production caps/exports or paired pins are widened at this checkpoint.

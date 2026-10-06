@@ -24,17 +24,41 @@ both runs. Explorer6464 is a fresh baseline; prior2488 has a second recorded
 installed Mesa D3D10 UMD fault c0000005/RVA10db80. MatchingPDB/dump causation
 and long-term desktop stability remain open, separate from uninstalledDXVK.
 
-Continue typed vertex/index buffers, range locks, resource-bound streams and
-indexed drawing next. Then remaining state/resource contracts and runtime
+Typed vertex/index buffers, byte-range locks, resource-bound streams and indexed
+drawing are implemented in053e39f; the strict native probe shadow warning is
+fixed in6ca877040690ff9510fa999ef0370e0fd9ff4536. Uncommitted-source native
+preflight164072PASS is retained separately. Exact56Git/archive/after-run inputs,
+native ARM64 positive164072PASS and four compiled semantic controls independently
+verify asworktree02. Offline37508904695 all4SUCCESS before CI consolidation.
+CI-only sourcecd4f5e22fddc3c30d910ec4fe798c8dc34bd3168 retains the identical56
+inputs; single automatic fullrun37509470022 now includes unique Linux checks.
+All6jobs37509470022SUCCESS; five raw artifact ZIP digests, three PE architectures,
+164072device checks perarchitecture and14actual native ARM64 execution hashes
+independently verify. Exact cd4f5e2 targetbuffer27/28 verify1472pixels each,
+including384buffer621cd685, diagnostics1/0, durations8.316949s/10.8154619s.
+Each has24nonempty submits,ctx1/1alloc15/15lock14/14residency15/15remaining0
+wrong-thread0. All8payloads3scripts/LimitedUSERsession1 verify. Freshreadiness
+keeps signed58624/oem17/binding0002/PnP0/SYSsha,DWM1552/Explorer6464 and58fields
+unchanged; both owned tasks removedexit0. Next implement typeddepth/stencil
+resources, native binding/clear/lifetime and occlusion/stencil pixels.
+Then remaining state/resource contracts and runtime
 presentation/reset, with ordinary system-runtime DX8-DX11 rendering acceptance.
 Keep the full goal active; no Finish, production exports/caps or paired pins
 until mandatory contracts and actual ordinary-runtime acceptance are complete.
 
 User-provided EWDK copy C:\Users\USER\EWDK_br_release_svc_im_28000_260714-1640.iso
-is truncated17912889344bytes versus descriptor19785189376bytes; no active
-transfer and no mount/build. Complete-source location is requested asynchronously.
-EWDK-specific production KMD runner is prepared with automatic compiler/kit
-inventory and input hashes. Existing portable nativeMSVC14.44/26100 remains
+mounts read-only atD: and exposes nativeMSVC14.50.35717/WDK28000. Initial
+native/x64 compiler attempts actually failC1510 because selectedclui.dll UDF
+extents18283870208/18287994880 lie beyond the physical17912889344byte file.
+The user-requested build subagent recovers missing compiler files from exact
+official Microsoft ISO byte ranges into an owned copy, preserving the mount
+and original ISO. Fresh C1b9 KMD build/independent output verification passes:
+all9steps9.1133401s,118sourcefiles,86compilerfiles,19recovered and55official
+ranges. ARM64 Native410624byteSYSsha b773c84e8df806293a87a6e27c019c4e0995f51cbc660c871b826ce60947ae9e,
+kernel-only imports and desktop/signed58624/oem17 continuity verify. Unsigned,
+uninstalled. Future compiler C:\Users\Public\EwdkNativeCompiler-01\bin,
+EwdkRootD:/CompilerHostarm64, kit28000; fresh owned root required.
+Existing portable nativeMSVC14.44/26100 remains
 the separate provenance for controlled fixtures. WindowsSSH22 uses the existing
 Androidroot socat bridgeguestforward; curve25519-sha256 negotiation recovers
 access without service/VM/image changes. AndroidSSH8022/ADB5555 are reachable.
@@ -590,6 +614,9 @@ gates and native fixture/semantic controls remain required.
 - [complete] Verify full/offline/API/package CI and all exact architecture artifacts.
 - [complete] Verify target1088pixels diagnostics1/0 and fresh driver/readiness continuity.
 - [complete] Record immutable evidence and current ordinary-runtime limits.
-- [in_progress] Locate complete EWDK, inventory actual tools and build driver on target.
-- [in_progress] Audit typed VB/IB/range locks/streams/indexed drawing against local DDI docs.
+- [complete] Independently verify actual EWDK KMD build and exact recovered compiler provenance.
+- [complete] Audit and implement typed VB/IB/range locks/streams/indexed drawing against local DDI docs.
+- [complete] Verify exact source6ca8770 native controls, consolidated cd4f5e2 architecture CI and buffer GPU pixels.
+- [complete] Record independently verified buffer hardware and EWDK build checkpoints.
+- [in_progress] Implement typed depth/stencil ownership and native clear semantics with occlusion/stencil pixel oracles.
 - [pending] Complete remaining state/resource/presentation/reset and ordinary DX8-DX11 acceptance.

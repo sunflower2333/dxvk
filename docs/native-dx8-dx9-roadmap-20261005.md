@@ -54,9 +54,15 @@ d3afb9c5, seventeen nonempty submissions and balanced callbacks/residency,
 diagnostics1/0. Fresh signed58624/DWM1552/Explorer6464 continuity and58
 selected readiness values remain unchanged through both runs. Earlier
 Explorer2488 also faults in the installed Mesa D3D10 UMD at the same RVA;
-long-term desktop stability remains open. Vertex/index buffers, remaining
-drawing/state semantics, presentation/reset and ordinary system-runtime
-acceptance remain open.
+long-term desktop stability remains open. The [buffer checkpoint](native-d3d9-buffers-20261007.md)
+adds owned VB/IB/range locks, multi-stream drawing,16/32-bit indexed draws and
+signed base vertices. Consolidated cd4f5e2 CI37509470022 passes all6jobs;
+164072native device checks perarchitecture and four target semantic controls
+verify. Actual targetbuffer27/28 verify1472pixels each, including384buffer
+pixels621cd685,24nonempty submissions and balanced callbacks/residency,
+diagnostics1/0 with unchanged signed58624/desktop/readiness. Depth/stencil,
+remaining state/resource semantics, presentation/reset and ordinary
+system-runtime acceptance remain open.
 Production OpenAdapter and rendering caps remain closed; the historical table
 is not an inventory of the new static core or device bridge.
 

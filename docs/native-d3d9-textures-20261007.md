@@ -94,11 +94,15 @@ Production exports/caps and paired binary pins remain closed.
 
 The user-provided EWDK ISO is visible at
 `C:\Users\USER\EWDK_br_release_svc_im_28000_260714-1640.iso`. Its current
-17,912,889,344 bytes are below the ISO descriptor's 19,785,189,376 bytes;
-the transfer has stopped. It has not been mounted or used for a build.
+17,912,889,344 bytes are below the ISO descriptor's 19,785,189,376 bytes.
+It mounts read-only at D: and exposes MSVC14.50.35717/WDK28000. Actual compiler
+attempts failC1510: UDF extents for both selected `clui.dll` files lie beyond
+the file's end. The requested build subagent recovered exact official Microsoft
+ISO ranges into an owned compiler copy; the fresh C1b9 KMD build and independent
+verification pass all9steps in9.1133401s. The original ISO/mount and installed
+driver are preserved. See the [target EWDK checkpoint](native-ewdk-target-build-20261007.md).
 The native fixture above uses the already verified portable MSVC14.44/26100
-toolchain. A separate EWDK production KMD runner is prepared; complete-image
-location and tool inventory are the next build prerequisites.
+toolchain. EWDK build success and production installation are separate gates.
 
 Use the local Microsoft DDI references under workspace
 `reference/codes/windows-driver-docs-ddi/wdk-ddi-src/content/`:

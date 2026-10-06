@@ -1984,3 +1984,46 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
   Independent query CPU oracle derives192pixels/57872e55 and occlusion64/16/0
   before any GPU run. New query wrapper/verifier copies preserve all accepted
   clip helpers and add raw completion/cached/pending/frequency/timestamp checks.
+
+- Query0a605643a78306a101350ec88fca51cd0974cbc2 committed/pushed once;
+  only consolidatedCI37544531323 triggers. Committed57 archive is byte
+  identical to preflight02. All six strict native controls compile0/noWarnings
+  then intendedexit1; root reviewed/reran originalproofs preserving them.
+  Expectedcheck/line: flags3651/2618,pendingstatus3153/2596,pendingoutput3982/2627,
+  callerpointer5477/2639,eventBOOL11433/2639,postepoch36384/2691. Original36COFFs,
+  sixPEs/allsource+archive/after-run and candidate/compiler/SYS/desktop verify.
+  Rootcontrol01 strengthened receipt attempted a missing failure-result.sources
+  field; failure retained, fresh02 uses actual wrapper-built and collected hashes
+  and independently relinks all positive57 directly to committed0a60564.
+- Separate query verifier selfcheck02 passes a synthetic parser positive and
+  four rejected pixel/EVENT-width/timestamp-order/pending-status records.
+  No GPU execution is implied. Earlier selfcheck01 missing relative cliporacle
+  is retained; fresh helper pins the unchanged canonical rational cliporacle.
+  Seven local query acceptance helpers/oracles are frozen before GPU, preserving
+  all eight old clip helpers and all earlier GPU receipts unchanged.
+
+- Query exact0a60564 CI37544531323 all6SUCCESS. Build verifier independently
+  joins five rawZIPs, actualquery/core/backendcompilelogs, threearchitectures
+  comparator342/typed272881 and15nativeARM64 execution hashes. Fresh committed
+  CPU build passes272881, strict probe compile,72primary+15dependency hashes;
+  root reviews/reruns strengthened proofs preserving all originals. Three frozen
+  wrappers native parse/hash match, generic paths now query mode. Root verifies
+  originalARMZIP11450142911/23802847/1c552b8f and every archived member, native
+  PEs and closedOpenAdapter; stages exactD/P/STATUS candidate process-local.
+  Query39 diagnostics1 launched; acceptance remains pending. Initial root CI
+  read guessed sunfarms repo and got404; corrected to actual checkout gh context
+  sunflower2333 without any workflow dispatch or remote mutation.
+
+- Query39/40 independently PASS diagnostics1/0:5056pixels+1056bytes, nine
+  completions/6handles, occlusion64/16/0, EVENTfullBOOL/reuse, orderedtimestamps,
+  DISJOINTfalse/frequency19200000. Durations35.2096953/34.2518279s,ctx1/1,
+  alloc19/19,lock18/18,render96,residency19/19/wrong0. ExactSYS/oem17/desktop
+  and58readinessfields retain; bothownedtasks removedsuccessfully. Root recomputes
+ 192query+640clip rationalrawpixels and joinsimmutableproofs in root-query-
+  checkpoint-verified-02.json. Acceptance docs/native-d3d9-queries-20261007.md.
+  Root CI03 verifies all5rawZIPmembers and15actualnativebinary/stdout/stderr
+  links. Review01 UTF8BOM and02 all-active-workflows assumption were corrected
+  in fresh03 without touching originals:4unuseddisabled,2manual-only retained.
+  Initial checkpoint01 rawCRLF prevented regex matches; fresh02 normalizes text
+  as original strictverifier, all832 rationalrawpixels perrun PASS. No production
+  issue or failedGPUtest is hidden by these retained local reviewer corrections.

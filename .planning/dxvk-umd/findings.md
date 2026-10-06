@@ -1476,3 +1476,28 @@ first-GetData issue. VCACHE is NVIDIA-specific in this renderer and unavailable
 on matched Adreno830; do not fabricate those hints or advertise target support.
 Native query preflight01 passes272881; revised probe/source preflight02 remains
 under build verification. GPU query acceptance and ordinary runtime remain open.
+
+D3D9 presentation contract audit uses local Microsoft Present/PresentCb docs
+(reference/codes/windows-driver-docs-ddi) and the exact accepted native SDK header.
+D3DDDIARG_PRESENT carries source/destination resource/subresource handles and
+Blt1/ColorFill2/Flip4 flags. Typed D3DDDICB_PRESENT must contain the real source
+allocation and a previously created runtime context; its ABI differs from
+DXGIDDICB_PRESENT and has no opaque pDXGIContext. Existing RuntimeMemory
+presentation copies D3D10 readback into an owned kernel allocation then invokes
+DXGI; available() currently requires live DXGI callbacks and ensureContext()
+creates a separate context. It cannot be blindly reused or cast for typed9.
+Current typed9 surfaces own private core resources only; pfnPresent remains
+absent. Next implementation needs owned allocation metadata, typed PresentCb,
+serialized callback/reset/retirement handling and pixel/display acceptance.
+CPU staging correctness would not establish the separate zero-copy goal.
+No presentation source changes or production admission are included in query0a.
+
+Exactquery0a60564 hardware completion is accepted on Adreno830 with matched
+Mesa8443c71 and unchanged58624KMD. Bothdiagnostics query39/40 produce64/16/0
+actualocclusion and192 matchingrawpixels. Timestampfrequency is19200000; pair
+ordered,DISJOINTfalse,fullEVENTTRUE twice. Everyendedquery wasalreadycomplete
+on firstpoll after explicitflush/readback; actualendedpending was not observed.
+That semanticpath remains separately proven by nativepositive/compiledcontrols.
+Nine unissued/begun pendingresults retainguards; sixquerylifetimes closecleanly.
+Full5056pixel/1056byte acceptance retainsall earliercompactclipgates. This is
+typedoffscreen hardware acceptance; ordinarysystemruntime/Present remains open.

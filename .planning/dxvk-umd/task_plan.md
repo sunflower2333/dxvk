@@ -8,54 +8,36 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Source `0d585e2318266f0f910fc758b997e7e6defcc897` implements SYSTEMMEM VB/IB
-and typed BufBlt, with an aligned GPU probe. Native committed worktree03 passes
-216868 checks and all five compiled semantic controls independently verify
-57 Git/archive/after-run inputs and native ARM64 PE/COFF. Preflight05 is byte
-identical to the committed archive. Single automatic CI37530530983 all6SUCCESS;
-five ZIP digests, three architectures/216868checks and14native ARM64 hashes
-independently verify. Targetbuffer-transfer33/34 diagnostics1/0 pass4224pixels
-and1056bytes each,78renders and balancedcallbacks/residency, retaining signedSYS,
-desktop and58readiness fields. Checkpoint docs/native-d3d9-buffer-transfer-20261007.md.
-Typed SetClipPlane source48efb7d50334a05488f78ef93ea418bf54a68b26 is pushed.
-Corrected native preflight03 and committed worktree01 each pass220595checks;
-all57inputs independently link to Git. Four compiled native semantic controls
-verify invalid indices, callback rereads, aliased indices and reversed coefficients.
-Single automatic CI37533397261 all6SUCCESS: five ZIP digests, three architectures/
-220595 checks,14native execution hashes, Linux gates and actual build/link logs
-independently verify. Independent rational homogeneous equations expect640newclip
-pixels/ac340bd5,4864total. Targetclip35 diagnostics1 fails first new stage67 pixel
-with mask0: (0,0) backgroundff091725 instead offf739a4c. All eight prior slices pass;
-8payloads/3native-parsed wrappers/LimitedUSER1 and signedSYS/desktop/58readiness
-fields independently verify. Failed archive and receipts retained; clip36 not run.
-Diagnostic-only sources25a9edd andd79b3bb are native built and independently linked
-through all57inputs; targetdiagnostic01/02 both retain64backgroundpixels atstage67.
-NORMALIZENORMALS=0 has no effect. Diagnostic02 duration22.7688432s, all eight prior
-slices pass and signedSYS/desktop/58readiness fields stay unchanged. Diagnostic03
-d230cb0 fresh constant refresh also has no effect: all64pixels remain clear,
-duration20.6867262s, prior slices/driver/desktop/readiness retained. Diagnostic04
-e980efa8 POSITION/NORMAL/COLOR layout passes all640clip pixels/ac340bd5,4864total
-and1056bytes with88renders, balanced lifetimes/residency, unchanged signedSYS/desktop/
-58readiness fields. This layout change is diagnostic, not an accepted compact-layout fix.
-Diagnostic05 eade97ce removes only NORMAL and also passes the identical640pixel
-oracle,4864total+1056bytes,88renders with balanced callbacks/residency and retained
-SYS/desktop/readiness. This isolates the failure away from NORMAL declaration alone.
-Diagnostic06 95ce11cd restores coloroffset12 at the same stride28 and reproduces
-all64clearpixels (25.1943667s), with prior slices/driver/desktop/readiness retained.
-Local25da07dc keeps FLOAT3 POSITION/stride28/noNORMAL, inserts one unused zeroDWORD
-before color (offset16), and preserves geometry/640pixel oracle. Strict native
-build07 and independent failure verification pass: all64pixels are3f800000,
-the unused float1 atoffset24, rather than expectedff739a4c. Driver/desktop and
-58readiness fields stay unchanged. Source audit finds vertex-input equality
-can overwrite a header/binding/attribute or earlier-divisor mismatch with a
-later matching divisor. Missing fixed-function attributes use a zero-divisor
-binding, and native MSVC hash lookup compares same-bucket keys without testing
-full hashes. A short-circuit fix uses a portable production helper, tested with
-342 checks and forced cache collisions; reverting the fix fails the exact
-color-offset oracle. Original stride16/color12 probe is restored byte-for-byte
-from25a9edd. New committed source, CI/native build and compact GPU acceptance
-are pending; no clip or ordinary-runtime acceptance is claimed.
-Keep ordinary DX8-DX11 rendering/presentation and the full goal active.
+Owned typed D3D9 queries are accepted at exact source
+`0a605643a78306a101350ec88fca51cd0974cbc2`. Single automatic consolidated
+CI37544531323 passes six jobs, five raw ZIPs, three architecture builds and
+15 actual native ARM64 executions. Native fixture272881 and six compiled
+semantic controls verify snapshots, pending/completion output and reset/lifetime.
+Fresh committed source/archive/build/after-run verifies72primary+15dependencies;
+root independently reviews original native, CI/archive and PowerShell proofs.
+
+Target query39/40 diagnostics1/0 each pass5056pixels+1056bytes, six handles/nine
+completions, occlusion64/16/0, full EVENT/cached/reuse, ordered timestamps,
+DISJOINTfalse and frequency19200000. Root independently recomputes192query
+and640clip raw rational pixels per run; every earlier slice remains strict.
+Callbacks ctx1/1alloc19/19lock18/18render96residency19/19wrong0. Exact signed
+SYS58624/oem17, DWM1552/Explorer6464 and58readiness fields retain. Frozen seven
+query helpers, three scripts and eight older clip helpers remain byte unchanged.
+Acceptance docs/native-d3d9-queries-20261007.md and root-query-checkpoint-
+verified-02.json. Original failed local review attempts remain separate evidence.
+Four unused workflows stay disabled; offline/runtime controls are manual-only.
+
+Continue typed D3D9 presentation. Local Microsoft Present/PresentCb docs and the
+actual SDK require real kernel allocation handles and an owned created context.
+Existing DXGI presentation ABI cannot be cast to typed9. Current surfaces own
+private renderer backing and pfnPresent is absent. Implement owned presentation
+allocation/pixel publication and typed callback with serialized snapshots,
+reset/reentry/retirement/cleanup verification, followed by target display proof.
+
+Previous ae61dde compact clip37/38 acceptance remains unchanged. Production
+caps/exports, registration and paired package pins stay closed. Complete remaining
+resource/state/presentation/reset and ordinary Microsoft system-runtime DX8-DX11
+hardware acceptance on all required architectures. Keep the full goal active.
 
 ## Earlier checkpoints
 Exact source787419696fc828bdc0f1c9d7d5337135fce0c82f implements coherent
@@ -697,5 +679,12 @@ gates and native fixture/semantic controls remain required.
 - [complete] Implement and independently verify fixed-function transforms/material/lights, native controls, CI and targetfixed31/32 pixels.
 - [complete] Implement and independently verify SYSTEMMEM/BufBlt, native controls, consolidated CI and targetbuffer-transfer33/34 pixel/byte/readiness gates.
 - [complete] Implement typed SetClipPlane and fix vertex-input comparison; native controls, exact CI and compact GPU clip37/38 pass.
-- [in_progress] Implement owned typed queries with completion-only output, native controls and independent GPU acceptance.
+- [complete] Implement owned typed queries with completion-only output, native controls and independent GPU acceptance.
 - [pending] Complete remaining state/resource/presentation/reset and ordinary DX8-DX11 acceptance.
+
+## Typed D3D9 presentation continuation
+- [complete] Accept exact0a60564 query CPU/CI/GPU checkpoints and freeze evidence.
+- [complete] Audit typed Present/PresentCb ABI and existing runtime allocation ownership.
+- [in_progress] Implement owned presentable allocation/pixel publication and typed callback.
+- [pending] Verify native callback/pixel/lifetime/reset/reentry controls and exact architecture builds.
+- [pending] Verify actual target presentation and continue ordinary system-runtime admission.

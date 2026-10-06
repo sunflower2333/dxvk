@@ -3,6 +3,11 @@
 #include <cstdlib>
 #include <type_traits>
 
+#ifdef _WIN32
+#include "../src/umd/umd_runtime_gpu.h"
+static_assert(std::is_same_v<decltype(dxvk::umd::AdapterIdentity::runtime), HANDLE>);
+#endif
+
 using namespace dxvk::umd;
 static unsigned checks;
 #define CHECK(c) do { ++checks; if (!(c)) { std::fprintf(stderr, "runtime backend line %d: %s\n", __LINE__, #c); std::exit(1); } } while (0)

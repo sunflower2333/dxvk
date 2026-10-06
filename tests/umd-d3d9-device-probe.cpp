@@ -1065,8 +1065,10 @@ public:
             hr = api.pfnUnlock(m_driverDevice,&unmap); if (FAILED(hr)) return hr;
           }
         }
-        const D3DDDIVERTEXELEMENT transferElements[] = {{0,3,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITIONT,0},
-          {0,19,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+        // Put the byte-range prefix in the stream binding. Dynamic SYSTEMMEM
+        // uploads pack the declared vertex bytes into a fresh aligned buffer.
+        const D3DDDIVERTEXELEMENT transferElements[] = {{0,0,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITIONT,0},
+          {0,16,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
         D3DDDIARG_CREATEVERTEXSHADERDECL transferDeclaration = {2,nullptr};
         hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&transferDeclaration,transferElements); if (FAILED(hr)) return hr;
         hr = api.pfnSetVertexShaderDecl(m_driverDevice,transferDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
@@ -1168,36 +1170,36 @@ public:
         };
         checked = 0; checksum = 2166136261u;
         hr = transfer(59,0,5,1,13,payloadBytes); if (FAILED(hr)) return hr;
-        hr = transferDraw(59,1,13,0); if (FAILED(hr)) return hr;
+        hr = transferDraw(59,1,16,0); if (FAILED(hr)) return hr;
         hr = verifyBytes(59,1); if (FAILED(hr)) return hr;
         hr = transfer(60,2,9,3,13,payloadBytes); if (FAILED(hr)) return hr;
-        hr = transferDraw(60,3,13,0); if (FAILED(hr)) return hr;
+        hr = transferDraw(60,3,16,0); if (FAILED(hr)) return hr;
         hr = verifyBytes(60,3); if (FAILED(hr)) return hr;
         hr = transfer(61,3,13,3,17,payloadBytes); if (FAILED(hr)) return hr;
-        hr = transferDraw(61,3,17,0); if (FAILED(hr)) return hr;
+        hr = transferDraw(61,3,20,0); if (FAILED(hr)) return hr;
         hr = verifyBytes(61,3); if (FAILED(hr)) return hr;
         hr = transfer(62,3,17,3,13,payloadBytes); if (FAILED(hr)) return hr;
-        hr = transferDraw(62,3,13,0); if (FAILED(hr)) return hr;
+        hr = transferDraw(62,3,16,0); if (FAILED(hr)) return hr;
         hr = verifyBytes(62,3); if (FAILED(hr)) return hr;
         hr = transfer(63,3,13,4,5,payloadBytes); if (FAILED(hr)) return hr;
         if (!verifyExternal(4)) return E_FAIL;
-        hr = transferDraw(63,4,5,0); if (FAILED(hr)) return hr;
+        hr = transferDraw(63,4,8,0); if (FAILED(hr)) return hr;
         hr = verifyBytes(63,4); if (FAILED(hr)) return hr;
         hr = writeRange(64,0,5,thirdPayload.data(),payloadBytes); if (FAILED(hr)) return hr;
         if (!verifyExternal(0)) return E_FAIL;
         hr = transfer(64,0,5,2,9,payloadBytes); if (FAILED(hr)) return hr;
-        hr = transferDraw(64,2,9,0); if (FAILED(hr)) return hr;
+        hr = transferDraw(64,2,12,0); if (FAILED(hr)) return hr;
         hr = verifyBytes(64,2); if (FAILED(hr)) return hr;
         const UINT16 indices16[] = {1,2,3,3,2,4};
         hr = writeRange(65,5,1,indices16,sizeof(indices16)); if (FAILED(hr)) return hr;
         if (!verifyExternal(5)) return E_FAIL;
         hr = transfer(65,5,1,6,6,sizeof(indices16)); if (FAILED(hr)) return hr;
-        hr = transferDraw(65,2,9,6); if (FAILED(hr)) return hr;
+        hr = transferDraw(65,2,12,6); if (FAILED(hr)) return hr;
         hr = verifyBytes(65,6); if (FAILED(hr)) return hr;
         const UINT indices32[] = {1,2,3,3,2,4};
         hr = writeRange(66,1,1,indices32,sizeof(indices32)); if (FAILED(hr)) return hr;
         hr = transfer(66,1,1,7,12,sizeof(indices32)); if (FAILED(hr)) return hr;
-        hr = transferDraw(66,2,9,7); if (FAILED(hr)) return hr;
+        hr = transferDraw(66,2,12,7); if (FAILED(hr)) return hr;
         hr = verifyBytes(66,7); if (FAILED(hr)) return hr;
         if (!verifyExternal(0) || !verifyExternal(4) || !verifyExternal(5)) return E_FAIL;
         for (HANDLE resource : transferResources) {

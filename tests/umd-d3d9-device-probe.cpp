@@ -1232,14 +1232,13 @@ public:
       }
       if (clipPlanes) {
         if (!api.pfnSetClipPlane || !api.pfnSetTransform) return E_FAIL;
-        // Diagnostic: match the previously passing fixed-function layout.
-        // Lighting stays disabled and the homogeneous positions are unchanged.
+        // Diagnostic: retain the passing padded layout, but omit NORMAL.
+        // Lighting stays disabled and all bytes and positions are unchanged.
         struct ClipVertex { float x,y,z,nx,ny,nz; D3DCOLOR color; };
         static_assert(sizeof(ClipVertex) == 28);
         const D3DDDIVERTEXELEMENT clipElements[] = {{0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0},
-          {0,12,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_NORMAL,0},
           {0,24,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
-        D3DDDIARG_CREATEVERTEXSHADERDECL clipDeclaration = {3,nullptr};
+        D3DDDIARG_CREATEVERTEXSHADERDECL clipDeclaration = {2,nullptr};
         hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&clipDeclaration,clipElements); if (FAILED(hr)) return hr;
         hr = api.pfnSetVertexShaderDecl(m_driverDevice,clipDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
         const D3DDDIARG_SETSTREAMSOURCEUM clipStream = {0,sizeof(ClipVertex)};

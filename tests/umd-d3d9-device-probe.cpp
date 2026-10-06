@@ -1,6 +1,7 @@
 // Unregistered target-only harness. All callbacks use real KMT operations;
 // the Microsoft D3D runtime does not supply these callbacks or load this UMD.
 #include "../src/umd/umd_d3d9_adapter.h"
+#include "../src/umd/umd_runtime_identity.h"
 #include <d3dkmthk.h>
 #include <cstdio>
 #include <cstring>
@@ -38,7 +39,15 @@ static int listAdapters() {
   bool failed = request.NumAdapters > adapters.size();
   for (size_t i = 0; i < request.NumAdapters && i < adapters.size(); i++) {
     std::printf("KMT_ENUM luid="); printLuid(adapters[i].AdapterLuid);
-    std::printf(" present_sources=%u\n", unsigned(adapters[i].NumOfSources));
+    std::array<uint8_t, dxvk::umd::RuntimeIdentityReplySize> bytes = {};
+    D3DKMT_QUERYADAPTERINFO query = {};
+    query.hAdapter = adapters[i].hAdapter; query.Type = KMTQAITYPE_UMDRIVERPRIVATE;
+    query.pPrivateDriverData = bytes.data(); query.PrivateDriverDataSize = UINT(bytes.size());
+    dxvk::umd::RuntimeIdentity identity;
+    const bool viogpu = D3DKMTQueryAdapterInfo(&query) == 0
+      && dxvk::umd::readRuntimeIdentity(bytes.data(), query.PrivateDriverDataSize, identity)
+      && !std::memcmp(identity.luid.data(), &adapters[i].AdapterLuid, sizeof(LUID));
+    std::printf(" present_sources=%u viogpu_identity=%u\n", unsigned(adapters[i].NumOfSources), unsigned(viogpu));
     D3DKMT_CLOSEADAPTER close = {}; close.hAdapter = adapters[i].hAdapter;
     if (D3DKMTCloseAdapter(&close) < 0) failed = true;
   }

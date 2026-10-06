@@ -10,7 +10,6 @@ using PSGPERRORID = UINT;
 
 namespace dxvk {
   Logger Logger::s_instance("d3d9.log");
-  D3D9GlobalAnnotationList D3D9GlobalAnnotationList::s_instance;
 
   HRESULT CreateD3D9(
           bool           Extended,

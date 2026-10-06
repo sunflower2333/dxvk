@@ -2,6 +2,8 @@
 
 namespace dxvk {
 
+  D3D9GlobalAnnotationList D3D9GlobalAnnotationList::s_instance;
+
   ////////////////////////////
   // D3D9GlobalAnnotationList
   ////////////////////////////

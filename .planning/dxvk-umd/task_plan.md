@@ -53,6 +53,23 @@ presentation/reset, with ordinary system-runtime DX8-DX11 rendering acceptance.
 Keep the full goal active; no Finish, production exports/caps or paired pins
 until mandatory contracts and actual ordinary-runtime acceptance are complete.
 
+Fixed-function source e86e0c50a55d05e6ef78e06fcc106e1e7e4adf49 now implements
+typed SetTransform/MultiplyTransform/SetMaterial and sparse, device-owned lights.
+Final native preflight02 and committed positive worktree01 pass202248 checks;
+five compiled semantic controls independently verify their intended assertions. Failed
+retirement-control01 compilation and publish-control01 assertion/teardown
+timeout remain separate evidence. Fresh controls preserve the complete oracle
+and change only its failure exit to _Exit to avoid static teardown after failure.
+Single automatic CI37520111683 all6jobs SUCCESS; the build subagent verifies
+fiveZIPdigests, all3architectures/202248checks and14nativeARM64execution hashes.
+Freshfixed31/32 diagnostics1/0 independently pass3712pixels each, including1344
+newfixed-function pixels b3416e11. Durations13.1856983s/20.6108307s,
+59nonempty submits,ctx1/1alloc14/14lock13/13residency14/14remaining0wrong0.
+All8payloads3scripts/LimitedUSER1 verify; freshsigned58624/oem17/SYSsha,
+DWM1552/Explorer6464 and58fields retain. Ownedtasks removedexit0.
+Next SYSTEMMEM/managed buffer transfer and remaining native contracts;
+ordinary system-runtime DX8-DX11 rendering/presentation stays open.
+
 User-provided EWDK copy C:\Users\USER\EWDK_br_release_svc_im_28000_260714-1640.iso
 mounts read-only atD: and exposes nativeMSVC14.50.35717/WDK28000. Initial
 native/x64 compiler attempts actually failC1510 because selectedclui.dll UDF
@@ -626,5 +643,6 @@ gates and native fixture/semantic controls remain required.
 - [complete] Verify exact source6ca8770 native controls, consolidated cd4f5e2 architecture CI and buffer GPU pixels.
 - [complete] Record independently verified buffer hardware and EWDK build checkpoints.
 - [complete] Implement typed depth/stencil ownership and native clear semantics; exact targetdepth29/30 pixel/readiness proofs pass.
-- [in_progress] Implement missing typed fixed-function transform/material/light contracts and actual untransformed geometry pixel acceptance.
+- [complete] Implement and independently verify fixed-function transforms/material/lights, native controls, CI and targetfixed31/32 pixels.
+- [in_progress] Implement SYSTEMMEM buffers and typed BufBlt with exact byte-range/borrowed-memory/copy ownership.
 - [pending] Complete remaining state/resource/presentation/reset and ordinary DX8-DX11 acceptance.

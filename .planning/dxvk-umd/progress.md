@@ -1727,3 +1727,34 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
  enable/disable/DATA preservation, sparse destroy/reuse, point range and spot
  cones. Leave one enabled owned light for actual DestroyDevice worker cleanup.
  No caps/exports/registration/installation or paired pins change.
+
+### Fixed-function committed-source and actual GPU acceptance
+
+- Exact source e86e0c50a55d05e6ef78e06fcc106e1e7e4adf49 committed positive
+ worktree01 passes202248checks; independent verifier matches56Git/archive/
+ after-run/nativePE/static imports and signed58624/desktop continuity. Five
+ compiled controls catch lost multiplication, light DATA reread, sparse slot
+ misuse, enabled retirement and S_FALSE private publication. Last two control
+ harnesses preserve all assertions and use exact CHECK failure _Exit instead of
+ static teardown; production fixture unchanged. Earlier retirement01 compiler
+ failure and publish01 assertion/teardown timeout are retained and excluded.
+- User-requested build verifier passes complete single CI37520111683 all6jobs,
+ five raw ZIP digests, ARM64/x64/x86202248checks,14actual native ARM64 execution
+ hashes,56preflight02source links and Linux sanitizer/semantic controls.
+ ARM64artifact11440226149 DLL3b3863a5/probecfbb7c79 retained; root live-refresh
+ all6SUCCESS after target execution confirms the exact source link.
+- Freshtargetfixed31/32 diagnostics1/0 independently verify3712pixels including
+ 1344fixed-function b3416e11, durations13.1856983s/20.6108307s. Each59nonempty
+ submits,ctx1/1alloc14/14lock13/13residency14/14remaining0wrong-thread0;
+ all8payloads3scripts/nativeARM64/LimitedUSER1 verify. Owned tasks removedexit0.
+ Freshsigned58624/oem17/binding0002/PnP0/SYSsha,DWM1552/Explorer6464 and58selected
+ readiness fields retain. Full proof artifacts/dxvk-native-d3d9-fixed-function-20261007;
+ checkpoint docs/native-d3d9-fixed-function-20261007.md. No production cap/export/
+ registration/installation or paired pins widened; ordinary DX8-DX11 remains open.
+- Next local Microsoft BufBlt audit: hDst/hSrc are vertex or index resources,
+ Offset is destination bytes, SrcRange carries source offset/size. SYSTEMMEM
+ buffers are currently rejected; native DXVK common buffers already implement
+ SYSTEMMEM staging, dynamic draw uploads and mapping sequence synchronization.
+ Reuse that renderer with typed byte ranges and borrowed-data snapshots, plus
+ actual GPU copy/draw/readback acceptance. Existing copyBufferRegion handles
+ same-buffer overlap through a temporary allocation.

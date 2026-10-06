@@ -68,9 +68,16 @@ CI37515057679 passes all6jobs and182260device checks perarchitecture; four
 compiled semantic controls verify. Targetdepth29/30 verify2368pixels each,
 including896depth/stencil pixels eac96ea5,38nonempty submissions and balanced
 callbacks/residency, diagnostics1/0. Signed58624/DWM1552/Explorer6464 and58
-readiness fields remain unchanged through both runs. Remaining fixed-function
-state/resource semantics, presentation/reset and ordinary
-system-runtime acceptance remain open.
+readiness fields remain unchanged through both runs.
+The [fixed-function checkpoint](native-d3d9-fixed-function-20261007.md) adds typed
+transforms/material and sparse owned lights. Exact e86e0c50 consolidated
+CI37520111683 passes all6jobs and202248device checks perarchitecture; five
+compiled semantic controls verify. Targetfixed31/32 verify3712pixels each,
+including1344fixed-function pixels b3416e11,59nonempty submissions and balanced
+callbacks/residency, diagnostics1/0. Signed58624/DWM1552/Explorer6464 and58
+readiness fields remain unchanged. SYSTEMMEM/managed buffer transfer, remaining
+state/resources/queries, presentation/reset and ordinary runtime acceptance
+remain open.
 Production OpenAdapter and rendering caps remain closed; the historical table
 is not an inventory of the new static core or device bridge.
 

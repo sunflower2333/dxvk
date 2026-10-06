@@ -22,7 +22,7 @@ HRESULT result(HRESULT hr) {
 }
 
 struct Device {
-  std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>();
+  std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>(true);
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
   std::unique_ptr<dxvk::umd::D3D9Backend> backend;
   HANDLE runtime = nullptr;
@@ -128,7 +128,6 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   }));
   if (FAILED(hr)) return hr;
   if (!owner->backend) return E_FAIL;
-  owner->service->allowDeferredCalls();
   D3DDDI_DEVICEFUNCS table = {};
   table.pfnFlush = flush;
   table.pfnDestroyDevice = destroyDevice;

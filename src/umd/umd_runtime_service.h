@@ -42,7 +42,10 @@ public:
     explicit Scope(RuntimeService* value) : service(value), previous(current) { current = this; }
     ~Scope() { current = previous; }
   };
-  RuntimeService() {
+  // An owned device may start completion workers during construction. Enable
+  // their deferred requests before the first pump can return; enabling them
+  // afterwards leaves a window in which a valid worker sees UNSUPPORTED.
+  explicit RuntimeService(bool deferred = false) : m_deferred(deferred) {
     m_work = CreateThreadpoolWork(work, this, nullptr);
     if (!m_work) throw std::bad_alloc();
   }

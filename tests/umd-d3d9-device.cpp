@@ -1,6 +1,7 @@
 #include "../src/umd/umd_d3d9_adapter.h"
 #include "../src/umd/umd_d3d9_backend.h"
 #include "../src/umd/umd_allocation.h"
+#include "../src/umd/umd_runtime_service.h"
 #include <array>
 #include <atomic>
 #include <condition_variable>
@@ -253,7 +254,51 @@ static void closeAdapter() {
   f->adapterValid = false;
 }
 
+static void ownedServiceStartup() {
+  // A completion worker may reach the bridge before the first pump starts,
+  // or just after it returns. Both requests must wait for a legal caller.
+  for (const bool firstPump : {true, false}) {
+    dxvk::umd::RuntimeService service(true);
+    if (!firstPump) service.run([] { });
+    const DWORD caller = GetCurrentThreadId();
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool started = false, done = false;
+    HRESULT result = E_FAIL;
+    std::thread worker([&] {
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        started = true;
+        changed.notify_all();
+      }
+      result = service.invoke([&] {
+        CHECK(GetCurrentThreadId() == caller);
+        return S_OK;
+      });
+      std::lock_guard<std::mutex> lock(mutex);
+      done = true;
+      changed.notify_all();
+    });
+    {
+      std::unique_lock<std::mutex> lock(mutex);
+      changed.wait(lock, [&] { return started; });
+    }
+    service.run([&] {
+      std::unique_lock<std::mutex> lock(mutex);
+      changed.wait(lock, [&] { return done; });
+    });
+    worker.join();
+    CHECK(result == S_OK);
+    service.close();
+    CHECK(service.invoke([] { CHECK(false); return S_OK; }) == DXGI_ERROR_DEVICE_REMOVED);
+  }
+  // Non-owning synchronous probes still fail outside an active DDI pump.
+  dxvk::umd::RuntimeService synchronous;
+  CHECK(synchronous.invoke([] { CHECK(false); return S_OK; }) == DXGI_ERROR_UNSUPPORTED);
+}
+
 int main() {
+  ownedServiceStartup();
   {
     Fixture fixture; initialize(fixture);
     // A missing mandatory callback rejects before backend construction.

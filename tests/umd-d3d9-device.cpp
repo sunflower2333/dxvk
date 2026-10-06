@@ -101,6 +101,14 @@ struct Fixture {
   std::vector<RECT> copySources, copyDestinations;
   std::vector<UINT> copyWidths;
   std::vector<std::vector<uint8_t>> uploads;
+  unsigned bufferCreates = 0, bufferCloses = 0, bufferLocks = 0, bufferUnlocks = 0;
+  HRESULT bufferResult = S_OK, bufferUnlockResult = S_OK;
+  bool nullBuffer = false, badBufferMapping = false;
+  std::function<void()> bufferHook;
+  std::vector<dxvk::umd::D3D9BufferDesc> bufferDescriptions;
+  UINT bufferOffset = 0, bufferBytes = 0, drawStart = 0, drawMinimum = 0, drawVertexCount = 0;
+  INT drawBase = 0;
+  DWORD bufferFlags = 0;
   void runtime() const { CHECK(callbacksValid && GetCurrentThreadId() == caller); }
 };
 static Fixture* f;
@@ -197,7 +205,79 @@ struct dxvk::umd::D3D9Backend::State {
   D3D9VertexDeclaration* declaration = nullptr;
   std::array<D3D9Shader*, 2> shaders = {};
   std::array<D3D9TextureResource*, 20> textures = {};
+  std::array<D3D9BufferResource*, 16> streams = {};
+  D3D9BufferResource* indices = nullptr;
 };
+
+struct dxvk::umd::D3D9BufferResource::State {
+  D3D9BufferDesc desc;
+  std::vector<uint8_t> bytes;
+  bool locked = false;
+  unsigned bindings = 0;
+};
+dxvk::umd::D3D9BufferResource::D3D9BufferResource() : m_state(std::make_unique<State>()) {
+  CHECK(GetCurrentThreadId() != f->caller); ++f->bufferCreates;
+}
+dxvk::umd::D3D9BufferResource::~D3D9BufferResource() {
+  CHECK(GetCurrentThreadId() != f->caller && !m_state->locked && !m_state->bindings);
+  ++f->bufferCloses;
+}
+HRESULT dxvk::umd::D3D9Backend::createBuffer(const D3D9BufferDesc& desc,
+    std::unique_ptr<D3D9BufferResource>& output) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->bufferResult != S_OK) return f->bufferResult;
+  if (f->nullBuffer) return S_OK;
+  auto buffer = std::make_unique<D3D9BufferResource>();
+  buffer->m_state->desc = desc; buffer->m_state->bytes.resize(desc.bytes,0x6d);
+  f->bufferDescriptions.push_back(desc);
+  if (f->bufferHook) { auto hook = std::move(f->bufferHook); hook(); }
+  output = std::move(buffer); return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::lockBuffer(D3D9BufferResource& buffer, UINT offset, UINT bytes,
+    DWORD flags, void*& data) {
+  CHECK(GetCurrentThreadId() != f->caller && !buffer.m_state->locked);
+  CHECK(bytes && uint64_t(offset) + bytes <= buffer.m_state->bytes.size());
+  ++f->bufferLocks; f->bufferOffset = offset; f->bufferBytes = bytes; f->bufferFlags = flags;
+  buffer.m_state->locked = true;
+  data = f->badBufferMapping ? nullptr : buffer.m_state->bytes.data() + offset;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::unlockBuffer(D3D9BufferResource& buffer) {
+  CHECK(GetCurrentThreadId() != f->caller && buffer.m_state->locked);
+  ++f->bufferUnlocks;
+  if (f->bufferUnlockResult != S_OK) return f->bufferUnlockResult;
+  buffer.m_state->locked = false; return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setStreamSource(UINT stream, D3D9BufferResource* buffer,
+    UINT offset, UINT stride) {
+  CHECK(GetCurrentThreadId() != f->caller && stream < 16);
+  CHECK(!buffer || (!buffer->m_state->desc.index && offset < buffer->m_state->desc.bytes && stride));
+  if (f->stateResult != S_OK && f->stateResult != D3DERR_DEVICELOST) return f->stateResult;
+  if (m_state->streams[stream]) --m_state->streams[stream]->m_state->bindings;
+  m_state->streams[stream] = buffer;
+  if (buffer) ++buffer->m_state->bindings;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setIndices(D3D9BufferResource* buffer) {
+  CHECK(GetCurrentThreadId() != f->caller && (!buffer || buffer->m_state->desc.index));
+  if (f->stateResult != S_OK && f->stateResult != D3DERR_DEVICELOST) return f->stateResult;
+  if (m_state->indices) --m_state->indices->m_state->bindings;
+  m_state->indices = buffer;
+  if (buffer) ++buffer->m_state->bindings;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::drawPrimitiveBuffers(D3DPRIMITIVETYPE type, UINT start, UINT count) {
+  CHECK(GetCurrentThreadId() != f->caller && m_state->declaration && m_state->target);
+  ++f->draws; f->drawType = type; f->drawStart = start; f->drawCount = count;
+  return f->drawResult;
+}
+HRESULT dxvk::umd::D3D9Backend::drawIndexedPrimitive(D3DPRIMITIVETYPE type, INT base, UINT minimum,
+    UINT vertices, UINT start, UINT count) {
+  CHECK(GetCurrentThreadId() != f->caller && m_state->declaration && m_state->target && m_state->indices);
+  ++f->draws; f->drawType = type; f->drawBase = base; f->drawMinimum = minimum;
+  f->drawVertexCount = vertices; f->drawStart = start; f->drawCount = count;
+  return f->drawResult;
+}
 
 struct dxvk::umd::D3D9TextureResource::State {
   unsigned liveLevels = 0, bindings = 0;
@@ -249,6 +329,8 @@ dxvk::umd::D3D9Backend::~D3D9Backend() {
   CHECK(f->shaderCreates == f->shaderCloses && !m_state->shaders[0] && !m_state->shaders[1]);
   CHECK(f->textureCreates == f->textureCloses);
   for (const auto texture : m_state->textures) CHECK(!texture);
+  CHECK(f->bufferCreates == f->bufferCloses && !m_state->indices);
+  for (const auto stream : m_state->streams) CHECK(!stream);
   ++f->backendCloses;
   if (!f->adapterValid) {
     uint32_t fence = 99;
@@ -593,7 +675,10 @@ static void createDevice() {
   expectedTable.pfnSetZRange = f->table.pfnSetZRange;
   expectedTable.pfnSetScissorRect = f->table.pfnSetScissorRect;
   expectedTable.pfnSetStreamSourceUm = f->table.pfnSetStreamSourceUm;
+  expectedTable.pfnSetStreamSource = f->table.pfnSetStreamSource;
+  expectedTable.pfnSetIndices = f->table.pfnSetIndices;
   expectedTable.pfnDrawPrimitive = f->table.pfnDrawPrimitive;
+  expectedTable.pfnDrawIndexedPrimitive = f->table.pfnDrawIndexedPrimitive;
   CHECK(snapshot(f->table) == snapshot(expectedTable));
 }
 static void closeDevice(HRESULT expected = S_OK) {
@@ -1397,7 +1482,292 @@ static void textureContracts() {
   }
 }
 
+static D3DDDIARG_CREATERESOURCE bufferArgs(HANDLE cookie, D3DDDI_SURFACEINFO* info,
+    D3DFORMAT format = D3DFMT_VERTEXDATA) {
+  auto args = resourceArgs(cookie, info, 1, true);
+  args.Flags.Value = 0;
+  args.Flags.VertexBuffer = format == D3DFMT_VERTEXDATA;
+  args.Flags.IndexBuffer = format != D3DFMT_VERTEXDATA;
+  args.Format = static_cast<D3DDDIFORMAT>(format);
+  args.Fvf = format == D3DFMT_VERTEXDATA ? D3DFVF_XYZ : UINT_MAX;
+  return args;
+}
+
+static void bufferContracts() {
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    CHECK(f->table.pfnSetStreamSource && f->table.pfnSetIndices && f->table.pfnDrawIndexedPrimitive);
+    char cookie, lockedCookie, staticCookie, indexCookie;
+    D3DDDI_SURFACEINFO info = {64,UINT_MAX,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto args = bufferArgs(&cookie, &info);
+    const auto original = args;
+    auto reject = [&](HRESULT hr) {
+      const auto prior = snapshot(args);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == hr && snapshot(args) == prior);
+    };
+    for (const UINT flags : {UINT(0x180000),UINT(0x80001),UINT(0x90000),UINT(0x80002),UINT(0x80010)}) {
+      args.Flags.Value = flags; reject(E_INVALIDARG);
+    }
+    args = original; args.SurfCount = 2; reject(E_INVALIDARG);
+    args = original; args.Format = static_cast<D3DDDIFORMAT>(D3DFMT_INDEX16); reject(E_INVALIDARG);
+    args = original; args.Pool = D3DDDIPOOL_SYSTEMMEM; reject(D3DERR_NOTAVAILABLE);
+    args = original;
+    for (const UINT bytes : {UINT(0),UINT_MAX,UINT_MAX-254}) {
+      info.Width = bytes; reject(E_INVALIDARG);
+    }
+    info.Width = 64; info.pSysMem = reinterpret_cast<void*>(UINT_PTR(1)); reject(E_INVALIDARG);
+    info.pSysMem = nullptr;
+    args = bufferArgs(&indexCookie, &info, D3DFMT_INDEX16);
+    info.Width = 3; reject(E_INVALIDARG);
+    args.Format = static_cast<D3DDDIFORMAT>(D3DFMT_INDEX32); info.Width = 6; reject(E_INVALIDARG);
+    args.Format = static_cast<D3DDDIFORMAT>(D3DFMT_A8R8G8B8); info.Width = 64; reject(E_INVALIDARG);
+    args = original;
+    for (const HRESULT hr : {S_FALSE,E_FAIL,E_OUTOFMEMORY,D3DERR_NOTAVAILABLE}) {
+      f->bufferResult = hr; reject(hr == S_FALSE ? E_FAIL : hr);
+    }
+    f->bufferResult = S_OK; f->nullBuffer = true; reject(E_FAIL); f->nullBuffer = false;
+    args.Flags.Dynamic = args.Flags.WriteOnly = 1;
+    f->queryHook = [&] {
+      auto nested = original; nested.pSurfList = reinterpret_cast<D3DDDI_SURFACEINFO*>(UINT_PTR(1));
+      CHECK(f->table.pfnCreateResource(f->device, &nested) == D3DERR_WASSTILLDRAWING);
+      info.Width = 8; args.Fvf = 0; args.Flags.Value = 0; args.hResource = nullptr;
+    };
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE dynamic = args.hResource;
+    CHECK(f->bufferDescriptions.size() == 1 && f->bufferDescriptions[0].bytes == 64
+      && f->bufferDescriptions[0].fvf == D3DFVF_XYZ && f->bufferDescriptions[0].dynamic
+      && f->bufferDescriptions[0].writeOnly && !f->bufferDescriptions[0].index);
+    info.Width = 64; args = original; reject(E_INVALIDARG);
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = dynamic;
+    mapping.pSurfData = reinterpret_cast<void*>(UINT_PTR(0x1234));
+    mapping.Pitch = mapping.SlicePitch = UINT_MAX;
+    auto rejectLock = [&] {
+      const auto prior = snapshot(mapping);
+      CHECK(f->table.pfnLock(f->device, &mapping) == E_INVALIDARG && snapshot(mapping) == prior);
+    };
+    for (const UINT flags : {UINT(1),UINT(3),UINT(0xc),UINT(9),UINT(0x20),UINT(0x40),UINT(0x80),UINT(0x100),UINT(0x400)}) {
+      mapping.Flags.Value = flags; rejectLock();
+    }
+    mapping.Flags.Value = 0x10;
+    for (const D3DDDIRANGE range : {D3DDDIRANGE{0,0},D3DDDIRANGE{63,2},D3DDDIRANGE{UINT_MAX,2}}) {
+      mapping.Range = range; rejectLock();
+    }
+    mapping.Range = {8,16}; mapping.SubResourceIndex = 1; rejectLock(); mapping.SubResourceIndex = 0;
+    mapping.Flags.Value = 0x10 | 8 | 2 | 0x200;
+    f->queryHook = [&] { mapping.Range = {0,1}; mapping.Flags.Value = 0; };
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && mapping.pSurfData
+      && mapping.Pitch == 0 && mapping.SlicePitch == 0);
+    CHECK(f->bufferOffset == 8 && f->bufferBytes == 16 && f->bufferFlags == (D3DLOCK_DISCARD | D3DLOCK_DONOTWAIT));
+    std::memset(mapping.pSurfData,0x92,16);
+    rejectLock();
+    CHECK(f->table.pfnDestroyResource(f->device, dynamic) == E_INVALIDARG);
+    D3DDDIARG_SETSTREAMSOURCE stream = {0,dynamic,0,12};
+    CHECK(f->table.pfnSetStreamSource(f->device, &stream) == E_INVALIDARG);
+    D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = dynamic;
+    unmap.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == E_INVALIDARG); unmap.Flags.Value = 0;
+    unmap.SubResourceIndex = 1;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == E_INVALIDARG); unmap.SubResourceIndex = 0;
+    f->bufferUnlockResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == E_OUTOFMEMORY);
+    rejectLock(); f->bufferUnlockResult = S_OK;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == E_INVALIDARG);
+    mapping.Flags.Value = 0; mapping.Range = {UINT_MAX,UINT_MAX};
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && f->bufferOffset == 0 && f->bufferBytes == 64);
+    const auto bytes = static_cast<const uint8_t*>(mapping.pSurfData);
+    for (UINT i = 0; i < 64; ++i) CHECK(bytes[i] == (i >= 8 && i < 24 ? 0x92 : 0x6d));
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+    mapping.Flags.Value = 4;
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && f->bufferFlags == D3DLOCK_NOOVERWRITE);
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+    mapping.Flags.Value = 0;
+    const auto prior = snapshot(mapping);
+    f->badBufferMapping = true;
+    CHECK(f->table.pfnLock(f->device, &mapping) == E_FAIL && snapshot(mapping) == prior);
+    f->bufferUnlockResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnLock(f->device, &mapping) == E_FAIL && snapshot(mapping) == prior);
+    f->badBufferMapping = false; rejectLock(); f->bufferUnlockResult = S_OK;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+
+    args = bufferArgs(&staticCookie, &info); args.Flags.HintStatic = 1;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE staticBuffer = args.hResource;
+    mapping = {}; mapping.hResource = staticBuffer;
+    for (const UINT flags : {UINT(4),UINT(8)}) { mapping.Flags.Value = flags; rejectLock(); }
+    mapping.Flags.Value = 1;
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && f->bufferFlags == D3DLOCK_READONLY);
+    unmap.hResource = staticBuffer;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+    args = bufferArgs(&lockedCookie, &info); args.Flags.NotLockable = 1;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    mapping.hResource = args.hResource; rejectLock();
+    CHECK(f->table.pfnDestroyResource(f->device, args.hResource) == S_OK);
+    args = bufferArgs(&indexCookie, &info, D3DFMT_INDEX32);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK && f->bufferDescriptions.back().fvf == 0);
+    // Close drains remaining mapped and bound buffers on the worker.
+    D3DDDIARG_SETINDICES indices = {args.hResource,4};
+    CHECK(f->table.pfnSetIndices(f->device, &indices) == S_OK);
+    stream = {15,dynamic,0,12}; CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    mapping = {}; mapping.hResource = staticBuffer;
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+    closeDevice();
+    CHECK(f->bufferCreates == f->bufferCloses && f->bufferLocks == f->bufferUnlocks - 2);
+    closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char positionCookie, colorCookie, index16Cookie, index32Cookie, targetCookie;
+    D3DDDI_SURFACEINFO positionInfo = {96,UINT_MAX,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    D3DDDI_SURFACEINFO colorInfo = {32,UINT_MAX,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    D3DDDI_SURFACEINFO indexInfo = {10,UINT_MAX,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto args = bufferArgs(&positionCookie, &positionInfo);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK); const HANDLE position = args.hResource;
+    args = bufferArgs(&colorCookie, &colorInfo);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK); const HANDLE color = args.hResource;
+    args = bufferArgs(&index16Cookie, &indexInfo, D3DFMT_INDEX16);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK); const HANDLE index16 = args.hResource;
+    indexInfo.Width = 20; args = bufferArgs(&index32Cookie, &indexInfo, D3DFMT_INDEX32);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK); const HANDLE index32 = args.hResource;
+    D3DDDI_SURFACEINFO targetInfo = {8,8,1,nullptr,0,0}; args = resourceArgs(&targetCookie, &targetInfo, 1, true);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    D3DDDIARG_SETRENDERTARGET target = {0,args.hResource,0};
+    CHECK(f->table.pfnSetRenderTarget(f->device, &target) == S_OK);
+    D3DDDIVERTEXELEMENT elements[] = {{3,4,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0},
+      {7,0,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}, {15,4,D3DDECLTYPE_FLOAT1,0,D3DDECLUSAGE_TEXCOORD,0}};
+    D3DDDIARG_CREATEVERTEXSHADERDECL declaration = {3,nullptr};
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device, &declaration, elements) == S_OK);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device, declaration.ShaderHandle) == S_OK);
+    D3DDDIARG_SETSTREAMSOURCE stream = {3,position,8,24};
+    CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    stream = {15,position,8,24}; CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    D3DDDIARG_DRAWPRIMITIVE draw = {D3DPT_TRIANGLELIST,1,1};
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG);
+    stream = {7,color,4,8}; CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK);
+    CHECK(f->drawType == D3DPT_TRIANGLELIST && f->drawStart == 1 && f->drawCount == 1 && f->draws == 1);
+    // Last color element ends at byte32; unused final stride padding is absent.
+    const auto originalStream = stream;
+    for (const D3DDDIARG_SETSTREAMSOURCE invalid : {D3DDDIARG_SETSTREAMSOURCE{16,color,0,8},
+        D3DDDIARG_SETSTREAMSOURCE{7,index16,0,8}, D3DDDIARG_SETSTREAMSOURCE{7,color,32,8},
+        D3DDDIARG_SETSTREAMSOURCE{7,color,0,0}, D3DDDIARG_SETSTREAMSOURCE{7,&positionCookie,0,8}}) {
+      CHECK(f->table.pfnSetStreamSource(f->device, &invalid) == E_INVALIDARG);
+    }
+    stream.Stride = 3; CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG);
+    stream = originalStream; CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    f->stateResult = E_OUTOFMEMORY; stream.Offset = 8;
+    CHECK(f->table.pfnSetStreamSource(f->device, &stream) == E_OUTOFMEMORY); f->stateResult = S_OK;
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK);
+    f->queryHook = [&] { draw.VStart = UINT_MAX; draw.PrimitiveCount = UINT_MAX; };
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK && f->drawStart == 1 && f->drawCount == 1);
+    draw = {D3DPT_TRIANGLELIST,1,2}; const auto draws = f->draws;
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG && f->draws == draws);
+    draw = {D3DPT_TRIANGLELIST,0,UINT_MAX};
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG && f->draws == draws);
+    draw = {D3DPT_POINTLIST,2,UINT_MAX};
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG && f->draws == draws);
+    D3DDDIARG_SETINDICES indices = {index16,2};
+    CHECK(f->table.pfnSetIndices(f->device, &indices) == S_OK);
+    for (const D3DDDIARG_SETINDICES invalid : {D3DDDIARG_SETINDICES{position,2},
+        D3DDDIARG_SETINDICES{index16,4},D3DDDIARG_SETINDICES{&index16Cookie,2}}) {
+      CHECK(f->table.pfnSetIndices(f->device, &invalid) == E_INVALIDARG);
+    }
+    D3DDDIARG_DRAWINDEXEDPRIMITIVE indexed = {D3DPT_TRIANGLELIST,-3,4,3,2,1};
+    f->queryHook = [&] { indexed = {D3DPT_POINTLIST,INT_MIN,0,UINT_MAX,UINT_MAX,UINT_MAX}; };
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == S_OK);
+    CHECK(f->drawType == D3DPT_TRIANGLELIST && f->drawBase == -3 && f->drawMinimum == 4
+      && f->drawVertexCount == 3 && f->drawStart == 2 && f->drawCount == 1);
+    const D3DDDIARG_DRAWINDEXEDPRIMITIVE originalIndexed = {D3DPT_TRIANGLELIST,-3,4,3,2,1};
+    for (const D3DDDIARG_DRAWINDEXEDPRIMITIVE invalid : {
+        D3DDDIARG_DRAWINDEXEDPRIMITIVE{D3DPT_TRIANGLELIST,-5,4,3,2,1},
+        D3DDDIARG_DRAWINDEXEDPRIMITIVE{D3DPT_TRIANGLELIST,-3,4,4,2,1},
+        D3DDDIARG_DRAWINDEXEDPRIMITIVE{D3DPT_TRIANGLELIST,-3,4,3,3,1},
+        D3DDDIARG_DRAWINDEXEDPRIMITIVE{D3DPT_TRIANGLELIST,-3,4,0,2,1},
+        D3DDDIARG_DRAWINDEXEDPRIMITIVE{D3DPT_POINTLIST,INT_MAX,UINT_MAX,UINT_MAX,0,1},
+        D3DDDIARG_DRAWINDEXEDPRIMITIVE{D3DPT_TRIANGLELIST,0,0,3,UINT_MAX,1}}) {
+      const auto prior = f->draws;
+      CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &invalid) == E_INVALIDARG && f->draws == prior);
+    }
+    f->stateResult = E_OUTOFMEMORY; indices = {index32,4};
+    CHECK(f->table.pfnSetIndices(f->device, &indices) == E_OUTOFMEMORY); f->stateResult = S_OK;
+    indexed = originalIndexed; CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == S_OK);
+    CHECK(f->table.pfnSetIndices(f->device, &indices) == S_OK);
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == S_OK);
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = index32;
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+    CHECK(f->table.pfnSetIndices(f->device, &indices) == E_INVALIDARG);
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == E_INVALIDARG);
+    D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = index32;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+    mapping.hResource = position; CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+    draw = {D3DPT_TRIANGLELIST,1,1};
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == E_INVALIDARG);
+    unmap.hResource = position; CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+    f->drawResult = S_FALSE;
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == E_FAIL); f->drawResult = S_OK;
+    indexed.PrimitiveCount = indexed.NumVertices = 0; indexed.StartIndex = 5;
+    const auto noOpDraws = f->draws;
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == S_OK && f->draws == noOpDraws);
+    indices = {nullptr,UINT_MAX}; CHECK(f->table.pfnSetIndices(f->device, &indices) == S_OK);
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &originalIndexed) == E_INVALIDARG);
+    f->stateResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnDestroyResource(f->device, position) == E_OUTOFMEMORY); f->stateResult = S_OK;
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK);
+    f->flushResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnDestroyResource(f->device, position) == E_OUTOFMEMORY); f->flushResult = S_OK;
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG);
+    stream = {3,position,8,24}; CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    stream.Stream = 15; CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    // Replacing stream0 with caller storage retires its backend binding.
+    stream = {0,position,0,12}; CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    std::array<float,12> user = {};
+    D3DDDIARG_SETSTREAMSOURCEUM userStream = {0,12};
+    CHECK(f->table.pfnSetStreamSourceUm(f->device, &userStream, user.data()) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnSetStreamSourceUm(f->device, &userStream, nullptr) == S_OK);
+    CHECK(f->table.pfnDestroyResource(f->device, position) == S_OK);
+    CHECK(f->table.pfnSetStreamSource(f->device, &stream) == E_INVALIDARG);
+    CHECK(f->table.pfnDestroyResource(f->device, position) == E_INVALIDARG);
+    indices = {index32,4}; CHECK(f->table.pfnSetIndices(f->device, &indices) == S_OK);
+    CHECK(f->table.pfnDestroyResource(f->device, index32) == S_OK);
+    CHECK(f->table.pfnSetIndices(f->device, &indices) == E_INVALIDARG);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie; D3DDDI_SURFACEINFO info = {32,UINT_MAX,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto args = bufferArgs(&cookie, &info); const auto prior = snapshot(args);
+    f->bufferHook = [] { ++f->generation; };
+    CHECK(f->table.pfnCreateResource(f->device, &args) == D3DERR_DEVICELOST && snapshot(args) == prior);
+    CHECK(f->bufferCreates == f->bufferCloses);
+    --f->generation;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == D3DERR_DEVICELOST);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture a; initialize(a); createDevice();
+    char cookie; D3DDDI_SURFACEINFO info = {32,UINT_MAX,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto args = bufferArgs(&cookie, &info);
+    CHECK(a.table.pfnCreateResource(a.device, &args) == S_OK);
+    D3DDDIARG_SETSTREAMSOURCE stream = {0,args.hResource,0,12};
+    CHECK(a.table.pfnSetStreamSource(a.device, &stream) == S_OK);
+    Fixture b; initialize(b); createDevice();
+    CHECK(b.table.pfnSetStreamSource(b.device, &stream) == E_INVALIDARG);
+    D3DDDIARG_SETINDICES indices = {args.hResource,2};
+    CHECK(b.table.pfnSetIndices(b.device, &indices) == E_INVALIDARG);
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = args.hResource;
+    const auto prior = snapshot(mapping);
+    CHECK(b.table.pfnLock(b.device, &mapping) == E_INVALIDARG && snapshot(mapping) == prior);
+    CHECK(b.table.pfnDestroyResource(b.device, args.hResource) == E_INVALIDARG);
+    closeDevice(); closeAdapter(); f = &a;
+    closeDevice(); closeAdapter();
+  }
+}
+
 int main() {
+  bufferContracts();
   textureContracts();
   shaderContracts();
   ownedServiceStartup();

@@ -134,7 +134,7 @@ public:
     return contexts == 1 && contextCloses == 1 && allocations && allocations == deallocations
       && locks == unlocks && !m_context && !wrongThreads ? S_OK : E_FAIL;
   }
-  HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false) {
+  HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false, bool buffers = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -211,6 +211,8 @@ public:
               0xff808080,0xff647a98,0xff204060,0xff4060e0};
             expected = textureColors[stage - 10];
           }
+          if (stage >= 18 && stage <= 23)
+            expected = stage <= 20 ? 0xffa03658 : stage == 21 ? 0xff2785b3 : 0xffe19c47;
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
               stage, x, y, actual, expected);
@@ -541,6 +543,133 @@ public:
         hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,declaration.ShaderHandle); if (FAILED(hr)) return hr;
         std::printf("D3D9_TEXTURE_READBACK PASS pixels=%u checksum=%08x padding=retained levels=3/2 filters=point/linear address=border/clamp/wrap\n",checked,checksum);
       }
+      if (buffers) {
+        if (!api.pfnSetStreamSource || !api.pfnSetIndices || !api.pfnDrawIndexedPrimitive) return E_FAIL;
+        char owners[4];
+        // Nonzero binding/declaration offsets, padded strides, and no unused
+        // trailing stride bytes make every address component observable.
+        std::array<uint8_t,124> positionBytes; positionBytes.fill(0xcd);
+        std::array<uint8_t,44> colorBytes; colorBytes.fill(0xcd);
+        const float positions[][4] = {{1000,1000,0.5f,1},{-1,1,0.5f,1},{1,1,0.5f,1},
+          {-1,-1,0.5f,1},{1,-1,0.5f,1}};
+        for (UINT i = 0; i < 5; ++i) {
+          std::memcpy(positionBytes.data() + 12 + i * 24,positions[i],16);
+          const UINT color = 0xffa03658;
+          std::memcpy(colorBytes.data() + 8 + i * 8,&color,4);
+        }
+        const UINT16 indices16[] = {UINT16_MAX,UINT16_MAX,3,4,5,5,4,6};
+        const UINT32 indices32[] = {UINT32_MAX,UINT32_MAX,UINT32_MAX,3,4,5,5,4,6};
+        HANDLE resources[4] = {};
+        const void* initial[] = {positionBytes.data(),colorBytes.data(),indices16,indices32};
+        const UINT sizes[] = {UINT(positionBytes.size()),UINT(colorBytes.size()),sizeof(indices16),sizeof(indices32)};
+        for (UINT i = 0; i < 4; ++i) {
+          D3DDDI_SURFACEINFO info = {sizes[i],UINT_MAX,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+          D3DDDIARG_CREATERESOURCE resource = {};
+          resource.hResource = &owners[i]; resource.pSurfList = &info; resource.SurfCount = 1;
+          resource.Pool = D3DDDIPOOL_LOCALVIDMEM;
+          resource.Format = static_cast<D3DDDIFORMAT>(i < 2 ? D3DFMT_VERTEXDATA : i == 2 ? D3DFMT_INDEX16 : D3DFMT_INDEX32);
+          resource.Flags.VertexBuffer = i < 2; resource.Flags.IndexBuffer = i >= 2;
+          resource.Flags.Dynamic = resource.Flags.WriteOnly = i == 1;
+          hr = api.pfnCreateResource(m_driverDevice,&resource);
+          std::printf("D3D9_BUFFER_CREATE slot=%u bytes=%u dynamic=%u hr=%08lx\n",i,sizes[i],UINT(i == 1),static_cast<unsigned long>(hr));
+          if (FAILED(hr)) return hr;
+          resources[i] = resource.hResource;
+          D3DDDIARG_LOCK mapping = {}; mapping.hResource = resources[i]; mapping.Flags.WriteOnly = 1;
+          if (i == 1) mapping.Flags.Discard = 1;
+          hr = api.pfnLock(m_driverDevice,&mapping); if (FAILED(hr)) return hr;
+          if (!mapping.pSurfData || mapping.Pitch || mapping.SlicePitch) return E_FAIL;
+          std::memcpy(mapping.pSurfData,initial[i],sizes[i]);
+          D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = resources[i];
+          hr = api.pfnUnlock(m_driverDevice,&unmap); if (FAILED(hr)) return hr;
+        }
+        const D3DDDIVERTEXELEMENT bufferElements[] = {{3,4,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITION,0},
+          {7,4,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+        declaration = {2,nullptr};
+        hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&declaration,bufferElements); if (FAILED(hr)) return hr;
+        hr = api.pfnSetVertexShaderDecl(m_driverDevice,declaration.ShaderHandle); if (FAILED(hr)) return hr;
+        const UINT vs[] = {0xfffe0200,
+          0x0200001f,0x80000000,0x900f0000,0x0200001f,0x8000000a,0x900f0001,
+          0x02000001,0xc00f0000,0x90e40000,0x02000001,0xd00f0000,0x90e40001,0x0000ffff};
+        const UINT ps[] = {0xffff0200,0x0200001f,0x80000000,0x900f0000,
+          0x02000001,0x800f0800,0x90e40000,0x0000ffff};
+        D3DDDIARG_CREATEVERTEXSHADERFUNC vertexShader = {sizeof(vs),nullptr};
+        D3DDDIARG_CREATEPIXELSHADER pixelShader = {sizeof(ps),nullptr};
+        hr = api.pfnCreateVertexShaderFunc(m_driverDevice,&vertexShader,vs); if (FAILED(hr)) return hr;
+        hr = api.pfnCreatePixelShader(m_driverDevice,&pixelShader,ps); if (FAILED(hr)) return hr;
+        hr = api.pfnSetVertexShaderFunc(m_driverDevice,vertexShader.ShaderHandle); if (FAILED(hr)) return hr;
+        hr = api.pfnSetPixelShader(m_driverDevice,pixelShader.ShaderHandle); if (FAILED(hr)) return hr;
+        D3DDDIARG_SETSTREAMSOURCEUM noUser = {0,UINT_MAX};
+        hr = api.pfnSetStreamSourceUm(m_driverDevice,&noUser,nullptr); if (FAILED(hr)) return hr;
+        D3DDDIARG_SETSTREAMSOURCE stream = {3,resources[0],8,24};
+        hr = api.pfnSetStreamSource(m_driverDevice,&stream); if (FAILED(hr)) return hr;
+        stream = {7,resources[1],4,8};
+        hr = api.pfnSetStreamSource(m_driverDevice,&stream); if (FAILED(hr)) return hr;
+        checked = 0; checksum = 2166136261u;
+        for (UINT stage = 18; stage <= 23; ++stage) {
+          if (stage == 21 || stage == 22) {
+            D3DDDIARG_LOCK mapping = {}; mapping.hResource = resources[1]; mapping.Flags.WriteOnly = 1;
+            if (stage == 21) { mapping.Flags.NoOverwrite = mapping.Flags.RangeValid = 1; mapping.Range = {16,28}; }
+            else mapping.Flags.Discard = 1;
+            hr = api.pfnLock(m_driverDevice,&mapping); if (FAILED(hr)) return hr;
+            if (!mapping.pSurfData || mapping.Pitch || mapping.SlicePitch) return E_FAIL;
+            const UINT color = stage == 21 ? 0xff2785b3 : 0xffe19c47;
+            if (stage == 22) std::memset(mapping.pSurfData,0xcd,colorBytes.size());
+            for (UINT i = 1; i < 5; ++i)
+              std::memcpy(static_cast<uint8_t*>(mapping.pSurfData) + (stage == 21 ? (i-1)*8 : 8+i*8),&color,4);
+            D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = resources[1];
+            hr = api.pfnUnlock(m_driverDevice,&unmap); if (FAILED(hr)) return hr;
+            std::printf("D3D9_BUFFER_UPDATE stage=%u mode=%s offset=%u bytes=%u\n",stage,
+              stage == 21 ? "nooverwrite" : "discard",stage == 21 ? 16u : 0u,stage == 21 ? 28u : 44u);
+          }
+          if (stage == 23) {
+            D3DDDIARG_LOCK mapping = {}; mapping.hResource = resources[2];
+            mapping.Flags.RangeValid = mapping.Flags.WriteOnly = 1; mapping.Range = {4,12};
+            hr = api.pfnLock(m_driverDevice,&mapping); if (FAILED(hr)) return hr;
+            const UINT16 replacement[] = {0,1,2,2,1,3};
+            std::memcpy(mapping.pSurfData,replacement,sizeof(replacement));
+            D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = resources[2];
+            hr = api.pfnUnlock(m_driverDevice,&unmap); if (FAILED(hr)) return hr;
+          }
+          fill.FillColor = 0xff0a152d;
+          hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
+          hr = state(D3DDDIRS_SCENECAPTURE,1); if (FAILED(hr)) return hr;
+          if (stage == 18) {
+            const D3DDDIARG_DRAWPRIMITIVE primitive = {D3DPT_TRIANGLESTRIP,1,2};
+            hr = api.pfnDrawPrimitive(m_driverDevice,&primitive,nullptr);
+          } else {
+            const UINT slot = stage == 19 || stage == 23 ? 2 : 3;
+            D3DDDIARG_SETINDICES indices = {resources[slot],slot == 2 ? 2u : 4u};
+            hr = api.pfnSetIndices(m_driverDevice,&indices);
+            if (SUCCEEDED(hr)) {
+              const D3DDDIARG_DRAWINDEXEDPRIMITIVE primitive = {D3DPT_TRIANGLELIST,
+                stage == 23 ? 1 : -2,stage == 23 ? 0u : 3u,4,slot == 2 ? 2u : 3u,2};
+              hr = api.pfnDrawIndexedPrimitive(m_driverDevice,&primitive);
+            }
+          }
+          std::printf("D3D9_BUFFER_DRAW stage=%u mode=%s base=%d min=%u start=%u hr=%08lx\n",stage,
+            stage == 18 ? "vertex" : stage == 19 || stage == 23 ? "index16" : "index32",
+            stage == 18 ? 0 : stage == 23 ? 1 : -2,stage == 18 || stage == 23 ? 0u : 3u,
+            stage == 18 ? 1u : stage == 19 || stage == 23 ? 2u : 3u,static_cast<unsigned long>(hr));
+          const HRESULT ended = state(D3DDDIRS_SCENECAPTURE,0);
+          if (FAILED(hr)) return hr;
+          if (FAILED(ended)) return ended;
+          hr = readback(stage); if (FAILED(hr)) return hr;
+        }
+        D3DDDIARG_LOCK mapping = {}; mapping.hResource = resources[0]; mapping.Flags.ReadOnly = 1;
+        hr = api.pfnLock(m_driverDevice,&mapping); if (FAILED(hr)) return hr;
+        const bool retained = mapping.pSurfData && !std::memcmp(mapping.pSurfData,positionBytes.data(),positionBytes.size());
+        D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = resources[0];
+        hr = api.pfnUnlock(m_driverDevice,&unmap); if (FAILED(hr)) return hr;
+        if (!retained) return E_FAIL;
+        for (HANDLE resource : resources) {
+          hr = api.pfnDestroyResource(m_driverDevice,resource); if (FAILED(hr)) return hr;
+          if (api.pfnDestroyResource(m_driverDevice,resource) != E_INVALIDARG) return E_FAIL;
+        }
+        hr = api.pfnDeleteVertexShaderFunc(m_driverDevice,vertexShader.ShaderHandle); if (FAILED(hr)) return hr;
+        hr = api.pfnDeletePixelShader(m_driverDevice,pixelShader.ShaderHandle); if (FAILED(hr)) return hr;
+        hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,declaration.ShaderHandle); if (FAILED(hr)) return hr;
+        std::printf("D3D9_BUFFER_READBACK PASS pixels=%u checksum=%08x padding=retained streams=3/7 indices=16/32 base=negative/positive dynamic=nooverwrite/discard\n",checked,checksum);
+      }
     }
     hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
     if (FAILED(hr)) return hr;
@@ -781,22 +910,23 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  const bool textures = argc == 3 && !wcscmp(argv[2], L"--texture");
+  const bool buffers = argc == 3 && !wcscmp(argv[2], L"--buffer");
+  const bool textures = buffers || (argc == 3 && !wcscmp(argv[2], L"--texture"));
   const bool shaders = textures || (argc == 3 && !wcscmp(argv[2], L"--shader"));
   const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

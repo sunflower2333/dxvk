@@ -45,6 +45,13 @@ struct D3D9Shader::State {
 D3D9Shader::D3D9Shader() : m_state(std::make_unique<State>()) { }
 D3D9Shader::~D3D9Shader() = default;
 
+struct D3D9BufferResource::State {
+  Com<IDirect3DVertexBuffer9> vertex;
+  Com<IDirect3DIndexBuffer9> index;
+};
+D3D9BufferResource::D3D9BufferResource() : m_state(std::make_unique<State>()) { }
+D3D9BufferResource::~D3D9BufferResource() = default;
+
 D3D9Backend::D3D9Backend() : m_state(std::make_unique<State>()) { }
 D3D9Backend::~D3D9Backend() = default;
 IDirect3DDevice9Ex* D3D9Backend::device() const noexcept { return m_state->d3d.ptr(); }
@@ -52,6 +59,39 @@ HRESULT D3D9Backend::flush() noexcept {
   try { return m_state->d3d->FlushRuntimeSubmission(); }
   catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
   catch (...) { return D3DERR_DEVICELOST; }
+}
+
+HRESULT D3D9Backend::createBuffer(const D3D9BufferDesc& desc,
+    std::unique_ptr<D3D9BufferResource>& output) {
+  auto buffer = std::make_unique<D3D9BufferResource>();
+  const DWORD usage = (desc.dynamic ? D3DUSAGE_DYNAMIC : 0) | (desc.writeOnly ? D3DUSAGE_WRITEONLY : 0);
+  const HRESULT hr = desc.index
+    ? m_state->d3d->CreateIndexBuffer(desc.bytes, usage, desc.format, D3DPOOL_DEFAULT, &buffer->m_state->index, nullptr)
+    : m_state->d3d->CreateVertexBuffer(desc.bytes, usage, desc.fvf, D3DPOOL_DEFAULT, &buffer->m_state->vertex, nullptr);
+  if (hr != S_OK || !(desc.index ? bool(buffer->m_state->index) : bool(buffer->m_state->vertex)))
+    return FAILED(hr) ? hr : E_FAIL;
+  output = std::move(buffer);
+  return S_OK;
+}
+HRESULT D3D9Backend::lockBuffer(D3D9BufferResource& buffer, UINT offset, UINT bytes, DWORD flags, void*& data) {
+  return buffer.m_state->index ? buffer.m_state->index->Lock(offset, bytes, &data, flags)
+                              : buffer.m_state->vertex->Lock(offset, bytes, &data, flags);
+}
+HRESULT D3D9Backend::unlockBuffer(D3D9BufferResource& buffer) {
+  return buffer.m_state->index ? buffer.m_state->index->Unlock() : buffer.m_state->vertex->Unlock();
+}
+HRESULT D3D9Backend::setStreamSource(UINT stream, D3D9BufferResource* buffer, UINT offset, UINT stride) {
+  return m_state->d3d->SetStreamSource(stream, buffer ? buffer->m_state->vertex.ptr() : nullptr, offset, stride);
+}
+HRESULT D3D9Backend::setIndices(D3D9BufferResource* buffer) {
+  return m_state->d3d->SetIndices(buffer ? buffer->m_state->index.ptr() : nullptr);
+}
+HRESULT D3D9Backend::drawPrimitiveBuffers(D3DPRIMITIVETYPE type, UINT start, UINT count) {
+  return m_state->d3d->DrawPrimitive(type, start, count);
+}
+HRESULT D3D9Backend::drawIndexedPrimitive(D3DPRIMITIVETYPE type, INT base, UINT minimum,
+    UINT vertices, UINT start, UINT count) {
+  return m_state->d3d->DrawIndexedPrimitive(type, base, minimum, vertices, start, count);
 }
 
 HRESULT D3D9Backend::createVertexDeclaration(const D3DVERTEXELEMENT9* elements,

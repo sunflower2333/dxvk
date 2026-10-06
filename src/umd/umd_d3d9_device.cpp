@@ -38,6 +38,9 @@ struct Surface {
 };
 struct Resource {
   HANDLE runtime = nullptr;
+  dxvk::umd::D3D9BufferDesc bufferDesc;
+  std::unique_ptr<dxvk::umd::D3D9BufferResource> buffer;
+  bool bufferLocked = false;
   // Member order releases mip surfaces before their owning texture.
   std::unique_ptr<dxvk::umd::D3D9TextureResource> texture;
   std::vector<Surface> surfaces;
@@ -45,6 +48,7 @@ struct Resource {
 struct Declaration {
   std::unique_ptr<dxvk::umd::D3D9VertexDeclaration> backend;
   UINT streams = 0, streamZeroSize = 0;
+  std::array<UINT, 16> streamSizes = {};
 };
 using ShaderStage = dxvk::umd::D3D9ShaderStage;
 struct Shader {
@@ -67,6 +71,9 @@ struct Device {
   HANDLE declaration = nullptr;
   const void* userVertices = nullptr;
   UINT userStride = 0;
+  struct Stream { HANDLE buffer = nullptr; UINT offset = 0, stride = 0; };
+  std::array<Stream, 16> streams = {};
+  HANDLE indices = nullptr;
   HANDLE target = nullptr;
   UINT targetIndex = 0;
 
@@ -77,15 +84,20 @@ struct Device {
     HRESULT hr = S_OK;
     try { service->drain([&] {
       try { if (backend) {
-        for (auto& entry : resources)
+        for (auto& entry : resources) {
+          if (entry.second->bufferLocked) backend->unlockBuffer(*entry.second->buffer);
           for (auto& surface : entry.second->surfaces)
             if (surface.locked) backend->unlockSurface(*surface.backend, false);
+        }
         if (target) backend->setRenderTarget(nullptr);
         if (declaration) backend->setVertexDeclaration(nullptr);
         if (boundShaders[0]) backend->setShader(ShaderStage::Vertex, nullptr);
         if (boundShaders[1]) backend->setShader(ShaderStage::Pixel, nullptr);
         for (UINT i = 0; i < boundTextures.size(); ++i)
           if (boundTextures[i]) backend->setTexture(i < 16 ? i : D3DVERTEXTEXTURESAMPLER0 + i - 16, nullptr);
+        for (UINT i = 0; i < streams.size(); ++i)
+          if (streams[i].buffer) backend->setStreamSource(i, nullptr, 0, 0);
+        if (indices) backend->setIndices(nullptr);
         if (!resources.empty() || !declarations.empty() || !shaders.empty()) backend->flush();
       } } catch (...) { hr = E_FAIL; }
       resources.clear();
@@ -97,6 +109,8 @@ struct Device {
       declaration = nullptr;
       userVertices = nullptr;
       userStride = 0;
+      streams = {};
+      indices = nullptr;
       backend.reset();
     }); }
     catch (...) { hr = E_FAIL; }
@@ -174,10 +188,13 @@ bool validArea(const RECT& area, const dxvk::umd::D3D9SurfaceDesc& desc) {
 HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   if (!args || !args->hResource || !args->pSurfList || !args->SurfCount) return E_INVALIDARG;
   const auto input = *args;
-  if (input.Flags.Value & ~(UINT(1) | UINT(0x80) | UINT(0x10000))) return E_INVALIDARG;
+  const bool buffer = input.Flags.VertexBuffer || input.Flags.IndexBuffer;
+  if (input.Flags.Value & ~(buffer ? UINT(0x1800cc) : UINT(0x10081))) return E_INVALIDARG;
+  if (buffer && (bool(input.Flags.VertexBuffer) == bool(input.Flags.IndexBuffer) || input.SurfCount != 1))
+    return E_INVALIDARG;
   const bool target = input.Flags.RenderTarget != 0;
   const bool texture = input.Flags.Texture != 0;
-  if (input.Flags.NotLockable && !target && !texture) return E_INVALIDARG;
+  if (input.Flags.NotLockable && !target && !texture && !buffer) return E_INVALIDARG;
   if (target && (input.MultisampleType != D3DDDIMULTISAMPLE_NONE || input.MultisampleQuality))
     return E_INVALIDARG;
   if (input.Pool != D3DDDIPOOL_SYSTEMMEM && input.Pool != D3DDDIPOOL_VIDEOMEMORY
@@ -187,7 +204,12 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   if (texture && (!input.MipLevels || input.MipLevels != input.SurfCount || input.MipLevels > 32
       || (input.Flags.NotLockable && input.Pool == D3DDDIPOOL_SYSTEMMEM))) return E_INVALIDARG;
   const auto format = static_cast<D3DFORMAT>(input.Format);
-  if (format != D3DFMT_A8R8G8B8 && format != D3DFMT_X8R8G8B8) return E_INVALIDARG;
+  if (buffer) {
+    if (input.Pool == D3DDDIPOOL_SYSTEMMEM) return D3DERR_NOTAVAILABLE;
+    if (input.Flags.IndexBuffer ? (format != D3DFMT_INDEX16 && format != D3DFMT_INDEX32)
+                                : format != D3DFMT_VERTEXDATA) return E_INVALIDARG;
+  } else if (format != D3DFMT_A8R8G8B8 && format != D3DFMT_X8R8G8B8) return E_INVALIDARG;
+  dxvk::umd::D3D9BufferDesc bufferDesc;
   std::vector<dxvk::umd::D3D9SurfaceDesc> descriptions;
   return preparedOperation(handle, [&](Device&) {
     // Serialize before reading pointed metadata: nested callbacks must not
@@ -195,6 +217,17 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
     // absent usage flags retain their native meaning.
     const uint64_t listBytes = uint64_t(input.SurfCount) * sizeof(D3DDDI_SURFACEINFO);
     if (listBytes > UINTPTR_MAX - reinterpret_cast<uintptr_t>(input.pSurfList)) return E_INVALIDARG;
+    if (buffer) {
+      const auto info = input.pSurfList[0];
+      if (!info.Width || info.Width > UINT_MAX - 255 || info.pSysMem) return E_INVALIDARG;
+      if (input.Flags.IndexBuffer && info.Width % (format == D3DFMT_INDEX16 ? 2 : 4)) return E_INVALIDARG;
+      bufferDesc.bytes = info.Width; bufferDesc.format = format;
+      bufferDesc.fvf = input.Flags.VertexBuffer ? input.Fvf : 0;
+      bufferDesc.index = input.Flags.IndexBuffer != 0; bufferDesc.dynamic = input.Flags.Dynamic != 0;
+      bufferDesc.writeOnly = input.Flags.WriteOnly != 0; bufferDesc.lockable = !input.Flags.NotLockable;
+      // Height, depth, pitches and mip count are reserved for linear resources.
+      return S_OK;
+    }
     descriptions.reserve(input.SurfCount);
     for (UINT i = 0; i < input.SurfCount; ++i) {
       const auto info = input.pSurfList[i];
@@ -229,7 +262,12 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       auto resource = std::make_unique<Resource>();
       resource->runtime = input.hResource;
       resource->surfaces.reserve(descriptions.size());
-      if (texture) {
+      if (buffer) {
+        resource->bufferDesc = bufferDesc;
+        const HRESULT hr = result(device.backend->createBuffer(bufferDesc, resource->buffer));
+        if (FAILED(hr)) return hr;
+        if (!resource->buffer) return E_FAIL;
+      } else if (texture) {
         std::vector<std::unique_ptr<dxvk::umd::D3D9SurfaceResource>> levels;
         const HRESULT hr = result(device.backend->createTexture(descriptions.data(), input.MipLevels,
           resource->texture, levels));
@@ -266,6 +304,7 @@ HRESULT APIENTRY destroyResource(HANDLE handle, HANDLE token) {
   return operation(handle, [&](Device& device) {
     const auto entry = device.resources.find(token);
     if (entry == device.resources.end()) return E_INVALIDARG;
+    if (entry->second->bufferLocked) return E_INVALIDARG;
     for (const auto& item : entry->second->surfaces)
       if (item.locked) return E_INVALIDARG;
     if (device.target == token) {
@@ -278,6 +317,17 @@ HRESULT APIENTRY destroyResource(HANDLE handle, HANDLE token) {
       const HRESULT hr = result(device.backend->setTexture(i < 16 ? i : D3DVERTEXTEXTURESAMPLER0 + i - 16, nullptr));
       if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
       device.boundTextures[i] = nullptr;
+    }
+    for (UINT i = 0; i < device.streams.size(); ++i) {
+      if (device.streams[i].buffer != token) continue;
+      const HRESULT hr = result(device.backend->setStreamSource(i, nullptr, 0, 0));
+      if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+      device.streams[i] = {};
+    }
+    if (device.indices == token) {
+      const HRESULT hr = result(device.backend->setIndices(nullptr));
+      if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+      device.indices = nullptr;
     }
     // The backend joins recording/submission before runtime backing expires.
     const HRESULT hr = result(device.backend->flush());
@@ -344,8 +394,33 @@ HRESULT APIENTRY blt(HANDLE handle, const D3DDDIARG_BLT* args) {
 HRESULT APIENTRY lockResource(HANDLE handle, D3DDDIARG_LOCK* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
-  if (input.Flags.Value & ~UINT(0x2a3) || (input.Flags.ReadOnly && input.Flags.WriteOnly)) return E_INVALIDARG;
+  if (input.Flags.ReadOnly && input.Flags.WriteOnly) return E_INVALIDARG;
   return operation(handle, [&](Device& device) {
+    const auto resource = device.resources.find(input.hResource);
+    if (resource != device.resources.end() && resource->second->buffer) {
+      auto& item = *resource->second;
+      if (input.SubResourceIndex || input.Flags.Value & ~UINT(0x21f) || item.bufferLocked
+          || !item.bufferDesc.lockable || (input.Flags.ReadOnly && item.bufferDesc.writeOnly)
+          || (input.Flags.NoOverwrite && input.Flags.Discard) || (input.Flags.Discard && input.Flags.ReadOnly)
+          || ((input.Flags.NoOverwrite || input.Flags.Discard) && !item.bufferDesc.dynamic)) return E_INVALIDARG;
+      const UINT offset = input.Flags.RangeValid ? input.Range.Offset : 0;
+      const UINT bytes = input.Flags.RangeValid ? input.Range.Size : item.bufferDesc.bytes;
+      if (!bytes || uint64_t(offset) + bytes > item.bufferDesc.bytes) return E_INVALIDARG;
+      const DWORD flags = (input.Flags.ReadOnly ? D3DLOCK_READONLY : 0)
+        | (input.Flags.Discard ? D3DLOCK_DISCARD : 0) | (input.Flags.NoOverwrite ? D3DLOCK_NOOVERWRITE : 0)
+        | (input.Flags.DoNotWait ? D3DLOCK_DONOTWAIT : 0);
+      void* data = nullptr;
+      const HRESULT hr = result(device.backend->lockBuffer(*item.buffer, offset, bytes, flags, data));
+      if (FAILED(hr)) return hr;
+      item.bufferLocked = true;
+      if (!data) {
+        if (result(device.backend->unlockBuffer(*item.buffer)) == S_OK) item.bufferLocked = false;
+        return E_FAIL;
+      }
+      args->pSurfData = data; args->Pitch = 0; args->SlicePitch = 0;
+      return S_OK;
+    }
+    if (input.Flags.Value & ~UINT(0x2a3)) return E_INVALIDARG;
     auto item = surface(device, input.hResource, input.SubResourceIndex);
     if (!item || !item->desc.lockable || item->locked
         || bool(input.Flags.NotifyOnly) != bool(item->desc.systemData)) return E_INVALIDARG;
@@ -371,6 +446,14 @@ HRESULT APIENTRY unlockResource(HANDLE handle, const D3DDDIARG_UNLOCK* args) {
   const auto input = *args;
   if (input.Flags.Value & ~UINT(1)) return E_INVALIDARG;
   return operation(handle, [&](Device& device) {
+    const auto resource = device.resources.find(input.hResource);
+    if (resource != device.resources.end() && resource->second->buffer) {
+      auto& item = *resource->second;
+      if (input.SubResourceIndex || input.Flags.Value || !item.bufferLocked) return E_INVALIDARG;
+      const HRESULT hr = result(device.backend->unlockBuffer(*item.buffer));
+      if (SUCCEEDED(hr)) item.bufferLocked = false;
+      return hr;
+    }
     auto item = surface(device, input.hResource, input.SubResourceIndex);
     if (!item || !item->locked || bool(input.Flags.NotifyOnly) != item->notifyOnly) return E_INVALIDARG;
     const HRESULT hr = result(device.backend->unlockSurface(*item->backend));
@@ -524,6 +607,7 @@ HRESULT APIENTRY createVertexDeclaration(HANDLE handle, D3DDDIARG_CREATEVERTEXSH
     std::vector<D3DVERTEXELEMENT9> elements;
     elements.reserve(size_t(count) + 1);
     UINT streams = 0, extent = 0;
+    std::array<UINT, 16> streamSizes = {};
     constexpr UINT sizes[] = {4,8,12,16,4,4,4,8,4,4,8,4,8,4,4,4,8};
     for (UINT i = 0; i < count; ++i) {
       const auto item = inputElements[i];
@@ -538,12 +622,14 @@ HRESULT APIENTRY createVertexDeclaration(HANDLE handle, D3DDDIARG_CREATEVERTEXSH
           || item.UsageIndex >= 16) return E_INVALIDARG;
       elements.push_back({item.Stream,item.Offset,item.Type,item.Method,item.Usage,item.UsageIndex});
       streams |= UINT(1) << item.Stream;
+      streamSizes[item.Stream] = (std::max)(streamSizes[item.Stream], UINT(item.Offset) + sizes[item.Type]);
       if (!item.Stream) extent = (std::max)(extent, UINT(item.Offset) + sizes[item.Type]);
     }
     elements.push_back(D3DDECL_END());
     return operation(handle, [&](Device& device) {
       auto declaration = std::make_unique<Declaration>();
       declaration->streams = streams; declaration->streamZeroSize = extent;
+      declaration->streamSizes = streamSizes;
       const HRESULT hr = result(device.backend->createVertexDeclaration(elements.data(), declaration->backend));
       if (FAILED(hr)) return hr;
       if (!declaration->backend) return E_FAIL;
@@ -788,40 +874,113 @@ HRESULT APIENTRY setScissorRect(HANDLE handle, const RECT* args) {
   return operation(handle, [&](Device& device) { return device.backend->setScissorRect(input); });
 }
 
+HRESULT APIENTRY setStreamSource(HANDLE handle, const D3DDDIARG_SETSTREAMSOURCE* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  if (input.Stream >= 16 || (input.hVertexBuffer && !input.Stride)) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.resources.find(input.hVertexBuffer);
+    if (input.hVertexBuffer && (entry == device.resources.end() || !entry->second->buffer
+        || entry->second->bufferDesc.index || entry->second->bufferLocked
+        || input.Offset >= entry->second->bufferDesc.bytes)) return E_INVALIDARG;
+    const HRESULT hr = result(device.backend->setStreamSource(input.Stream,
+      input.hVertexBuffer ? entry->second->buffer.get() : nullptr,
+      input.hVertexBuffer ? input.Offset : 0, input.hVertexBuffer ? input.Stride : 0));
+    if (SUCCEEDED(hr)) {
+      device.streams[input.Stream] = input.hVertexBuffer
+        ? Device::Stream{input.hVertexBuffer,input.Offset,input.Stride} : Device::Stream{};
+      if (!input.Stream) { device.userVertices = nullptr; device.userStride = 0; }
+    }
+    return hr;
+  });
+}
+
+HRESULT APIENTRY setIndices(HANDLE handle, const D3DDDIARG_SETINDICES* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.resources.find(input.hIndexBuffer);
+    if (input.hIndexBuffer && (entry == device.resources.end() || !entry->second->buffer
+        || !entry->second->bufferDesc.index || entry->second->bufferLocked
+        || input.Stride != (entry->second->bufferDesc.format == D3DFMT_INDEX16 ? 2u : 4u))) return E_INVALIDARG;
+    const HRESULT hr = result(device.backend->setIndices(input.hIndexBuffer ? entry->second->buffer.get() : nullptr));
+    if (SUCCEEDED(hr)) device.indices = input.hIndexBuffer;
+    return hr;
+  });
+}
+
 HRESULT APIENTRY setStreamSourceUm(HANDLE handle, const D3DDDIARG_SETSTREAMSOURCEUM* args,
     const void* vertices) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
   if (input.Stream || (vertices && !input.Stride)) return E_INVALIDARG;
   return operation(handle, [&](Device& device) {
+    if (device.streams[0].buffer) {
+      const HRESULT hr = result(device.backend->setStreamSource(0, nullptr, 0, 0));
+      if (FAILED(hr)) return hr;
+      device.streams[0] = {};
+    }
     device.userVertices = vertices;
     device.userStride = vertices ? input.Stride : 0;
     return S_OK;
   });
 }
 
-HRESULT APIENTRY drawPrimitive(HANDLE handle, const D3DDDIARG_DRAWPRIMITIVE* args,
-    const UINT* flags) {
-  if (!args || flags) return E_INVALIDARG; // Per-edge line-fill flags need their own path.
-  const auto input = *args;
-  uint64_t count = input.PrimitiveCount;
-  switch (input.PrimitiveType) {
+bool primitiveVertices(D3DPRIMITIVETYPE type, UINT primitives, uint64_t& count) {
+  count = primitives;
+  switch (type) {
     case D3DPT_POINTLIST: break;
     case D3DPT_LINELIST: count *= 2; break;
     case D3DPT_LINESTRIP: if (count) ++count; break;
     case D3DPT_TRIANGLELIST: count *= 3; break;
     case D3DPT_TRIANGLESTRIP:
     case D3DPT_TRIANGLEFAN: if (count) count += 2; break;
-    default: return E_INVALIDARG;
+    default: return false;
   }
-  if (count > UINT_MAX) return E_INVALIDARG;
+  return count <= UINT_MAX;
+}
+
+bool drawBindings(Device& device, const Declaration& declaration, uint64_t first, uint64_t count) {
+  if (device.userVertices) return false; // Mixed user-memory/resource streams need a separate upload plan.
+  if (first > UINT_MAX || count > uint64_t(UINT_MAX) + 1 - first) return false;
+  for (UINT i = 0; i < device.streams.size(); ++i) {
+    if (!(declaration.streams & (UINT(1) << i))) continue;
+    const auto& stream = device.streams[i];
+    const auto entry = device.resources.find(stream.buffer);
+    if (entry == device.resources.end() || !entry->second->buffer || entry->second->bufferLocked
+        || stream.stride < declaration.streamSizes[i]) return false;
+    // Count complete declarations, rather than requiring unused final stride padding.
+    if (count && uint64_t(stream.offset) + (first + count - 1) * stream.stride
+        + declaration.streamSizes[i] > entry->second->bufferDesc.bytes) return false;
+  }
+  return true;
+}
+
+bool drawTarget(Device& device) {
+  auto target = surface(device, device.target, device.targetIndex);
+  if (!target || target->locked) return false;
+  for (const auto binding : device.boundTextures) {
+    if (!binding) continue;
+    for (const auto& level : device.resources.at(binding)->surfaces)
+      if (level.locked) return false;
+  }
+  return true;
+}
+
+HRESULT APIENTRY drawPrimitive(HANDLE handle, const D3DDDIARG_DRAWPRIMITIVE* args,
+    const UINT* flags) {
+  if (!args || flags) return E_INVALIDARG; // Per-edge line-fill flags need their own path.
+  const auto input = *args;
+  uint64_t count = 0;
+  if (!primitiveVertices(input.PrimitiveType, input.PrimitiveCount, count)) return E_INVALIDARG;
   std::vector<uint8_t> vertices;
   UINT stride = 0;
   return preparedOperation(handle, [&](Device& device) {
     const auto declaration = device.declarations.find(device.declaration);
-    auto target = surface(device,device.target,device.targetIndex);
-    if (declaration == device.declarations.end() || !target || target->locked
-        || !device.userVertices || !device.userStride) return E_INVALIDARG;
+    if (declaration == device.declarations.end() || !drawTarget(device)) return E_INVALIDARG;
+    if (!device.userVertices)
+      return drawBindings(device, *declaration->second, input.VStart, count) ? S_OK : E_INVALIDARG;
+    if (!device.userStride) return E_INVALIDARG;
     if (declaration->second->streams != 1
         || declaration->second->streamZeroSize > device.userStride) return E_INVALIDARG;
     for (const auto binding : device.boundTextures) {
@@ -842,7 +1001,35 @@ HRESULT APIENTRY drawPrimitive(HANDLE handle, const D3DDDIARG_DRAWPRIMITIVE* arg
     std::memcpy(vertices.data(),reinterpret_cast<const void*>(base + uintptr_t(offset)),vertices.size());
     return S_OK;
   }, [&](Device& device) {
-    return count ? device.backend->drawPrimitive(input.PrimitiveType,input.PrimitiveCount,vertices.data(),stride) : S_OK;
+    if (!count) return S_OK;
+    return device.userVertices
+      ? device.backend->drawPrimitive(input.PrimitiveType,input.PrimitiveCount,vertices.data(),stride)
+      : device.backend->drawPrimitiveBuffers(input.PrimitiveType,input.VStart,input.PrimitiveCount);
+  });
+}
+
+HRESULT APIENTRY drawIndexedPrimitive(HANDLE handle, const D3DDDIARG_DRAWINDEXEDPRIMITIVE* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  uint64_t count = 0;
+  if (!primitiveVertices(input.PrimitiveType, input.PrimitiveCount, count)) return E_INVALIDARG;
+  return preparedOperation(handle, [&](Device& device) {
+    const auto declaration = device.declarations.find(device.declaration);
+    const auto indices = device.resources.find(device.indices);
+    if (declaration == device.declarations.end() || !drawTarget(device)
+        || indices == device.resources.end() || !indices->second->buffer || indices->second->bufferLocked)
+      return E_INVALIDARG;
+    const uint64_t stride = indices->second->bufferDesc.format == D3DFMT_INDEX16 ? 2 : 4;
+    if ((uint64_t(input.StartIndex) + count) * stride > indices->second->bufferDesc.bytes
+        || (count && !input.NumVertices)) return E_INVALIDARG;
+    const int64_t first = int64_t(input.BaseVertexIndex) + input.MinIndex;
+    // Negative base indices are valid when the referenced vertex range stays nonnegative.
+    if (first < 0 || uint64_t(first) + input.NumVertices > uint64_t(UINT_MAX) + 1
+        || !drawBindings(device, *declaration->second, uint64_t(first), input.NumVertices)) return E_INVALIDARG;
+    return S_OK;
+  }, [&](Device& device) {
+    return count ? device.backend->drawIndexedPrimitive(input.PrimitiveType,input.BaseVertexIndex,
+      input.MinIndex,input.NumVertices,input.StartIndex,input.PrimitiveCount) : S_OK;
   });
 }
 
@@ -956,7 +1143,10 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnSetZRange = setZRange;
   table.pfnSetScissorRect = setScissorRect;
   table.pfnSetStreamSourceUm = setStreamSourceUm;
+  table.pfnSetStreamSource = setStreamSource;
+  table.pfnSetIndices = setIndices;
   table.pfnDrawPrimitive = drawPrimitive;
+  table.pfnDrawIndexedPrimitive = drawIndexedPrimitive;
   {
     std::lock_guard<std::mutex> lock(devicesMutex);
     if (!nextHandle) return E_OUTOFMEMORY;

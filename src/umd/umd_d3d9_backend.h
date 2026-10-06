@@ -15,6 +15,24 @@ struct D3D9SurfaceDesc {
   UINT systemPitch = 0;
 };
 
+struct D3D9BufferDesc {
+  UINT bytes = 0, fvf = 0;
+  D3DFORMAT format = D3DFMT_VERTEXDATA;
+  bool index = false, dynamic = false, writeOnly = false, lockable = true;
+};
+
+class D3D9BufferResource {
+public:
+  D3D9BufferResource();
+  ~D3D9BufferResource();
+  D3D9BufferResource(const D3D9BufferResource&) = delete;
+  D3D9BufferResource& operator=(const D3D9BufferResource&) = delete;
+private:
+  friend class D3D9Backend;
+  struct State;
+  std::unique_ptr<State> m_state;
+};
+
 // Private renderer storage, never a runtime handle. Release on a pumped
 // backend worker before the runtime resource and its system backing expire.
 class D3D9SurfaceResource {
@@ -82,6 +100,14 @@ public:
 
   IDirect3DDevice9Ex* device() const noexcept;
   HRESULT flush() noexcept;
+  HRESULT createBuffer(const D3D9BufferDesc& desc, std::unique_ptr<D3D9BufferResource>& result);
+  HRESULT lockBuffer(D3D9BufferResource& buffer, UINT offset, UINT bytes, DWORD flags, void*& data);
+  HRESULT unlockBuffer(D3D9BufferResource& buffer);
+  HRESULT setStreamSource(UINT stream, D3D9BufferResource* buffer, UINT offset, UINT stride);
+  HRESULT setIndices(D3D9BufferResource* buffer);
+  HRESULT drawPrimitiveBuffers(D3DPRIMITIVETYPE type, UINT start, UINT count);
+  HRESULT drawIndexedPrimitive(D3DPRIMITIVETYPE type, INT base, UINT minimum,
+                               UINT vertices, UINT start, UINT count);
   HRESULT createSurface(const D3D9SurfaceDesc& desc,
                         std::unique_ptr<D3D9SurfaceResource>& result);
   HRESULT createTexture(const D3D9SurfaceDesc* levels, UINT count,

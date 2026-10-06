@@ -7,24 +7,6 @@ on:
         description: 'Successful Mesa run containing turnip-wddm-arm64-icd-bundle (optional)'
         required: false
         type: string
-  push:
-    branches:
-      - wddm
-    paths:
-      - '.github/workflows/build-wddm-arm64.yml'
-      - 'include/**'
-      - 'src/**'
-      - '*.ini'
-      - '*.in'
-      - '*.conf'
-      - 'meson.build'
-      - 'meson_options.txt'
-      - 'build-winarm64.txt'
-      - 'version.h.in'
-      - 'scripts/package-wddm-arm64.ps1'
-      - 'scripts/launch-wddm-arm64.ps1'
-      - 'scripts/run-wddm-smoke-arm64.ps1'
-      - 'tests/**'
 
 jobs:
   build:

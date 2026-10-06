@@ -111,8 +111,11 @@ public:
         || m_deviceFuncs.pfnDestroyDevice(stale) != E_INVALIDARG) return E_FAIL;
     std::printf("D3D9_CALLBACKS query=%u context=%u/%u allocation=%u/%u lock=%u/%u render=%u escape=%u wrong_thread=%u\n",
       queries, contexts, contextCloses, allocations, deallocations, locks, unlocks, renders, escapes, wrongThreads);
+    // This lifecycle creates no surface and records no clear or draw. DXVK
+    // and Turnip may suppress its empty submission; render callbacks are a
+    // rendering-workload oracle, not evidence required for balanced lifetime.
     return contexts == 1 && contextCloses == 1 && allocations && allocations == deallocations
-      && locks == unlocks && renders && !m_context && !wrongThreads ? S_OK : E_FAIL;
+      && locks == unlocks && !m_context && !wrongThreads ? S_OK : E_FAIL;
   }
   HRESULT close() {
     HRESULT hr = S_OK;

@@ -75,9 +75,18 @@ CI37520111683 passes all6jobs and202248device checks perarchitecture; five
 compiled semantic controls verify. Targetfixed31/32 verify3712pixels each,
 including1344fixed-function pixels b3416e11,59nonempty submissions and balanced
 callbacks/residency, diagnostics1/0. Signed58624/DWM1552/Explorer6464 and58
-readiness fields remain unchanged. SYSTEMMEM/managed buffer transfer, remaining
-state/resources/queries, presentation/reset and ordinary runtime acceptance
-remain open.
+readiness fields remain unchanged. That checkpoint left SYSTEMMEM/managed
+buffer transfer, remaining state/resources/queries, presentation/reset and
+ordinary runtime acceptance open.
+The [SYSTEMMEM/BufBlt checkpoint](native-d3d9-buffer-transfer-20261007.md)
+adds borrowed/owned SYSTEMMEM VB/IB and guarded byte-range/overlap/readback
+transfers. Exact0d585e2 single CI37530530983 passes all6jobs and216868device
+checks perarchitecture; five compiled semantic controls verify57inputs.
+Targetbuffer-transfer33/34 diagnostics1/0 verify4224pixels and1056bytes each,
+78nonempty submits, balanced lifetime/residency and unchanged signedSYS/desktop/
+58readiness fields. Typed clip planes are the next contract; managed resources,
+remaining state/resources/queries, presentation/reset and ordinary runtime
+acceptance remain open.
 Production OpenAdapter and rendering caps remain closed; the historical table
 is not an inventory of the new static core or device bridge.
 

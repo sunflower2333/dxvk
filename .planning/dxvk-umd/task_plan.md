@@ -6,7 +6,24 @@ runtime, with correct hardware rendering, DX8 compatibility proven through
 the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
-## Next Step
+## Current step
+
+Source `0d585e2318266f0f910fc758b997e7e6defcc897` implements SYSTEMMEM VB/IB
+and typed BufBlt, with an aligned GPU probe. Native committed worktree03 passes
+216868 checks and all five compiled semantic controls independently verify
+57 Git/archive/after-run inputs and native ARM64 PE/COFF. Preflight05 is byte
+identical to the committed archive. Single automatic CI37530530983 all6SUCCESS;
+five ZIP digests, three architectures/216868checks and14native ARM64 hashes
+independently verify. Targetbuffer-transfer33/34 diagnostics1/0 pass4224pixels
+and1056bytes each,78renders and balancedcallbacks/residency, retaining signedSYS,
+desktop and58readiness fields. Checkpoint docs/native-d3d9-buffer-transfer-20261007.md.
+Next typed SetClipPlane: uncommitted preflight01 passes220595checks; final probe
+preflight02 retains a strict shadow-warning failure; corrected preflight03 is
+with the build verifier. Independent CPU homogeneous equations
+expect640newclip pixels/ac340bd5,4864total. Committed controls/CI/GPU remain open.
+Keep ordinary DX8-DX11 rendering/presentation and the full goal active.
+
+## Earlier checkpoints
 Exact source787419696fc828bdc0f1c9d7d5337135fce0c82f implements coherent
 static2D mip chains, all-common-level TexBlt and explicit sampler/state mapping.
 Native ARM64 fixture134906PASS and four compiled semantic controls independently
@@ -644,5 +661,6 @@ gates and native fixture/semantic controls remain required.
 - [complete] Record independently verified buffer hardware and EWDK build checkpoints.
 - [complete] Implement typed depth/stencil ownership and native clear semantics; exact targetdepth29/30 pixel/readiness proofs pass.
 - [complete] Implement and independently verify fixed-function transforms/material/lights, native controls, CI and targetfixed31/32 pixels.
-- [in_progress] Implement SYSTEMMEM buffers and typed BufBlt with exact byte-range/borrowed-memory/copy ownership.
+- [complete] Implement and independently verify SYSTEMMEM/BufBlt, native controls, consolidated CI and targetbuffer-transfer33/34 pixel/byte/readiness gates.
+- [in_progress] Implement typed SetClipPlane with copied homogeneous coefficients, bounded indices and independent native/GPU acceptance.
 - [pending] Complete remaining state/resource/presentation/reset and ordinary DX8-DX11 acceptance.

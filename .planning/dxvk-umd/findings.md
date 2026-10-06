@@ -1356,3 +1356,40 @@ native controlled/semantic and actual target GPU gates before acceptance.
  Reuse that renderer with typed byte ranges and borrowed-data snapshots, plus
  actual GPU copy/draw/readback acceptance. Existing copyBufferRegion handles
  same-buffer overlap through a temporary allocation.
+
+## 2026-10-07 buffer transfer GPU-layout correction
+- Before GPU execution, audited D3D9 UploadPerDrawData: dynamic SYSTEMMEM
+  buffers are repacked with stride=min(source stride, declaration extent),
+  dropping stream binding offset. An internal declaration offset3 would
+  produce unaligned FLOAT4 addresses and stride23 after repacking. Changed
+  the probe only to declaration0/16 and stream offsets+3, preserving every
+  copied byte range and independent pixel/byte oracle. Both real-buffer
+  and packed SYSTEMMEM fetches now use four-byte-aligned addresses.
+- Current Vulkan vertex-input primary reference requires component-size
+  alignment when legacyVertexAttributes is not enabled; this DXVK tree
+  has no enabled legacyVertexAttributes feature. Source reference:
+  https://docs.vulkan.org/spec/latest/chapters/fxvertex.html#fxvertex-input-extraction
+- Old c8e7ff5 CI37526611880 retained as superseded; replacement exact-source
+  preflight, native controls and full CI required before any GPU claim.
+- Next local DDI audit: SetClipPlane inline coefficients obey homogeneous
+  Ax+By+Cz+Dw >=0, six DXVK planes. Native DDI must reject Index>=6 before
+  backend (COM SetClipPlane silently caps it). CLIPPLANEENABLE mapping
+  already exists; typed plane dispatch and snapshot/GPU tests remain absent.
+## 2026-10-07 accepted SYSTEMMEM and next clip-plane contract
+
+Exact0d585e2 native216868checks/five compiled semantic controls and single
+consolidated37530530983 all6jobs independently verify57inputs, three PE
+architectures,14native ARM64 execution hashes and Linux gates. Target33/34
+diagnostics1/0 each independently verify4224pixels/1056bytes,78nonempty submits,
+balanced lifetime/residency and unchanged signedSYS/desktop/58readiness fields.
+The alignment correction changes only probe declaration/bindings; byte payloads,
+copy offsets and pixel/byte expectations retain. No ordinary DX8-DX11 claim.
+
+SetClipPlane's native structure owns four inline float coefficients and uses
+Ax+By+Cz+Dw>=0. NativeDDI must reject indices>=6 before the public core caps them
+to its last valid plane. Local typed implementation now owns the entry snapshot
+and reuses the existing renderer. Controlled native preflight01 passes220595;
+final probe preflight02 is frozen. Pixeloracle uses exact rational half-space
+equations at D3D9 integer sample centers with identity transforms and z=.5,w=1.
+The x/y planes put boundaries between samples to avoid edge-rule ambiguity.
+Ten stages67..76 expect640pixels/ac340bd5 and4864total; controls/CI/GPU pending.

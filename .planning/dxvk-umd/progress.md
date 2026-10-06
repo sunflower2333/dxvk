@@ -1758,3 +1758,75 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
  Reuse that renderer with typed byte ranges and borrowed-data snapshots, plus
  actual GPU copy/draw/readback acceptance. Existing copyBufferRegion handles
  same-buffer overlap through a temporary allocation.
+
+## 2026-10-07 SYSTEMMEM and BufBlt implementation in progress
+- Implemented borrowed/owned SYSTEMMEM VB/IB, pre-callback creation/unlock/copy
+  snapshots, typed BufBlt ranges and overlap-safe native DXVK copy/readback.
+  Native-only Vulkan usage now explicitly covers both copy directions and
+  writable mapping destinations, including dedicated allocator fallback.
+- First controlled native preflight passed 216868 checks. Preflight02 retained
+  MSVC C2975 probe compile failure; corrected using an outer VertexPayload
+  type alias. Fresh preflight03/04 are with the independent build verifier.
+  Final preflight04 freezes57inputs/eightchanges against82b80b9, archive
+  c63727e767b9068fe7313ccba2991f840eae2d94fc11dea4828fd3e9139d9e0c.
+- New --buffer-transfer probe independently expects512pixels/49865e45 and
+  1056bytes/5bd18a08 (4224totalpixels retaining all previous gates). Frozen
+  wrappers pass native PowerShell parsing; actual GPU/committed native
+  controls and full renderer CI remain pending. No ordinary runtime PASS.
+
+### Exact committed SYSTEMMEM source verification
+
+- Source c8e7ff5 implements the renderer and native contracts; 0d585e2 aligns
+  only the GPU probe declaration/bindings for dynamic SYSTEMMEM repacking.
+  Raw copy offsets, payloads and independent byte/pixel expectations retain.
+  Superseded CI37526611880 was canceled before GPU execution and its complete
+  x86/ARM64/Linux ZIP evidence is retained separately, with canceled jobs
+  explicitly distinguished from compiler failures.
+- Build subagent independently verifies aligned native preflight05: strict
+  ARM64 probe compile and216868fixture checks,57source/after-run hashes,
+  installed signed58624/oem17/SYSsha and DWM1552/Explorer6464 continuity.
+  Root and subagent separately link all57inputs to final0d585e2; preflight05
+  and committedworktree03 archives are byte identical (3345ded70...).
+- Fresh committedworktree03 passes216868checks. Five separately compiled
+  controls03 fail the intended creation/copy/unlock snapshot, destination
+  bounds and NotifyOnly assertions. Independent root verifier checks all57
+  source/archive/after-run/Git links, nativePE/COFF, exact control mutations,
+  KERNEL32-only positive static imports and unchanged desktop/driver metadata.
+  Six original compiled probe objects are copied into supplemental evidence.
+- Push0d585e2 triggers exactly one automatic run37530530983. Full renderer CI
+  and fresh GPU33/34 remain pending; no ordinary runtime acceptance is claimed.
+
+### Accepted SYSTEMMEM and actual buffer-transfer GPU checkpoint
+
+- Final0d585e2 single automatic CI37530530983 all6SUCCESS. Build subagent
+  independently verifies five raw ZIP/API digests, ARM64/x64/x86216868checks,
+  14actual native ARM64 execution hashes,57source links and Linux sanitizer/
+  semantic gates; retained original logs prove full private renderer compilation.
+  ARM64artifact11444158161 ZIP1a09e3a0/DLL18146f8a/probeba66af56 retained.
+- Freshbuffer-transfer33/34 diagnostics1/0 independently pass4224pixels,
+  including512new49865e45, and1056bytes5bd18a08. Durations19.0761805s/
+  18.0587911s;78nonempty renders,ctx1/1alloc15/15lock14/14residency15/15
+  remaining0wrong0. All8payloads3frozen scripts/nativeARM64/LimitedUSER1 verify;
+  ownedtasks removedexit0. Freshsigned58624/oem17/binding0002/PnP0/SYSsha,
+  DWM1552/Explorer6464/starttimes and58readiness fields remain unchanged.
+  Root live CI refresh after both GPU runs confirms all6SUCCESS and verifies
+  five frozen local acceptance helpers remained unchanged through execution.
+- Checkpoint docs/native-d3d9-buffer-transfer-20261007.md; evidence under
+  artifacts/dxvk-native-d3d9-buffer-transfer-20261007. Full ordinary runtime
+  acceptance and long-term installed desktop stability remain open.
+- While renderer CI built, added next typed SetClipPlane DDI using local MS
+  homogeneous half-space docs. It snapshots inline4coefficients before callbacks
+  and rejects Index>=6 before public-core index clamping. Native uncommitted
+  preflight01 strictcompile/220595checks and57inputs/4changes independently
+  verify with signedSYS/desktop continuity. Newprobe stages67..76 cover all
+  xyzw coefficients, enabled updates, sparseplane5 and plane intersections.
+  Exact rational CPUoracle expects640newpixels/ac340bd5,4864total, with no sample
+  on a clipping edge. Frozen preflight02 includes the probe; after both buffer
+  runs the build subagent begins its native verification. Committed clip
+  controls/fullCI/GPU remain pending; no caps/exports/package pins widened.
+- Clip preflight02 strict probe compilation fails MSVC C2220/C4456 because its
+  local vertices hides the earlier draw vertices. The build verifier retains
+  and verifies the exact failure,57source/after-run hashes and signedSYS/desktop
+  continuity; fixture compile/run was not reached. Root renames clipVertices
+  and freezes freshpreflight03 cb2c99ee30d29b046e1d30843fdb6bdd03f8c5cc911aed35286f9040d8929f5e;
+  independent target build is pending. Positivefixture/oracle behavior retains.

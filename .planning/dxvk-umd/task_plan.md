@@ -27,9 +27,12 @@ draw53a03d45, six nonempty KMT submits and balanced ctx1/1 alloc10/10 lock9/9
 residency10/10 wrong0, diagnostics1/0. Eight payloads, three scripts, native
 ARM64 and Limited USER/session1 verify. Fresh signed58624/oem17/PnP0/SYSsha
 and DWM1552/Explorer4184 continuity retain all54 sensitive readiness values.
-Next implement typed programmable VS/PS create/bind/delete and constant uploads
-with bounded caller snapshots and renderer-worker ownership; validate native
-fixture, compiled semantic controls, all architecture CI and real shader pixels.
+Typed programmable VS/PS create/bind/delete and six constant uploads are
+implemented with bounded caller snapshots and worker ownership. Native
+fixture107385PASS and four compiled semantic controls independently verify
+56 source/after-run/archive/nativePE/driver/desktop links. Next commit/build
+all architecture gates, then verify the576pixel --shader oracle on the target.
+Full shader CI and actual programmable pixels remain pending.
 Textures/buffers, indexed/multistream drawing, presentation/reset and ordinary
 DX8-DX11 remain open. Keep the full goal active; no caps, production exports
 or paired binary pin widening until their mandatory contracts are ready.

@@ -32,6 +32,13 @@ struct D3D9VertexDeclaration::State {
 D3D9VertexDeclaration::D3D9VertexDeclaration() : m_state(std::make_unique<State>()) { }
 D3D9VertexDeclaration::~D3D9VertexDeclaration() = default;
 
+struct D3D9Shader::State {
+  Com<IDirect3DVertexShader9> vertex;
+  Com<IDirect3DPixelShader9> pixel;
+};
+D3D9Shader::D3D9Shader() : m_state(std::make_unique<State>()) { }
+D3D9Shader::~D3D9Shader() = default;
+
 D3D9Backend::D3D9Backend() : m_state(std::make_unique<State>()) { }
 D3D9Backend::~D3D9Backend() = default;
 IDirect3DDevice9Ex* D3D9Backend::device() const noexcept { return m_state->d3d.ptr(); }
@@ -50,6 +57,34 @@ HRESULT D3D9Backend::createVertexDeclaration(const D3DVERTEXELEMENT9* elements,
 }
 HRESULT D3D9Backend::setVertexDeclaration(D3D9VertexDeclaration* declaration) {
   return m_state->d3d->SetVertexDeclaration(declaration ? declaration->m_state->declaration.ptr() : nullptr);
+}
+HRESULT D3D9Backend::createShader(D3D9ShaderStage stage, const DWORD* code, UINT bytes,
+    std::unique_ptr<D3D9Shader>& output) {
+  auto shader = std::make_unique<D3D9Shader>();
+  const HRESULT hr = stage == D3D9ShaderStage::Vertex
+    ? m_state->d3d->CreateNativeVertexShader(code, bytes, &shader->m_state->vertex)
+    : m_state->d3d->CreateNativePixelShader(code, bytes, &shader->m_state->pixel);
+  if (hr != S_OK || !(stage == D3D9ShaderStage::Vertex ? bool(shader->m_state->vertex) : bool(shader->m_state->pixel)))
+    return FAILED(hr) ? hr : E_FAIL;
+  output = std::move(shader);
+  return S_OK;
+}
+HRESULT D3D9Backend::setShader(D3D9ShaderStage stage, D3D9Shader* shader) {
+  return stage == D3D9ShaderStage::Vertex
+    ? m_state->d3d->SetVertexShader(shader ? shader->m_state->vertex.ptr() : nullptr)
+    : m_state->d3d->SetPixelShader(shader ? shader->m_state->pixel.ptr() : nullptr);
+}
+HRESULT D3D9Backend::setShaderConstantF(D3D9ShaderStage stage, UINT first, UINT count, const float* values) {
+  return stage == D3D9ShaderStage::Vertex ? m_state->d3d->SetVertexShaderConstantF(first, values, count)
+                                        : m_state->d3d->SetPixelShaderConstantF(first, values, count);
+}
+HRESULT D3D9Backend::setShaderConstantI(D3D9ShaderStage stage, UINT first, UINT count, const INT* values) {
+  return stage == D3D9ShaderStage::Vertex ? m_state->d3d->SetVertexShaderConstantI(first, values, count)
+                                        : m_state->d3d->SetPixelShaderConstantI(first, values, count);
+}
+HRESULT D3D9Backend::setShaderConstantB(D3D9ShaderStage stage, UINT first, UINT count, const BOOL* values) {
+  return stage == D3D9ShaderStage::Vertex ? m_state->d3d->SetVertexShaderConstantB(first, values, count)
+                                        : m_state->d3d->SetPixelShaderConstantB(first, values, count);
 }
 HRESULT D3D9Backend::setRenderState(D3DRENDERSTATETYPE state, DWORD value) {
   return m_state->d3d->SetRenderState(state, value);

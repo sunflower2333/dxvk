@@ -1107,6 +1107,11 @@ namespace dxvk {
     // RT0 contract; native resources still require this device's ownership.
     HRESULT SetNativeRenderTarget(IDirect3DSurface9* target);
 
+    // Native DDI shader code has an explicit byte count. Preserve that bound
+    // through analysis and compilation instead of walking a public API pointer.
+    HRESULT CreateNativeVertexShader(const DWORD* code, UINT bytes, IDirect3DVertexShader9** shader);
+    HRESULT CreateNativePixelShader(const DWORD* code, UINT bytes, IDirect3DPixelShader9** shader);
+
     HRESULT FlushRuntimeSubmission();
 
     /**
@@ -1313,7 +1318,8 @@ namespace dxvk {
             D3D9CommonShader*     pShaderModule,
             size_t*               pLength,
             D3D9ShaderType        ShaderType,
-      const DWORD*                pShaderBytecode);
+      const DWORD*                pShaderBytecode,
+            size_t                bytecodeSize = size_t(-1));
 
     inline uint32_t GetUPDataSize(uint32_t vertexCount, uint32_t stride) {
       return vertexCount * stride;

@@ -2,6 +2,7 @@
 #include "../src/umd/umd_d3d9_backend.h"
 #include "../src/umd/umd_allocation.h"
 #include "../src/umd/umd_runtime_service.h"
+#include "../src/d3d9/d3d9_shader_code.h"
 #include <array>
 #include <atomic>
 #include <condition_variable>
@@ -80,6 +81,15 @@ struct Fixture {
   D3DVIEWPORT9 viewport = {0,0,0,0,0.0f,1.0f};
   RECT scissor = {};
   bool scene = false, software = false;
+  unsigned shaderCreates = 0, shaderCloses = 0, shaderSets = 0, constantSets = 0;
+  HRESULT shaderResult = S_OK, constantResult = S_OK;
+  bool nullShader = false;
+  std::function<void()> shaderHook;
+  dxvk::umd::D3D9ShaderStage shaderStage = dxvk::umd::D3D9ShaderStage::Vertex;
+  std::vector<DWORD> shaderCode;
+  std::vector<uint8_t> constantBytes;
+  UINT constantFirst = 0, constantCount = 0;
+  char constantType = 0;
   void runtime() const { CHECK(callbacksValid && GetCurrentThreadId() == caller); }
 };
 static Fixture* f;
@@ -174,7 +184,18 @@ struct dxvk::umd::D3D9Backend::State {
   mwd_allocation allocation = {};
   D3D9SurfaceResource* target = nullptr;
   D3D9VertexDeclaration* declaration = nullptr;
+  std::array<D3D9Shader*, 2> shaders = {};
 };
+
+struct dxvk::umd::D3D9Shader::State {
+  D3D9ShaderStage stage = D3D9ShaderStage::Vertex;
+};
+dxvk::umd::D3D9Shader::D3D9Shader() : m_state(std::make_unique<State>()) {
+  CHECK(GetCurrentThreadId() != f->caller); ++f->shaderCreates;
+}
+dxvk::umd::D3D9Shader::~D3D9Shader() {
+  CHECK(GetCurrentThreadId() != f->caller); ++f->shaderCloses;
+}
 
 struct dxvk::umd::D3D9VertexDeclaration::State { };
 dxvk::umd::D3D9VertexDeclaration::D3D9VertexDeclaration() : m_state(std::make_unique<State>()) {
@@ -200,6 +221,7 @@ dxvk::umd::D3D9Backend::~D3D9Backend() {
   CHECK(GetCurrentThreadId() != f->caller);
   CHECK(f->surfaceCreates == f->surfaceCloses && !m_state->target);
   CHECK(f->declarationCreates == f->declarationCloses && !m_state->declaration);
+  CHECK(f->shaderCreates == f->shaderCloses && !m_state->shaders[0] && !m_state->shaders[1]);
   ++f->backendCloses;
   if (!f->adapterValid) {
     uint32_t fence = 99;
@@ -265,6 +287,47 @@ HRESULT dxvk::umd::D3D9Backend::setVertexDeclaration(D3D9VertexDeclaration* decl
   if (f->stateResult != S_OK) return f->stateResult;
   m_state->declaration = declaration;
   return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::createShader(D3D9ShaderStage stage, const DWORD* code, UINT bytes,
+    std::unique_ptr<D3D9Shader>& output) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  f->shaderStage = stage;
+  f->shaderCode.assign(code, code + bytes / sizeof(DWORD));
+  if (!f->nullShader) {
+    output = std::make_unique<D3D9Shader>();
+    output->m_state->stage = stage;
+  }
+  if (f->shaderHook) { auto hook = std::move(f->shaderHook); hook(); }
+  return f->shaderResult;
+}
+HRESULT dxvk::umd::D3D9Backend::setShader(D3D9ShaderStage stage, D3D9Shader* shader) {
+  CHECK(GetCurrentThreadId() != f->caller && (!shader || shader->m_state->stage == stage));
+  ++f->shaderSets;
+  if (f->stateResult != S_OK) {
+    if (f->stateResult == D3DERR_DEVICELOST && !shader) m_state->shaders[size_t(stage)] = nullptr;
+    return f->stateResult;
+  }
+  m_state->shaders[size_t(stage)] = shader;
+  return S_OK;
+}
+static HRESULT captureConstants(dxvk::umd::D3D9ShaderStage stage, UINT first, UINT count,
+    const void* values, size_t bytes, char type) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->constantResult != S_OK) return f->constantResult;
+  ++f->constantSets;
+  f->shaderStage = stage; f->constantFirst = first; f->constantCount = count; f->constantType = type;
+  const auto data = static_cast<const uint8_t*>(values);
+  f->constantBytes.assign(data, data + bytes);
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setShaderConstantF(D3D9ShaderStage stage, UINT first, UINT count, const float* values) {
+  return captureConstants(stage, first, count, values, size_t(count) * 16, 'F');
+}
+HRESULT dxvk::umd::D3D9Backend::setShaderConstantI(D3D9ShaderStage stage, UINT first, UINT count, const INT* values) {
+  return captureConstants(stage, first, count, values, size_t(count) * 16, 'I');
+}
+HRESULT dxvk::umd::D3D9Backend::setShaderConstantB(D3D9ShaderStage stage, UINT first, UINT count, const BOOL* values) {
+  return captureConstants(stage, first, count, values, size_t(count) * 4, 'B');
 }
 HRESULT dxvk::umd::D3D9Backend::setRenderState(D3DRENDERSTATETYPE state, DWORD value) {
   CHECK(GetCurrentThreadId() != f->caller);
@@ -429,6 +492,18 @@ static void createDevice() {
   expectedTable.pfnCreateVertexShaderDecl = f->table.pfnCreateVertexShaderDecl;
   expectedTable.pfnSetVertexShaderDecl = f->table.pfnSetVertexShaderDecl;
   expectedTable.pfnDeleteVertexShaderDecl = f->table.pfnDeleteVertexShaderDecl;
+  expectedTable.pfnCreateVertexShaderFunc = f->table.pfnCreateVertexShaderFunc;
+  expectedTable.pfnSetVertexShaderFunc = f->table.pfnSetVertexShaderFunc;
+  expectedTable.pfnDeleteVertexShaderFunc = f->table.pfnDeleteVertexShaderFunc;
+  expectedTable.pfnCreatePixelShader = f->table.pfnCreatePixelShader;
+  expectedTable.pfnSetPixelShader = f->table.pfnSetPixelShader;
+  expectedTable.pfnDeletePixelShader = f->table.pfnDeletePixelShader;
+  expectedTable.pfnSetVertexShaderConst = f->table.pfnSetVertexShaderConst;
+  expectedTable.pfnSetPixelShaderConst = f->table.pfnSetPixelShaderConst;
+  expectedTable.pfnSetVertexShaderConstI = f->table.pfnSetVertexShaderConstI;
+  expectedTable.pfnSetPixelShaderConstI = f->table.pfnSetPixelShaderConstI;
+  expectedTable.pfnSetVertexShaderConstB = f->table.pfnSetVertexShaderConstB;
+  expectedTable.pfnSetPixelShaderConstB = f->table.pfnSetPixelShaderConstB;
   expectedTable.pfnSetRenderState = f->table.pfnSetRenderState;
   expectedTable.pfnSetViewport = f->table.pfnSetViewport;
   expectedTable.pfnSetZRange = f->table.pfnSetZRange;
@@ -844,7 +919,204 @@ static void drawContracts() {
   }
 }
 
+template<typename Args, typename T, typename Function>
+static void constantContract(Function function, bool vertex, char type, UINT limit) {
+  Args args{limit - 2, 2};
+  std::array<T, 8> values = {};
+  for (size_t i = 0; i < sizeof(values); ++i)
+    reinterpret_cast<uint8_t*>(values.data())[i] = uint8_t(17 + i * 7);
+  const size_t bytes = type == 'B' ? 2 * sizeof(T) : 8 * sizeof(T);
+  const auto ptr = reinterpret_cast<const uint8_t*>(values.data());
+  const std::vector<uint8_t> expected(ptr, ptr + bytes);
+  f->queryHook = [&] {
+    args = {UINT_MAX, UINT_MAX};
+    values.fill(T{});
+    Args nested{0, 1};
+    CHECK(function(f->device, &nested, reinterpret_cast<const T*>(UINT_PTR(1))) == D3DERR_WASSTILLDRAWING);
+  };
+  CHECK(function(f->device, &args, values.data()) == S_OK);
+  CHECK(f->constantFirst == limit - 2 && f->constantCount == 2 && f->constantType == type);
+  CHECK(f->shaderStage == (vertex ? dxvk::umd::D3D9ShaderStage::Vertex : dxvk::umd::D3D9ShaderStage::Pixel));
+  CHECK(f->constantBytes == expected);
+  args = {limit, 0};
+  const auto sets = f->constantSets;
+  CHECK(function(f->device, &args, nullptr) == S_OK && f->constantSets == sets);
+  CHECK(function(f->device, nullptr, values.data()) == E_INVALIDARG);
+  args = {0, 1}; CHECK(function(f->device, &args, nullptr) == E_INVALIDARG);
+  args = {limit, 1}; CHECK(function(f->device, &args, values.data()) == E_INVALIDARG);
+  args = {UINT_MAX, 0}; CHECK(function(f->device, &args, values.data()) == E_INVALIDARG);
+  args = {1, UINT_MAX}; CHECK(function(f->device, &args, values.data()) == E_INVALIDARG);
+  args = {0, 1};
+  CHECK(function(f->device, &args, reinterpret_cast<const T*>(UINTPTR_MAX - 1)) == E_INVALIDARG);
+  f->constantResult = S_FALSE; CHECK(function(f->device, &args, values.data()) == E_FAIL);
+  f->constantResult = E_OUTOFMEMORY; CHECK(function(f->device, &args, values.data()) == E_OUTOFMEMORY);
+  f->constantResult = S_OK;
+}
+
+static void shaderContracts() {
+  // END-like immediate values and comment payloads are data, not terminators.
+  // Exercise the same bounded framing check used by the real renderer entry.
+  for (DWORD version : {0xfffe0101u,0xfffe0200u,0xfffe0300u,0xffff0101u,0xffff0200u,0xffff0300u}) {
+    const bool vertex = (version >> 16) == 0xfffe;
+    const bool legacy = ((version >> 8) & 255) == 1;
+    const std::vector<DWORD> code{version,0x0002fffe,0x0000ffff,0x00000001,
+      legacy ? 0x00000051u : 0x05000051u,0xa00f0000,0x0000ffff,0,0,0,0x0000ffff};
+    CHECK(dxvk::validateD3D9ShaderCode(code.data(),code.size() * 4,vertex));
+    CHECK(!dxvk::validateD3D9ShaderCode(code.data(),code.size() * 4,!vertex));
+    for (size_t words = 0; words < code.size(); ++words)
+      CHECK(!dxvk::validateD3D9ShaderCode(code.data(),words * 4,vertex));
+    auto trailing = code; trailing.push_back(0);
+    CHECK(!dxvk::validateD3D9ShaderCode(trailing.data(),trailing.size() * 4,vertex));
+  }
+  {
+    const DWORD relative[] = {0xfffe0300,0x03000001,0xe00f0000,0xa0e42000,0xb0000000,0x0000ffff};
+    const DWORD predicate[] = {0xfffe0300,0x13000001,0xe00f0000,0xb0001000,0x90e40000,0x0000ffff};
+    CHECK(dxvk::validateD3D9ShaderCode(relative,sizeof(relative),true));
+    CHECK(dxvk::validateD3D9ShaderCode(predicate,sizeof(predicate),true));
+    auto bad = std::array<DWORD,6>{{0xfffe0300,0x03000001,0xe00f0000,0xa0e42000,0,0x0000ffff}};
+    CHECK(!dxvk::validateD3D9ShaderCode(bad.data(),sizeof(bad),true));
+    bad = {{0xfffe0300,0x03000001,0xe00f0000,0xa0e40000,0xb0000000,0x0000ffff}};
+    CHECK(!dxvk::validateD3D9ShaderCode(bad.data(),sizeof(bad),true));
+  }
+  const std::array<UINT, 5> vs{{0xfffe0300u, 0x02000001u, 0xe00f0000u, 0x90e40000u, 0x0000ffffu}};
+  const std::array<UINT, 5> ps{{0xffff0300u, 0x02000001u, 0x800f0800u, 0xa0e40000u, 0x0000ffffu}};
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    auto code = vs;
+    D3DDDIARG_CREATEVERTEXSHADERFUNC vertex{UINT(sizeof(code)), reinterpret_cast<HANDLE>(UINT_PTR(0xabc))};
+    const auto original = snapshot(vertex);
+    const auto queries = f->queries;
+    CHECK(f->table.pfnCreateVertexShaderFunc(f->device, nullptr, code.data()) == E_INVALIDARG);
+    CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex, nullptr) == E_INVALIDARG);
+    for (UINT size : {0u, 4u, 6u, 4u * 1024u * 1024u + 4u, UINT_MAX}) {
+      vertex.Size = size;
+      const auto before = snapshot(vertex);
+      CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex, code.data()) == E_INVALIDARG);
+      CHECK(snapshot(vertex) == before);
+    }
+    vertex.Size = UINT(sizeof(code));
+    CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex,
+      reinterpret_cast<const UINT*>(UINTPTR_MAX - 3)) == E_INVALIDARG);
+    CHECK(f->queries == queries && !f->shaderCreates);
+    for (UINT size = 8; size < sizeof(code); size += 4) {
+      vertex.Size = size;
+      CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex, code.data()) == E_INVALIDARG);
+    }
+    vertex.Size = UINT(sizeof(code));
+    for (auto invalid : {ps, std::array<UINT, 5>{{0xfffe0400u, 0, 0, 0, 0xffff}},
+      std::array<UINT, 5>{{0xfffe0300u, 0x03000001u, 0xe00f0000u, 0x90e40000u, 0xffff}},
+      std::array<UINT, 5>{{0xfffe0300u, 0x02000001u, 0xe00f0000u, 0x90e40000u, 0}},
+      std::array<UINT, 5>{{0xfffe0300u, 0x7ffffffeu, 0, 0, 0xffff}}}) {
+      CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex, invalid.data()) == E_INVALIDARG);
+    }
+    CHECK(snapshot(vertex) == original && !f->shaderCreates);
+    // No read may cross the explicit code bound, even when END is absent.
+    SYSTEM_INFO info = {}; GetSystemInfo(&info);
+    const size_t page = info.dwPageSize;
+    auto allocation = static_cast<uint8_t*>(VirtualAlloc(nullptr, page * 2, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    CHECK(allocation);
+    DWORD prior = 0;
+    CHECK(VirtualProtect(allocation + page, page, PAGE_NOACCESS, &prior));
+    auto bounded = allocation + page - 16;
+    std::memcpy(bounded, code.data(), 16);
+    vertex.Size = 16;
+    CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex, reinterpret_cast<const UINT*>(bounded)) == E_INVALIDARG);
+    CHECK(VirtualFree(allocation, 0, MEM_RELEASE));
+    vertex.Size = UINT(sizeof(code));
+    for (HRESULT failure : {S_FALSE, E_OUTOFMEMORY}) {
+      f->shaderResult = failure;
+      CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex, code.data()) == (failure == S_FALSE ? E_FAIL : failure));
+      CHECK(snapshot(vertex) == original && f->shaderCreates == f->shaderCloses);
+    }
+    f->shaderResult = S_OK; f->nullShader = true;
+    CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex, code.data()) == E_FAIL && snapshot(vertex) == original);
+    f->nullShader = false;
+    f->queryHook = [&] {
+      vertex.Size = 8;
+      code.fill(0);
+      CHECK(f->table.pfnSetPixelShader(f->device, nullptr) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex,
+        reinterpret_cast<const UINT*>(UINT_PTR(1))) == D3DERR_WASSTILLDRAWING);
+      std::thread concurrent([&] { CHECK(f->table.pfnSetVertexShaderFunc(f->device, nullptr) == D3DERR_WASSTILLDRAWING); });
+      concurrent.join();
+    };
+    CHECK(f->table.pfnCreateVertexShaderFunc(f->device, &vertex, code.data()) == S_OK);
+    CHECK(f->shaderCode == std::vector<DWORD>(vs.begin(), vs.end()));
+    const auto vertexToken = vertex.ShaderHandle;
+    CHECK(vertexToken && vertexToken != f->device);
+    D3DDDIARG_CREATEPIXELSHADER pixel{UINT(sizeof(ps)), nullptr};
+    CHECK(f->table.pfnCreatePixelShader(f->device, &pixel, ps.data()) == S_OK);
+    CHECK(pixel.ShaderHandle && pixel.ShaderHandle != vertexToken);
+    CHECK(f->table.pfnSetVertexShaderFunc(f->device, vertexToken) == S_OK);
+    CHECK(f->table.pfnSetPixelShader(f->device, pixel.ShaderHandle) == S_OK);
+    CHECK(f->table.pfnSetVertexShaderFunc(f->device, pixel.ShaderHandle) == E_INVALIDARG);
+    CHECK(f->table.pfnSetPixelShader(f->device, vertexToken) == E_INVALIDARG);
+    CHECK(f->table.pfnDeleteVertexShaderFunc(f->device, pixel.ShaderHandle) == E_INVALIDARG);
+    CHECK(f->table.pfnDeletePixelShader(f->device, vertexToken) == E_INVALIDARG);
+    CHECK(f->table.pfnDeleteVertexShaderDecl(f->device, vertexToken) == E_INVALIDARG);
+    CHECK(f->table.pfnDeletePixelShader(f->device, f->device) == E_INVALIDARG);
+    CHECK(f->table.pfnDeletePixelShader(f->device, nullptr) == E_INVALIDARG);
+    constantContract<D3DDDIARG_SETVERTEXSHADERCONST, float>(f->table.pfnSetVertexShaderConst, true, 'F', 256);
+    constantContract<D3DDDIARG_SETPIXELSHADERCONST, float>(f->table.pfnSetPixelShaderConst, false, 'F', 224);
+    constantContract<D3DDDIARG_SETVERTEXSHADERCONSTI, INT>(f->table.pfnSetVertexShaderConstI, true, 'I', 16);
+    constantContract<D3DDDIARG_SETPIXELSHADERCONSTI, INT>(f->table.pfnSetPixelShaderConstI, false, 'I', 16);
+    constantContract<D3DDDIARG_SETVERTEXSHADERCONSTB, BOOL>(f->table.pfnSetVertexShaderConstB, true, 'B', 16);
+    constantContract<D3DDDIARG_SETPIXELSHADERCONSTB, BOOL>(f->table.pfnSetPixelShaderConstB, false, 'B', 16);
+    const auto closes = f->shaderCloses;
+    f->stateResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnDeleteVertexShaderFunc(f->device, vertexToken) == E_OUTOFMEMORY && f->shaderCloses == closes);
+    f->stateResult = S_OK; f->flushResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnDeleteVertexShaderFunc(f->device, vertexToken) == E_OUTOFMEMORY && f->shaderCloses == closes);
+    CHECK(f->table.pfnSetVertexShaderFunc(f->device, vertexToken) == S_OK);
+    f->flushResult = S_OK;
+    CHECK(f->table.pfnDeleteVertexShaderFunc(f->device, vertexToken) == S_OK && f->shaderCloses == closes + 1);
+    CHECK(f->table.pfnSetVertexShaderFunc(f->device, vertexToken) == E_INVALIDARG);
+    CHECK(f->table.pfnDeleteVertexShaderFunc(f->device, vertexToken) == E_INVALIDARG);
+    closeDevice(); CHECK(f->shaderCreates == f->shaderCloses); closeAdapter();
+  }
+  for (bool pixel : {false, true}) {
+    Fixture fixture; initialize(fixture); createDevice();
+    f->shaderHook = [] { f->queryHook = [] { ++f->generation; }; };
+    D3DDDIARG_CREATEVERTEXSHADERFUNC vertex{UINT(sizeof(vs)), reinterpret_cast<HANDLE>(UINT_PTR(0x123))};
+    D3DDDIARG_CREATEPIXELSHADER fragment{UINT(sizeof(ps)), reinterpret_cast<HANDLE>(UINT_PTR(0x456))};
+    const auto v = snapshot(vertex), p = snapshot(fragment);
+    CHECK((pixel ? f->table.pfnCreatePixelShader(f->device, &fragment, ps.data())
+                 : f->table.pfnCreateVertexShaderFunc(f->device, &vertex, vs.data())) == D3DERR_DEVICELOST);
+    CHECK(snapshot(vertex) == v && snapshot(fragment) == p && f->shaderCreates == f->shaderCloses);
+    const auto queries = f->queries;
+    --f->generation;
+    CHECK(f->table.pfnSetPixelShader(f->device, nullptr) == D3DERR_DEVICELOST && f->queries == queries);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    D3DDDIARG_CREATEPIXELSHADER pixel{UINT(sizeof(ps)), nullptr};
+    CHECK(f->table.pfnCreatePixelShader(f->device, &pixel, ps.data()) == S_OK);
+    CHECK(f->table.pfnSetPixelShader(f->device, pixel.ShaderHandle) == S_OK);
+    f->stateResult = D3DERR_DEVICELOST;
+    CHECK(f->table.pfnDeletePixelShader(f->device, pixel.ShaderHandle) == S_OK);
+    D3DDDIARG_SETPIXELSHADERCONST args{0, 1}; float values[4] = {};
+    f->constantResult = D3DERR_DEVICELOST;
+    CHECK(f->table.pfnSetPixelShaderConst(f->device, &args, values) == D3DERR_DEVICELOST);
+    CHECK(f->table.pfnDeletePixelShader(f->device, pixel.ShaderHandle) == E_INVALIDARG);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture a; initialize(a); createDevice();
+    D3DDDIARG_CREATEVERTEXSHADERFUNC vertex{UINT(sizeof(vs)), nullptr};
+    CHECK(a.table.pfnCreateVertexShaderFunc(a.device, &vertex, vs.data()) == S_OK);
+    Fixture b; initialize(b); createDevice();
+    CHECK(b.table.pfnSetVertexShaderFunc(b.device, vertex.ShaderHandle) == E_INVALIDARG);
+    CHECK(b.table.pfnDeleteVertexShaderFunc(b.device, vertex.ShaderHandle) == E_INVALIDARG);
+    closeDevice(); closeAdapter();
+    f = &a;
+    CHECK(a.table.pfnSetVertexShaderFunc(a.device, vertex.ShaderHandle) == S_OK);
+    closeDevice(); closeAdapter();
+  }
+}
+
 int main() {
+  shaderContracts();
   ownedServiceStartup();
   resourceContracts();
   drawContracts();

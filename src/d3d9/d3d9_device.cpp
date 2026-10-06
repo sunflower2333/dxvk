@@ -10,6 +10,7 @@
 #include "d3d9_buffer.h"
 #include "d3d9_vertex_declaration.h"
 #include "d3d9_shader.h"
+#include "d3d9_shader_code.h"
 #include "d3d9_query.h"
 #include "d3d9_stateblock.h"
 #include "d3d9_monitor.h"
@@ -3529,6 +3530,17 @@ namespace dxvk {
   }
 
 
+  HRESULT D3D9DeviceEx::CreateNativeVertexShader(const DWORD* code, UINT bytes,
+                                               IDirect3DVertexShader9** shader) {
+    if (!shader || !validateD3D9ShaderCode(code, bytes, true)) return D3DERR_INVALIDCALL;
+    D3D9CommonShader module;
+    size_t length = 0;
+    const HRESULT hr = CreateShaderModule(&module, &length, D3D9ShaderType::VertexShader, code, bytes);
+    if (FAILED(hr)) return hr;
+    *shader = ref(new D3D9VertexShader(this, &m_shaderAllocator, module, code, uint32_t(length)));
+    return S_OK;
+  }
+
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::CreateVertexShader(
     const DWORD*                   pFunction,
           IDirect3DVertexShader9** ppShader) {
@@ -3887,6 +3899,17 @@ namespace dxvk {
     return D3D_OK;
   }
 
+
+  HRESULT D3D9DeviceEx::CreateNativePixelShader(const DWORD* code, UINT bytes,
+                                              IDirect3DPixelShader9** shader) {
+    if (!shader || !validateD3D9ShaderCode(code, bytes, false)) return D3DERR_INVALIDCALL;
+    D3D9CommonShader module;
+    size_t length = 0;
+    const HRESULT hr = CreateShaderModule(&module, &length, D3D9ShaderType::PixelShader, code, bytes);
+    if (FAILED(hr)) return hr;
+    *shader = ref(new D3D9PixelShader(this, &m_shaderAllocator, module, code, uint32_t(length)));
+    return S_OK;
+  }
 
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::CreatePixelShader(
     const DWORD*                  pFunction,
@@ -7904,12 +7927,13 @@ namespace dxvk {
           D3D9CommonShader*       pShaderModule,
           size_t*                 pBytecodeLength,
           D3D9ShaderType          ShaderType,
-    const DWORD*                  pShaderBytecode) {
+    const DWORD*                  pShaderBytecode,
+          size_t                  bytecodeSize) {
 
     if (!pShaderBytecode)
       return D3DERR_INVALIDCALL;
 
-    dxbc_spv::util::ByteReader reader(pShaderBytecode, std::numeric_limits<size_t>::max());
+    dxbc_spv::util::ByteReader reader(pShaderBytecode, bytecodeSize);
 
     D3D9ShaderAnalysis analysis(reader, CanSWVP());
 
@@ -7921,6 +7945,8 @@ namespace dxvk {
     auto info = analysis.GetShaderInfo();
 
     size_t bytecodeLength = analysis.GetLength();
+    if (bytecodeSize != size_t(-1) && bytecodeLength != bytecodeSize)
+      return D3DERR_INVALIDCALL;
 
     // Pre-conversion checks
     if (unlikely(ShaderType != D3D9ShaderType(info.getType()))) {

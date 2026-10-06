@@ -1,6 +1,7 @@
 #pragma once
 
-#include "d3d9_include.h"
+#include <d3d9.h>
+#include <cstdint>
 
 namespace dxvk::caps {
 

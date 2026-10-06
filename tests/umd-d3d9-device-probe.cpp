@@ -134,7 +134,7 @@ public:
     return contexts == 1 && contextCloses == 1 && allocations && allocations == deallocations
       && locks == unlocks && !m_context && !wrongThreads ? S_OK : E_FAIL;
   }
-  HRESULT verifyRendering(bool drawing = false) {
+  HRESULT verifyRendering(bool drawing = false, bool shaders = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -203,6 +203,9 @@ public:
             if (stage == 6 && x >= 1 && x < 7 && y >= 2 && y < 6)
               expected = (expected & 0xff00ff00) | (0xff901fe3 & 0x00ff00ff);
           }
+          if (stage == 7) expected = 0xff204060;
+          if (stage == 8) expected = 0xff80c060;
+          if (stage == 9) expected = x >= 4 ? 0xffe03090 : 0xff17293b;
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
               stage, x, y, actual, expected);
@@ -315,6 +318,100 @@ public:
       if (FAILED(hr)) return hr;
       if (api.pfnSetVertexShaderDecl(m_driverDevice,declaration.ShaderHandle) != E_INVALIDARG) return E_FAIL;
       std::printf("D3D9_DRAW_READBACK PASS pixels=%u checksum=%08x padding=retained vertex_start=1 stages=3\n", checked,checksum);
+      if (shaders) {
+        if (!api.pfnCreateVertexShaderFunc || !api.pfnSetVertexShaderFunc || !api.pfnDeleteVertexShaderFunc
+          || !api.pfnCreatePixelShader || !api.pfnSetPixelShader || !api.pfnDeletePixelShader
+          || !api.pfnSetVertexShaderConst || !api.pfnSetPixelShaderConst
+          || !api.pfnSetVertexShaderConstI || !api.pfnSetPixelShaderConstI
+          || !api.pfnSetVertexShaderConstB || !api.pfnSetPixelShaderConstB) return E_FAIL;
+        hr = state(D3DDDIRS_SCISSORTESTENABLE,0); if (FAILED(hr)) return hr;
+        hr = state(D3DDDIRS_COLORWRITEENABLE,15); if (FAILED(hr)) return hr;
+        const D3DDDIVERTEXELEMENT position = {0,0,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITION,0};
+        declaration = {1,nullptr};
+        hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&declaration,&position);
+        if (FAILED(hr)) return hr;
+        hr = api.pfnSetVertexShaderDecl(m_driverDevice,declaration.ShaderHandle);
+        if (FAILED(hr)) return hr;
+        struct Position { float x,y,z,w; };
+        const Position positions[] = {{1000,1000,0.5f,1},{-1,1,0.5f,1},{1,1,0.5f,1},
+          {-1,-1,0.5f,1},{1,-1,0.5f,1}};
+        const D3DDDIARG_SETSTREAMSOURCEUM shaderStream = {0,sizeof(Position)};
+        hr = api.pfnSetStreamSourceUm(m_driverDevice,&shaderStream,positions);
+        if (FAILED(hr)) return hr;
+        // Actual assembled SM1.1, SM2.0 and SM3.0 programs. SM3 uses float,
+        // integer and boolean constants in both stages to select the output.
+        const UINT vs1[] = {0xfffe0101,0x00000002,0xc00f0000,0x90e40000,0xa0e40000,0x0000ffff};
+        const UINT ps1[] = {0xffff0101,0x00000001,0x800f0000,0xa0e40000,0x0000ffff};
+        const UINT vs2[] = {0xfffe0200,0x0200001f,0x80000000,0x900f0000,
+          0x03000002,0xc00f0000,0x90e40000,0xa0e40000,0x0000ffff};
+        const UINT ps2[] = {0xffff0200,0x02000001,0x800f0800,0xa0e40000,0x0000ffff};
+        const UINT vs3[] = {0xfffe0300,0x0200001f,0x80000000,0x900f0000,
+          0x0200001f,0x80000000,0xe00f0000,0x01000026,0xf0e40000,0x01000028,0xe0e40800,
+          0x03000002,0xe00f0000,0x90e40000,0xa0e40000,0x0000002a,
+          0x02000001,0xe00f0000,0x90e40000,0x0000002b,0x00000027,0x0000ffff};
+        const UINT ps3[] = {0xffff0300,0x01000026,0xf0e40000,0x01000028,0xe0e40800,
+          0x02000001,0x800f0800,0xa0e40000,0x0000002a,
+          0x02000001,0x800f0800,0xa0e40001,0x0000002b,0x00000027,0x0000ffff};
+        struct Program { const UINT* vertex; UINT vertexBytes; const UINT* pixel; UINT pixelBytes; };
+        const Program programs[] = {{vs1,sizeof(vs1),ps1,sizeof(ps1)},
+          {vs2,sizeof(vs2),ps2,sizeof(ps2)},{vs3,sizeof(vs3),ps3,sizeof(ps3)}};
+        checked = 0; checksum = 2166136261u;
+        for (UINT model = 1; model <= 3; ++model) {
+          const auto& program = programs[model - 1];
+          D3DDDIARG_CREATEVERTEXSHADERFUNC vertexShader = {program.vertexBytes,nullptr};
+          D3DDDIARG_CREATEPIXELSHADER pixelShader = {program.pixelBytes,nullptr};
+          hr = api.pfnCreateVertexShaderFunc(m_driverDevice,&vertexShader,program.vertex);
+          std::printf("D3D9_SHADER_CREATE model=%u stage=vertex bytes=%u hr=%08lx\n",model,program.vertexBytes,static_cast<unsigned long>(hr));
+          if (FAILED(hr)) return hr;
+          hr = api.pfnCreatePixelShader(m_driverDevice,&pixelShader,program.pixel);
+          std::printf("D3D9_SHADER_CREATE model=%u stage=pixel bytes=%u hr=%08lx\n",model,program.pixelBytes,static_cast<unsigned long>(hr));
+          if (FAILED(hr)) return hr;
+          hr = api.pfnSetVertexShaderFunc(m_driverDevice,vertexShader.ShaderHandle);
+          if (FAILED(hr)) return hr;
+          hr = api.pfnSetPixelShader(m_driverDevice,pixelShader.ShaderHandle);
+          if (FAILED(hr)) return hr;
+          D3DDDIARG_SETVERTEXSHADERCONST vertexConstants = {0,1};
+          const float offset[4] = {model == 3 ? 1.0f : 0.0f,0,0,0};
+          hr = api.pfnSetVertexShaderConst(m_driverDevice,&vertexConstants,offset);
+          if (FAILED(hr)) return hr;
+          D3DDDIARG_SETPIXELSHADERCONST pixelConstants = {0,2};
+          const float color[8] = {model == 1 ? 32.0f/255 : 128.0f/255,
+            model == 1 ? 64.0f/255 : 192.0f/255,96.0f/255,1.0f,
+            224.0f/255,48.0f/255,144.0f/255,1.0f};
+          hr = api.pfnSetPixelShaderConst(m_driverDevice,&pixelConstants,color);
+          if (FAILED(hr)) return hr;
+          if (model == 3) {
+            const INT repeat[4] = {1,0,0,0}; const BOOL yes = TRUE, no = FALSE;
+            const D3DDDIARG_SETVERTEXSHADERCONSTI vertexInt = {0,1};
+            const D3DDDIARG_SETPIXELSHADERCONSTI pixelInt = {0,1};
+            const D3DDDIARG_SETVERTEXSHADERCONSTB vertexBool = {0,1};
+            const D3DDDIARG_SETPIXELSHADERCONSTB pixelBool = {0,1};
+            hr = api.pfnSetVertexShaderConstI(m_driverDevice,&vertexInt,repeat);
+            if (FAILED(hr)) return hr;
+            hr = api.pfnSetPixelShaderConstI(m_driverDevice,&pixelInt,repeat);
+            if (FAILED(hr)) return hr;
+            hr = api.pfnSetVertexShaderConstB(m_driverDevice,&vertexBool,&yes);
+            if (FAILED(hr)) return hr;
+            hr = api.pfnSetPixelShaderConstB(m_driverDevice,&pixelBool,&no);
+            if (FAILED(hr)) return hr;
+            std::printf("D3D9_SHADER_CONSTANTS model=3 vertex=float4/int4/bool pixel=float4/int4/bool\n");
+          }
+          fill.FillColor = 0xff17293b;
+          hr = api.pfnClear(m_driverDevice,&fill,1,&full);
+          if (FAILED(hr)) return hr;
+          hr = draw(6 + model);
+          if (FAILED(hr)) return hr;
+          hr = api.pfnDeleteVertexShaderFunc(m_driverDevice,vertexShader.ShaderHandle);
+          if (FAILED(hr)) return hr;
+          hr = api.pfnDeletePixelShader(m_driverDevice,pixelShader.ShaderHandle);
+          if (FAILED(hr)) return hr;
+          if (api.pfnSetVertexShaderFunc(m_driverDevice,vertexShader.ShaderHandle) != E_INVALIDARG
+            || api.pfnSetPixelShader(m_driverDevice,pixelShader.ShaderHandle) != E_INVALIDARG) return E_FAIL;
+        }
+        hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,declaration.ShaderHandle);
+        if (FAILED(hr)) return hr;
+        std::printf("D3D9_SHADER_READBACK PASS pixels=%u checksum=%08x padding=retained models=1/2/3 constants=float4/int4/bool\n",checked,checksum);
+      }
     }
     hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
     if (FAILED(hr)) return hr;
@@ -555,20 +652,21 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  const bool drawing = argc == 3 && !wcscmp(argv[2], L"--draw");
+  const bool shaders = argc == 3 && !wcscmp(argv[2], L"--shader");
+  const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

@@ -40,6 +40,20 @@ private:
   std::unique_ptr<State> m_state;
 };
 
+enum class D3D9ShaderStage { Vertex, Pixel };
+
+class D3D9Shader {
+public:
+  D3D9Shader();
+  ~D3D9Shader();
+  D3D9Shader(const D3D9Shader&) = delete;
+  D3D9Shader& operator=(const D3D9Shader&) = delete;
+private:
+  friend class D3D9Backend;
+  struct State;
+  std::unique_ptr<State> m_state;
+};
+
 class D3D9Backend {
 public:
   D3D9Backend();
@@ -61,6 +75,12 @@ public:
   HRESULT createVertexDeclaration(const D3DVERTEXELEMENT9* elements,
                                  std::unique_ptr<D3D9VertexDeclaration>& result);
   HRESULT setVertexDeclaration(D3D9VertexDeclaration* declaration);
+  HRESULT createShader(D3D9ShaderStage stage, const DWORD* code, UINT bytes,
+                       std::unique_ptr<D3D9Shader>& result);
+  HRESULT setShader(D3D9ShaderStage stage, D3D9Shader* shader);
+  HRESULT setShaderConstantF(D3D9ShaderStage stage, UINT first, UINT count, const float* values);
+  HRESULT setShaderConstantI(D3D9ShaderStage stage, UINT first, UINT count, const INT* values);
+  HRESULT setShaderConstantB(D3D9ShaderStage stage, UINT first, UINT count, const BOOL* values);
   HRESULT setRenderState(D3DRENDERSTATETYPE state, DWORD value);
   HRESULT setScene(bool capture);
   HRESULT setSoftwareVertexProcessing(bool enable);

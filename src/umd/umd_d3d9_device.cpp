@@ -1,6 +1,9 @@
 #include "umd_d3d9_adapter.h"
 #include "umd_d3d9_backend.h"
 #include "umd_runtime_gpu.h"
+#include "../d3d9/d3d9_shader_code.h"
+#include "../d3d9/d3d9_caps.h"
+#include <array>
 #include <atomic>
 #include <algorithm>
 #include <cstring>
@@ -41,6 +44,11 @@ struct Declaration {
   std::unique_ptr<dxvk::umd::D3D9VertexDeclaration> backend;
   UINT streams = 0, streamZeroSize = 0;
 };
+using ShaderStage = dxvk::umd::D3D9ShaderStage;
+struct Shader {
+  ShaderStage stage;
+  std::unique_ptr<dxvk::umd::D3D9Shader> backend;
+};
 struct Device {
   std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>(true);
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
@@ -51,6 +59,8 @@ struct Device {
   std::unordered_map<HANDLE, std::unique_ptr<Resource>> resources;
   std::unordered_set<HANDLE> runtimeResources;
   std::unordered_map<HANDLE, std::unique_ptr<Declaration>> declarations;
+  std::unordered_map<HANDLE, std::unique_ptr<Shader>> shaders;
+  std::array<HANDLE, 2> boundShaders = {};
   HANDLE declaration = nullptr;
   const void* userVertices = nullptr;
   UINT userStride = 0;
@@ -69,11 +79,15 @@ struct Device {
             if (surface.locked) backend->unlockSurface(*surface.backend, false);
         if (target) backend->setRenderTarget(nullptr);
         if (declaration) backend->setVertexDeclaration(nullptr);
-        if (!resources.empty() || !declarations.empty()) backend->flush();
+        if (boundShaders[0]) backend->setShader(ShaderStage::Vertex, nullptr);
+        if (boundShaders[1]) backend->setShader(ShaderStage::Pixel, nullptr);
+        if (!resources.empty() || !declarations.empty() || !shaders.empty()) backend->flush();
       } } catch (...) { hr = E_FAIL; }
       resources.clear();
       runtimeResources.clear();
       declarations.clear();
+      shaders.clear();
+      boundShaders = {};
       declaration = nullptr;
       userVertices = nullptr;
       userStride = 0;
@@ -401,6 +415,124 @@ HRESULT APIENTRY destroyVertexDeclaration(HANDLE handle, HANDLE token) {
   }, true);
 }
 
+HRESULT createShader(HANDLE handle, ShaderStage stage, UINT bytes,
+                     const UINT* input, HANDLE* output) {
+  if (!input || bytes < 8 || bytes % sizeof(DWORD) || bytes > 4u * 1024u * 1024u)
+    return E_INVALIDARG;
+  if (bytes > std::numeric_limits<uintptr_t>::max() - reinterpret_cast<uintptr_t>(input))
+    return E_INVALIDARG;
+  std::vector<DWORD> code;
+  return preparedOperation(handle, [&](Device&) {
+    code.resize(bytes / sizeof(DWORD));
+    std::memcpy(code.data(), input, bytes);
+    return dxvk::validateD3D9ShaderCode(code.data(), bytes, stage == ShaderStage::Vertex)
+      ? S_OK : E_INVALIDARG;
+  }, [&](Device& device) {
+    auto shader = std::make_unique<Shader>();
+    shader->stage = stage;
+    const HRESULT hr = result(device.backend->createShader(stage, code.data(), bytes, shader->backend));
+    if (FAILED(hr)) return hr;
+    if (!shader->backend) return E_FAIL;
+    const auto runtime = device.gpu->backend();
+    const HRESULT status = runtime.create.callbacks->status(runtime.create.owner);
+    if (FAILED(status)) return status;
+    std::lock_guard<std::mutex> lock(devicesMutex);
+    if (!nextHandle) return E_OUTOFMEMORY;
+    const HANDLE token = reinterpret_cast<HANDLE>(nextHandle++);
+    device.shaders.emplace(token, std::move(shader));
+    *output = token;
+    return S_OK;
+  });
+}
+HRESULT APIENTRY createVertexShader(HANDLE handle, D3DDDIARG_CREATEVERTEXSHADERFUNC* args, const UINT* code) {
+  if (!args) return E_INVALIDARG;
+  const UINT bytes = args->Size;
+  return createShader(handle, ShaderStage::Vertex, bytes, code, &args->ShaderHandle);
+}
+HRESULT APIENTRY createPixelShader(HANDLE handle, D3DDDIARG_CREATEPIXELSHADER* args, const UINT* code) {
+  if (!args) return E_INVALIDARG;
+  const UINT bytes = args->CodeSize;
+  return createShader(handle, ShaderStage::Pixel, bytes, code, &args->ShaderHandle);
+}
+
+template<ShaderStage Stage>
+HRESULT APIENTRY setShader(HANDLE handle, HANDLE token) {
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.shaders.find(token);
+    if (token && (entry == device.shaders.end() || entry->second->stage != Stage)) return E_INVALIDARG;
+    const HRESULT hr = result(device.backend->setShader(Stage, token ? entry->second->backend.get() : nullptr));
+    if (SUCCEEDED(hr)) device.boundShaders[size_t(Stage)] = token;
+    return hr;
+  });
+}
+template<ShaderStage Stage>
+HRESULT APIENTRY destroyShader(HANDLE handle, HANDLE token) {
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.shaders.find(token);
+    if (entry == device.shaders.end() || entry->second->stage != Stage) return E_INVALIDARG;
+    auto& binding = device.boundShaders[size_t(Stage)];
+    if (binding == token) {
+      const HRESULT hr = result(device.backend->setShader(Stage, nullptr));
+      if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+      binding = nullptr;
+    }
+    const HRESULT hr = result(device.backend->flush());
+    if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+    device.shaders.erase(entry);
+    return hr;
+  }, true);
+}
+
+enum class ConstantType { Float, Int, Bool };
+template<ShaderStage Stage, ConstantType Type, typename Args, typename T>
+HRESULT shaderConstants(HANDLE handle, const Args* args, const T* input) {
+  if (!args) return E_INVALIDARG;
+  const auto data = *args;
+  constexpr UINT limit = Type == ConstantType::Float
+    ? (Stage == ShaderStage::Vertex ? dxvk::caps::MaxFloatConstantsVS : dxvk::caps::MaxSM3FloatConstantsPS)
+    : dxvk::caps::MaxOtherConstants;
+  if (data.Register > limit || data.Count > limit - data.Register || (!input && data.Count))
+    return E_INVALIDARG;
+  constexpr UINT components = Type == ConstantType::Bool ? 1u : 4u;
+  const size_t bytes = size_t(data.Count) * components * sizeof(T);
+  if (bytes > std::numeric_limits<uintptr_t>::max() - reinterpret_cast<uintptr_t>(input))
+    return E_INVALIDARG;
+  std::vector<T> values;
+  return preparedOperation(handle, [&](Device&) {
+    if (data.Count) {
+      values.resize(size_t(data.Count) * components);
+      std::memcpy(values.data(), input, bytes);
+    }
+    return S_OK;
+  }, [&](Device& device) {
+    if (!data.Count) return S_OK;
+    if constexpr (Type == ConstantType::Float)
+      return device.backend->setShaderConstantF(Stage, data.Register, data.Count, values.data());
+    else if constexpr (Type == ConstantType::Int)
+      return device.backend->setShaderConstantI(Stage, data.Register, data.Count, values.data());
+    else
+      return device.backend->setShaderConstantB(Stage, data.Register, data.Count, values.data());
+  });
+}
+HRESULT APIENTRY vertexConstantsF(HANDLE handle, const D3DDDIARG_SETVERTEXSHADERCONST* args, const void* values) {
+  return shaderConstants<ShaderStage::Vertex, ConstantType::Float>(handle, args, static_cast<const float*>(values));
+}
+HRESULT APIENTRY pixelConstantsF(HANDLE handle, const D3DDDIARG_SETPIXELSHADERCONST* args, const float* values) {
+  return shaderConstants<ShaderStage::Pixel, ConstantType::Float>(handle, args, values);
+}
+HRESULT APIENTRY vertexConstantsI(HANDLE handle, const D3DDDIARG_SETVERTEXSHADERCONSTI* args, const INT* values) {
+  return shaderConstants<ShaderStage::Vertex, ConstantType::Int>(handle, args, values);
+}
+HRESULT APIENTRY pixelConstantsI(HANDLE handle, const D3DDDIARG_SETPIXELSHADERCONSTI* args, const INT* values) {
+  return shaderConstants<ShaderStage::Pixel, ConstantType::Int>(handle, args, values);
+}
+HRESULT APIENTRY vertexConstantsB(HANDLE handle, const D3DDDIARG_SETVERTEXSHADERCONSTB* args, const BOOL* values) {
+  return shaderConstants<ShaderStage::Vertex, ConstantType::Bool>(handle, args, values);
+}
+HRESULT APIENTRY pixelConstantsB(HANDLE handle, const D3DDDIARG_SETPIXELSHADERCONSTB* args, const BOOL* values) {
+  return shaderConstants<ShaderStage::Pixel, ConstantType::Bool>(handle, args, values);
+}
+
 bool renderState(D3DDDIRENDERSTATETYPE input, D3DRENDERSTATETYPE& output) {
   // Native-only legacy commands must never become ignored public states.
 #define D3D9_STATE(name) case D3DDDIRS_##name: output = D3DRS_##name; return true
@@ -627,6 +759,18 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnCreateVertexShaderDecl = createVertexDeclaration;
   table.pfnSetVertexShaderDecl = setVertexDeclaration;
   table.pfnDeleteVertexShaderDecl = destroyVertexDeclaration;
+  table.pfnCreateVertexShaderFunc = createVertexShader;
+  table.pfnSetVertexShaderFunc = setShader<ShaderStage::Vertex>;
+  table.pfnDeleteVertexShaderFunc = destroyShader<ShaderStage::Vertex>;
+  table.pfnCreatePixelShader = createPixelShader;
+  table.pfnSetPixelShader = setShader<ShaderStage::Pixel>;
+  table.pfnDeletePixelShader = destroyShader<ShaderStage::Pixel>;
+  table.pfnSetVertexShaderConst = vertexConstantsF;
+  table.pfnSetPixelShaderConst = pixelConstantsF;
+  table.pfnSetVertexShaderConstI = vertexConstantsI;
+  table.pfnSetPixelShaderConstI = pixelConstantsI;
+  table.pfnSetVertexShaderConstB = vertexConstantsB;
+  table.pfnSetPixelShaderConstB = pixelConstantsB;
   table.pfnSetRenderState = setRenderState;
   table.pfnSetViewport = setViewport;
   table.pfnSetZRange = setZRange;

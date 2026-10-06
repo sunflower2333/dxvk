@@ -987,3 +987,20 @@ verified; new quad/scissor/colour-mask checks have no target receipt yet.
 - Record offscreen draw acceptance only. Next typed programmable shader and
   constant ownership; textures/buffers, presentation/reset and ordinary DX8-DX11
   system-runtime acceptance remain open. Full goal active, no caps/pins widened.
+
+### Typed D3D9 programmable shader worktree
+
+- Added owned VS/PS create/bind/delete and six float/int/bool constant DDIs.
+  Caller snapshots precede first callbacks. Bounded shader entry keeps byte
+  count through the existing SM1-3 translator. Stage/device/type-safe handles,
+  postcreate identity, retryable deletion/flush and worker release enforced.
+- Native ARM64 MSVC fixture02 PASS107385, compile6.5373586s/run0.0744307s.
+  Four compiled mutations caught intended contracts: shader reread2440/1044,
+  constants reread3603/940, missing identity9303/1084, missing flush7451/1069.
+  Independent56source/archive/after-run/nativePE/driver/desktop verification
+  passed. Earlier01 PASS107297 retained; it lacks the optional build-base pin,
+  but all56 byte hashes independently link.02 explicitly pins ba2d147 base.
+- --shader target oracle includes previous384pixels plus192 actual SM1/2/3
+  pixels. SM3 uses float/int/bool in both stages; independent checksum1384c5a5.
+  Commit exact source, complete architecture gates and run in Limited USER.
+  Ordinary admission, caps and paired pins remain closed; full goal active.

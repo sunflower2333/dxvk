@@ -1,5 +1,27 @@
 # Findings
 
+## Native D3D9 resource contract audit
+
+Microsoft CreateResource requires separate saved runtime and published driver
+handles, atomic groups retaining SurfCount input order, and ignoring Fvf,
+MipLevels, refresh/output and multisample fields when their usage flags are
+absent. System-memory backing may use a synchronized CPU access path.
+Clear zero rectangles without COMPUTERECTS is a no-op; with COMPUTERECTS it
+uses viewport/scissor clipping. Explicit preclipped rectangles must not be
+clipped again against current viewport/scissor. DestroyResource submits
+dependent commands before retiring backing; system-to-system Blt synchronizes
+only and leaves the actual copy to the runtime. These distinctions require
+behavioral tests and a nonempty real target submission/pixel oracle.
+Sources: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_createresource
+https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_clear
+https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_blt
+https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_destroyresource
+
+Discovery errors: no tests/meson.build (native fixture targets live in
+src/umd/meson.build); guessed prepare-d3d9-startup-build.sh is absent. Use
+rg --files on the known helper directory. One combined web output spread a
+string into character keys; corrected to print the web result directly.
+
 ## 2026-10-06 independently verified diagnostic build
 
 Diagnostic c1b9ea69 native guest build verifies all118 Git/archive input
@@ -854,3 +876,77 @@ work must add ownership/state/clear/draw/readback and a separate pixel/submissio
 oracle before widening caps or runtime activation.
 Retained evidence: artifacts/dxvk-native-d3d9-startup-20261006/ with CI logs,
 exact candidate, device11-13 verified receipts and active-binding snapshot14.
+
+### Independently verified resource fixture controls
+
+Latest worktree03 receipts are under workspace-root artifacts/
+dxvk-native-d3d9-resources-20261006/guest-*/verified.json. Reusable verifier
+.planning/dxvk-umd-remote-20261005/verify-native-resource-fixtures.py checks
+source52/archive/EXE identity, architecture, desktop and driver continuity;
+negative receipts retain their original failures and separate measured sources.
+Actual src/d3d9 core resource implementation still requires the full CI build
+and target GPU byte test; fixture renderer is an explicit controlled substitute.
+
+### Next draw contract audit while full resource CI builds
+
+Microsoft CreateVertexShaderDecl takes a counted D3DDDIVERTEXELEMENT array
+and returns a nonzero ShaderHandle (output only, unlike resource runtime
+cookies). The native26100 header matches D3DVERTEXELEMENT9 field widths, but
+explicit element validation and a copied terminator are required for the COM
+core; never expose COM pointers as driver tokens.
+https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/ns-d3dumddi-_d3dddiarg_createvertexshaderdecl
+
+SetStreamSourceUM permits one user memory stream, nonzero DWORD-aligned stride;
+its typed argument has Stream and Stride only. Keep the source address in
+per-device state and snapshot the exact DrawPrimitive vertex span before any
+runtime query/callback, with checked VStart/primitive-count arithmetic.
+https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/ns-d3dumddi-_d3dddiarg_setstreamsourceum
+
+Native SetRenderState maps runtime BeginScene/EndScene through the special
+D3DRENDERSTATE_SCENECAPTURE state. Blind casting every DDI state to COM
+D3DRENDERSTATETYPE is incorrect; route scene capture explicitly and validate
+actual standard state mappings. DrawPrimitive flag buffer encodes triangle
+edge flags for line-fill fans and must not be silently ignored.
+https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_setrenderstate
+https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_drawprimitive
+
+Native viewport splits XY/width/height (SetViewport) from MinZ/MaxZ (SetZRange).
+Core SetRenderTargetInternal resets viewport/scissor when binding RT0; audit
+that native behavior together with explicit state before the next typed draw.
+The current clear probe intentionally uses only full target viewport.
+
+### Target17 KMT refusal and residency ownership
+
+The diagnostic callback is reached: first stage1readback submits484bytes,
+6allocation entries and6patch entries; D3DKMTRender returns c0000001 while
+keeping capacities65536/1024/1024. KMD NativeRenderFailure fields remain0;
+no new epoch/reset/timeouts. Empty record does not prove absence of DdiRender,
+since initial validation branches precede the diagnostic publication.
+
+KmtRuntime9::open only creates a KMT device. Its allocation/render/deallocation
+callbacks omit CreatePagingQueue, MakeResident, pending paging fence wait and
+Evict. Exact matched Mesa direct transport has these operations; its shared
+transport delegates backing to the original runtime owner. The target harness
+is that owner for these tests. First correct its ownership without modifying
+or reinstalling production UMD/KMD; retain16/17 as failed evidence.
+
+Primary specifications:
+- https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmthk/ns-d3dkmthk-_d3dkmt_render
+- https://learn.microsoft.com/en-us/windows-hardware/drivers/display/driver-residency-in-wddm-2-0
+- https://learn.microsoft.com/en-us/windows-hardware/drivers/display/gpu-virtual-memory-in-wddm-2-0
+- https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dukmdt/ns-d3dukmdt-d3dddi_makeresident
+- https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmthk/ns-d3dkmthk-_d3dkmt_waitforsynchronizationobjectfromcpu
+
+Physical engines retain allocation/patch-list scheduling. Thus missing explicit
+residency is an audited harness gap, not yet proven root cause of c0000001.
+
+### Raw-KMT residency hypothesis tested
+
+The corrected probe aaa70c9 passes the unchanged production dde00ed workload
+with the same Mesa8443/KMD58624: six allocation handles each gain one residency
+reference, pending fences7001..7006 are waited on, and all three raw renders
+return0. Matching evictions and all runtime lifetimes balance. Targets18/19
+verify192 actual pixels with diagnostics1/0. The missing residency ownership
+was the measured harness gate for16/17. No installed KMD Render/reset/timeout
+record changes. Do not generalize this proof to older09 loss, ordinary runtime
+admission, drawing, presentation/reset, or long-term stability.

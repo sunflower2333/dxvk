@@ -7,6 +7,22 @@ the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+Typed D3D9 surface/clear/readback source dde00ed is pushed. Native fixture
+77449PASS and three independently compiled semantic controls caught intended
+regressions. Full37464752821 all6PASS and offline37464754567 all4PASS; exact
+three-architecture artifacts and14native execution hashes independently verify.
+Probe-only aaa70c9 corrects missing WDDM2 paging queue/residency ownership.
+Unchanged production dde00ed/Mesa8443/installed58624 now pass target18/19
+with diagnostics1/0:192 actual pixels, checksumffefa655, intact padding,
+three nonempty GPU submits, context1/1, allocations7/7, locks6/6,
+residency6/6 and wrong-thread0. Eight payloads, three scripts, native ARM64,
+Limited USER/session1 and driver/desktop continuity independently verify.
+Failed16/17 receipts remain immutable. Probe offline37472553344 all4PASS.
+Next add typed vertex declarations, supported render state, UM vertex snapshot
+and nonindexed draw with meaningful failure/reentry tests and a hardware pixel
+oracle. Draws, presentation/reset and ordinary DX8-DX11 remain open; keep the
+full goal active. Do not widen caps, production exports or paired binary pins.
+
 Matched Mesa8443c71 fixes the measured missing runtime bridge on pinned3e50dd4.
 Full ARM64 CI37453384744 all3PASS; multiarchitecture37453381660 all4PASS.
 Property support07 returns3152574d/1/88/1. Empty-lifecycle oracle271a83c accepts
@@ -83,7 +99,7 @@ The next rendering slice remains embedded D3D9 with exact runtime ownership.
 
 ## Next typed D3D9 device continuation
 - [complete] Implement device creation/destruction with raw runtime handles and callback dispatch.
-- [pending] Add typed offscreen resource/state/clear/draw/readback ownership.
+- [in_progress] Add typed offscreen resource/state/clear/draw/readback ownership.
 - [complete] Validate lifecycle failure/reentry/teardown on all architectures and bounded construction on the actual target.
 - [pending] Implement runtime presentation/reset and prove ordinary DX8/DX9 acceptance.
 
@@ -120,10 +136,12 @@ The next rendering slice remains embedded D3D9 with exact runtime ownership.
 - [complete] Verify full ARM64 CI artifact and positive target runtime-support reply.
 - [complete] Complete all Mesa architecture CI and diagnose lifecycle submission oracle.
 - [complete] Validate startup callback repair and exact rebuilt target candidate.
-- [pending] Validate actual typed offscreen GPU work and record remaining runtime gates.
+- [complete] Validate actual typed surface/clear/readback GPU work and record remaining runtime gates.
 
-Exact verified binary source remains f648a1a even after a documentation-only
-checkpoint. Hardware evidence is workspace artifacts/dxvk-native-d3d9-startup-20261006/;
+Historical startup binary source remains f648a1a in its immutable receipts.
+Current resource binary source is dde00ed; probe source is aaa70c9. Hardware
+resource evidence is workspace artifacts/dxvk-native-d3d9-resources-20261006/.
+Startup evidence is workspace artifacts/dxvk-native-d3d9-startup-20261006/;
 shared matched Mesa payload is retained under mesa-matched-runtime-01/runtime-support-07.
 Next implementation must add typed resource handles and backend ownership,
 render-target/state binding, clear/draw/readback, plus an independent nonempty

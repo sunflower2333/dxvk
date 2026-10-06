@@ -1,5 +1,23 @@
 # Progress
 
+## Native D3D9 resource continuation
+
+Previous goal turn is progress: production Mesa/DXVK commits, verified CI
+artifacts and three real target lifecycles change the next action. Full goal
+remains active; empty lifecycle does not close DX8-DX11 system-runtime gates.
+Recovered clean b5b45b3 worktree and authoritative f648 source CI all4workflows
+successful. Windows22/Android8022/ADB5555 respond. Auditing typed resource,
+render-target, clear and readback contracts against retained guest SDK headers
+and Microsoft specifications, followed by real nonempty target GPU work.
+
+Resource fixture worktree01 compiles/runs on native ARM64:77449checks,
+3.6520244s compile/0.0572746s run. All52 source hashes, archive/EXE/AA64
+and unchanged driver/desktop independently verified. Added three-stage real
+GPU byte/padding/subresource oracle to the KMT probe. Worktree02 preflight
+failed because Windows RPC defines small as char; rename rectangle smallArea
+and use fresh03 roots. Preserve the failed02 evidence and regenerate unused
+semantic controls from the corrected probe, so controls fail behaviorally.
+
 ## 2026-10-06 diagnostic build verification continuation
 
 Resumed at exact diagnostic KMD c1b9ea69. Windows22 and Android8022 are
@@ -1238,3 +1256,89 @@ hash-verified against the original task config, retained under scripts/.
   f648a1a/Mesa8443 after documentation-only checkpoint. Typed resources, actual
   GPU pixels/nonempty submission, Present/reset and ordinary DX8-DX11 admission
   remain open; do not infer prior09loss cause or long-term stability.
+
+### Native resource fixture verification, latest worktree03
+
+- Verified all52 source input hashes against the current source files, ARM64
+  EXE e44e2380, both archive hashes and original native receipt:77449checksPASS,
+  probe/compiler exits0, compile3.3734562s/run0.0504742s.
+- Three separately compiled semantic controls exit1 at their intended behavior:
+  post-create identity refusal(check10654), NotifyOnly tag validation(check4648),
+  and descriptor snapshot against callback mutation(check2331). Each verified
+  all52 after-run inputs and exactly the declared source mutation.
+- Preserved worktree02 compiler failure caused by Windows RPC small macro.
+  Corrected probe identifier in03; no compiler failure counted as semantic proof.
+- Driver58624/oem17 and DWM1552/Explorer4184 retained. These CPU/backend fixtures
+  do not prove actual GPU pixels or ordinary D3D runtime admission. Full native
+  core build and target typed clear/readback remain next gates.
+
+- Reviewed eight source paths committed/pushed as dde00ed3d255d24073d111c90dc91e69247bba93.
+  Full37464752821 and offline37464754567 dispatched; ordinary API/package
+  runs37464732394/37464732439 also active. Resources/rendering remain in progress.
+- Updated owned interactive wrapper with explicit render mode and independently
+  computed expected192pixel checksumffefa655. New render verifier retains
+  byte-linked payload, native PE, limited token, driver and desktop evidence.
+- Recovery guessed obsolete documentation filenames and nonexistent Mesa glob.
+  Both read-only searches failed; rg--files located native-dx8-dx9-roadmap and
+  src/freedreno/vulkan/tu_knl_wddm.cc before further work.
+
+### Full resource CI and target failure16
+
+- dde00ed full37464752821 all6SUCCESS; offline37464754567 all4SUCCESS.
+  All3downloaded candidates independently verify source, PE/import/export,
+  77449device checks per architecture and14native ARM64 execution hashes.
+- Exact ARM64 artifact11415095322 UMD6f81586e/probe1b3d76dd staged with
+  archive0da2105a and all3inputSHA/AA64 checks.
+- Target render-dde00ed-58624-16 Limited USER/session1 reaches successful
+  adapter/device/resource-group construction and RT0 binding. First nonempty
+  Mesa submission loses device(entries3/references6/fence1) and readback
+  does not return before the30sprocess deadline. No pixel acceptance.
+- Owned task removed. Original failed compressed evidence archive45a34009
+  downloaded/verified. Driver/desktop retained; fresh active binding0002,
+  PnP0/running58624oem17/exactSYSd48e118a. Readiness/epoch/timeout/reset
+  registry values match snapshot14; do not infer exact refusal cause yet.
+- Probe84eb920 adds per-clear/readback and raw KMT render diagnostics, and
+  preserves seeded replacement buffers on failed KMT thunks. Production UMD
+  remains dde00ed. Exact51Git inputs compiled natively; collect/verify its
+  receipt before the diagnostic target run. Offline follow-up dispatched.
+- Guessed umd_log.h was absent; no logging source was changed by that read.
+
+### Diagnostic target17 and residency audit
+
+- Probe84eb920 built natively in0.658s(overall1.918s),51Git/source/archive
+  inputs and AA64 EXE1eb27975 independently verified. Offline37468023505 all4PASS.
+- Target17 first preclipped/empty-noop clears S_OK; first readback calls KMT
+  with484bytes/6allocations/6patches. Raw statusc0000001/HRESULTd0000001,
+  replacement capacities65536/1024/1024. Deadline30.093s, no pixels accepted.
+- Both16/17 failed evidence verifiers pass8input hashes/3wrapper hashes,
+  exact Limited token/source pins and driver/desktop continuity.17archive4d0bf275.
+- Post17 readiness retains native render failure stage0 and unchanged reset,
+  epoch and timeout records; fence trace/guest allocation counts advanced.
+  Read-only DxgKrnl/System event scan yields no events for this period.
+- Source audit finds the target harness omits WDDM2paging queue and residency
+  ownership that the direct Mesa KMT path implements. Next probe isolates this
+  gap with unchanged production UMD/KMD. Causation remains unproven.
+- Recovery guessed absent nested AGENTS, viogpuwddm/viogpudo paths, workflow
+  filename and helper-directory source receipt. Correct locations discovered
+  with rg; read failures changed no source or evidence.
+
+### Corrected raw-KMT residency and verified hardware clear/readback18/19
+
+- Probe-only aaa70c9 adds WDDM2 paging queue, unique allocation residency,
+  pending paging waits and matching evictions. Native ARM64 compilation and
+  enumeration verify51 declared/measured/Git source files, archive and EXE.
+  Offline37472553344 is all4SUCCESS; production dde00ed is unchanged.
+- Targets18/19 independently PASS192 actual pixels/checksumffefa655, intact
+  padding, two RT subresources and3 successful nonempty KMT submissions,
+  diagnostics1/0. Context1/1, allocation7/7, lock6/6, residency6/6, wrong0.
+  Elapsed1.2268632/1.166842s; Limited USER/session1 token verified.
+- Eight exact payloads/native ARM64 and three wrapper hashes verify per run.
+  Archives SHA683421a34386bc0678cc0d90e1d4a0e64048006e3736618d44ea78922aedb466
+  andf2c9d3a77c4a8b2eb6fd95de7c207534b6048be7c6b12353b1ea4dd1b95f6826.
+  Fresh SYSsha/PnP0/binding0002/signed58624/oem17 and DWM1552/Explorer4184
+  retained; failure/reset/epoch/timeout/admission deltas empty.
+- Both owned Limited tasks removed; owned32MB bounded DxgKrnl trace18
+  stopped and ETL/archive/script hashes retained. Failed16/17 not overwritten.
+- Full goal remains active. Next actual typed declarations/state/UMstream/
+  nonindexed draw and pixel proof; no caps, production export or paired pin
+  widening. Presentation/reset and ordinary DX8-DX11 still required.

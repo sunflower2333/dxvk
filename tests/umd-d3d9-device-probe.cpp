@@ -600,10 +600,10 @@ public:
         hr = api.pfnSetPixelShader(m_driverDevice,pixelShader.ShaderHandle); if (FAILED(hr)) return hr;
         D3DDDIARG_SETSTREAMSOURCEUM noUser = {0,UINT_MAX};
         hr = api.pfnSetStreamSourceUm(m_driverDevice,&noUser,nullptr); if (FAILED(hr)) return hr;
-        D3DDDIARG_SETSTREAMSOURCE stream = {3,resources[0],8,24};
-        hr = api.pfnSetStreamSource(m_driverDevice,&stream); if (FAILED(hr)) return hr;
-        stream = {7,resources[1],4,8};
-        hr = api.pfnSetStreamSource(m_driverDevice,&stream); if (FAILED(hr)) return hr;
+        D3DDDIARG_SETSTREAMSOURCE bufferStream = {3,resources[0],8,24};
+        hr = api.pfnSetStreamSource(m_driverDevice,&bufferStream); if (FAILED(hr)) return hr;
+        bufferStream = {7,resources[1],4,8};
+        hr = api.pfnSetStreamSource(m_driverDevice,&bufferStream); if (FAILED(hr)) return hr;
         checked = 0; checksum = 2166136261u;
         for (UINT stage = 18; stage <= 23; ++stage) {
           if (stage == 21 || stage == 22) {
@@ -634,16 +634,16 @@ public:
           hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
           hr = state(D3DDDIRS_SCENECAPTURE,1); if (FAILED(hr)) return hr;
           if (stage == 18) {
-            const D3DDDIARG_DRAWPRIMITIVE primitive = {D3DPT_TRIANGLESTRIP,1,2};
-            hr = api.pfnDrawPrimitive(m_driverDevice,&primitive,nullptr);
+            const D3DDDIARG_DRAWPRIMITIVE bufferPrimitive = {D3DPT_TRIANGLESTRIP,1,2};
+            hr = api.pfnDrawPrimitive(m_driverDevice,&bufferPrimitive,nullptr);
           } else {
             const UINT slot = stage == 19 || stage == 23 ? 2 : 3;
             D3DDDIARG_SETINDICES indices = {resources[slot],slot == 2 ? 2u : 4u};
             hr = api.pfnSetIndices(m_driverDevice,&indices);
             if (SUCCEEDED(hr)) {
-              const D3DDDIARG_DRAWINDEXEDPRIMITIVE primitive = {D3DPT_TRIANGLELIST,
+              const D3DDDIARG_DRAWINDEXEDPRIMITIVE bufferIndexed = {D3DPT_TRIANGLELIST,
                 stage == 23 ? 1 : -2,stage == 23 ? 0u : 3u,4,slot == 2 ? 2u : 3u,2};
-              hr = api.pfnDrawIndexedPrimitive(m_driverDevice,&primitive);
+              hr = api.pfnDrawIndexedPrimitive(m_driverDevice,&bufferIndexed);
             }
           }
           std::printf("D3D9_BUFFER_DRAW stage=%u mode=%s base=%d min=%u start=%u hr=%08lx\n",stage,

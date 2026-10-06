@@ -10,10 +10,29 @@ The 2026-10-06 [typed adapter checkpoint](native-d3d9-adapter-20261006.md)
 adds identity/caps/lifetime development contracts. It keeps rendering caps
 zero, CreateDevice unavailable and production OpenAdapter absent. The table
 below describes the earlier rendering/package baseline.
-The [embedded renderer checkpoint](native-d3d9-embedded-20261006.md) now adds
+The [embedded renderer checkpoint](native-d3d9-embedded-20261006.md) adds
 the private D3D9 core, common exact-LUID/runtime owner factory and offscreen
-initializer. Typed device/rendering DDIs and successful target construction
-remain open; the historical table is not an inventory of the new static core.
+initializer. The [typed device checkpoint](native-d3d9-device-20261006.md)
+implements CreateDevice/Flush/DestroyDevice with runtime ownership and passes
+all architecture lifecycle CI, including native ARM64 execution. Actual
+target readiness now succeeds on diagnostic58624. The measured Limited
+interactive probe selects the pinned local ICD, but that Mesa build returns
+zero private runtime support and CreateDevice refuses before Vulkan device
+creation. Matched Mesa8443c71 ports the existing callback bridge onto that
+baseline. Its full ARM64 transport/link CI37453384744 and three-architecture
+candidate CI37453381660 pass. The matched property reply and a bounded empty
+device lifecycle pass on the target with balanced callbacks. An intermittent
+flush loss remains separately recorded; startup callback repair f648a1a passes
+the native66410check fixture and a compiled disabling control. Full37457000846
+all6PASS/offline37456996101 all4PASS and exact three-architecture artifacts
+verify. The rebuilt exact ARM64 UMD/probe pass three fresh target lifecycles
+(Mesa diagnostics enabled once and disabled twice), with balanced context,
+allocation and lock ownership, zero wrong-thread callbacks, and unchanged
+signed58624 driver/desktop. This is empty offscreen lifecycle acceptance;
+earlier device-loss causation and long-term stability remain open.
+Typed resource/state/clear/draw/readback and presentation/reset remain open.
+Production OpenAdapter and rendering caps remain closed; the historical table
+is not an inventory of the new static core or device bridge.
 
 | Path | Current evidence | Meaning |
 | --- | --- | --- |

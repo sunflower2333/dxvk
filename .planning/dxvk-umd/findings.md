@@ -1,5 +1,34 @@
 # Findings
 
+## 2026-10-06 independently verified diagnostic build
+
+Diagnostic c1b9ea69 native guest build verifies all118 Git/archive input
+hashes, source tree, SYS/PDB/MAP/compile-PDB hashes, ARM64 Native PE, CFG/NX/
+ASLR and kernel-only imports(ntoskrnl.exe/HAL.dll). Runner5.429254s,
+VirtIO0.754602s, KMD4.367460s; installed58623 and DWM1644/Explorer5828 retained.
+Evidence: artifacts/dxvk-kmd-readiness-20261006/guest-c1b9ea69-02/build-verified.json.
+Pushed c1b9ea69 to personal origin work/dxvk-readiness-diagnostic-20261006;
+unsigned full-miniport CI37426954641 is running.
+Native guest signtool exists; matching WDK26100 NuGet contains x86 Inf2Cat
+and dependencies plus native ARM64 stampinf. Test-signing is already enabled.
+Reserve distinguishable diagnostic58624 after local/remote branch/version
+audit found no allocation. Preserve the active58623 full payload by copying
+it for rollback and retaining every runtime DLL hash in the diagnostic package.
+Android SSH runs as app uid10316; root app-dir inventory is available through
+ADB su rather than this Termux identity. Live daemon reconfirms sole Windows
+PID3980 with6656MiB, so preserve its actual configuration.
+Independently verified distinguishable58624 guest build and signed overlay.
+Unsigned SYS3c5c8506e42148a2aafdde98f5fda790387d78421bfb1de7f588b447412a80d1;
+signed SYSd48e118a89b83df49e1da2f4b26e57b13d7f40ee6a42ad19ff6ea0328989650a.
+Signing modifies only PE checksum/certificate directory and appended signature;
+all executable content matches the unsigned build. INF settings are identical
+after normalizing DriverVer. All47 retained files,50 catalog members and51
+rollback file identities match the exact original signed58623 package.
+Package result SHA256f836257b318828f068627fd780a9af2d81cef80673c0c1f359e8e3d88766a989.
+Evidence: artifacts/dxvk-kmd-readiness-20261006/package-c1b9ea69-58624/package-verified.json.
+CI fixture correctionfdfd8f99 changes only two host fixture files; all118
+production build inputs remain exactlyc1b9ea69. Replacement CI37428593406 active.
+
 - The next diagnostic uses five direct-system-D3D11 controls inside the same
   CPU fixture: single/array resources, default versus selected-array SRVs,
   full automatic versus explicit mip count. It bypasses every UMD helper,
@@ -613,3 +642,215 @@ must stop before reading an expired adapter handle. Added an optional shared
 identity lifetime gate used by D3D9; device-only unlock/deallocate/context
 cleanup remains callable. D3D10's default absent gate preserves its contract.
 Added adapter-close-before-Flush and close-during-CreateContext controls.
+
+Recovery at af9ecd5: offline37419571615 completed all four jobs successfully;
+full37419569213 still builds ARM64/x64/x86. The old embedded CI verifier covers
+13 ARM64 execution hashes and42429/49/45 checks; the device continuation must
+also verify66403 device checks, the new executed fixture hash and the real-KMT
+probe's native PE/source provenance. The hardware runner stages unregistered
+process-only ICD/loader copies and refuses existing evidence directories.
+
+Next resource audit confirms reserved fields must be ignored when their usage
+flag is absent: MipLevels without texture/cube/volume, Fvf without VB,
+multisample fields without render-target/video usage, and RefreshRate/Output
+without Primary. SurfCount determines surfaces; per-surface indices retain
+the runtime's input ordering. Plain flags-zero resources are lock/blit only.
+DestroyResource must submit dependent batched commands before allocation
+cleanup, which can be deferred for nonshared resources. Lock must validate
+mutually exclusive read/write, discard/no-overwrite and range/area/box flags.
+These contracts constrain the next typed resource slice after hardware
+construction; no resource DDIs are implemented in this checkpoint.
+
+First hardware probe (af9ecd5 hardware01) fails HRESULTd0000001 before
+KMT_ADAPTER output, so the failure is the GDI-display-name adapter lookup,
+not D3D9 backend creation. Inspect actual adapter/session visibility and
+prefer exact LUID selection if GDI display enumeration is unavailable to SSH.
+
+Explicit native KMT enumeration succeeds in SSH and returns d36b/686b LUIDs,
+both with zero presentation sources. Guest bfd7e77 probe compilation and six
+CLI controls pass, but neither private160byte reply passes identity decoding
+and LUID comparison. Inspect raw query status/reply before assuming adapter
+ordering, modifying runtime admission or constructing the backend.
+
+Recovered readiness inventory downloaded successfully. It contains class keys
+0002 (58623/oem10.inf) and0004 (58609/oem5.inf); both have fail mask256,
+but hardware reset/epoch/timeout values differ. These are not current-state
+proof until the active PCI PnP Enum Driver binding is resolved. Extended the
+read-only collector to bind the exact active device, signed driver, service
+and binary hash. Windows22 and Android8022 independently online; DWM1644 and
+Explorer5828 were continuous through hardware02. No installation changed.
+
+Active PCI binding confirmed0002, serviceVioGpuWddm running with58623/oem10.
+DriverStore SYS SHA25654f4d93769ad317b389fb887422208031e20726c1950123d53338adaf7cbc37a
+matches retained signed CI package37242831438, parentd10f9ba6. Current receipt
+has reset state1, native context/adapter epoch3 generation2, readiness256,
+first reset141868 (0x22a2c), first synchronous timeout251108 (0x3d4e4),
+STATUS_TIMEOUT258,32command bytes, lifecycle held50019ms. Exact SYS/MAP BLs
+place first reset in CompletePagingBufferOperation and timeout in
+CtrlQueue::SubmitNativeControl. Scalars lack first-event timestamps, so do not
+infer which came first. Aperture failure stage19/statusc00000a3/detail0.
+Live daemon lists sole running Windows VM PID3980 with configured6656MiB;
+preserved live configuration takes precedence over stale8192MiB notes.
+The primary KMD checkout has pre-existing source/haptics edits; preserve them.
+
+Continuation confirms both SSH22 and SSH8022 online. Exact d10f9ba6
+UnmapStandard detail0 can originate in Dod submission rundown, missing
+adapter, invalid resource ledger, reset reconciliation, or queue admission/
+allocation. Destroy2DResource may run UNMAP_BLOB then UNREF; the existing
+scalar does not distinguish these operations. The older paging diagnostic
+patch provides common-clock timeout/engine-reset observations, but the actual
+first reset caller here is CompletePagingBufferOperation, so engine-reset-only
+capture cannot identify this first refusal. Do not change reset admission or
+declare event ordering from the current receipt.
+
+The c1b9ea69 diagnostic records immutable first queue-admission refusal,
+standard2Ddestroy failure and reset request using the timeout's common
+KeQueryInterruptTime clock. It does not repair readiness. Fixture-only
+fdfd8f99 retains identical118production build inputs. Verified signed58624
+package preserves47installed runtime files and carries51verified rollback
+files; active PnP installation reports oem17.inf after PnPUtil0. A fresh boot
+and exact active service/binary hash are still required to attribute new
+records. Nonexportable test signer DF9791D9362A8E2FA962C1683625D74D4DAE5D05
+is trusted in machine Root/TrustedPublisher; no private key was exported.
+
+Fresh58624boot01 binds device08/0002/oem17/serviceVioGpuWddm to signed
+SYSd48e118a89b83df49e1da2f4b26e57b13d7f40ee6a42ad19ff6ea0328989650a.
+First reset time1025960378ticks (102.5960378s), hardware state0before request,
+callerRVA595a8: exact MAP/PDB and ARM64 BL at595a4 resolve to
+VioGpuWddmResetEngine. First admission/destroy/submitted-timeout records are
+absent in this snapshot. This differs from old58623paging-reset provenance;
+the old UnmapStandard hypothesis is not established for this boot. Desktop
+snapshot has DWM2172 only; query user reports no logged-on session. Preserve
+the evidence and inspect current boot/session rather than assume success.
+Lifecycle holder4460 resolves to AcquireNativeContextSnapshot. Historical
+present scalars are not automatically tied to this boot's immutable records.
+Native transport=zero has no usable VNC listener5900 despite stored config;
+one attempted capture closed at handshake. Removed the temporary ADB15900
+forward and collected the Android console instead.
+
+Boot02 after autologon has DWM1552/Explorer4184 and active hardware reset0,
+queue epochs enabled/generation3. The immutable observations are reset request
+102.5960378s, first2Ddestroy108.8039849s/stage2Dod submission rundown/refused,
+and first native AHB paging timeout130.9818822s/48bytes/caller3ba1c. Exact PDB
+resolves timeout to CtrlQueue::PageNativeAhbSynchronous. These captures do not
+establish that destruction or the submitted timeout caused the earlier reset.
+The historical NativeReadinessFailMask256 was stale until a new private query.
+Correct --list-adapters now returns physical LUID6e6c000000000000 with decoded
+VIOGPU identity1; software LUID046c000000000000 has identity0. Initial --list
+was rejected with the documented usage and corrected without a backend run.
+Host logs report native display surface unavailable while the management page
+was open. Opened the existing VM's Native Display; screenshot confirms the
+3040x1904Windows desktop. No memory, image, backend or registration changed.
+
+Hardware04 uses unchanged af9ecd5UMD/bfd7e77probe and pinned Mesa/loader.
+Measured SSH token: Administrator, session0, elevated/high integrity12288.
+Limited task runs as Explorer ownerDROIDVM\USER, session1, elevationtype3,
+not elevated/medium integrity8192. Loader now selects process-local
+turnip-native.json/viogpu_gl_vk_arm64.dll; CreateDevice still returns8876086a
+in0.5892604s. Owned scheduled task removed; desktop/58624oem17retained.
+Thus installed ICD selection was a real measurement issue but is insufficient
+to explain the remaining construction failure. DXVK log ends after physical
+Adreno830/LUID6e6c enumeration, before device initialization logging.
+Pinned Mesa source3e50dd4 has no MWD_STYPE_SUPPORT/mwd_support implementation;
+runtime integration is separate ada48c1+d6883df under the existing
+mesa-dx-runtime-integration-20260913checkout. Measure the private property
+reply, then integrate the missing bridge into the pinned candidate source.
+
+## 2026-10-06 measured missing matched Mesa runtime bridge
+
+Property-only native ARM64 probe, compiled against35 hashed local/Git inputs,
+exe00f402d1821ddaaba86d0647e0e81c290caafb1c691f4cee832897a7612e4d11,
+ran under measured Limited USER/session1. Exact pinned ICD9cbe528f selected;
+MWD_SUPPORT returns magic/version/size/flags all0 instead of3152574d/1/88/1.
+No VkDevice is created. Desktop and installed58624oem17 continuityPASS;
+owned task removed. Independent receipts/EXE/PE/input verificationPASS.
+Hardware03 and04 all9 payload hashes also verify. The property diagnostic is
+local source plus exact bfd7e77 Git headers, not a tracked probe at bfd7e77;
+its actual cpp/archive hashes are retained in runtime-support-01/verified.json.
+
+Created isolated mesa-dxvk-matched-runtime-20261006 at exact3e50dd4.
+Porting ada48c1+d6883df requires resolving shared-runtime/residency adjacency
+conflicts while retaining both paths. Second patch adds teardown fixture fields;
+one premature fixture compile saw unresolved second-patch markers and is
+invalidated. Complete conflict resolution before rerunning source validation.
+
+Mesa integration8443c71 retains exact3e50dd4 ancestry and identical DXVK
+protocol header. Runtime-owned mode bypasses direct KMT handle/residency
+creation; its callbacks own those services. Direct mode preserves all existing
+residency operations and six fault oracles. Guest real MSVC/SDK/WDK compile
+and controlled dispatch fixture are independently verified (7source hashes,
+exe8d77424eba1802fe4bc4b0244f9c7d64c05f03cc38ac1d44b49c6c1fbea9017d).
+Retain exact CI metadata and source-hashed candidate before trying construction.
+
+## Matched Mesa target bridge and lifecycle08
+
+Mesa8443c71 exact ARM64 artifact11408122116 from successful CI37453384744
+returns MWD support3152574d/1/88/1 in the real Limited USER session1. The
+unchanged af9ecd5 UMD and bfd7e77 KMT probe now succeed at open, create,
+flush and destroy, with balanced context1/1, allocations3/3 and locks3/3.
+Overall probe still fails E_FAIL because it requires renders>0 despite issuing
+no resource/clear/draw operation. Empty offscreen initialization only changes
+state; no GPU submission is yet proven. Audit the oracle and preserve this
+failed receipt before adding a rendering stage. Desktop/58624 remains retained.
+
+## Matched runtime follow-up09 submission loss
+
+Mesa8443 multiarchitecture CI37453381660 all4SUCCESS (ARM64/x64/x86 plus
+source regressions). Corrected empty-lifecycle probe271a83c was compiled on
+target in1.066s, all51Git/source hashes, native AA64 and6invalid CLI checks
+verified. Follow-up09 creates successfully but Flush reports88760868; DXVK
+logs VK_ERROR_DEVICE_LOST from its submission queue. Do not claim a stable
+lifecycle PASS from08; preserve both failed receipts and collect Mesa/KMT
+submission diagnostics before adding resources or re-running identical work.
+
+## Construction callback pump boundary
+
+Diagnostic device10 with TU_WDDM_DIAGNOSTICS1 passes the empty lifecycle
+(context1/1, allocation3/3, lock3/3, render0, wrong_thread0); independent8input
+and3script hashes/token/58624continuity verification passes. The prior09
+submission loss is intermittent, and no root-cause equivalence is claimed.
+D3D10 enables deferral before its construction pump; D3D9 did so only after
+run() returned. RuntimeService rejects non-caller requests when m_pumps0 and
+m_deferredfalse. A completion worker crossing that gap can see UNSUPPORTED.
+Source f648a1a constructs the owned D3D9 service with deferral enabled from
+the beginning; synchronous non-owning probes retain their rejection behavior.
+Native ARM64 fixture now66410checksPASS; a compiled control disabling initial
+deferral fails at the first new behavioral assertion (not compiler failure).
+
+## Exact startup candidate target acceptance
+
+Source f648a1ab67bdf86794542d4e6bb5622290467e1f passes offline37456996101
+all4 and full37457000846 all6 jobs, including actual native ARM64 execution.
+All three architecture artifacts and14ARM64 execution-to-download EXE hashes
+independently verify; each device fixture now has66410checks. Normal public API
+build37456982139 and package37456982302 are also successful.
+Exact ARM64 artifact11410126793 yields UMD6fdc07b0db947b975632b45105b5b4bdeecc4c0de744ba2231466413f4a10350
+and probe7260356b39b107a882a21d053fb0c6c84548fcae9dffb8b1311952653487c175.
+Archive e97ea08c26c74154de482e6492305dbd3a18a54ed2ffce57d1582847d2e8690e
+is verified by the guest staging script before process-local extraction.
+
+Fresh device11/12/13 all PASS with diagnostics1/0/0 and stopwatch durations
+0.9432165/5.2373924/2.3940590seconds. All KMT/open/create/flush/destroy stages
+S_OK. Each context1/1, allocation3/3, lock3/3, query44, escape6, wrong_thread0,
+render0. Limited DROIDVM\USER/session1 token independently verifies. All
+three archive checksums, eight payload hashes and three wrapper hashes verify
+against retained exact CI and shared Mesa8443 payloads. Wrappers are saved
+per evidence run, and all owned scheduled tasks are removed.
+
+Read-only snapshot14 independently verifies actual PnP binding0002, statusOK/
+error0, running driver service, 58624/oem17 and exact signed SYS
+d48e118a89b83df49e1da2f4b26e57b13d7f40ee6a42ad19ff6ea0328989650a.
+DWM1552/Explorer4184 retain their original start times. ADB5555 responds and
+root ADB finds only existing crosvm PID10130; Windows/Android SSH both respond.
+Termux's app process namespace does not expose crosvm to its pgrep/pidof;
+that command's exit1 is not an SSH service failure or evidence of a stopped VM.
+No candidate installation, registration, reboot, image or configuration change.
+
+Acceptance is bounded empty offscreen lifetime. No pixel work or nonempty
+render submission is proven; long-term stability and prior09loss causation
+remain open. Source deferral repair closes a proven CPU callback-service
+contract gap but is not established as the cause of09loss. Next typed resource
+work must add ownership/state/clear/draw/readback and a separate pixel/submission
+oracle before widening caps or runtime activation.
+Retained evidence: artifacts/dxvk-native-d3d9-startup-20261006/ with CI logs,
+exact candidate, device11-13 verified receipts and active-binding snapshot14.

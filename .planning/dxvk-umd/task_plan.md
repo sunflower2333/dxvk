@@ -7,22 +7,27 @@ the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-Validate typed native D3D9 device lifecycle on all architectures and the target.
-CreateDevice/Flush/DestroyDevice are implemented with copied runtime callbacks,
-caller dispatch, separate tokens and an adapter lifetime gate. Guest controlled
-fixture66403PASS and target probe compiler preflightPASS; fullCI and realGPU
-construction remain pending. Then add resource/state/clear/draw/readback DDIs.
-Production OpenAdapter/rendering caps remain closed.
-Embedded source2a4095c full37415595130 ALL6PASS: three builds and native ARM64
-execution with42429adapter/49owner/45DLL-rejection checks per architecture.
-166retained CI files hashed; independent PE/import/export checks and all13
-native ARM64 execution-to-download EXE hashesPASS. Normal API Windows37415565405
-and package37415565396PASS. Source9b4168b offline37412714285 ALL4PASS.
-Guest ARM64 header/owner fixture49PASS, compile/link0.807s/run0.060s; all ten
-exact Git inputs, EXE/PE and installed58623/desktop continuity verified.
-Earlier typed adapteraac5172 full37408749906/offline37408748554 alsoPASS;
-its guest42429check fixture and all148retained CI files remain verified.
-See docs/native-d3d9-embedded-20261006.md for scope, evidence and next ABI work.
+Matched Mesa8443c71 fixes the measured missing runtime bridge on pinned3e50dd4.
+Full ARM64 CI37453384744 all3PASS; multiarchitecture37453381660 all4PASS.
+Property support07 returns3152574d/1/88/1. Empty-lifecycle oracle271a83c accepts
+balanced lifetime without requiring unused render callbacks; offline37455724595
+all4PASS. Device08 lifecycle calls succeed;09Flush loses device; diagnostic10PASS
+with context1/1, allocations3/3, locks3/3, wrong-thread0 and render0. Startup
+deferral gap is fixed by f648a1a; guest fixture66410PASS and compiled disabling
+control caught. Offline37456996101 all4PASS and full37457000846 all6PASS;
+three architecture artifacts and14native ARM64 execution hashes verify.
+Exact f648a1a ARM64 UMD/probe with matched Mesa pass target device11/12/13
+under the measured Limited USER/session1 token, diagnostics1/0/0 respectively.
+All stages S_OK; context1/1, allocations3/3, locks3/3, wrong-thread0, render0.
+All eight inputs and three wrapper hashes per run independently verify.
+Active PnP binding0002, signed58624/oem17 and exact SYS hash verify after runs;
+DWM1552/Explorer4184 retained.09loss cause and long-term stability remain open.
+Next typed rendering slice needs resource/state/clear/draw/readback and its own
+nonempty-submit/pixel oracle. Ordinary DX8-DX11 admission stays open.
+Lifecycle af9ecd5 full37419569213 all6PASS/offline37419571615 all4PASS;
+probe bfd7e77 offline37421820113 all4PASS. Diagnostic KMD fdfd8f99
+CI37428593406 all2PASS and active signed58624 readiness recovered on boot02.
+Resource/state/clear/draw/readback and ordinary DX8-DX11 admission remain open.
 
 ## Validated D3D10 Checkpoint
 Rotation4f59adf passed all source CI and 1281 checks in the existing guest.
@@ -65,8 +70,8 @@ acceptance are complete. Preserve the active Windows desktop and VM settings.
 - [complete] Wire architecture checks and validate on CI and the Windows guest.
 - [complete] Record exact evidence and commit the reviewed implementation.
 
-The current bounded slice does not publish production OpenAdapter or rendering
-caps. CreateDevice must fail without modifying runtime outputs. Reuse the
+That adapter-only slice does not publish production OpenAdapter or rendering
+caps. Its then-unimplemented CreateDevice fails without modifying runtime outputs. Reuse the
 existing identity decoder and preserve the original opaque runtime handle.
 The next rendering slice remains embedded D3D9 with exact runtime ownership.
 
@@ -79,8 +84,63 @@ The next rendering slice remains embedded D3D9 with exact runtime ownership.
 ## Next typed D3D9 device continuation
 - [complete] Implement device creation/destruction with raw runtime handles and callback dispatch.
 - [pending] Add typed offscreen resource/state/clear/draw/readback ownership.
-- [in_progress] Validate failure/reentry/teardown on all architectures and actual target GPU.
+- [complete] Validate lifecycle failure/reentry/teardown on all architectures and bounded construction on the actual target.
 - [pending] Implement runtime presentation/reset and prove ordinary DX8/DX9 acceptance.
+
+## Target KMD readiness continuation
+- [complete] Verify all lifecycle CI jobs and retained architecture artifacts.
+- [complete] Repair hardware probe adapter selection and verify guest build.
+- [complete] Resolve active PnP binding and capture current KMD reset/timeout provenance.
+- [complete] Repair the measured Mesa support refusal and validate bounded construction.
+- [pending] Establish earlier reset/device-loss causation and long-term stability.
+- [complete] Finalize lifecycle evidence, roadmap and checkpoint documentation.
+
+## 2026-10-06 readiness diagnosis and guest build
+- [complete] Independently verify the separate bfd7e77 probe and both failed hardware receipts.
+- [complete] Trace the exact installed d10f9ba6 standard-resource destruction admission.
+- [complete] Add immutable refusal provenance and common-clock reset/timeout timing if existing diagnostics cannot identify the gate.
+- [complete] Run focused semantic controls and compile/independently verify the diagnostic KMD in the existing Windows VM.
+- [complete] Record verified lifecycle evidence and the next target acceptance step.
+- [complete] Prepare and independently verify distinguishable signed58624 guest package,47 retained runtime files,50 catalog members and51 rollback files.
+- [complete] Validate unchanged diagnostic production inputs and corrected host fixtures in replacement CI37428593406.
+- [complete] Install reviewed diagnostic and collect fresh same-clock refusal records in the existing VM.
+- [complete] Validate bounded backend construction after observed reset recovery and matched Mesa repair.
+
+## 2026-10-06 interactive ICD selection
+- [complete] Recover pinned source, evidence and both SSH health signals.
+- [complete] Record SSH/interactive token and run unchanged probe with a Limited interactive task.
+- [complete] Verify exact selected ICD and all58624hardware receipt payloads.
+- [complete] Fix the measured missing Mesa bridge and validate the affected source.
+- [complete] Record new hardware evidence and remaining native runtime gates.
+
+## 2026-10-06 matched Mesa runtime continuation
+- [complete] Measure missing private support on exact pinned Mesa in the target.
+- [complete] Integrate callback-owned bridge and failed-create cleanup on pinned Mesa.
+- [complete] Validate transport/negative controls and native ARM64 guest compilation.
+- [complete] Verify full ARM64 CI artifact and positive target runtime-support reply.
+- [complete] Complete all Mesa architecture CI and diagnose lifecycle submission oracle.
+- [complete] Validate startup callback repair and exact rebuilt target candidate.
+- [pending] Validate actual typed offscreen GPU work and record remaining runtime gates.
+
+Exact verified binary source remains f648a1a even after a documentation-only
+checkpoint. Hardware evidence is workspace artifacts/dxvk-native-d3d9-startup-20261006/;
+shared matched Mesa payload is retained under mesa-matched-runtime-01/runtime-support-07.
+Next implementation must add typed resource handles and backend ownership,
+render-target/state binding, clear/draw/readback, plus an independent nonempty
+submission and pixel oracle before widening caps or enabling production activation.
+
+### Readiness slice errors
+| Error | Resolution |
+| --- | --- |
+| Guest-probe verifier first patch joined two shell lines | Split the lines before execution; probe verification passes. |
+| Guessed standard-resource test directory absent | Reuse discovered synchronous-timeout fixture and add a focused readiness fixture. |
+| Static response-classifier contract rejected the diagnostic call | Retain the response branch and update its exact contract to include capture. |
+| New fixture extracted an extra callback typedef and lacked VOID | Narrow enum extraction and provide the OS peer type. |
+| Reset-order negative control accidentally retained capture order | Move the deliberately injected reset before capture; the corrected control is detected. |
+| Recovery read used workspace .planning/dxvk-umd instead of the pinned nested project | Read dxvk-umd-ci/.planning/dxvk-umd. |
+| Recovery guessed absent src/viogpu, src/wddm and artifact directories | Discover actual source/evidence paths with rg --files. |
+| CI status redirection and verifier compile used nested-project paths for workspace artifacts/scripts | Use the workspace root for retained artifacts and helper scripts; rerun both successfully. |
+| Termux pgrep/pidof cannot see the existing crosvm process | Verify SSH with id and use root ADB pidof; one existing PID10130, no VM action. |
 
 ## Previous next-step checkpoint (historical)
 GS7c0b9e3 CI34620365858 ALL5PASS. Both original/rebuilt GS16payloadwords
@@ -436,3 +496,16 @@ PWF_PLAN_ROOT=/home/sunf/droidvm-repos/dxvk-umd-ci/.planning/dxvk-umd explicitly
   five-file package. Narrow checker integration validates exact reserved
   source version and exact five files; full contract nowPASS. Check-only
   follow-up does not change7051011 binaries and avoids duplicate full CI.
+
+## 2026-10-06 matched Mesa runtime bridge (completed checkpoint)
+- [complete] Measure the private support reply without creating a device.
+- [complete] Integrate existing runtime ownership and teardown into exact pinned Mesa.
+- [complete] Validate semantic failures, architecture CI and downloaded payloads.
+- [complete] Verify matched candidate on the existing guest and record remaining gates.
+
+### Resume diagnosis errors
+Broad root hidden-file discovery entered generated AOSP trees and was stopped;
+subsequent reads use the known .planning/dxvk-umd-remote-20261005 script directory.
+An unnecessary Windows CIM query had invalid shell quoting; no remote changes.
+Exact Mesa3e50dd4 was absent from the integration worktree's object store; fetch
+only that source SHA with depth1 before creating the isolated candidate.

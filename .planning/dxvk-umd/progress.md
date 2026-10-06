@@ -1,5 +1,45 @@
 # Progress
 
+## 2026-10-06 diagnostic build verification continuation
+
+Resumed at exact diagnostic KMD c1b9ea69. Windows22 and Android8022 are
+independently online. Downloaded the completed native guest build receipt,
+SYS/PDB/MAP and logs for independent verification; reported runner5.429254s,
+VirtIO0.754602s and KMD4.367460s. Receipt retains installed58623 and desktop
+DWM1644/Explorer5828. This remains unsigned, uninstalled compile evidence.
+Added a parameterized Git/archive/output/PE verifier and read-only guest
+signing-tool/certificate inventory. Verification and packaging remain active.
+Corrected discovery paths after absent flat-inf-spec.json, a worktree-relative
+workspace-script lookup and a zsh unmatched roadmap glob; none changed source.
+Independent c1b9ea69 verification nowPASS118 source files and all reported
+output hashes, ARM64 Native PE/import policy and installed/desktop continuity.
+Pushed exact c1b9ea69; CI37426954641 is running. Added parameterized build
+version and compiled identical diagnostic source as58624 in5.741236s.
+An initial rebuild referenced an absent remote source-receipt filename;
+transferred both exact local inputs under explicit paths before the successful
+retry. Guest package preparation copies the complete active DriverStore
+payload for rollback, preserves runtime hashes and uses distinct test signing.
+No diagnostic installation or reboot has occurred yet.
+Guest CurrentUser certificate creation failedNTE_PERM(80090010) in SSH.
+Three concurrent download sessions hit banner timeouts during that attempt;
+the next script transfer succeeded. Independent daemon/root checks confirm
+the same sole VM PID3980 and6656MiB, with Android SSH still being checked.
+Switched signing preflight to a distinct LocalMachine software-CSP certificate
+before copying another package, and serialized further guest transfers.
+The local58624 verifier correctly refused because its download was incomplete.
+Serialized download succeeded, and independent58624 build verificationPASS.
+Distinct LocalMachine software-CSP signing preflightPASS thumbprint
+DF9791D9362A8E2FA962C1683625D74D4DAE5D05; no private key export.
+CI37426954641 failed in inherited vblank fixture MSVC /WX: SAL macro
+redefinitions and production local `late` shadowing a fixture peer member.
+Guarded existing SAL definitions and renamed that peer member; applied the
+same guards to the new readiness fixture. These edits affect fixture inputs
+only; c1b9ea69 production KMD inputs and guest diagnostic build are unchanged.
+The second package attempt reached public-certificate export but CurrentUser
+Root import requires forbidden UI in SSH. Changed only that trust destination
+to the machine Root store used by existing CI/installation scripts; signer
+stays the distinct nonexportable machine-store key. No KMD installation yet.
+
 2026-09-11: Added API-only WARP control matrix to the existing CPU fixture;
 it does not use UMD translation helpers and runs before state changes. Tests
 default/selected SRVs and full/explicit mips to locate the ignored operation
@@ -895,3 +935,306 @@ cleanup control rejects adapter escapes after CloseAdapter. Source review
 complete; prepare exact-source commit, architecture CI and guest receipt rerun.
 Evidence stays under the workspace artifacts/dxvk-native-d3d9-device-20261006,
 outside the checkout. No installed driver or desktop configuration changed.
+
+Committed/pushed af9ecd52ee2fac7ceacc1cdceeb2ad2a9712ffd5 with session
+trailers. Full37419569213/offline37419571615 run that exact source. Guest
+exact-source rerun66403PASS, compile2.906s/run0.054s; receipt/hash verification
+and CI remain in progress. Added standalone verification and hardware-runner
+scripts. Hardware staging uses only process-local signed Mesa loader/ICD copies
+from paired37338579561; preserve their final package hashes (source-identity
+lists pre-signing hashes). Source Mesa pin3e50dd4b/run37312838033 is unchanged.
+
+Resumed af9ecd5 with this plan explicitly pinned; recovery and memory search
+add no project history. Offline37419571615 is ALL4SUCCESS. Full37419569213
+identity/shader jobs pass while all three embedded builds remain running.
+Prior pending staging scp completed. Exact guest66403 checks/input/archive/
+executable hashes are already verified; next collect final CI and run the
+real-KMT lifecycle probe with the process-local pinned Mesa payload. A workflow
+search using an absent zsh wildcard failed before execution; use rg on the
+workflow directory instead. No source, installation or VM settings changed.
+
+Added a device CI verifier for66403checks, the14thnativeARM64execution hash
+and all three hardware-probe PE architectures. Added hardware staging with
+archive/source/finalMesa hashes checked before execution. Windows Public
+inventory confirms existing guest build roots; the assumed C:\dxvk-umd-20261005
+path does not exist. Two guessed ARM64 script names also do not exist; actual
+CI runner is scripts/test-native-arm64.ps1. Use explicit known paths next.
+
+Full37419569213 ARM64/x86 build jobs are now SUCCESS and their artifacts
+11392248793/11393295519 are downloading. x64 still runs; nativeARM64 execution
+depends on the full build matrix. Offline logs independently confirm66403
+device checks on both x86/x64. Added final hardware receipt/input verifier.
+An absent roadmap wildcard failed before execution; rg --files identifies
+docs/native-dx8-dx9-roadmap-20261005.md as the actual roadmap.
+
+Full37419569213 is ALL6SUCCESS, including nativeARM64 execution. Hardware
+staging passed archive/source/architecture and pinned finalMesa hashes.
+First real-KMT probe returned d0000001 before KMT_ADAPTER/OpenAdapter output:
+D3DKMTOpenAdapterFromGdiDisplayName(default DISPLAY1) failed before the UMD
+ran. Retain the failed evidence and inspect active/session-visible adapter
+enumeration before changing or rerunning the probe. Installed driver and
+desktop continuity receipts are being collected; no configuration changed.
+
+Independent af9ecd5 CI verification PASS: all full/offline jobs,66403device
+checks per architecture,14nativeARM64execution hashes and three native probe
+PE/import policies. hardware01 receipt retains58623/DWM1644/Explorer5828.
+An existing adapter control reports zero outputs in the SSH session; it also
+attempts ordinary system D3D11 creation (hardware fails, WARP succeeds) and
+does not establish candidate rendering. Corrected the probe to require exact
+LUID bytes, list/close KMT adapter handles and report open/device failures.
+Offline CI now compiles the probe on all architectures. Prepared a fast guest
+probe builder with six malformed CLI controls and a pinned SDK Gdi32 library.
+Guessed test/compiler path searches failed; actual offline runner is
+scripts/test-umd-mrt.ps1. Production UMD source remainsaf9ecd5.
+
+Committed/pushed probe-only0b8dea5; offline37421518064 now runs exact source.
+Guest native probe compilation passed/W4/WX but first link failedOLDNAMES:
+CL treats /link inside this multiline response file as compiler flags. Move
+linker arguments to the process command line as in the proven guest fixture
+runner; retain DxvkD3D9Probe-0b8dea5-01 and use a fresh02build root. af9ecd5
+public API Windows37419538950 and package37419539028 are also ALLSUCCESS.
+Independent full artifact verifier hashes184retained files.
+
+Guest probe0b8dea5 build02PASS with all six malformed CLI controls. KMT lists
+d36b/686b LUIDs, both with zero presentation sources in this SSH session.
+Add existing private identity decoding/matching to listing output before
+choosing the exact hardware LUID; preserve original backend/callback path.
+
+Probe bfd7e77 guest build PASS: compile/link0.6198779s, full build/CLI/list
+runner1.3083707s, six malformed CLI controls. Raw identity audit shows physical
+LUIDd36b private queryNTSTATUSc00000a3 (DEVICE_NOT_READY); LUID686b replies
+with software-driver data. Corrected native hardware02 explicitly selectsd36b:
+KMT open/device creation succeed, typed D3D9 OpenAdapter returnsd00000a3 before
+renderer construction. Diagnose the existing KMD readiness refusal; do not
+claim GPU construction or change admission based on the successful CI fixtures.
+Android8022 remains online. Offline0b8dea5 was superseded/cancelled by the
+workflow concurrency policy; final bfd7e77 run37421820113 is in progress.
+
+Final probe offline37421820113 ALL4SUCCESS. Logs confirm actual probe compiler
+preflight on x64/x86/ARM64 and unchanged66403device fixture checks on x86/x64.
+Readiness registry inventory hit the display-class Properties subkey's denied
+ACL; constrain enumeration to numeric driver subkeys and ignore that unrelated
+protected key. The failed receipt scp had no source because inventory stopped;
+retry only after a successful corrected inventory. No driver setting changed.
+
+Continuation recovered bfd7e77 source with only planning findings/progress
+modified. Pending readiness scp84417 completed. Final bfd7e77 offline CI is
+ALL4SUCCESS. Refreshed plan with exact lifecycle CI and confirmed KMD refusal.
+Read-only collector now resolves active PCI Enum Driver key, service and hash;
+historical registry entries are retained separately. An unquoted guessed
+docs/native-kmd glob failed; use rg file discovery for actual paths.
+
+Active collector's first execution assumed System32/drivers/service.sys and
+failed before evidence publication; active binary is DriverStore based.
+Resolve Win32_SystemDriver.PathName instead. Found retained exact58623 signed
+SYS/MAP/PDB under .artifacts/destroy-diag-58623-ci-37242831438/download.
+
+Active readiness receipt01 collected and downloaded with exact PnP/service/
+binary binding. Exact SYS hash and ARM64 BLs confirmed. Stored first-reset
+and first-timeout locations differ; no timing attribution claimed. Git package
+receipt pins KMDd10f9ba6. Historical CI37242831438 lookups404 on personal and
+Droid-VM repos; use retained signed receipt rather than more guessed endpoints.
+Guessed Android log directory absent; resolve source/actual paths next.
+
+Recovered bfd7e77 with the DXVK plan pinned; skill catchup and memory query
+found no additional context. Current source worktrees match the handoff:
+DXVK has only planning edits, paired GG is clean, primary KMD has unrelated
+user edits. Both remote SSH services are online. Traced exact installed
+standard-resource unmap/destruction and selected diagnostic admission
+provenance as the next bounded KMD slice, followed by guest compilation.
+One combined file search included an absent guessed artifact directory;
+use the known package/evidence paths rather than retrying that path.
+
+Independent bfd7e77 probe verificationPASS: all51Git/local input hashes,
+archive/EXE hashes, ARM64 PE/import policy and six malformed CLI controls.
+Both hardware receipts now verify exact separate probe/UMD provenance,
+all9input hashes, final signed Mesa payload and driver/desktop continuity.
+Their outcomes remain explicit GDI-open failure and D3D9 DEVICE_NOT_READY.
+Added an isolated d10f9ba6 worktree under reference/codes for diagnosis.
+New queue admission/first reset/2D-destroy immutable records share the timeout
+clock. Existing queue fixture1219PASS; timeout overwrite negativePASS.
+Focused destroy/reset fixture and native guest compile remain in progress.
+
+Focused production destroy/reset fixture24PASS plus four compiled semantic
+negativesPASS. Queue lifecycle/admission1220PASS, first-timeout overwrite
+negativePASS, full Native Context contractPASS and diff-checkPASS. Wired the
+new controls to both KMD CI paths. Reused the proven guest direct compiler
+recipe with separate exact-source/evidence roots and existing toolchain;
+prepare the committed diagnostic source for guest ARM64 compilation next.
+
+Readiness continuation recovered installed diagnostic source c1b9ea69 and
+fixture-only followup fdfd8f99 in the isolated readiness worktree. Both are
+pushed. Guest native ARM64 builds verified all118production input hashes,
+output/PE/import policy and desktop continuity:58623runner5.429254s and
+distinguishable58624runner5.741236s. Host fixture corrections preserve all
+production inputs; vblank lifecycle plus nine semantic negativesPASS.
+Initial CI37426954641 failed inherited MSVC fixture warnings; corrected
+replacement37428593406 remains in progress at this recovery checkpoint.
+
+Signed58624 preparation independently verified47retained runtime files,
+50catalog members and51exact58623rollback files. Installation receipt
+readiness-install-58624-20261006.json reports PnPUtil0/PASS, active device08
+version100.6.101.58624/oem17.inf, no reboot and no VM configuration change.
+Signed SYSd48e118a89b83df49e1da2f4b26e57b13d7f40ee6a42ad19ff6ea0328989650a;
+package-resultf836257b318828f068627fd780a9af2d81cef80673c0c1f359e8e3d88766a989.
+Both SSH services and ADB are online. Next cleanly stop the existing guest,
+verify daemon STOPPED/no crosvm, start once with the reviewed helper and bind
+fresh common-clock diagnostics to the exact loaded58624binary.
+
+Clean guest shutdown succeeded; daemon STOPPED/PID-1/no crosvm verified.
+Reviewed local/remote start helper hashes match; the sole Windows VM started
+once with PID10130 and6656MiB. Replacement CI37428593406 ALL2SUCCESS at
+fdfd8f99, including1220queue/24readiness/foursemantic negative controls.
+Early SSH closed during boot, then returned; two collector attempts stopped
+because Explorer was absent. Adjusted read-only collection to persist an
+explicit desktop_processes_complete flag even when processes are missing;
+desktop recovery and new readiness interpretation remain pending.
+One queue/DDI search guessed the wrong subdirectory; discovered actual files
+under viogpu/common and viogpu/viogpuwddm and continued there.
+
+Continued from58624boot and hardware03 with the persistent DXVK plan pinned.
+Both Windows22 and Android8022 SSH are live. The unchanged bfd7e77probe
+opened KMT adapter/device and D3D9 adapter on physical6e6c, but DXVK device
+construction returned8876086a while loading installed DriverStore Mesa.
+Added structured process-token evidence and an owned Limited interactive
+scheduled-task runner with source-script hashes, exact Explorer owner/session,
+30second probe/55second task deadlines and task removal. No candidate DLL,
+KMD, registered ICD or VM configuration edits are part of this probe.
+
+Hardware04 completed under measured USER/session1Limited token; pinned local
+ICD selected, same8876086aCreateDevice refusal,0.5892604s. Desktop/58624oem17
+continuity passes; owned task removed. Full03/04payload downloads continue.
+Source audit finds pinned Mesa3e50dd4does not contain the MWD property/device
+runtime bridge. Added property-only support diagnostic and native guest
+compiler recipe; the existing runtime-integration source is clean and can
+be brought onto the candidate once the actual zero reply is measured.
+
+## 2026-10-06 resumed backend bridge diagnosis
+
+Recovered current bfd7e77 source, af9ecd5 lifecycle and fresh58624 evidence.
+Live GitHub verification confirms37419569213 all6PASS and37428593406 all2PASS.
+ADB5555 and both SSH services are reachable; Android lists one registered crosvm.
+Hardware04 already measured USER/session1Limited, pinned local Mesa selected,
+and CreateDevice8876086a with desktop/installed58624 retained. Next run the
+property-only support diagnostic, then integrate the proven missing runtime
+bridge into an isolated exact-source Mesa candidate and validate it.
+A shell quoting error invalidated an unnecessary Windows CIM query; no mutation.
+
+Measured and independently verified missing private runtime bridge: pinned
+ICD reply all0, Limited USER/session1, property query only, desktop/58624
+retained and scheduled task removed. Verified35 source/build input hashes,
+ARM64 EXE and both03/04nine-input hardware payload receipts. Porting existing
+bridge into isolated exact3e50dd4 candidate; preserve residency and resolve
+second patch teardown fixture fields before source tests.
+
+Ported existing runtime ownership bridge into exact3e50dd4 Mesa and committed/
+pushed8443c71a5ab32b9d58b904fa51f4bf2f9089db8d on personal
+work/dxvk-matched-runtime-20261006. No production source outside13explicit
+paths changed. Preserved residency and protocol header matches DXVK exactly.
+Allocation2795/residency72sanitizer checksPASS, three allocation and six
+residency semantic negativesPASS, seven additional existing regressionsPASS,
+full policy/YAML/diffPASS. Source extraction fixtures required the new runtime
+header, shared helpers and a bounded external Escape peer; they compile the
+actual production functions and preserve the original residency oracles.
+Dispatched three-architecture OpenGL/Turnip candidate and transport CI; source
+SHA/status/artifact verification and actual hardware construction pending.
+Also prepared seven exact Git source inputs and reusable portable native
+ARM64 transport build/controlled-dispatch fixture in existing Windows guest.
+
+Exact Mesa8443c71 native guest production transport compiles with /W4/WX
+and executes the controlled direct/shared dispatch fixturePASS. Independent
+verificationPASS all7Git/archive/source hashes, ARM64 PE/hash and
+desktop/installed58624continuity; compile1.0699098s/run0.8524681s.
+This is controlled dispatch evidence, not actual GPU construction.
+Mesa CI37453381660 source-regressionsPASS; three architecture builds active.
+Transport CI37453384744 real SDK/WDK ARM64 compilation and command-stream/
+runtime semantic checksPASS; full Turnip ARM64 compilation/link still active.
+
+Full ARM64 Turnip CI37453384744 all3jobsSUCCESS, exact8443c71. Downloaded
+ICD artifact11408122116 and independently verified all13payload checksums,
+AA64 core DLL/dependency, actual exports/imports and embedded8443c71 source
+string. Native ICD1b0cb01a requires only native z-1 plus Windows system DLLs.
+First stage guard caught unused x64 CRT files inherited from the earlier
+probe payload; imports prove UMD/probe/loader and new ICD are statically linked
+and do not use those DLLs. Prepare fresh native-only3file stage rather than
+weaken the PE rule. A prepared-but-unrun interactive task is being canceled;
+no GPU execution or driver/registration/configuration change occurred.
+Exact scripts from completed property05 were reconstructed and independently
+hash-verified against the original task config, retained under scripts/.
+
+### Matched runtime support07 and actual device08
+
+- Fresh exact three-DLL native ARM64 process-local stage02 verified successfully.
+  Canceled the prepared old support06 task without starting it.
+- support07 under Limited USER/session1 reports3152574d/version1/size88/flags1,
+  supported1. Owned task removed; no installation or registration.
+- device08 uses unchanged af9ecd5 UMD/bfd7e77 probe. KMT/open/create/flush/destroy
+  all S_OK; context1/1, allocations3/3, locks3/3, wrong_thread0, render0.
+  The render>0 lifecycle oracle returns80004005; preserve failed evidence.
+- Recovery guessed tests/umd/d3d9_device_kmt_probe.cpp and nested artifacts;
+  rg discovered tests/umd-d3d9-device-probe.cpp and workspace-root artifacts.
+- First combined plan patch referenced an absent findings heading; patch rejected
+  and replaced by an exact task-plan patch and append-only findings/progress.
+
+- Empty submission audit: InitializeNativeOffscreen only resets/binds state;
+  Turnip tu_wddm_queue_submit_locked suppresses entry_count0 render callbacks.
+  Probe271a83c removes only that invalid render>0 lifecycle expectation and is
+  pushed; offline CI37455724595 started. Existing lifetime checks retained.
+- Independent property07 verifier passed8input hashes,3wrapper hashes, exact
+  oldUMD/loader and newICD/zlib hashes, AA64, Limited session1 and58624oem17
+  continuity. Probe271a83c build verifier passed51sources/exe/archive/CLI.
+-09 is a new failure after successful creation: Flush88760868 and DXVK command
+  submission device loss. Task removed; captured verified compressed evidence.
+- One extra poll of completed SCP49312 returned Unknown process id; no transfer
+  retry performed. Full downloaded property07 payload independently verified.
+
+### D3D9 startup callback repair f648a1a
+
+- Closed startup deferral window in RuntimeService constructor and typed D3D9
+  ownership. Added before-first-pump/between-pumps/caller-affinity/closure and
+  synchronous rejection checks to the actual typed lifecycle fixture.
+- Guest ARM64 production fixture compile3.3824182s/run0.0547275s/66410PASS.
+  Compiled negative-deferred-disabled control exits1 at result==S_OK.
+- Source f648a1a pushed. Offline37456996101/full37457000846 started; monitor
+  both and validate exact rebuilt hardware candidate before acceptance.
+- Diagnostic device10 af9+Mesa8443passes in1.8902364s;08and09failed receipts
+  remain immutable. Saved wrappers and eight exact linked payload hashes.
+- Readiness snapshot initially assumed newer active_device schema; guest
+  script was older registry-only schema. Narrowed extraction to actual keys;
+  do not claim it independently resolves active binding or09cause.
+
+- Startup offline37456996101 all4SUCCESS. Full37457000846 identity/shader
+  passed; all three backend builds still active. Watched with30s intervals.
+- Independent positive/negative guest receipt verification:52source files each
+  match f648a1a, with the declared deferral mutation only in the negative.
+  Failed build script omits source hashes on failure; captured a separate
+  after-run source receipt instead of changing its original failed receipt.
+  Negative verifier initially expected the omitted sources key; corrected to
+  use the separate measured receipt.
+
+### Startup candidate CI and target completion
+
+- f648a1a full37457000846 all6SUCCESS, offline37456996101 all4SUCCESS;
+  normal API37456982139 and package37456982302 also SUCCESS. All three
+  architecture downloads verified for source, native PE/import/export policy,
+  66410device checks and14native ARM64 execution-to-download hashes.
+- ARM64 UMD/probe staged from exact CI artifact11410126793. Guest archive and
+  three input hashes/AA64 checks PASS; stage is process-local only.
+- device-f648a1a-58624-11/12/13 all PASS; diagnostics1/0/0; measured durations
+  0.9432165/5.2373924/2.3940590s. Every stage S_OK and each lifetime balances
+  context1/1, allocations3/3, locks3/3, with wrong-thread0/render0.
+- Collected compressed evidence serially, verified each archive hash, all eight
+  payload hashes and three wrapper hashes per run, limited USER/session1 token,
+  actual local Adreno830 ICD, and driver/desktop continuity. Saved exact wrappers;
+  all owned tasks removed. Binary links point to retained CI and Mesa payloads.
+- New active-binding snapshot14 verifies0002/statusOK/PnP0/running service/
+  58624oem17/exact SYSd48e118a; DWM1552/Explorer4184 unchanged. ADB5555 and
+  both SSH services respond; root ADB confirms only existing crosvm PID10130.
+- A status redirection and helper compile initially used nested-project relative
+  paths for workspace artifacts/scripts. Corrected to workspace root and both
+  checks passed. Termux pgrep/pidof exit1 comes from process visibility; retained
+  successful id output and use root ADB for the sole VM process, no VM action.
+- Updated current plan, device evidence and roadmap. Exact binary source stays
+  f648a1a/Mesa8443 after documentation-only checkpoint. Typed resources, actual
+  GPU pixels/nonempty submission, Present/reset and ordinary DX8-DX11 admission
+  remain open; do not infer prior09loss cause or long-term stability.

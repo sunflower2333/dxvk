@@ -411,3 +411,79 @@ can remap the same shared staging texture. Use device-wide Present exclusion
 and mutual rotation exclusion. Also validate the independent resource
 reservation after RuntimeMemory's identity/context callbacks, immediately
 before PresentCb; a pinned allocation can outlive a logically retired Resource.
+
+Next DXGI residency source work must connect each native resource to the
+actual backend BO allocation identities before QueryResidencyCb can report
+VidMm residency. RuntimeGpu currently owns token-to-kernel-handle records
+privately, while D3D11VkInteropSurface::GetVulkanImageInfo exposes Vulkan image
+metadata rather than kernel BO handles. The separate Present publication
+allocation is not proof that every rendering allocation is resident. Do not
+fill the missing QueryResourceResidency slot with unconditional resident values.
+
+2026-10-06 read-only guest system inventory (Windows26100, native ARM64
+PowerShell): System32 has ARM64 d3d9/d3d9on12/d3d10/d3d11/dxgi, no d3d8.dll.
+SysWOW64 has all six as x86. DX8 system-runtime acceptance can target x86 on
+this guest; existence/architecture does not prove its DDI route or DXVK loading.
+Remote worker retains separate inventory JSON under workspace remote-test plan.
+
+Bounded native D3D9 design: actual WDK OpenAdapter.hAdapter and
+CreateDevice.hDevice are in/out opaque runtime-to-driver handles. Preserve
+original runtime handles independently of driver registry tokens and negotiate
+versions with D3D9 policy, not D3D10 packed-version rules. Next harness slice
+can test exact160-byte identity/query ownership and typed GetCaps/close without
+advertising rendering or bare production OpenAdapter. It must then connect the
+embedded D3D9 core to renderer-neutral exact-LUID/Turnip/runtime owner selection;
+unchanged public CreateDeviceEx would reintroduce direct ownership/implicit WSI.
+
+2026-10-06 guest KMD build continuation: the existing Windows VM has no
+MSVC, MSBuild, SDK, WDK, git, Python or winget. Audit completed in0.597s;
+C: has13,158,424,576free bytes. Local SDK/WDK26100.1 payloads provide
+headers/libs but no cl/link/rc/tracewpp executables. Remote worker identified
+official VS17 native HostARM64-to-ARM64 MSVC14.44.35229 package(22.6MB)
+and is preparing an isolated portable toolchain. Setup and actual compile
+timings must be distinguished before comparing with CI.
+
+Paired docs-only checkpoint09ec84ca56eca381c953a9a307852b8e05920625 is
+pushed and clean; binary source remainsb6bf/34ff.166retained evidence files
+verified, duplicate signed ZIP removed after recording its metadata digest.
+
+Independent final receipt review matches all counts/source pins/scope. It
+found guest process creation UTC labels later than fixture UTC labels. Before
+and after identities still match; annotate evidence README and preserve raw
+receipts. New guest build timing uses Stopwatch rather than wall-clock delta.
+Retained CI KMD WPP-to-code-generation interval is16:25:10.181-16:25:14.428
+(~4.25s), excluding VirtIO and packaging. Guest iteration saves full CI
+turnaround; do not compare direct KMD compile with full signed package jobs.
+
+Guest build source is exactb6bf Git archive(build/VirtIO/viogpu),294files.
+Independent reviewer checked every file byte against Git blobs/receipt:
+source tree04d3c8ce75ca2d5d2c9a310ea371862851bae178; archive SHA256
+acccddd1f91a570e848ec83fb0a35547c91be3fce6d110dfe0fbd81d5115b765.
+Native SDK.BuildTools26100.1 provides rc and tracewpp; portable MSVC catalog
+package revision35229 uses internal path14.44.35207. Actual compiler banner
+and package revision must be recorded separately. Source and installed driver
+are unchanged while direct compiler build-only reproduction is prepared.
+
+Refined CI37338579561baseline from retained logs/API: KMD WPP/CL/RC/link
+4.391s; KMD project wall6.624s(reported6.55s). Plain VirtioLib CL+LIB6.222s;
+full dependency project13.751s. All ARM64 driver step73s, product job293s,
+full workflow1190s(19m50s). CI used HostX86-to-ARM64 compiler on x64 Windows;
+guest uses native HostARM64. Direct compile is a faster potential feedback
+path, not equivalent signing/UMD/hardware acceptance. Guest link currently
+needs arm64rt.lib not found in SDK/WDK/CRT Desktop packages; parallel research
+is active while remote prepares compilation.
+
+Resolved arm64rt.lib: official Microsoft.Windows.SDK.CPP.arm6410.0.26100.1
+contains c/um/arm64/arm64rt.lib, 1,365,588bytes. Library SHA256
+83925e5f51c0599deca7871667e04b0a6dc046dcec77115cfb5d4af1a655b823;
+archive SHA256e0d6e5e019e28d92f24c9807afb04ad9e95ec685a1f742c30c3c7fe5abd0a109.
+Portable base setup is complete; compilation remains pending. No installation.
+
+Final guest KMD build and independent output verificationPASS. Native
+MSVC19.44.35229 tools need no system installation; SDK26100.1ARM64/WPP/RC
+works once kernel CRT headers precede MSVC and RC uses direct arguments.
+VirtIO0.648s/KMD4.113s/runner5.114s. SYS329216bytes,100.6.101.58522,
+SHA2567c0a45f2bbf3424ff8a67c4c6c2369d13e329331c5e4adf46ab3b74d196e934b.
+Source/input/output hashes and unchanged58623/DWM/Explorer are verified.
+Unsigned/uninstalled build provides rapid compiler feedback; full package
+signing/runtime admission/hardware acceptance still require independent gates.

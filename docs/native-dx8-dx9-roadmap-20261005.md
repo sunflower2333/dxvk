@@ -1,8 +1,10 @@
 # DX8/DX9 native UMD audit, 2026-10-05
 
-Read-only source audit: `dxvk-umd-ci` at `4f59adf`, paired driver baseline
-`gg-dxvk-umd` at `fac1bfe6`. Paths naming these checkouts are relative to the
-DroidVM workspace.
+Initial read-only source audit: `dxvk-umd-ci` at `4f59adf`, paired driver
+baseline `gg-dxvk-umd` at `fac1bfe6`. The roadmap remains applicable after
+validated source `34ff484` and paired source `b6bf4c4f`; those checkpoints
+repair DXGI ownership without adding a D3D9 bridge. Paths naming these
+checkouts are relative to the DroidVM workspace.
 **Native D3D9 is not implemented in the DXVK UMD. Upstream DX8/DX9 API DLLs exist, but do not close that driver gate.**
 
 | Path | Current evidence | Meaning |
@@ -18,6 +20,15 @@ The native D3D10 candidate independently remains unadvertised: `src/umd/umd_adap
 
 ## Concrete implementation sequence
 
+The existing Windows ARM64 guest was inventoried read-only on 2026-10-06
+(Windows build 26100). System32 contains ARM64 D3D9, D3D9On12, D3D10, D3D11
+and DXGI DLLs, but no D3D8 DLL. SysWOW64 contains all six as x86 DLLs.
+The current guest therefore provides an x86 system-runtime target for DX8
+acceptance. DLL presence alone does not establish the DDI path or DXVK UMD
+activation; those still require loaded-module and rendering evidence.
+Workspace evidence is
+`.planning/dxvk-umd-remote-20261005/system-d3d-inventory.json`.
+
 1. Add a **separate typed D3D9 adapter/device bridge** using `D3DDDIARG_OPENADAPTER`, `D3DDDI_ADAPTERFUNCS` (`GetCaps`, `CreateDevice`, `CloseAdapter`), `D3DDDIARG_CREATEDEVICE`, `D3DDDI_DEVICEFUNCS`, and `D3DDDI_DEVICECALLBACKS`. Negotiate DDI/runtime versions explicitly; do not cast the existing D3D10 tables or infer D3D9 support from them. First acceptance slice should be offscreen create/clear/draw/readback with exact object destruction and conservative caps, in an unregistered development harness.
 2. Embed a static D3D9 implementation core excluding public API exports, analogous to `src/d3d11/meson.build:95`. Factor a private construction path using the **exact runtime adapter identity** and Turnip driver ID, copied runtime callbacks before `vkCreateDevice`, and the existing private Mesa runtime ABI. `D3D9DeviceEx` already accepts a `D3D9Adapter*` and `Rc<DxvkDevice>`, but also dereferences its COM parent for instance/config/compatibility; those dependencies need a controlled private parent. Calling `Direct3DCreate9` unchanged reintroduces enumeration, direct Vulkan/KMT ownership and implicit WSI.
 3. Map the D3D9 resource/lock/open/DDI ownership, render and texture-stage state, FVF/vertex declarations, shader-model 1-3 token handling, fixed-function transforms/lighting, queries and flush through that embedded core. Reuse DXVK's existing D3D9 fixed-function and shader translators; translate DDI-specific resource handles and creation semantics rather than exposing COM objects as runtime handles. Gate `D3DCAPS9`, formats and optional features on actual completed contracts.
@@ -25,6 +36,27 @@ The native D3D10 candidate independently remains unadvertised: `src/umd/umd_adap
 5. Prove DX8 separately on the guest's supported application architectures. Establish whether the system DX8 runtime reaches the new D3D9 DDI, and test representative fixed-function/FVF/shader-1.x workloads and device reset. If an explicit DX8-to-DX9 compatibility layer is necessary, adapt the dependency on DXVK's private bridge or document that separately; the current upstream app-local bundle alone is not system-wide DX8 driver support.
 
 ## KMD and packaging requirements
+
+The first typed adapter slice should be an unregistered development harness
+using proposed `umd_d3d9_adapter.{h,cpp}` and `tests/umd-d3d9-adapter.cpp`.
+The actual WDK `D3DDDIARG_OPENADAPTER.hAdapter` and
+`D3DDDIARG_CREATEDEVICE.hDevice` are in/out runtime-to-driver handles. Preserve
+the incoming runtime handle separately before publishing a registered driver
+token; these layouts differ from D3D10's split handles. Reuse the existing
+160-byte identity decoder behind a raw-HANDLE query entry, retaining the
+original QueryAdapterInfo callback and exact LUID/generation/capabilities.
+Adapter calls need pinned ownership across callbacks, unlocked registry queries,
+sticky close/reset retirement and nested-query rejection.
+
+Initially validate typed GetCaps size/count dispatch without positive rendering
+caps, and reject CreateDevice before publishing a driver device/table. Keep
+the production bare OpenAdapter export absent until the rendering contract is
+complete. Test original callback handles, malformed identity, S_FALSE,
+generation/LUID changes, callback close/reset, stale handles, canaries and
+unsupported versions on all three architectures. Negotiate D3D9 interface and
+runtime versions explicitly; D3D10's packed Version rule is not its contract.
+The exact-adapter renderer factory must be shared with the embedded D3D9 core
+before this adapter slice can become a rendering acceptance result.
 
 - **Identity plumbing is available:** GG `wddmddi.cpp:4003` `QueryUmdPrivateInfo` already produces the versioned 128-byte adapter prefix plus 32-byte identity trailer with Windows LUID/reset generation. Adapt its consumer to the real D3D9 callback/opaque runtime adapter handle; no new identity ABI is inherently required.
 - D3D9 must use the existing context/allocation/render/escape services under `D3DDDI_DEVICECALLBACKS`, including reset generation checks, BO residency/lock synchronization, fences and teardown. Its native primary/opened/shared-resource formats must satisfy the same KMD validation and Present allocation lifetimes. Existing KMD support is reusable infrastructure, not proof that all D3D9 semantics work.

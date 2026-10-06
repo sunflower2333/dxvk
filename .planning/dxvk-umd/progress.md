@@ -525,3 +525,198 @@ and matches the gitlink. scripts/test-native-umd.sh now PASS under ASan/UBSan:
 Independent reviewer and root final source review have no concrete remaining
 findings for this repair. Windows fixtures still require exact-source CI;
 prepare source commit and concurrent final paired candidate validation.
+
+Source34ff484ac87b66f77e1c9f6d8db914783b24788e committed with real multiline
+attribution and pushed. Dispatched exact offline37338141939 and full native
+37338144307; generic push37338074483/37338074581 also active. Reviewer handles
+source CI and verified artifact retention; paired worker advances both source
+pins and validates contracts before direct paired dispatch. Remote worker
+prepares changed ARM64 lifetime fixture runner and read-only system-runtime
+DLL inventory; execute only after verified artifact arrives. No installation.
+
+34ff source CI initial results: offline Linux sanitizers PASS; full identity
+and shader CPU PASS. All architecture fixture/backend jobs continue without
+failures. Paired final34ffpins and73tests/YAML/diff pass; full checker pending.
+Bounded next-gap audit confirms residency needs a native resource-to-backend
+BO identity link; the Present publication allocation and Vulkan image interop
+metadata do not expose all rendering BO handles. Save this dependency for
+actual QueryResidency implementation rather than claiming unconditional residency.
+
+Paired b6bf4c4f849f5ca597637fc2ce591f23a826f158 pushed with both DXVK pins
+at34ff484. Full checker,73package tests,11-job YAML and diff check PASS.
+Direct paired37338579561 now runs concurrently with exact source CI; signed
+package/native-load evidence remains pending. Guest scope includes both changed
+rotation and lifetime fixtures because CreateContext cancellation lives in
+rotation; no repeat of the eight unchanged fixtures is needed.
+
+Exact34ff offline37338141939 SUCCESS, all four jobs: Linux sanitizers, Windows
+x64/x86 production DDI execution and ARM64 compilation. Reviewer downloads and
+verifies artifact source/PE/hash before handing changed fixtures to remote
+worker. Full native37338144307 and paired37338579561 continue without failures.
+
+Remote system-D3D inventory retained read-only: native ARM64 Windows26100 has
+System32 D3D9/9On12/10/11/DXGI but lacks D3D8; SysWOW64 supplies all six x86
+runtimes. Added current DX8 acceptance architecture evidence to roadmap, with
+DDI/renderer activation still unproven. Prepared transferred guest runner parses
+successfully; waiting on exact rotation/native-lifetime binaries and hashes.
+
+Offline34ff exact logs PASS1428rotation checks/44locks on x64 and1400/44 on
+x86 (private-storage byte assertions reflect architecture size). Verified
+ARM64 rotation.exe SHA256a03ba1df30eb753394ab248ee0d7702985101b6d1274b731a4065da4bcde8cd6
+has source34ff and nativePEaa64; remote worker executes it once now. Full
+native-lifetime fixture remains pending. Paired repaired full-contract/Zink,
+GL/CL ABI and package tests all PASS, with architecture builds still active.
+
+Exact34ff native ARM64 rotation guest PASS1428checks/44locks, exit0, empty
+stderr, no timeout. Before/after DWM1644 and Explorer5828/start times preserved.
+Receipt binds source34ff, offline37338141939 and a03bexecutable SHA256; compact
+stdout/stderr/JSON retained locally. Requested copies into guest-34ff484 artifact
+directory with digests; keep remote-plan originals. New lifetime guest fixture
+is pending full ARM64 build, and full/signed package CI remains active.
+
+Root inspected compact guest rotation JSON and offline evidence receipt:
+source/hash/run/check output match, exit0 and empty stderr, same desktop process
+identities. Offline archive source and all eight ARM64 EXE machines are verified
+by reviewer; exact-source review is embedded in the receipt. guest-34ff484 copies,
+runner scripts, inventory and SHA256SUMS are retained with originals preserved.
+
+Paired37338579561 exact34ff DXVK ARM64/x64/x86 builds and native ARM64
+functional execution now SUCCESS. Source full x64/x86/identity/shader PASS,
+with ARM64 backend still building. The one guest lifetime run may use the
+verified paired fixture input instead of waiting on duplicate source artifacts;
+receipt must bind actual source/artifact/run, and no second run is needed.
+Audited current package invocation: verify_bundle.py correctly keeps distinct
+D3D Mesa eae74a and GL/Turnip3e50 sources; obsolete verify-joint-package.py is
+not the active workflow verifier. No package source/pin change is needed.
+
+Paired native ARM64 logs PASS10834lifetime checks and1428/44rotation. Verified
+fixture input11357009608 from paired37338579561 binds STATUS34ff, nativePEaa64
+and lifetime SHA2561a5618ccbb46c6f7c753ab1a0e572140e85242bf1839c9b7a1c359b1e9e88615.
+It matches native runner validation hashes. Remote worker receives that input
+for the one changed lifetime guest execution; no source-artifact duplicate run.
+
+Exact34ff native ARM64 lifetime guest PASS10834checks, complete-contract-fixture1,
+backend-calls5, exit0, empty stderr/no timeout. Paired37338579561 input11357009608
+local/remote PE/hash verified. DWM1644/Explorer5828 retained session/start times
+and remained continuous from rotation through lifetime. Compact lifetime receipt
+and logs added to guest-34ff evidence; no full-backend fixture rerun is needed.
+
+Exact34ff full37338144307 SUCCESS all six jobs, including ARM64 backend/native
+runtime. Reviewer retains full source/runtime/hashes independently of paired
+build. Both changed guest fixtures completed once with desktop continuity.
+Paired input arm64/x64/x86 DXVK manifests verified exact source34ff/parentb6bf,
+all file hashes/PE machines/private loaders and unchanged eight gaps. Product
+job now compiling/signing on repaired VS2022 host; final package still pending.
+
+Paired product111865802664 passed driver compilation and reached Sign+package:
+matching VS17/x64 host resolves the prior WDK precompile failure. Full source
+and guest validation is complete; final catalog/load/receipt remains required.
+
+Product111865802664 SUCCESS: compilation, PE/exports, signing/package,
+actual catalog/common signer, exact joint receipt and artifact upload pass.
+Signed ARM64/native+EC+x86 runtime loading remains final gate. Full source
+receipt inspected by root: all15ARM64EXE/DLLs AA64, all10runtime hashes match,
+STATUS34ff, rotation1428/44, lifetime10834 and allocation5164PASS. Independent
+guest bundle source/hash/desktop checks also pass; no duplicate workload.
+
+Delegated native D3D9 bounded design saved to roadmap: typed in/out opaque
+handles, exact identity query owner and conservative GetCaps/close harness;
+production bareOpenAdapter/CreateDevice rendering stay unavailable until
+embedded D3D9/runtime-owned factory exists. Root checked actual WDK layouts
+and current D3D10 factory before recording next implementation dependencies.
+
+Root live poll confirms paired37338579561 completedSUCCESS, including final
+signed-runtime-abi on Windows ARM64 after product success. Source/offline/full,
+guest changed fixtures and paired signed load checks all pass. Agent retains
+final signed package/source/manifest/PE/catalog receipts, then documentation-only
+checkpoint without redundant full build. DXVK/VKD3D unregistered,58522older
+candidate baseline, installed58623/Mesa and VM configuration preserved.
+
+Paired final CI logs prove53actual Windows catalog members/common PE signer,
+52-file installer receipt and64GPU/9installer joint bundle identities. Signed
+ARM64/EC/x86 GL/CL/D3D and all three DXVK/private-loader/closed-gate loads PASS.
+Root inspected finalrun/source-verified receipts: parentb6bf, DXVK34ff, all
+architectures unregistered and exact eight-gap set. Final138534327-byte artifact
+archive download/hash verification is pending before documentation commit.
+
+User explicitly suggests KMD builds in the target Windows VM for faster
+iteration. Delegate toolchain/disk audit and exact b6bf isolated KMD compile,
+with setup/compile timings and source/PE/output receipts; no driver installation
+or configured VM changes. Continue already authorized DXVK milestone artifact
+verification. Paired worker503 interrupted after91%download; resume original
+session rather than duplicate138MBtransfer. File plan remains explicitly selected.
+
+Downloaded paired artifact verification now COMPLETE PASS: archive SHA256
+1aad40d95c607738fe1e36b64488c7b4ce50e2010e77d3fb1f103db875f8f919 matches
+GitHub metadata/upload. Exact b6bf/34ff/version58522 and older Mesa/CLVK pins
+verified; local64GPU/9installer hashes/PE/source/gate receipt equals uploaded
+joint receipt. Windows53catalog/common signer/fullABI logs retained. Final
+candidate-evidence.json and signed-package-verified.json are reviewable; cleanup
+and docs-only paired checkpoint proceed. User-requested guest KMD build audit
+is active separately; installed driver and system configuration preserved.
+
+Resumed from the explicit file plan after compaction. Read workspace rules,
+agent.md and selected planning skill; session catchup has no additional output.
+Memory registry contains no matching project evidence. Paired documentation
+checkpoint09ec84ca is complete/pushed/clean. Guest build bootstrap proceeds
+with minimal official native ARM64 MSVC instead of a full VS installation;
+root and reviewer avoid duplicate remote transfers. No configuration changes.
+
+Independent final DXVK receipt reviewPASS; absolute guest clock chronology
+anomaly recorded in guest README and its SHA256SUMS refreshed. Matching
+desktop identities before/after remain valid; no unchanged fixture rerun.
+Portable nativeARM64 compiler/linker and SDK26100.1rc/tracewpp acquired from
+official packages. Reviewer extracted exact WPP/CL/RC/LINK flags from successful
+paired CI so guest direct build reproduces actual KMD policy and dependencies.
+
+Root clarified roadmap initial audit pins vs current validated34ff/b6bf,
+and added absolute-clock limitation to rotation documentation. Reviewer
+verified all294guest-source archive files against exactb6bfGit; source transfer
+and native portable build script preparation continue.
+
+After interruption, only root remains active. Existing transfer completed:
+78,305,838 bytes in 26.655s; source/tools had not yet been extracted or built.
+Resumed portable setup successfully in 51.224s with native ARM64 tool banners
+and hash checks. Found arm64rt.lib in Microsoft.Windows.SDK.CPP.arm6426100.1
+instead of the compiler/WDK packages; archive and library digest recorded.
+Adding its isolated library path before running the exact-source build.
+
+First guest compile reached native cl but failed VirtIO compilation: portable
+include order let MSVC crtdefs.h shadow the kernel CRT definition, causing
+_CRTIMP_ALT/__ALTDECL errors in WDK string.h. Preserve attempt-1 logs and
+correct kernel/km-crt header precedence before retry. Driver source unchanged.
+
+Corrected include precedence: VirtIO CL and LIB both PASS,0.576s/0.111s.
+Windows PowerShell5 then rejected Measure-Object on OrderedDictionary keys;
+change timing aggregation to emit numeric dictionary values first. Preserve
+attempt-2 logs; this is runner bookkeeping, not a compiler/source failure.
+
+Third attempt: VirtIO and both WPP stagesPASS; all ten KMD source files
+compilePASS in2.640s. RC fails RC1109 creating quoted resource-output path
+when arguments are provided via response file. Reproduce CI direct RC argument
+dispatch instead; preserve attempt-3 logs. Final link remains pending.
+
+Guest exact-source b6bf buildPASS: VirtIO CL0.562947s/LIB0.084819s,
+WPP0.035853s/non-owner0.018827s, KMDCL2.568962s, RC0.053833s,
+LINK1.435689s. Native ARM64 SYS/version100.6.101.58522 and PE import checks
+PASS; total runner5.114122s(Stopwatch). Collecting output/log/continuity
+receipts for final verification. No installation/signing/package acceptance.
+
+Downloaded SYS/PDB/map/compiler-PDB hashes all match guest outputs. Independent
+LLVM inspection confirms nativeARM64/subsystem, kernel-onlyNT/HAL imports,
+CFG/NX/ASLR, version resource and stack cookie; link map confirmsGsDriverEntry.
+build-verified.jsonPASS; every stageexit0/empty stderr, desktop1644/5828 and
+installed58623/oem10.inf preserved. Base setup51.224s/support library0.269s.
+Saved guest build guide, compact evidence and recipe snapshots. Runtime
+admission/eight gaps remain unchanged; next implementation is nativeD3D9.
+
+Final compact guest artifact checksum setPASS(86files), recipe snapshots
+preserved and unused local486MBtoolchain assembly staging removed. Provisioned
+guest tools/source remain reusable; local archives/manifests retained. Final
+documentation-only commits preserve binary producers34ff/b6bf and source pins;
+no duplicate CI/package/backend fixture run is needed for these documentation
+changes. Both implementation and guest-build continuation checkpoints complete.
+
+Recorded exact CI timing baseline; delegated official matching arm64rt.lib
+package lookup after remote discovered missing link support library. Guest
+compiler/linker/WPP/rc source/toolchain preparation continues with native tools.

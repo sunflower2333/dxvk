@@ -10,13 +10,23 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 Rotation4f59adf passed all source CI and 1281 checks in the existing guest.
 Callback-table retention/fixture lifetime af84b74 passed offline37335070338
 and full37335069804, including native ARM64 execution. The additional Present
-ownership/cancellation and nested-call repair is reviewed, with local identity,
-runtime identity and shader sanitizer checks69/180/147PASS. Commit/push this
-source, run exact offline/full CI, and integrate its exact paired candidate pin.
-Paired61d03f05 fixes VS18/WDK17 runner mismatch and job-specific contracts;
-full checker and73package tests pass. Dispatch replacement paired CI concurrently,
-retain signed/native-load/source receipts, and run the changed ARM64 lifetime
-fixture in the existing guest. Mesa exact-source CI37312838033 remains pinned.
+ownership/cancellation and nested-call repair34ff484 is reviewed/pushed, with
+local identity/runtime identity/shader sanitizer checks69/180/147PASS.
+Offline37338141939 is all PASS, including actual x64/x86 execution and ARM64
+compilation. Full37338144307 is also all six PASS, including native ARM64
+execution. Both changed guest fixtures passed with continuous desktop processes.
+Paired b6bf4c4f pins34ff and includes the VS18/WDK17 runner/contract fixes;
+full checker and73package tests pass. Paired37338579561 is all SUCCESS,
+including signed package and native/EC/x86 runtime load checks. Downloaded
+archive/manifest verification passed64GPU/9installer files and matches the
+uploaded joint receipt. Preserve binary source pin34ff in docs-only checkpoint.
+Exact b6bf KMD built and verified inside the existing Windows guest with
+portable native ARM64 MSVC19.44.35229/SDK-WDK26100.1:5.114s runner,
+4.113s KMD plus0.648s VirtIO. Base setup51.224s/support library0.269s;
+provisioning transfers/downloads are separate. Installed58623/Desktop retained.
+Next implementation is typed native D3D9 identity/caps plus embedded backend,
+and remaining full DXGI/resource/feature semantics. Mesa CI37312838033 remains
+pinned. All eight admission gaps and DX8-DX11 hardware/runtime gates stay open.
 Keep runtime admission closed until its remaining capabilities and hardware
 acceptance are complete. Preserve the active Windows desktop and VM settings.
 
@@ -24,8 +34,11 @@ acceptance are complete. Preserve the active Windows desktop and VM settings.
 - [complete] Recover current DXVK/KMD package state and choose the next source gap.
 - [complete] Implement and test the selected native runtime ownership contract.
 - [complete] Compile the actual production DDI on supported architectures.
-- [in_progress] Repair Present ownership across retirement and nested rotation.
-- [in_progress] Record exact validation and update the paired package if justified.
+- [complete] Repair Present ownership across retirement and nested rotation.
+- [complete] Validate reviewed Present repair on all architectures and in guest.
+- [complete] Record exact validation and update the paired package if justified.
+- [complete] Audit and compile exact-source KMD in existing Windows VM.
+- [complete] Verify guest build outputs and record reusable build checkpoint.
 
 ## Previous next-step checkpoint
 GS7c0b9e3 CI34620365858 ALL5PASS. Both original/rebuilt GS16payloadwords
@@ -196,6 +209,19 @@ is a candidate package and must not replace it. This thread selects
 PWF_PLAN_ROOT=/home/sunf/droidvm-repos/dxvk-umd-ci/.planning/dxvk-umd explicitly.
 
 ## Errors
+- A remote-notes search used a .sh glob with no matches; those notes contain
+  PowerShell scripts. Delegated remote worker uses verified existing paths.
+- Paired artifact worker hit service503 after download reached91%; resume its
+  existing transfer/session and verification instead of starting a duplicate.
+- A follow-up SDK search used an unexpanded guessed docs/wdk glob and zsh
+  rejected it. The delegated exact WDK audit continues from discovered paths;
+  no source change or claim depended on that failed search.
+- A workspace artifact read used a checkout-relative path; corrected to the
+  exact absolute evidence paths. Read-only failure made no changes.
+- A combined inventory notes patch used the wrong wrapped progress line and
+  applied nothing; corrected the exact line and kept inventory evidence intact.
+- A follow-up residency search assumed a Mesa Driver.cpp in the paired sparse
+  tree; that file is absent locally. Use discovered source paths for follow-up.
 - A source-service read guessed a .cpp file for the header-only helper; no
   edits depended on that failed read. Completed independent review is retained.
 - Focused local native suite reached shader validation before finding the

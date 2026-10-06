@@ -99,6 +99,60 @@ CreateContextCb and PresentCb, no submission after early retirement, balanced
 release, and nested Present/rotation rejection. CI validation of this additional
 repair is recorded separately from the earlier source checkpoints above.
 
+Source `34ff484ac87b66f77e1c9f6d8db914783b24788e` passed
+[offline CI37338141939](https://github.com/sunflower2333/dxvk/actions/runs/37338141939),
+including actual x64/x86 production DDI execution and ARM64 compilation.
+Rotation passed 1428 checks on x64 and 1400 on x86, with 44 synchronized locks
+each. The check count differs because the test asserts each byte of
+architecture-sized reclaimed private storage. Full backend/native lifetime
+fixture and paired signed-package validation remain separately tracked.
+
+[Full native CI37338144307](https://github.com/sunflower2333/dxvk/actions/runs/37338144307)
+also passed all six jobs on source34ff484: ARM64/x64/x86 embedded backend
+builds, identity and shader checks, and native ARM64 runtime fixtures. The
+paired signed-package result remains independent of that source validation.
+
+The exact offline ARM64 rotation fixture also passed in the existing guest:
+1428 checks, 44 synchronized locks, exit 0 and empty stderr. Its SHA256 is
+`a03ba1df30eb753394ab248ee0d7702985101b6d1274b731a4065da4bcde8cd6`.
+DWM PID1644 and Explorer PID5828 retained their start times across execution.
+The compact receipt includes source identity and CI37338141939; evidence is
+retained under `artifacts/dxvk-native-rotation-20261005/guest-34ff484/`.
+This is WARP regression execution with runtime admission still closed.
+
+The changed native ARM64 lifetime fixture passed in the same guest with 10834
+checks, exit 0 and empty stderr. Its exact-source input was artifact11357009608
+from [paired CI37338579561](https://github.com/sunflower2333/gunyah-guest-drivers-windows/actions/runs/37338579561),
+with SHA256
+`1a5618ccbb46c6f7c753ab1a0e572140e85242bf1839c9b7a1c359b1e9e88615`.
+DWM and Explorer identities remained continuous through both fixture runs.
+Captured process creation UTC labels are later than fixture wall-clock labels;
+absolute guest chronology is inconsistent. Matching before/after identities
+support continuity independently of that clock discrepancy.
+The lifetime fixture substitutes a complete-contract policy only in its test
+executable; the production DLL still exposes no incomplete native feature level.
+
+[Paired CI37338579561](https://github.com/sunflower2333/gunyah-guest-drivers-windows/actions/runs/37338579561)
+passed on driver source `b6bf4c4f849f5ca597637fc2ce591f23a826f158`, pinned to
+DXVK34ff484. Driver compilation, signing, actual catalog membership, common
+signer/package identity and native ARM64/EC/x86 signed runtime loading passed.
+The runner repair cross-builds ARM64 driver targets on matching VS2022/x64,
+while native functional and signed load checks remain mandatory ARM64 jobs.
+
+Its version100.6.101.58522 and older Mesa sources remain a candidate baseline.
+Mesa stays registered and DXVK/VKD3D stay unregistered. This package validates
+integration and loadability; it was not installed over active driver58623.
+Signed package evidence is retained under
+`artifacts/dxvk-native-rotation-20261005/paired-ci-37338579561/`.
+
+The separate user-requested KMD build in the Windows VM also succeeded on
+exact paired sourceb6bf: native ARM64 portable MSVC/SDK/WDK,5.114s runner,
+4.113s KMD stages plus0.648s VirtIO. Its unsigned SYS was verified but not
+installed; active58623 and desktop identities were retained. Build setup,
+source/output/PE receipts and scripts are in
+`artifacts/dxvk-native-rotation-20261005/guest-kmd-b6bf4c4/`.
+This provides rapid KMD compiler feedback independently of UMD runtime gates.
+
 The [DX8/DX9 audit](native-dx8-dx9-roadmap-20261005.md) records the separate
 native D3D9 bridge and DX8 system-runtime proof still required for the broader
 DX8-DX11 goal.

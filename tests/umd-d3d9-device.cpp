@@ -91,6 +91,9 @@ struct Fixture {
   D3DTRANSFORMSTATETYPE transformState = D3DTS_WORLD;
   D3DMATRIX transform = {};
   D3DMATERIAL9 material = {};
+  unsigned clipPlaneSets = 0;
+  UINT clipPlaneIndex = 0;
+  std::array<std::array<float,4>,6> clipPlanes = {};
   UINT lightSlot = 0;
   std::vector<D3DLIGHT9> lights;
   std::vector<bool> lightsEnabled;
@@ -505,6 +508,14 @@ HRESULT dxvk::umd::D3D9Backend::setMaterial(const D3DMATERIAL9& material) {
   if (f->fixedResult != S_OK) return f->fixedResult;
   f->material = material; return S_OK;
 }
+HRESULT dxvk::umd::D3D9Backend::setClipPlane(UINT index, const float* plane) {
+  CHECK(GetCurrentThreadId() != f->caller && index < f->clipPlanes.size() && plane);
+  ++f->clipPlaneSets;
+  if (f->fixedResult != S_OK) return f->fixedResult;
+  f->clipPlaneIndex = index;
+  std::memcpy(f->clipPlanes[index].data(), plane, sizeof(f->clipPlanes[index]));
+  return S_OK;
+}
 HRESULT dxvk::umd::D3D9Backend::setLight(UINT index, const D3DLIGHT9& light) {
   CHECK(GetCurrentThreadId() != f->caller && index <= f->lights.size() && index < 64);
   ++f->lightSets;
@@ -776,6 +787,7 @@ static void createDevice() {
   expectedTable.pfnSetTransform = f->table.pfnSetTransform;
   expectedTable.pfnMultiplyTransform = f->table.pfnMultiplyTransform;
   expectedTable.pfnSetMaterial = f->table.pfnSetMaterial;
+  expectedTable.pfnSetClipPlane = f->table.pfnSetClipPlane;
   expectedTable.pfnCreateLight = f->table.pfnCreateLight;
   expectedTable.pfnSetLight = f->table.pfnSetLight;
   expectedTable.pfnDestroyLight = f->table.pfnDestroyLight;
@@ -2419,6 +2431,57 @@ static void fixedFunctionContracts() {
   }
 }
 
+static void clipPlaneContracts() {
+  Fixture fixture; initialize(fixture); createDevice();
+  CHECK(f->table.pfnSetClipPlane);
+  D3DDDIARG_SETCLIPPLANE args = {0,{1.0f,-2.0f,3.0f,-4.0f}};
+  const unsigned initialQueries = f->queries;
+  const auto initialPlanes = snapshot(f->clipPlanes);
+  CHECK(f->table.pfnSetClipPlane(f->device,nullptr) == E_INVALIDARG);
+  for (const UINT index : {6u,7u,UINT_MAX}) {
+    args.Index = index;
+    const auto before = snapshot(args);
+    CHECK(f->table.pfnSetClipPlane(f->device,&args) == E_INVALIDARG && snapshot(args) == before);
+  }
+  args.Index = 0;
+  CHECK(f->table.pfnSetClipPlane(nullptr,&args) == E_INVALIDARG);
+  CHECK(f->table.pfnSetClipPlane(reinterpret_cast<HANDLE>(UINT_PTR(0xfeed)),&args) == E_INVALIDARG);
+  CHECK(!f->clipPlaneSets && f->queries == initialQueries && snapshot(f->clipPlanes) == initialPlanes);
+  for (UINT index = 0; index < 6; ++index) {
+    args = {index,{float(index)+0.25f,-float(index)-0.5f,0.75f,-1.5f}};
+    const auto expected = args;
+    auto expectedPlanes = f->clipPlanes;
+    std::memcpy(expectedPlanes[index].data(),expected.Plane,sizeof(expected.Plane));
+    f->queryHook = [&] {
+      CHECK(f->table.pfnSetClipPlane(f->device,&args) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnDestroyDevice(f->device) == D3DERR_WASSTILLDRAWING);
+      args = {(index+1)%6,{91.0f,92.0f,93.0f,94.0f}};
+    };
+    CHECK(f->table.pfnSetClipPlane(f->device,&args) == S_OK);
+    CHECK(f->clipPlaneIndex == index && snapshot(f->clipPlanes) == snapshot(expectedPlanes));
+  }
+  const auto beforeFailure = snapshot(f->clipPlanes);
+  args = {5,{-7.0f,8.0f,-9.0f,10.0f}};
+  for (const HRESULT failure : {S_FALSE,E_FAIL,E_OUTOFMEMORY,D3DERR_NOTAVAILABLE,DXGI_ERROR_WAS_STILL_DRAWING}) {
+    f->fixedResult = failure;
+    const HRESULT expected = failure == S_FALSE ? E_FAIL
+      : failure == DXGI_ERROR_WAS_STILL_DRAWING ? D3DERR_WASSTILLDRAWING : failure;
+    CHECK(f->table.pfnSetClipPlane(f->device,&args) == expected);
+    CHECK(snapshot(f->clipPlanes) == beforeFailure);
+  }
+  f->fixedResult = S_OK;
+  CHECK(f->table.pfnSetClipPlane(f->device,&args) == S_OK);
+  CHECK(!std::memcmp(f->clipPlanes[5].data(),args.Plane,sizeof(args.Plane)));
+  const unsigned beforeLost = f->clipPlaneSets;
+  ++f->generation;
+  CHECK(f->table.pfnSetClipPlane(f->device,&args) == D3DERR_DEVICELOST);
+  CHECK(f->table.pfnSetClipPlane(f->device,&args) == D3DERR_DEVICELOST && f->clipPlaneSets == beforeLost);
+  const HANDLE stale = f->device;
+  closeDevice();
+  CHECK(f->table.pfnSetClipPlane(stale,&args) == E_INVALIDARG && f->clipPlaneSets == beforeLost);
+  closeAdapter();
+}
+
 int main() {
   bufferTransferContracts();
   fixedFunctionContracts();
@@ -2429,6 +2492,7 @@ int main() {
   ownedServiceStartup();
   resourceContracts();
   drawContracts();
+  clipPlaneContracts();
   {
     Fixture fixture; initialize(fixture);
     // A missing mandatory callback rejects before backend construction.

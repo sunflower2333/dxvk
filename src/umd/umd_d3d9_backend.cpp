@@ -188,6 +188,9 @@ HRESULT D3D9Backend::setTransform(D3DTRANSFORMSTATETYPE state, const D3DMATRIX& 
 HRESULT D3D9Backend::setMaterial(const D3DMATERIAL9& material) {
   return m_state->d3d->SetMaterial(&material);
 }
+HRESULT D3D9Backend::setClipPlane(UINT index, const float* plane) {
+  return m_state->d3d->SetClipPlane(index, plane);
+}
 HRESULT D3D9Backend::setLight(UINT index, const D3DLIGHT9& light) {
   return m_state->d3d->SetLight(index, &light);
 }

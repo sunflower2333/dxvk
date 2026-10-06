@@ -143,6 +143,7 @@ public:
   HRESULT setShaderConstantB(D3D9ShaderStage stage, UINT first, UINT count, const BOOL* values);
   HRESULT setTransform(D3DTRANSFORMSTATETYPE state, const D3DMATRIX& matrix, bool multiply);
   HRESULT setMaterial(const D3DMATERIAL9& material);
+  HRESULT setClipPlane(UINT index, const float* plane);
   HRESULT setLight(UINT index, const D3DLIGHT9& light);
   HRESULT setLightEnabled(UINT index, bool enable);
   HRESULT setRenderState(D3DRENDERSTATETYPE state, DWORD value);

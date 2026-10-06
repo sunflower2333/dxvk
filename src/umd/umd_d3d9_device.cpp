@@ -970,6 +970,16 @@ HRESULT APIENTRY setMaterial(HANDLE handle, const D3DDDIARG_SETMATERIAL* args) {
   const D3DMATERIAL9 material = {args->Diffuse, args->Ambient, args->Specular, args->Emissive, args->Power};
   return operation(handle, [&](Device& device) { return device.backend->setMaterial(material); });
 }
+HRESULT APIENTRY setClipPlane(HANDLE handle, const D3DDDIARG_SETCLIPPLANE* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  // The public COM core caps invalid indices to its last plane. A typed DDI
+  // must reject them before callback pumping or changing a valid plane.
+  if (input.Index >= dxvk::caps::MaxClipPlanes) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) {
+    return device.backend->setClipPlane(input.Index, input.Plane);
+  });
+}
 HRESULT APIENTRY createLight(HANDLE handle, const D3DDDIARG_CREATELIGHT* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
@@ -1339,6 +1349,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnSetTransform = setTransform<D3DDDIARG_SETTRANSFORM, false>;
   table.pfnMultiplyTransform = setTransform<D3DDDIARG_MULTIPLYTRANSFORM, true>;
   table.pfnSetMaterial = setMaterial;
+  table.pfnSetClipPlane = setClipPlane;
   table.pfnCreateLight = createLight;
   table.pfnSetLight = setLight;
   table.pfnDestroyLight = destroyLight;

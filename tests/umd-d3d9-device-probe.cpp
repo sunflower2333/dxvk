@@ -136,7 +136,7 @@ public:
   }
   HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false,
                           bool buffers = false, bool depthStencil = false, bool fixedFunction = false,
-                          bool bufferTransfer = false) {
+                          bool bufferTransfer = false, bool clipPlanes = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -240,6 +240,14 @@ public:
           }
           if (stage >= 59 && stage <= 66)
             expected = stage == 59 ? 0xffa05c71 : stage <= 63 ? 0xffb08746 : 0xff65b82f;
+          if (stage >= 67 && stage <= 76) {
+            const UINT clipColors[] = {0xff739a4c,0xffc85d8a,0xff49a1d2,0xff9a73c4,0xff4da57e,
+              0xffce9341,0xfff0a236,0xff3dae96,0xffba567d,0xff64bdc9};
+            const bool visible = stage == 68 ? x >= 4 : stage == 69 ? x < 4
+              : stage == 70 ? y < 4 : stage == 71 ? x < 4 && y < 4
+              : stage != 73 && stage != 74;
+            expected = visible ? clipColors[stage-67] : 0xff091725;
+          }
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
               stage, x, y, actual, expected);
@@ -1213,6 +1221,83 @@ public:
         std::printf("D3D9_TRANSFER_READBACK PASS pixels=%u checksum=%08x bytes=%u byte_checksum=%08x guards=retained pools=system/default copies=range/overlap/readback indices=16/32\n",
           checked,checksum,bytesChecked,byteChecksum);
       }
+      if (clipPlanes) {
+        if (!api.pfnSetClipPlane || !api.pfnSetTransform) return E_FAIL;
+        struct ClipVertex { float x,y,z; D3DCOLOR color; };
+        static_assert(sizeof(ClipVertex) == 16);
+        const D3DDDIVERTEXELEMENT clipElements[] = {{0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0},
+          {0,12,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+        D3DDDIARG_CREATEVERTEXSHADERDECL clipDeclaration = {2,nullptr};
+        hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&clipDeclaration,clipElements); if (FAILED(hr)) return hr;
+        hr = api.pfnSetVertexShaderDecl(m_driverDevice,clipDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        const D3DDDIARG_SETSTREAMSOURCEUM clipStream = {0,sizeof(ClipVertex)};
+        const D3DDDIARG_VIEWPORTINFO clipViewport = {0,0,8,8};
+        hr = api.pfnSetViewport(m_driverDevice,&clipViewport); if (FAILED(hr)) return hr;
+        for (const auto clipState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_ZENABLE,0},
+          {D3DDDIRS_STENCILENABLE,0},{D3DDDIRS_SCISSORTESTENABLE,0},
+          {D3DDDIRS_LIGHTING,0},{D3DDDIRS_COLORVERTEX,1},{D3DDDIRS_CLIPPLANEENABLE,0}}) {
+          hr = state(clipState.State,clipState.Value); if (FAILED(hr)) return hr;
+        }
+        D3DMATRIX identity = {}; identity._11 = identity._22 = identity._33 = identity._44 = 1.0f;
+        for (const auto type : {D3DTS_WORLD,D3DTS_VIEW,D3DTS_PROJECTION}) {
+          const D3DDDIARG_SETTRANSFORM transform = {type,identity};
+          hr = api.pfnSetTransform(m_driverDevice,&transform);
+          std::printf("D3D9_CLIP_TRANSFORM type=%u hr=%08lx\n",UINT(type),static_cast<unsigned long>(hr));
+          if (FAILED(hr)) return hr;
+        }
+        auto plane = [&](UINT stage,UINT index,float a,float b,float c,float d) -> HRESULT {
+          const D3DDDIARG_SETCLIPPLANE args = {index,{a,b,c,d}};
+          const HRESULT status = api.pfnSetClipPlane(m_driverDevice,&args);
+          std::printf("D3D9_CLIP_PLANE stage=%u index=%u a=%.3f b=%.3f c=%.3f d=%.3f hr=%08lx\n",
+            stage,index,double(a),double(b),double(c),double(d),static_cast<unsigned long>(status));
+          return status;
+        };
+        for (UINT index = 0; index < 6; ++index) {
+          hr = plane(0,index,0,0,0,0); if (FAILED(hr)) return hr;
+        }
+        const UINT clipColors[] = {0xff739a4c,0xffc85d8a,0xff49a1d2,0xff9a73c4,0xff4da57e,
+          0xffce9341,0xfff0a236,0xff3dae96,0xffba567d,0xff64bdc9};
+        checked = 0; checksum = 2166136261u;
+        for (UINT stage = 67; stage <= 76; ++stage) {
+          UINT mask = 0;
+          // Place x/y boundaries between D3D9 integer pixel centers. This
+          // avoids a clipping edge passing through a tested sample.
+          if (stage == 67) hr = plane(stage,0,1,0,0,.125f);
+          else if (stage == 69) hr = plane(stage,0,-1,0,0,-.125f);
+          else if (stage == 70) hr = plane(stage,5,0,1,0,-.125f);
+          else if (stage == 72) hr = plane(stage,3,0,0,1,-.25f);
+          else if (stage == 73) hr = plane(stage,3,0,0,-1,.25f);
+          else if (stage == 74 || stage == 76) hr = plane(stage,5,0,0,0,-1);
+          else if (stage == 75) hr = plane(stage,5,0,0,0,1);
+          if (FAILED(hr)) return hr;
+          if (stage == 68 || stage == 69) mask = 1;
+          else if (stage == 70 || stage == 74 || stage == 75) mask = 32;
+          else if (stage == 71) mask = 33;
+          else if (stage == 72 || stage == 73) mask = 8;
+          hr = state(D3DDDIRS_CLIPPLANEENABLE,mask);
+          std::printf("D3D9_CLIP_ENABLE stage=%u mask=%u hr=%08lx\n",stage,mask,static_cast<unsigned long>(hr));
+          if (FAILED(hr)) return hr;
+          ClipVertex clipVertices[5] = {{1000,1000,.5f,0xff000000},
+            {-2,2,.5f,clipColors[stage-67]},{2,2,.5f,clipColors[stage-67]},
+            {-2,-2,.5f,clipColors[stage-67]},{2,-2,.5f,clipColors[stage-67]}};
+          hr = api.pfnSetStreamSourceUm(m_driverDevice,&clipStream,clipVertices); if (FAILED(hr)) return hr;
+          fill.FillColor = 0xff091725;
+          hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
+          hr = state(D3DDDIRS_SCENECAPTURE,1); if (FAILED(hr)) return hr;
+          hr = api.pfnDrawPrimitive(m_driverDevice,&primitive,nullptr);
+          std::printf("D3D9_CLIP_DRAW stage=%u hr=%08lx\n",stage,static_cast<unsigned long>(hr));
+          const HRESULT ended = state(D3DDDIRS_SCENECAPTURE,0);
+          if (FAILED(hr)) return hr;
+          if (FAILED(ended)) return ended;
+          hr = readback(stage); if (FAILED(hr)) return hr;
+        }
+        D3DDDIARG_SETCLIPPLANE invalid = {6,{91,92,93,94}};
+        if (api.pfnSetClipPlane(m_driverDevice,&invalid) != E_INVALIDARG) return E_FAIL;
+        invalid.Index = UINT_MAX;
+        if (api.pfnSetClipPlane(m_driverDevice,&invalid) != E_INVALIDARG) return E_FAIL;
+        hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,clipDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        std::printf("D3D9_CLIP_READBACK PASS pixels=%u checksum=%08x padding=retained coefficients=xyzw lifetime=snapshot indices=0/3/5 enable=disable/update/sparse/intersection\n",checked,checksum);
+      }
     }
     hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
     if (FAILED(hr)) return hr;
@@ -1453,7 +1538,8 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  const bool bufferTransfer = argc == 3 && !wcscmp(argv[2], L"--buffer-transfer");
+  const bool clipPlanes = argc == 3 && !wcscmp(argv[2], L"--clip-planes");
+  const bool bufferTransfer = clipPlanes || (argc == 3 && !wcscmp(argv[2], L"--buffer-transfer"));
   const bool fixedFunction = bufferTransfer || (argc == 3 && !wcscmp(argv[2], L"--fixed-function"));
   const bool depthStencil = fixedFunction || (argc == 3 && !wcscmp(argv[2], L"--depth"));
   const bool buffers = depthStencil || (argc == 3 && !wcscmp(argv[2], L"--buffer"));
@@ -1462,17 +1548,17 @@ int wmain(int argc, WCHAR** argv) {
   const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer|--clip-planes]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer,clipPlanes) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    clipPlanes ? "CLIP" : bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    clipPlanes ? "typed homogeneous clip-plane draw/readback pixels" : bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

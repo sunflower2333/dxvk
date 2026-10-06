@@ -1468,3 +1468,29 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
   c0000005/RVA10db80/module timestamp6ac2defb. CI-fdfd legacyDLL timestamp
   6ac4a23c/image21000 does not match; no source-cause inference. Retain event,
   inspect actual installed binary for separate stability diagnosis.
+
+### Verified SM1-3 target checkpoint and texture continuation
+
+- Probe-only b3e83c8 corrects the required VS1 input DCL. Offline37491825113
+  all4/API37491604110/package37491604172SUCCESS. Native ARM64 MSVC compile
+  0.7457505s, all51 source/archive/after-run hashes, native PE/imports, six CLI
+  negatives and exact KMT identity verify. Production DLL remains8c4e097.
+- Target23/24 independently PASS576pixels diagnostics1/0:192clearffefa655,
+  192draw53a03d45,192shader1384c5a5; nine successful nonempty KMT submissions,
+  ctx1/1alloc12/12lock11/11residency12/12remaining0wrong0. Elapsed4.0513128s /
+  4.3172908s. All8payloads3scripts/nativeARM64/LimitedUSERsession1 verify.
+  Owned tasks removedexit0. Evidence archives28c9f39bd0820b1903fb1dbe2a695a06f001dd4455a37fadcb45f7bae5a9a547
+  anddbe2cc26de78c10f2f7d4ead6f1e0730d21ea308ed559ca2b6c72691700ce334.
+  Fresh exact signed58624/oem17/binding0002/PnP0/SYSsha/DWM1552/Explorer2488
+  and all58 sensitive failure/reset/epoch/timeout/admission fields unchanged.
+- Installed Explorer fault binary9d72bfee matches signed58624 Mesa D3D10 Zink
+  sourceeaad15fa/image11833344/timestamp6ac2defb/viogpud3d_zink.pdb identity.
+  Keep separate from legacyshim and uninstalledDXVKcandidate; matchingPDB/dump
+  needed for exact cause. Guest/host absolute clocks differ; use guest-relative
+  ordering and Stopwatch timings. No VM/image/package/clock changes.
+- Continue coherent owned2D mip chains, explicit native sampler/state mapping,
+  all-common-level TexBlt and worker teardown with caller metadata snapshots.
+  Then GPU texture pixel oracle. Full DX8-DX11 goal active, no Finish/caps/pins.
+- Resume read used a nonexistent src/dxvk_native_runtime path and briefly read
+  tests from workspace instead of pinned repo. Discover src/umd and use exact
+  project cwd; neither error affected edits, binaries or acceptance evidence.

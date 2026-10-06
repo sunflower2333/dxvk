@@ -36,9 +36,14 @@ pushed and all56 positive fixture inputs match its committed bytes. Offline
 Full37486995183 all6PASS; independently retained3architecture artifacts and
 14 actual native ARM64 execution hashes/107385 device checks verify. Target22
 passes384 old pixels then fails SM1stage7 firstpixel with clearcolour; VS1
-probe lacks the D3D9-required input DCL. Correct the probe alone and compile/
-verify it against the unchanged8c4e097 DLL before a fresh576pixel target run.
-Failed22 remains immutable; actual programmable pixels are still pending.
+probe lacks the D3D9-required input DCL. Probe-only correctionb3e83c8 passes
+offline37491825113 all4/API37491604110/package37491604172. Native ARM64 probe
+compile0.7457505s/all51source hashes/nativePE/imports/6CLI controls verify.
+Target23/24 independently PASS576pixels diagnostics1/0:clearffefa655,
+draw53a03d45,shader1384c5a5, nine nonempty submits, ctx1/1alloc12/12locks11/11
+residency12/12remaining0wrong0. All8payloads3scripts/LimitedUSER/nativeARM
+and fresh signed58624/DWM1552/Explorer2488/58sensitive values verify.
+Failed22 remains immutable. Continue typed2D textures/samplers/mips next.
 Transferred shader harness hashes/native Windows parsing verify. Fresh before22
 still has signed58624/oem17/PnP0/SYSsha and unchanged readiness values. Explorer
 is now2488 before this GPU test; DWM1552 remains. Compare each upcoming run with
@@ -47,6 +52,9 @@ After22 same driver/desktop and58 selected sensitive values remain unchanged.
 Earlier Explorer ApplicationError1000 fault in installedviogpud3d.dll,
 exceptionc0000005/RVA10db80, remains a separate stability diagnosis; map the
 actual installed binary before inferring its source from a different CI DLL.
+Actual installed9d72bfee hash matches signed58624 Mesa D3D10 Zink UMD source
+eaad15fa, image11833344/timestamp6ac2defb; matching PDB/dump diagnosis remains
+open. It is separate from the smalllegacyshim and uninstalledDXVKcandidate.
 Textures/buffers, indexed/multistream drawing, presentation/reset and ordinary
 DX8-DX11 remain open. Keep the full goal active; no caps, production exports
 or paired binary pin widening until their mandatory contracts are ready.
@@ -565,3 +573,10 @@ only that source SHA with depth1 before creating the isolated candidate.
 | Draw error | Resolution |
 | --- | --- |
 | First native compile used guessed DestroyVertexShaderDecl table name | Actual SDK names pfnDeleteVertexShaderDecl; corrected all references, retain worktree01 failure. |
+
+## Typed D3D9 texture continuation
+- [complete] Independently verify shader23/24 and checkpoint unchanged binary pins.
+- [in_progress] Implement coherent2D mip ownership, native sampler/state mapping and TexBlt.
+- [pending] Validate creation/snapshots/reentry/retirement and semantic controls on native ARM64.
+- [pending] Compile all architectures and verify actual GPU texture/mip pixels.
+- [pending] Continue remaining resources/drawing/presentation and ordinary DX8-DX11 acceptance.

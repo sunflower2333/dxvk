@@ -38,8 +38,15 @@ declarations, states and user-memory nonindexed drawing. Exact c874d55 full
 CI37477931517/offline37477937872 pass; target20/21 independently verify384
 clear/draw pixels, six real GPU submissions and balanced callbacks/residency
 with diagnostics enabled/disabled. Signed58624/desktop continuity is retained.
-Programmable shaders, textures/buffers, remaining drawing/state semantics and
-presentation/reset remain open.
+The [shader checkpoint](native-d3d9-shaders-20261006.md) adds typed SM1–3
+VS/PS ownership and float/int/Boolean constants. Exact source8c4e097 full/
+offline CI passes. Corrected probeb3e83c8 target23/24 independently verify576
+clear/draw/shader pixels with diagnostics enabled/disabled, nine nonempty
+submissions and balanced callbacks/residency. Signed58624 and the fresh
+DWM1552/Explorer2488 baseline remain continuous through these runs. An earlier
+Explorer fault in the installed Mesa D3D10 UMD remains separately recorded.
+Textures/buffers, remaining drawing/state semantics, presentation/reset and
+ordinary system-runtime acceptance remain open.
 Production OpenAdapter and rendering caps remain closed; the historical table
 is not an inventory of the new static core or device bridge.
 

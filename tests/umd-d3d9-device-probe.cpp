@@ -1244,8 +1244,7 @@ public:
         hr = api.pfnSetViewport(m_driverDevice,&clipViewport); if (FAILED(hr)) return hr;
         for (const auto clipState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_ZENABLE,0},
           {D3DDDIRS_STENCILENABLE,0},{D3DDDIRS_SCISSORTESTENABLE,0},
-          {D3DDDIRS_LIGHTING,0},{D3DDDIRS_NORMALIZENORMALS,0},
-          {D3DDDIRS_COLORVERTEX,1},{D3DDDIRS_CLIPPLANEENABLE,0}}) {
+          {D3DDDIRS_LIGHTING,0},{D3DDDIRS_COLORVERTEX,1},{D3DDDIRS_CLIPPLANEENABLE,0}}) {
           hr = state(clipState.State,clipState.Value); if (FAILED(hr)) return hr;
         }
         D3DMATRIX identity = {}; identity._11 = identity._22 = identity._33 = identity._44 = 1.0f;
@@ -1264,6 +1263,13 @@ public:
         };
         for (UINT index = 0; index < 6; ++index) {
           hr = plane(0,index,0,0,0,0); if (FAILED(hr)) return hr;
+        }
+        // Diagnostic: force a fresh disabled-plane constant-buffer upload.
+        // The draw, geometry and all pixel expectations remain identical.
+        for (const UINT mask : {1u,0u}) {
+          hr = state(D3DDDIRS_CLIPPLANEENABLE,mask);
+          std::printf("D3D9_CLIP_REFRESH mask=%u hr=%08lx\n",mask,static_cast<unsigned long>(hr));
+          if (FAILED(hr)) return hr;
         }
         const UINT clipColors[] = {0xff739a4c,0xffc85d8a,0xff49a1d2,0xff9a73c4,0xff4da57e,
           0xffce9341,0xfff0a236,0xff3dae96,0xffba567d,0xff64bdc9};

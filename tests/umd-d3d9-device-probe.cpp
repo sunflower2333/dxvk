@@ -3,6 +3,8 @@
 #include "../src/umd/umd_d3d9_adapter.h"
 #include "../src/umd/umd_runtime_identity.h"
 #include <d3dkmthk.h>
+#include <d3d9.h>
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -116,6 +118,115 @@ public:
     // rendering-workload oracle, not evidence required for balanced lifetime.
     return contexts == 1 && contextCloses == 1 && allocations && allocations == deallocations
       && locks == unlocks && !m_context && !wrongThreads ? S_OK : E_FAIL;
+  }
+  HRESULT verifyRendering() {
+    const auto& api = m_deviceFuncs;
+    if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
+        || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
+    char targetOwner, systemOwner;
+    D3DDDI_SURFACEINFO targetInfo[2] = {{8,8,1,nullptr,0,0},{4,4,1,nullptr,0,0}};
+    D3DDDIARG_CREATERESOURCE target = {};
+    target.hResource = &targetOwner;
+    target.Format = static_cast<D3DDDIFORMAT>(D3DFMT_A8R8G8B8);
+    target.Pool = D3DDDIPOOL_LOCALVIDMEM;
+    target.Flags.RenderTarget = target.Flags.NotLockable = 1;
+    target.pSurfList = targetInfo; target.SurfCount = 2;
+    HRESULT hr = api.pfnCreateResource(m_driverDevice, &target);
+    std::printf("D3D9_TARGET_RESOURCE hr=%08lx\n", static_cast<unsigned long>(hr));
+    if (FAILED(hr)) return hr;
+    std::array<uint8_t, 384> backing;
+    backing.fill(0xcd);
+    constexpr UINT pitch = 44;
+    D3DDDI_SURFACEINFO systemInfo = {8,8,1,backing.data() + 16,pitch,0};
+    D3DDDIARG_CREATERESOURCE system = {};
+    system.hResource = &systemOwner;
+    system.Format = target.Format; system.Pool = D3DDDIPOOL_SYSTEMMEM;
+    system.pSurfList = &systemInfo; system.SurfCount = 1;
+    hr = api.pfnCreateResource(m_driverDevice, &system);
+    std::printf("D3D9_SYSTEM_RESOURCE hr=%08lx\n", static_cast<unsigned long>(hr));
+    if (FAILED(hr)) return hr;
+    D3DDDIARG_SETRENDERTARGET bind = {0,target.hResource,0};
+    hr = api.pfnSetRenderTarget(m_driverDevice, &bind);
+    std::printf("D3D9_TARGET_BIND hr=%08lx\n", static_cast<unsigned long>(hr));
+    if (FAILED(hr)) return hr;
+    const RECT full = {0,0,8,8};
+    D3DDDIARG_CLEAR fill = {};
+    fill.Flags = D3DCLEAR_TARGET; fill.FillColor = 0xff123456;
+    hr = api.pfnClear(m_driverDevice, &fill, 1, &full);
+    if (FAILED(hr)) return hr;
+    // No preclipped rectangles means no-op. A public API Clear here would
+    // incorrectly overwrite the baseline and fail the byte oracle below.
+    fill.FillColor = 0xffaa55cc;
+    hr = api.pfnClear(m_driverDevice, &fill, 0, reinterpret_cast<const RECT*>(UINT_PTR(1)));
+    if (FAILED(hr)) return hr;
+    D3DDDIARG_BLT copy = {};
+    copy.hSrcResource = target.hResource; copy.hDstResource = system.hResource;
+    copy.SrcRect = copy.DstRect = full;
+    UINT checked = 0, checksum = 2166136261u;
+    auto readback = [&](unsigned stage) -> HRESULT {
+      const HRESULT copied = api.pfnBlt(m_driverDevice, &copy);
+      std::printf("D3D9_READBACK stage=%u hr=%08lx\n", stage, static_cast<unsigned long>(copied));
+      if (FAILED(copied)) return copied;
+      D3DDDIARG_LOCK mapping = {}; mapping.hResource = system.hResource;
+      mapping.Flags.ReadOnly = mapping.Flags.NotifyOnly = 1;
+      HRESULT status = api.pfnLock(m_driverDevice, &mapping);
+      if (FAILED(status)) return status;
+      if (mapping.pSurfData != backing.data() + 16 || mapping.Pitch != pitch) status = E_FAIL;
+      for (UINT y = 0; y < 8 && SUCCEEDED(status); ++y) {
+        for (UINT x = 0; x < 8; ++x) {
+          UINT actual;
+          std::memcpy(&actual, backing.data() + 16 + size_t(y) * pitch + x * 4, 4);
+          UINT expected = stage == 1 ? 0xff123456 :
+            x >= 2 && x < 6 && y >= 2 && y < 6 ? 0xffd03070 : 0xff2468ac;
+          if (stage == 3 && x >= 4 && y >= 4) expected = 0xff80c020;
+          if (actual != expected) {
+            std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
+              stage, x, y, actual, expected);
+            status = E_FAIL; break;
+          }
+          ++checked;
+          checksum = (checksum ^ actual) * 16777619u;
+        }
+        for (UINT pad = 32; pad < pitch; ++pad)
+          if (backing[16 + size_t(y) * pitch + pad] != 0xcd) status = E_FAIL;
+      }
+      for (UINT i = 0; i < 16; ++i)
+        if (backing[i] != 0xcd || backing[368 + i] != 0xcd) status = E_FAIL;
+      D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = system.hResource; unmap.Flags.NotifyOnly = 1;
+      const HRESULT unlocked = api.pfnUnlock(m_driverDevice, &unmap);
+      return FAILED(status) ? status : unlocked;
+    };
+    hr = readback(1);
+    if (FAILED(hr)) return hr;
+    fill.Flags = D3DCLEAR_TARGET | 8; fill.FillColor = 0xff2468ac;
+    hr = api.pfnClear(m_driverDevice, &fill, 0, reinterpret_cast<const RECT*>(UINT_PTR(1)));
+    if (FAILED(hr)) return hr;
+    fill.Flags = D3DCLEAR_TARGET; fill.FillColor = 0xffd03070;
+    const RECT center = {2,2,6,6};
+    hr = api.pfnClear(m_driverDevice, &fill, 1, &center);
+    if (FAILED(hr)) return hr;
+    hr = readback(2);
+    if (FAILED(hr)) return hr;
+    bind.SubResourceIndex = 1;
+    hr = api.pfnSetRenderTarget(m_driverDevice, &bind);
+    if (FAILED(hr)) return hr;
+    const RECT smallArea = {0,0,4,4};
+    fill.FillColor = 0xff80c020;
+    hr = api.pfnClear(m_driverDevice, &fill, 1, &smallArea);
+    if (FAILED(hr)) return hr;
+    copy.SrcSubResourceIndex = 1; copy.SrcRect = smallArea; copy.DstRect = {4,4,8,8};
+    hr = readback(3);
+    if (FAILED(hr)) return hr;
+    hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
+    if (FAILED(hr)) return hr;
+    hr = api.pfnDestroyResource(m_driverDevice, system.hResource);
+    if (FAILED(hr)) return hr;
+    if (api.pfnDestroyResource(m_driverDevice, target.hResource) != E_INVALIDARG) return E_FAIL;
+    std::printf("D3D9_CLEAR_READBACK PASS pixels=%u checksum=%08x padding=retained surfaces=2\n", checked, checksum);
+    hr = verify();
+    // This workload records real clears and image-to-buffer transfers. Empty
+    // submit acceptance is insufficient for its rendering oracle.
+    return FAILED(hr) ? hr : renders ? S_OK : E_FAIL;
   }
   HRESULT close() {
     HRESULT hr = S_OK;
@@ -269,17 +380,19 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  if (argc != 2 || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes>|--list-adapters\n");
+  const bool rendering = argc == 3 && !wcscmp(argv[2], L"--render");
+  if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering() : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
-  std::printf("D3D9_KMT_DEVICE %s hr=%08lx; offscreen lifecycle only, no pixel rendering or ordinary runtime admission\n",
-    SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr));
+  std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
+    rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

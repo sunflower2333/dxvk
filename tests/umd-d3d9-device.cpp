@@ -12,6 +12,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <climits>
 
 static std::atomic<unsigned> checks{0};
 #define CHECK(c) do { const auto n = ++checks; if (!(c)) { \
@@ -56,6 +57,14 @@ struct Fixture {
   bool callbacksValid = true, adapterValid = true;
   std::function<void()> queryHook, contextHook, allocationHook, destroyHook;
   std::function<void()> backendHook;
+  std::function<void()> surfaceHook;
+  unsigned surfaceCreates = 0, surfaceCloses = 0, surfaceLocks = 0, surfaceUnlocks = 0;
+  unsigned surfaceAttempts = 0, failSurfaceAttempt = 0, clears = 0, copies = 0;
+  HRESULT surfaceResult = S_OK, surfaceUnlockResult = S_OK;
+  bool nullSurface = false, badMapping = false;
+  bool lastComputeRects = false, teardownDiscard = false;
+  std::vector<dxvk::umd::D3D9SurfaceDesc> descriptions;
+  std::vector<RECT> clearRects;
   void runtime() const { CHECK(callbacksValid && GetCurrentThreadId() == caller); }
 };
 static Fixture* f;
@@ -148,10 +157,24 @@ static HRESULT APIENTRY render(HANDLE, D3DDDICB_RENDER*) { CHECK(false); return 
 struct dxvk::umd::D3D9Backend::State {
   RuntimeBackend bridge;
   mwd_allocation allocation = {};
+  D3D9SurfaceResource* target = nullptr;
 };
+struct dxvk::umd::D3D9SurfaceResource::State {
+  D3D9SurfaceDesc desc;
+  std::vector<uint8_t> bytes;
+  RECT area = {};
+  bool locked = false;
+};
+dxvk::umd::D3D9SurfaceResource::D3D9SurfaceResource() : m_state(std::make_unique<State>()) { }
+dxvk::umd::D3D9SurfaceResource::~D3D9SurfaceResource() {
+  CHECK(GetCurrentThreadId() != f->caller);
+  CHECK(!m_state->locked);
+  ++f->surfaceCloses;
+}
 dxvk::umd::D3D9Backend::D3D9Backend() : m_state(std::make_unique<State>()) { }
 dxvk::umd::D3D9Backend::~D3D9Backend() {
   CHECK(GetCurrentThreadId() != f->caller);
+  CHECK(f->surfaceCreates == f->surfaceCloses && !m_state->target);
   ++f->backendCloses;
   if (!f->adapterValid) {
     uint32_t fence = 99;
@@ -200,6 +223,79 @@ HRESULT dxvk::umd::D3D9Backend::flush() noexcept {
   return m_state->bridge.create.callbacks->status(m_state->bridge.create.owner);
 }
 
+HRESULT dxvk::umd::D3D9Backend::createSurface(const D3D9SurfaceDesc& desc,
+    std::unique_ptr<D3D9SurfaceResource>& output) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  ++f->surfaceAttempts;
+  if (f->surfaceAttempts == f->failSurfaceAttempt) return E_OUTOFMEMORY;
+  if (f->surfaceResult != S_OK) return f->surfaceResult;
+  if (f->nullSurface) return S_OK;
+  auto resource = std::make_unique<D3D9SurfaceResource>();
+  ++f->surfaceCreates;
+  resource->m_state->desc = desc;
+  resource->m_state->bytes.resize(size_t(desc.width) * desc.height * 4);
+  f->descriptions.push_back(desc);
+  if (f->surfaceHook) { auto hook = std::move(f->surfaceHook); hook(); }
+  output = std::move(resource);
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setRenderTarget(D3D9SurfaceResource* target) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  m_state->target = target;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::clear(D3DCOLOR color, UINT count, const RECT* rects, bool computeRects) {
+  CHECK(GetCurrentThreadId() != f->caller && m_state->target);
+  ++f->clears;
+  f->lastComputeRects = computeRects;
+  f->clearRects.clear();
+  if (count) f->clearRects.assign(rects, rects + count);
+  if (!count && !computeRects) return S_OK;
+  auto& state = *m_state->target->m_state;
+  for (size_t i = 0; i < state.bytes.size(); i += 4) std::memcpy(state.bytes.data() + i, &color, 4);
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::copySurface(D3D9SurfaceResource& destination, const RECT& destinationRect,
+    D3D9SurfaceResource& source, const RECT& sourceRect) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  ++f->copies;
+  auto& dst = *destination.m_state;
+  auto& src = *source.m_state;
+  if (dst.desc.systemMemory && src.desc.systemMemory) return flush();
+  const size_t bytes = size_t(sourceRect.right - sourceRect.left) * 4;
+  for (LONG row = 0; row < sourceRect.bottom - sourceRect.top; ++row) {
+    auto from = src.bytes.data() + (size_t(row + sourceRect.top) * src.desc.width + sourceRect.left) * 4;
+    auto to = dst.bytes.data() + (size_t(row + destinationRect.top) * dst.desc.width + destinationRect.left) * 4;
+    std::memcpy(to, from, bytes);
+    if (dst.desc.systemData)
+      std::memcpy(static_cast<uint8_t*>(dst.desc.systemData) + size_t(row + destinationRect.top)
+        * dst.desc.systemPitch + size_t(destinationRect.left) * 4, from, bytes);
+  }
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::lockSurface(D3D9SurfaceResource& resource, const RECT* area,
+    DWORD, D3DLOCKED_RECT& output) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  auto& state = *resource.m_state;
+  CHECK(!state.locked);
+  state.locked = true;
+  state.area = area ? *area : RECT{0, 0, LONG(state.desc.width), LONG(state.desc.height)};
+  ++f->surfaceLocks;
+  output.Pitch = f->badMapping ? 0 : INT(state.desc.systemData ? state.desc.systemPitch : state.desc.width * 4);
+  auto data = state.desc.systemData ? static_cast<uint8_t*>(state.desc.systemData) : state.bytes.data();
+  output.pBits = f->badMapping ? nullptr : data + size_t(state.area.top) * UINT(output.Pitch) + size_t(state.area.left) * 4;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::unlockSurface(D3D9SurfaceResource& resource, bool upload) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->surfaceUnlockResult != S_OK) return f->surfaceUnlockResult;
+  CHECK(resource.m_state->locked);
+  resource.m_state->locked = false;
+  ++f->surfaceUnlocks;
+  if (!upload) f->teardownDiscard = true;
+  return S_OK;
+}
+
 static void initialize(Fixture& fixture) {
   f = &fixture;
   D3DDDI_ADAPTERCALLBACKS callbacks = {}; callbacks.pfnQueryAdapterInfoCb = query;
@@ -237,6 +333,13 @@ static void createDevice() {
   CHECK(f->table.pfnFlush && f->table.pfnDestroyDevice);
   auto expectedTable = D3DDDI_DEVICEFUNCS{};
   expectedTable.pfnFlush = f->table.pfnFlush; expectedTable.pfnDestroyDevice = f->table.pfnDestroyDevice;
+  expectedTable.pfnCreateResource = f->table.pfnCreateResource;
+  expectedTable.pfnDestroyResource = f->table.pfnDestroyResource;
+  expectedTable.pfnSetRenderTarget = f->table.pfnSetRenderTarget;
+  expectedTable.pfnClear = f->table.pfnClear;
+  expectedTable.pfnBlt = f->table.pfnBlt;
+  expectedTable.pfnLock = f->table.pfnLock;
+  expectedTable.pfnUnlock = f->table.pfnUnlock;
   CHECK(snapshot(f->table) == snapshot(expectedTable));
 }
 static void closeDevice(HRESULT expected = S_OK) {
@@ -297,8 +400,167 @@ static void ownedServiceStartup() {
   CHECK(synchronous.invoke([] { CHECK(false); return S_OK; }) == DXGI_ERROR_UNSUPPORTED);
 }
 
+static D3DDDIARG_CREATERESOURCE resourceArgs(HANDLE cookie, D3DDDI_SURFACEINFO* info,
+                                           UINT count, bool target = false) {
+  D3DDDIARG_CREATERESOURCE args = {};
+  args.hResource = cookie; args.pSurfList = info; args.SurfCount = count;
+  args.Format = static_cast<D3DDDIFORMAT>(D3DFMT_A8R8G8B8);
+  args.Pool = target ? D3DDDIPOOL_LOCALVIDMEM : D3DDDIPOOL_SYSTEMMEM;
+  args.Flags.RenderTarget = target;
+  // Poison reserved fields, which cannot control this nontexture/nonprimary.
+  args.MipLevels = args.Fvf = args.VidPnSourceId = UINT_MAX;
+  args.RefreshRate.Numerator = args.RefreshRate.Denominator = UINT_MAX;
+  args.Rotation = static_cast<D3DDDI_ROTATION>(UINT_MAX);
+  if (!target) { args.MultisampleType = static_cast<D3DDDIMULTISAMPLE_TYPE>(UINT_MAX); args.MultisampleQuality = UINT_MAX; }
+  return args;
+}
+
+static void resourceContracts() {
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    CHECK(f->table.pfnCreateResource && f->table.pfnDestroyResource && f->table.pfnSetRenderTarget
+      && f->table.pfnClear && f->table.pfnBlt && f->table.pfnLock && f->table.pfnUnlock);
+    char targetCookie, systemCookie;
+    D3DDDI_SURFACEINFO info[2] = {{8,4,UINT_MAX,nullptr,UINT_MAX,UINT_MAX}, {4,3,UINT_MAX,nullptr,UINT_MAX,UINT_MAX}};
+    auto args = resourceArgs(&targetCookie, info, 2, true);
+    auto before = snapshot(args);
+    f->failSurfaceAttempt = 2;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == E_OUTOFMEMORY);
+    CHECK(snapshot(args) == before && f->surfaceCreates == 1 && f->surfaceCloses == 1);
+    f->failSurfaceAttempt = 0;
+    f->surfaceResult = S_FALSE;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == E_FAIL && snapshot(args) == before);
+    f->surfaceResult = S_OK; f->nullSurface = true;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == E_FAIL && snapshot(args) == before);
+    f->nullSurface = false;
+    f->queryHook = [&] {
+      CHECK(f->table.pfnDestroyDevice(f->device) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnDestroyResource(f->device, nullptr) == D3DERR_WASSTILLDRAWING);
+      info[0].Width = 999; args.Flags.Texture = 1;
+      args.hResource = reinterpret_cast<HANDLE>(UINT_PTR(0xdead));
+    };
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE target = args.hResource;
+    CHECK(target != &targetCookie && target != f->device);
+    CHECK(f->descriptions.size() == 3 && f->descriptions[1].width == 8 && f->descriptions[2].width == 4);
+    info[0].Width = 8;
+    args = resourceArgs(&targetCookie, info, 2, true);
+    before = snapshot(args);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG && snapshot(args) == before);
+    for (const UINT invalid : {UINT(2),UINT(0x800),UINT(0x8000),UINT(0x10000),UINT(0x80000)}) {
+      args.Flags.Value = invalid;
+      before = snapshot(args);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG && snapshot(args) == before);
+    }
+    D3DDDIARG_SETRENDERTARGET bind = {0,target,2};
+    CHECK(f->table.pfnSetRenderTarget(f->device, &bind) == E_INVALIDARG);
+    bind.SubResourceIndex = 0;
+    CHECK(f->table.pfnSetRenderTarget(f->device, &bind) == S_OK);
+    D3DDDIARG_CLEAR fill = {}; fill.Flags = D3DCLEAR_TARGET | 8; fill.FillColor = 0xff123456;
+    CHECK(f->table.pfnClear(f->device, &fill, 0, reinterpret_cast<const RECT*>(UINT_PTR(1))) == S_OK);
+    CHECK(f->lastComputeRects && f->clearRects.empty());
+    fill.Flags = D3DCLEAR_TARGET;
+    CHECK(f->table.pfnClear(f->device, &fill, 0, reinterpret_cast<const RECT*>(UINT_PTR(1))) == S_OK);
+    CHECK(!f->lastComputeRects && f->clearRects.empty());
+    RECT area = {1,1,6,3}; const RECT original = area;
+    f->queryHook = [&] { area = {-100,-100,900,900}; fill.FillColor = 0; };
+    CHECK(f->table.pfnClear(f->device, &fill, 1, &area) == S_OK);
+    CHECK(!f->lastComputeRects && f->clearRects.size() == 1
+      && !std::memcmp(&f->clearRects[0], &original, sizeof(RECT)));
+    fill.FillColor = 0xff123456;
+    CHECK(f->table.pfnClear(f->device, &fill, 1, &area) == E_INVALIDARG);
+    fill.Flags |= 8;
+    CHECK(f->table.pfnClear(f->device, &fill, 1, &area) == S_OK && f->lastComputeRects);
+    fill.Flags = D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER;
+    CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == E_INVALIDARG);
+
+    args = resourceArgs(&systemCookie, info, 1);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE system = args.hResource;
+    bind.hRenderTarget = system;
+    CHECK(f->table.pfnSetRenderTarget(f->device, &bind) == E_INVALIDARG);
+    D3DDDIARG_BLT copy = {}; copy.hSrcResource = target; copy.hDstResource = system;
+    copy.SrcRect = copy.DstRect = {0,0,8,4};
+    CHECK(f->table.pfnBlt(f->device, &copy) == S_OK && f->copies == 1);
+    copy.SrcSubResourceIndex = 2;
+    CHECK(f->table.pfnBlt(f->device, &copy) == E_INVALIDARG); copy.SrcSubResourceIndex = 0;
+    copy.DstRect.right = 9;
+    CHECK(f->table.pfnBlt(f->device, &copy) == E_INVALIDARG); copy.DstRect.right = 8;
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = system;
+    mapping.pSurfData = reinterpret_cast<void*>(UINT_PTR(0x1234)); mapping.Pitch = mapping.SlicePitch = UINT_MAX;
+    for (const UINT invalid : {UINT(3),UINT(4),UINT(8),UINT(0x10),UINT(0x40),UINT(0x80),UINT(0x100),UINT(0x400)}) {
+      mapping.Flags.Value = invalid;
+      const auto prior = snapshot(mapping);
+      CHECK(f->table.pfnLock(f->device, &mapping) == E_INVALIDARG && snapshot(mapping) == prior);
+    }
+    mapping.Flags.Value = 1;
+    f->badMapping = true;
+    const auto prior = snapshot(mapping);
+    CHECK(f->table.pfnLock(f->device, &mapping) == E_FAIL && snapshot(mapping) == prior);
+    f->badMapping = false;
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && mapping.pSurfData && mapping.Pitch == 32 && !mapping.SlicePitch);
+    UINT color; std::memcpy(&color, mapping.pSurfData, sizeof(color)); CHECK(color == 0xff123456);
+    CHECK(f->table.pfnLock(f->device, &mapping) == E_INVALIDARG);
+    CHECK(f->table.pfnBlt(f->device, &copy) == E_INVALIDARG);
+    CHECK(f->table.pfnDestroyResource(f->device, system) == E_INVALIDARG);
+    D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = system;
+    unmap.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == E_INVALIDARG); unmap.Flags.Value = 0;
+    f->surfaceUnlockResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == E_OUTOFMEMORY);
+    f->surfaceUnlockResult = S_OK;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == E_INVALIDARG);
+    f->flushResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnDestroyResource(f->device, target) == E_OUTOFMEMORY);
+    f->flushResult = S_OK;
+    CHECK(f->table.pfnDestroyResource(f->device, target) == S_OK);
+    CHECK(f->table.pfnDestroyResource(f->device, target) == E_INVALIDARG);
+    bind = {0,target,0};
+    CHECK(f->table.pfnSetRenderTarget(f->device, &bind) == E_INVALIDARG);
+    bind.hRenderTarget = nullptr;
+    CHECK(f->table.pfnSetRenderTarget(f->device, &bind) == S_OK);
+    CHECK(f->table.pfnDestroyResource(f->device, system) == S_OK);
+    CHECK(f->surfaceCreates == f->surfaceCloses && f->surfaceLocks == f->surfaceUnlocks);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie;
+    std::array<uint8_t, 48> backing = {};
+    D3DDDI_SURFACEINFO info = {2,2,UINT_MAX,backing.data(),24,UINT_MAX};
+    auto args = resourceArgs(&cookie, &info, 1);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE resource = args.hResource;
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = resource;
+    CHECK(f->table.pfnLock(f->device, &mapping) == E_INVALIDARG);
+    mapping.Flags.NotifyOnly = mapping.Flags.AreaValid = 1; mapping.Area = {1,1,2,2};
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+    CHECK(mapping.pSurfData == backing.data() + 28 && mapping.Pitch == 24);
+    // Device destruction discards a still-held CPU view without reading the
+    // runtime's external storage, then releases all private resources first.
+    closeDevice();
+    CHECK(f->teardownDiscard && f->surfaceCreates == f->surfaceCloses && f->surfaceLocks == f->surfaceUnlocks);
+    CHECK(f->table.pfnDestroyResource(f->device, resource) == E_INVALIDARG);
+    closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie;
+    D3DDDI_SURFACEINFO info = {2,2,1,nullptr,0,0};
+    auto args = resourceArgs(&cookie, &info, 1);
+    const auto before = snapshot(args);
+    f->surfaceHook = [] { ++f->generation; };
+    CHECK(f->table.pfnCreateResource(f->device, &args) == D3DERR_DEVICELOST);
+    CHECK(snapshot(args) == before && f->surfaceCreates == f->surfaceCloses);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == D3DERR_DEVICELOST);
+    closeDevice(); closeAdapter();
+  }
+}
+
 int main() {
   ownedServiceStartup();
+  resourceContracts();
   {
     Fixture fixture; initialize(fixture);
     // A missing mandatory callback rejects before backend construction.

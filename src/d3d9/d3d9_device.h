@@ -1103,6 +1103,10 @@ namespace dxvk {
 
     HRESULT InitializeNativeOffscreen();
 
+    // The native DDI can unbind RT0. The public D3D9 API keeps its non-null
+    // RT0 contract; native resources still require this device's ownership.
+    HRESULT SetNativeRenderTarget(IDirect3DSurface9* target);
+
     HRESULT FlushRuntimeSubmission();
 
     /**

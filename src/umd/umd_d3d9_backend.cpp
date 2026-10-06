@@ -6,13 +6,25 @@
 #include "../d3d9/d3d9_device.h"
 #include <dxgi.h>
 #include <new>
+#include <vector>
 
 namespace dxvk::umd {
 
 struct D3D9Backend::State : GpuBackend {
   Com<D3D9InterfaceEx> parent;
   Com<D3D9DeviceEx> d3d;
+  Com<IDirect3DSurface9> target;
 };
+
+struct D3D9SurfaceResource::State {
+  Com<IDirect3DSurface9> surface;
+  D3D9SurfaceDesc desc;
+  D3DLOCKED_RECT mapping = {};
+  RECT area = {};
+  bool locked = false, readOnly = false;
+};
+D3D9SurfaceResource::D3D9SurfaceResource() : m_state(std::make_unique<State>()) { }
+D3D9SurfaceResource::~D3D9SurfaceResource() = default;
 
 D3D9Backend::D3D9Backend() : m_state(std::make_unique<State>()) { }
 D3D9Backend::~D3D9Backend() = default;
@@ -21,6 +33,147 @@ HRESULT D3D9Backend::flush() noexcept {
   try { return m_state->d3d->FlushRuntimeSubmission(); }
   catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
   catch (...) { return D3DERR_DEVICELOST; }
+}
+
+HRESULT D3D9Backend::createSurface(const D3D9SurfaceDesc& desc,
+                                 std::unique_ptr<D3D9SurfaceResource>& result) {
+  auto resource = std::make_unique<D3D9SurfaceResource>();
+  auto& state = *resource->m_state;
+  state.desc = desc;
+  const HRESULT hr = desc.renderTarget
+    ? m_state->d3d->CreateRenderTarget(desc.width, desc.height, desc.format,
+        D3DMULTISAMPLE_NONE, 0, desc.lockable, &state.surface, nullptr)
+    : m_state->d3d->CreateOffscreenPlainSurface(desc.width, desc.height, desc.format,
+        desc.systemMemory ? D3DPOOL_SYSTEMMEM : D3DPOOL_DEFAULT, &state.surface, nullptr);
+  if (hr != S_OK || !state.surface) return FAILED(hr) ? hr : E_FAIL;
+  result = std::move(resource);
+  return S_OK;
+}
+
+HRESULT D3D9Backend::setRenderTarget(D3D9SurfaceResource* target) {
+  auto surface = target ? target->m_state->surface.ptr() : nullptr;
+  const HRESULT hr = m_state->d3d->SetNativeRenderTarget(surface);
+  if (SUCCEEDED(hr)) m_state->target = surface;
+  return hr;
+}
+
+HRESULT D3D9Backend::clear(D3DCOLOR color, UINT count, const RECT* rects, bool computeRects) {
+  if (computeRects) {
+    std::vector<D3DRECT> areas;
+    areas.reserve(count);
+    for (UINT i = 0; i < count; ++i)
+      areas.push_back({rects[i].left, rects[i].top, rects[i].right, rects[i].bottom});
+    return m_state->d3d->Clear(count, count ? areas.data() : nullptr,
+                              D3DCLEAR_TARGET, color, 1.0f, 0);
+  }
+  // The runtime already clipped these rectangles. ColorFill avoids applying
+  // the current viewport and scissor a second time. Empty preclipped clear
+  // is a no-op, unlike the public API's zero-count Clear.
+  for (UINT i = 0; i < count; ++i) {
+    if (rects[i].left == rects[i].right || rects[i].top == rects[i].bottom) continue;
+    const HRESULT hr = m_state->d3d->ColorFill(m_state->target.ptr(), &rects[i], color);
+    if (FAILED(hr)) return hr;
+  }
+  return S_OK;
+}
+
+static void copyRows(void* destination, UINT destinationPitch, const void* source,
+                     UINT sourcePitch, UINT bytes, UINT rows) {
+  auto dst = static_cast<uint8_t*>(destination);
+  auto src = static_cast<const uint8_t*>(source);
+  for (UINT row = 0; row < rows; ++row)
+    std::memcpy(dst + size_t(row) * destinationPitch, src + size_t(row) * sourcePitch, bytes);
+}
+
+HRESULT D3D9Backend::lockSurface(D3D9SurfaceResource& resource, const RECT* area,
+                               DWORD flags, D3DLOCKED_RECT& output) {
+  auto& state = *resource.m_state;
+  D3DLOCKED_RECT mapping = {};
+  const HRESULT hr = state.surface->LockRect(&mapping, area, flags);
+  if (FAILED(hr)) return hr;
+  state.mapping = mapping;
+  state.area = area ? *area : RECT{0, 0, LONG(state.desc.width), LONG(state.desc.height)};
+  state.locked = true;
+  state.readOnly = (flags & D3DLOCK_READONLY) != 0;
+  output = mapping;
+  if (state.desc.systemData) {
+    auto bytes = static_cast<uint8_t*>(state.desc.systemData);
+    output.pBits = bytes + size_t(state.area.top) * state.desc.systemPitch + size_t(state.area.left) * 4;
+    output.Pitch = INT(state.desc.systemPitch);
+  }
+  return S_OK;
+}
+
+HRESULT D3D9Backend::unlockSurface(D3D9SurfaceResource& resource, bool upload) {
+  auto& state = *resource.m_state;
+  if (upload && state.desc.systemData && !state.readOnly) {
+    auto bytes = static_cast<const uint8_t*>(state.desc.systemData)
+      + size_t(state.area.top) * state.desc.systemPitch + size_t(state.area.left) * 4;
+    copyRows(state.mapping.pBits, UINT(state.mapping.Pitch), bytes, state.desc.systemPitch,
+             UINT(state.area.right - state.area.left) * 4, UINT(state.area.bottom - state.area.top));
+  }
+  const HRESULT hr = state.surface->UnlockRect();
+  if (SUCCEEDED(hr)) state.locked = false;
+  return hr;
+}
+
+HRESULT D3D9Backend::copySurface(D3D9SurfaceResource& destination, const RECT& destinationRect,
+                               D3D9SurfaceResource& source, const RECT& sourceRect) {
+  auto& dst = *destination.m_state;
+  auto& src = *source.m_state;
+  if (src.desc.systemMemory && dst.desc.systemMemory)
+    return flush(); // The runtime performs the system-to-system copy itself.
+  if (src.desc.systemMemory) {
+    if (src.desc.systemData) {
+      D3DLOCKED_RECT mapping;
+      HRESULT hr = lockSurface(source, nullptr, 0, mapping);
+      if (FAILED(hr)) return hr;
+      hr = unlockSurface(source);
+      if (FAILED(hr)) return hr;
+    }
+    const POINT point = {destinationRect.left, destinationRect.top};
+    return m_state->d3d->UpdateSurface(src.surface.ptr(), &sourceRect, dst.surface.ptr(), &point);
+  }
+  if (!dst.desc.systemMemory && &destination == &source) {
+    if (!std::memcmp(&sourceRect, &destinationRect, sizeof(RECT))) return S_OK;
+    Com<IDirect3DSurface9> temporary;
+    HRESULT hr = m_state->d3d->CreateRenderTarget(UINT(sourceRect.right - sourceRect.left),
+      UINT(sourceRect.bottom - sourceRect.top), src.desc.format,
+      D3DMULTISAMPLE_NONE, 0, FALSE, &temporary, nullptr);
+    if (FAILED(hr)) return hr;
+    hr = m_state->d3d->StretchRect(src.surface.ptr(), &sourceRect, temporary.ptr(), nullptr, D3DTEXF_NONE);
+    if (FAILED(hr)) return hr;
+    return m_state->d3d->StretchRect(temporary.ptr(), nullptr, dst.surface.ptr(), &destinationRect, D3DTEXF_NONE);
+  }
+  if (!dst.desc.systemMemory)
+    return m_state->d3d->StretchRect(src.surface.ptr(), &sourceRect,
+                                    dst.surface.ptr(), &destinationRect, D3DTEXF_NONE);
+
+  // Read back the actual GPU surface before copying the requested region.
+  // This also handles caller-owned system memory with an arbitrary row pitch.
+  Com<IDirect3DSurface9> staging;
+  HRESULT hr = m_state->d3d->CreateOffscreenPlainSurface(src.desc.width, src.desc.height,
+    src.desc.format, D3DPOOL_SYSTEMMEM, &staging, nullptr);
+  if (FAILED(hr)) return hr;
+  hr = m_state->d3d->GetRenderTargetData(src.surface.ptr(), staging.ptr());
+  if (FAILED(hr)) return hr;
+  D3DLOCKED_RECT from = {}, to = {};
+  hr = staging->LockRect(&from, &sourceRect, D3DLOCK_READONLY);
+  if (FAILED(hr)) return hr;
+  hr = dst.surface->LockRect(&to, &destinationRect, 0);
+  if (SUCCEEDED(hr)) {
+    const UINT bytes = UINT(sourceRect.right - sourceRect.left) * 4;
+    const UINT rows = UINT(sourceRect.bottom - sourceRect.top);
+    copyRows(to.pBits, UINT(to.Pitch), from.pBits, UINT(from.Pitch), bytes, rows);
+    if (dst.desc.systemData) {
+      auto external = static_cast<uint8_t*>(dst.desc.systemData)
+        + size_t(destinationRect.top) * dst.desc.systemPitch + size_t(destinationRect.left) * 4;
+      copyRows(external, dst.desc.systemPitch, from.pBits, UINT(from.Pitch), bytes, rows);
+    }
+    hr = dst.surface->UnlockRect();
+  }
+  const HRESULT unlocked = staging->UnlockRect();
+  return FAILED(hr) ? hr : unlocked;
 }
 
 static HRESULT d3d9Error(HRESULT hr) {

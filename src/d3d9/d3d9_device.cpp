@@ -9008,6 +9008,15 @@ namespace dxvk {
   }
 
 
+  HRESULT D3D9DeviceEx::SetNativeRenderTarget(IDirect3DSurface9* target) {
+    D3D9DeviceLock lock = LockDevice();
+    if (!m_parent->IsNativeRenderer()) return D3DERR_INVALIDCALL;
+    auto surface = static_cast<D3D9Surface*>(target);
+    if (surface && surface->GetDevice() != this)
+      return D3DERR_INVALIDCALL;
+    return SetRenderTargetInternal(0, target);
+  }
+
   HRESULT D3D9DeviceEx::InitializeNativeOffscreen() {
     D3D9DeviceLock lock = LockDevice();
     if (!m_parent->IsNativeRenderer() || m_implicitSwapchain != nullptr)

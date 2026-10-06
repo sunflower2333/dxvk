@@ -153,17 +153,20 @@ public:
     D3DDDIARG_CLEAR fill = {};
     fill.Flags = D3DCLEAR_TARGET; fill.FillColor = 0xff123456;
     hr = api.pfnClear(m_driverDevice, &fill, 1, &full);
+    std::printf("D3D9_CLEAR stage=1 mode=preclipped hr=%08lx\n", static_cast<unsigned long>(hr));
     if (FAILED(hr)) return hr;
     // No preclipped rectangles means no-op. A public API Clear here would
     // incorrectly overwrite the baseline and fail the byte oracle below.
     fill.FillColor = 0xffaa55cc;
     hr = api.pfnClear(m_driverDevice, &fill, 0, reinterpret_cast<const RECT*>(UINT_PTR(1)));
+    std::printf("D3D9_CLEAR stage=1 mode=empty-noop hr=%08lx\n", static_cast<unsigned long>(hr));
     if (FAILED(hr)) return hr;
     D3DDDIARG_BLT copy = {};
     copy.hSrcResource = target.hResource; copy.hDstResource = system.hResource;
     copy.SrcRect = copy.DstRect = full;
     UINT checked = 0, checksum = 2166136261u;
     auto readback = [&](unsigned stage) -> HRESULT {
+      std::printf("D3D9_READBACK begin stage=%u\n", stage);
       const HRESULT copied = api.pfnBlt(m_driverDevice, &copy);
       std::printf("D3D9_READBACK stage=%u hr=%08lx\n", stage, static_cast<unsigned long>(copied));
       if (FAILED(copied)) return copied;
@@ -200,6 +203,7 @@ public:
     if (FAILED(hr)) return hr;
     fill.Flags = D3DCLEAR_TARGET | 8; fill.FillColor = 0xff2468ac;
     hr = api.pfnClear(m_driverDevice, &fill, 0, reinterpret_cast<const RECT*>(UINT_PTR(1)));
+    std::printf("D3D9_CLEAR stage=2 mode=computed hr=%08lx\n", static_cast<unsigned long>(hr));
     if (FAILED(hr)) return hr;
     fill.Flags = D3DCLEAR_TARGET; fill.FillColor = 0xffd03070;
     const RECT center = {2,2,6,6};
@@ -349,13 +353,27 @@ private:
   static HRESULT APIENTRY render(HANDLE handle, D3DDDICB_RENDER* args) {
     auto s = self(handle);
     if (!s || handle != &s->m_deviceOwner || !args || args->hContext != &s->m_contextOwner
-        || !s->m_context || args->Flags.Value || args->BroadcastContextCount) return E_INVALIDARG;
+        || !s->m_context || args->Flags.Value || args->BroadcastContextCount) {
+      std::printf("D3D9_KMT_RENDER_CB rejected hr=80070057\n");
+      return E_INVALIDARG;
+    }
     D3DKMT_RENDER request = {}; request.hContext = s->m_context;
     request.CommandLength = args->CommandLength; request.CommandOffset = args->CommandOffset;
     request.AllocationCount = args->NumAllocations; request.PatchLocationCount = args->NumPatchLocations;
     request.NewCommandBufferSize = args->NewCommandBufferSize;
     request.NewAllocationListSize = args->NewAllocationListSize; request.NewPatchLocationListSize = args->NewPatchLocationListSize;
-    const HRESULT hr = result(D3DKMTRender(&request));
+    // Keep the current callback storage if the KMT thunk leaves outputs
+    // untouched on failure, just as the direct Mesa transport does.
+    request.pNewCommandBuffer = args->pNewCommandBuffer;
+    request.pNewAllocationList = args->pNewAllocationList;
+    request.pNewPatchLocationList = args->pNewPatchLocationList;
+    std::printf("D3D9_KMT_RENDER_CB begin bytes=%u allocations=%u patches=%u\n",
+      args->CommandLength, args->NumAllocations, args->NumPatchLocations);
+    const NTSTATUS status = D3DKMTRender(&request);
+    const HRESULT hr = result(status);
+    std::printf("D3D9_KMT_RENDER_CB end status=%08lx hr=%08lx capacity=%u/%u/%u\n",
+      static_cast<unsigned long>(status), static_cast<unsigned long>(hr),
+      request.NewCommandBufferSize, request.NewAllocationListSize, request.NewPatchLocationListSize);
     args->pNewCommandBuffer = request.pNewCommandBuffer; args->NewCommandBufferSize = request.NewCommandBufferSize;
     args->pNewAllocationList = request.pNewAllocationList; args->NewAllocationListSize = request.NewAllocationListSize;
     args->pNewPatchLocationList = request.pNewPatchLocationList; args->NewPatchLocationListSize = request.NewPatchLocationListSize;

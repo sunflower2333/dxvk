@@ -7,6 +7,15 @@ the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
+Typed native D3D9 development adapter is implemented, with zero rendering caps
+and no production OpenAdapter. Guest ARM64 fixture passed42429checks with
+warning-free source compilation; all nine source hashes and PE verification
+are being retained. Compile/link18.006s, fixture3.503s, runner28.599s.
+Installed58623 and DWM1644/Explorer5828 retained. Finish exact offline/full
+architecture CI and record the checkpoint, then embed runtime-owned exact-LUID
+D3D9 without an implicit swapchain. Native rendering/admission remain open.
+
+## Validated D3D10 Checkpoint
 Rotation4f59adf passed all source CI and 1281 checks in the existing guest.
 Callback-table retention/fixture lifetime af84b74 passed offline37335070338
 and full37335069804, including native ARM64 execution. The additional Present
@@ -40,7 +49,19 @@ acceptance are complete. Preserve the active Windows desktop and VM settings.
 - [complete] Audit and compile exact-source KMD in existing Windows VM.
 - [complete] Verify guest build outputs and record reusable build checkpoint.
 
-## Previous next-step checkpoint
+## 2026-10-06 native D3D9 adapter continuation
+- [complete] Recover the clean checkpoint, roadmap and WDK adapter contract.
+- [complete] Implement typed identity/caps/close bridge with pinned ownership.
+- [complete] Add malformed reply, version, reentry and retirement fixture coverage.
+- [in_progress] Wire architecture checks and validate on CI and the Windows guest.
+- [pending] Record exact evidence and commit the reviewed implementation.
+
+The current bounded slice does not publish production OpenAdapter or rendering
+caps. CreateDevice must fail without modifying runtime outputs. Reuse the
+existing identity decoder and preserve the original opaque runtime handle.
+The next rendering slice remains embedded D3D9 with exact runtime ownership.
+
+## Previous next-step checkpoint (historical)
 GS7c0b9e3 CI34620365858 ALL5PASS. Both original/rebuilt GS16payloadwords
 match including actual XOR/sample processing. Source closes native GS/create/bind and
 GS CB/SRV/sampler slots, with real DXVK stage compilation and linkage.
@@ -209,6 +230,21 @@ is a candidate package and must not replace it. This thread selects
 PWF_PLAN_ROOT=/home/sunf/droidvm-repos/dxvk-umd-ci/.planning/dxvk-umd explicitly.
 
 ## Errors
+- Guest fixture runner fourth attempt put /link and its option on separate
+  response-file lines; CL treated NODEFAULTLIB as a compiler option. Pass
+  /link /NODEFAULTLIB:oldnames.lib after @compile.rsp on the actual command.
+- Guest static-CRT fixture link also requested OLDNAMES.lib (legacy aliases).
+  The retained portable packages do not provide it. For this CPU-only fixture,
+  exclude that default library while leaving every unresolved symbol fatal;
+  full CI retains its normal complete MSVC environment. Add the actual SDK
+  synchronization/runtimeobject default import libraries discovered in CRT.
+- Guest D3D9 second attempt compiled with fatal source warnings, then required
+  SDK uuid.lib at link. Add official c/um/arm64/Uuid.Lib to the supplement.
+- A read-only pragma search guessed d3d9.h under the local SDK tree; it is
+  supplied by the WDK payload. No code or validation relied on that path.
+- Guest D3D9 first compiler attempt /W4 /WX rejected WDK dxgiddi/d3d10umddi
+  anonymous-union warnings C4201. Use external-header warning classification
+  while retaining /W4 /WX for fixture/bridge sources; no production workaround.
 - A remote-notes search used a .sh glob with no matches; those notes contain
   PowerShell scripts. Delegated remote worker uses verified existing paths.
 - Paired artifact worker hit service503 after download reached91%; resume its

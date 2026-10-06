@@ -1,7 +1,7 @@
 #pragma once
 
 #include "umd_ddi.h"
-#include "umd_runtime_identity.h"
+#include "umd_runtime_query.h"
 #include <memory>
 
 namespace dxvk::umd {

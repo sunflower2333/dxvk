@@ -3,6 +3,7 @@ EXPORTS
   OpenAdapter10_2
   VioGpuDxvkPrivateDeviceSize
   VioGpuDxvkOpenAdapterForTest
+  VioGpuDxvkOpenAdapter9ForTest
   VioGpuDxvkQueryRuntimeAdapterLuid
   VioGpuDxvkCreateDdiTestDevice
   VioGpuDxvkQueryVulkanLoader

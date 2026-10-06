@@ -59,7 +59,9 @@ try {
     Check-Exit 'upload arithmetic fixture'
     & cl @flags "$root/tests/umd-rotation.cpp" @shaderObjects @ddiObjects d3d11.lib /Fe:rotation.exe
     Check-Exit 'published DXGI rotation fixture'
-    foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe','texture1d.exe','texture-transfer.exe','transfer-policy.exe','rotation.exe')) {
+    & cl @flags "$root/tests/umd-d3d9-adapter.cpp" "$root/src/umd/umd_d3d9_adapter.cpp" umd_runtime_query.obj /Fe:d3d9-adapter.exe
+    Check-Exit 'typed D3D9 adapter fixture'
+    foreach ($name in @('native-mrt.exe','mrt-signature.exe','output-policy.exe','output-views.exe','texture1d.exe','texture-transfer.exe','transfer-policy.exe','rotation.exe','d3d9-adapter.exe')) {
         $headers = (& dumpbin /headers $name | Out-String)
         Check-Exit "PE inspection $name"
         $machine = @{arm64='AA64';x64='8664';x86='14C'}[$Architecture]
@@ -81,6 +83,7 @@ try {
         schema=1; source=$env:GITHUB_SHA; architecture=$Architecture
         executed=(!$CompileOnly); backend='WARP test-only injection into actual native DDI'
         viogpu_gpu_test=$false; native_runtime_admission=$false; installation=$false
+        d3d9_backend='mock adapter callbacks; zero caps and device admission closed'
     } | ConvertTo-Json | Set-Content -Encoding utf8 receipt.json
 }
 finally { Pop-Location }

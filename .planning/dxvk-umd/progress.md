@@ -720,3 +720,53 @@ changes. Both implementation and guest-build continuation checkpoints complete.
 Recorded exact CI timing baseline; delegated official matching arm64rt.lib
 package lookup after remote discovered missing link support library. Guest
 compiler/linker/WPP/rc source/toolchain preparation continues with native tools.
+
+2026-10-06 continuation: recovered existing DXVK plan explicitly and verified
+clean f003ed6 checkpoint. Read workspace image/VM safety rules and D3D9
+roadmap. Memory registry has no matching project history. Begin the typed
+D3D9 adapter bridge; no remote state or installed driver changed.
+
+Added typed D3D9 adapter source/header, shared raw runtime identity query,
+development export and Meson target. Windows read-only health check confirms
+existing DWM1644/Explorer5828. Fixture implementation and compiler verification
+remain next; the new target does not yet have its test source.
+
+Added D3D9 fixture for malformed identities/exact S_OK, unchanged canaries,
+literal interfaces/opaque runtime build IDs, callback-table mutation, nested
+caps/create/open, exception boundaries, callback close/reopen, sticky changed
+identity/removal, concurrent close during a blocked query, and stale-token
+reopening. Wired offline MSVC compile/execution, embedded Meson production
+build, published fixture and native ARM64 CI execution. Compiler checks pending.
+
+Local existing sanitizer suite PASS: identity69/runtime identity180/shader147.
+Prepared standalone guest D3D9 runner and small release CRT/SDK supplement
+assembler using retained verified archives. It uses /MT so no system CRT
+installation is needed. Source and library transfers are isolated from the
+existing KMD toolchain. Corrected a fixture mutation which had changed a valid
+nonzero generation at open rather than making the reply malformed.
+
+Guest native MSVC compiled all three D3D9 source inputs, but /W4 /WX rejected
+C4201 anonymous unions in Microsoft dxgiddi/d3d10umddi headers. Isolate external
+header warnings with /external:anglebrackets /external:W0; retain fatal source
+warnings. First attempt receipts/logs retained before the corrected compile.
+
+Corrected guest compiler pass compiled bridge/fixture/query warning-free; link
+reported missing uuid.lib. Added official SDK ARM64 Uuid.Lib from the same
+retained, hash-verified package. Preserve second attempt compiler receipts.
+
+Third guest link found OLDNAMES.lib absent from retained portable payloads.
+This fixture uses no legacy alias API, so exclude only that default library
+and require all symbols to resolve. Inspected static CRT COFF directives and
+added official synchronization/runtimeobject SDK imports before the next link.
+Normal production CI build flags/toolchain remain unchanged.
+
+Guest fourth attempt showed CL ignoring the linker-only default-library flag
+when /link was inside the multiline compiler response file. Corrected runner
+to put /link /NODEFAULTLIB:oldnames.lib on the actual command line after the
+compiler response file. No driver source change; record failed attempt too.
+
+Corrected guest build PASS42429 D3D9 adapter checks. Source compiles warning-
+free and links static CRT with all symbols resolved; downloaded receipts/
+binary/import logs retained. Compile18.006s/run3.503s/runner28.599s. Driver
+58623/oem10.inf and DWM1644/Explorer5828 retained. Added checkpoint doc and
+updated roadmap for the implemented adapter slice. Prepare exact source CI.

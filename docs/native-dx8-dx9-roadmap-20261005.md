@@ -5,7 +5,11 @@ baseline `gg-dxvk-umd` at `fac1bfe6`. The roadmap remains applicable after
 validated source `34ff484` and paired source `b6bf4c4f`; those checkpoints
 repair DXGI ownership without adding a D3D9 bridge. Paths naming these
 checkouts are relative to the DroidVM workspace.
-**Native D3D9 is not implemented in the DXVK UMD. Upstream DX8/DX9 API DLLs exist, but do not close that driver gate.**
+**Native D3D9 rendering is not implemented in the DXVK UMD. Upstream DX8/DX9 API DLLs exist, but do not close that driver gate.**
+The 2026-10-06 [typed adapter checkpoint](native-d3d9-adapter-20261006.md)
+adds identity/caps/lifetime development contracts. It keeps rendering caps
+zero, CreateDevice unavailable and production OpenAdapter absent. The table
+below describes the earlier rendering/package baseline.
 
 | Path | Current evidence | Meaning |
 | --- | --- | --- |

@@ -1,18 +1,23 @@
 #include "umd_adapter.h"
 #include <cstring>
 
-HRESULT dxvk::umd::queryRuntimeIdentity(D3D10DDI_HRTADAPTER runtime,
+HRESULT dxvk::umd::queryRuntimeIdentity(HANDLE runtime,
     PFND3DDDI_QUERYADAPTERINFOCB query, RuntimeIdentity& result) {
   result = {};
-  if (!runtime.handle || !query) return E_INVALIDARG;
+  if (!runtime || !query) return E_INVALIDARG;
   std::array<uint8_t, RuntimeIdentityReplySize> reply = {};
   D3DDDICB_QUERYADAPTERINFO args = {};
   args.pPrivateDriverData = reply.data();
   args.PrivateDriverDataSize = static_cast<UINT>(reply.size());
-  const HRESULT hr = query(runtime.handle, &args);
+  const HRESULT hr = query(runtime, &args);
   if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
   return readRuntimeIdentity(reply.data(), args.PrivateDriverDataSize, result)
     ? S_OK : DXGI_ERROR_UNSUPPORTED;
+}
+
+HRESULT dxvk::umd::queryRuntimeIdentity(D3D10DDI_HRTADAPTER runtime,
+    PFND3DDDI_QUERYADAPTERINFOCB query, RuntimeIdentity& result) {
+  return queryRuntimeIdentity(runtime.handle, query, result);
 }
 
 extern "C" HRESULT APIENTRY VioGpuDxvkQueryRuntimeAdapterLuid(

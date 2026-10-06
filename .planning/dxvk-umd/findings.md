@@ -487,3 +487,27 @@ SHA2567c0a45f2bbf3424ff8a67c4c6c2369d13e329331c5e4adf46ab3b74d196e934b.
 Source/input/output hashes and unchanged58623/DWM/Explorer are verified.
 Unsigned/uninstalled build provides rapid compiler feedback; full package
 signing/runtime admission/hardware acceptance still require independent gates.
+
+2026-10-06 recovered clean DXVK docs HEAD f003ed6; binary source remains
+34ff484. No D3D9 source edits existed at handoff. WDK D3D9 OpenAdapter and
+CreateDevice use in/out runtime handles, GetCaps receives a const argument,
+Interface is a literal API version, and DriverVersion uses the D3D9 UMD
+interface constant. This continuation implements only typed identity/caps/
+close development contracts and keeps production device admission closed.
+
+Implemented a raw HANDLE query overload used by the typed D3D9 bridge while
+retaining the D3D10 overload. D3D9 only accepts literal Interface9; runtime
+Version has no documented packed minimum and is not used as one. Caps sizes
+are strict: UINT counts and D3DCAPS9, zero-byte empty data lists. All counts/
+rendering caps are zero. DriverVersion is the compiled header constant. Saved
+runtime owner/query pointer, shared in-flight state and monotonically issued
+tokens protect close/reentry and stale-handle reuse. Current identity changes
+and reset/removal errors retire the adapter; CreateDevice publishes nothing.
+
+Guest D3D9 adapter fixture PASS42429checks. Native MSVC/SDK-WDK source compile
+with /W4 /WX succeeds; static release CRT fixture has only KERNEL32 imports.
+Compile/link18.0064796s, fixture3.5028309s, timed runner28.5989371s; setup and
+transfers separate. Guest sources match all nine input hashes; downloaded EXE
+hash2fc771f057c2994e614c24129f76a416bdbe968eb11c253cc437fe52dfb1d85b.
+Driver58623/oem10.inf, DWM1644/Explorer5828 retained. No installation or
+configuration changed. Full CI still required for normal toolchain/architectures.

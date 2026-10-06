@@ -770,3 +770,44 @@ free and links static CRT with all symbols resolved; downloaded receipts/
 binary/import logs retained. Compile18.006s/run3.503s/runner28.599s. Driver
 58623/oem10.inf and DWM1644/Explorer5828 retained. Added checkpoint doc and
 updated roadmap for the implemented adapter slice. Prepare exact source CI.
+
+Committed/pushed aac5172b1c0983dbe58b4f6fe4c8a1a3cd7e7e03 with actual
+multiline session trailers. Guest verification PASS all nine source hashes,
+EXE hash/ARM64 PE and driver/desktop continuity. Offline37408748554 and
+full37408749906 run exactaac5172; upstream automatic package/API workflows
+also triggered by push. Continue required native CI to completion.
+
+Native CI Linux contracts, identity and shader CPU jobs already PASS; Windows
+architecture jobs continue. Read-only next renderer audit confirms public
+D3D9 creation enumerates/uses direct ownership and InitialReset's implicit
+swapchain. Private parent/offscreen initialization and common raw identity
+are the next construction work. Retained exact source-aac5172.zip locally.
+
+Offline37408748554 ALL4PASS: Linux contracts, x64/x86 execution, ARM64 compile.
+Full37408749906 has identity/shader CPU PASS; three embedded builds continue.
+ResetState initializes render state separately from ResetSwapChain, so a
+private offscreen initialization can reuse defaults while omitting the
+implicit swapchain. Do not expose swapchain-dependent COM methods in the DDI.
+
+Retained offline x64/x86 logs confirm exactly42429 D3D9 checks each with
+normal /MD toolchains. This independently validates the /MT guest fixture
+result; no driver workaround was needed. Full embedded DLL/import/export and
+native ARM64 CI remain pending. Release local generated library staging;
+keep reusable support/source archives and all failed/success receipts.
+
+Resumed with the explicitly selected DXVK plan; catchup adds no context and
+the memory registry has no relevant history. Collected full37408749906:
+all six jobs PASS on exactaac5172, including three embedded builds and native
+ARM64 execution. x64/x86/ARM64 each report42429 D3D9 adapter checks. Retained
+full status/logs; downloading architecture and native validation artifacts.
+Next source work is the shared runtime selection and offscreen D3D9 core.
+
+Full CI artifact verification PASS:148retained files hashed, each source pin,
+native PE architecture and export/import policy verified. Actual x64/x86 and
+ARM64 fixture logs each show42429D3D9 checks; six CI jobs all success.
+Added a renderer-neutral raw adapter owner and common GpuBackend factory,
+copied callback snapshot, embedded D3D9 static core excluding API entry source,
+private parent and offscreen state/submission initialization. Development
+construction/teardown helper publishes no COM renderer or typed device DDI.
+Added portable ownership and actual DLL rejection fixtures; wired full builds
+and ARM64 execution. Local sanitizers69/180/49/147PASS. Architecture CI next.

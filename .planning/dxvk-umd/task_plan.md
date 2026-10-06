@@ -11,9 +11,15 @@ Typed native D3D9 development adapter is implemented, with zero rendering caps
 and no production OpenAdapter. Guest ARM64 fixture passed42429checks with
 warning-free source compilation; all nine source hashes and PE verification
 are being retained. Compile/link18.006s, fixture3.503s, runner28.599s.
-Installed58623 and DWM1644/Explorer5828 retained. Finish exact offline/full
-architecture CI and record the checkpoint, then embed runtime-owned exact-LUID
-D3D9 without an implicit swapchain. Native rendering/admission remain open.
+Installed58623 and DWM1644/Explorer5828 retained. Sourceaac5172 is pushed;
+offline37408748554 is all fourPASS, including x64/x86 DDI execution and
+ARM64 compilation. Full37408749906 is all sixPASS on that exact commit,
+including embedded builds and native ARM64 execution (42429 D3D9 checks).
+All148 full CI artifact files are retained/hashed, and independent PE/import/
+export checks PASS. The private D3D9 core, common exact-LUID factory and
+offscreen initializer are implemented locally; new ownership49 sanitizer
+checks PASS. Next validate exact-source architecture CI. Native device DDIs,
+rendering/admission and target GPU construction remain open.
 
 ## Validated D3D10 Checkpoint
 Rotation4f59adf passed all source CI and 1281 checks in the existing guest.
@@ -53,13 +59,19 @@ acceptance are complete. Preserve the active Windows desktop and VM settings.
 - [complete] Recover the clean checkpoint, roadmap and WDK adapter contract.
 - [complete] Implement typed identity/caps/close bridge with pinned ownership.
 - [complete] Add malformed reply, version, reentry and retirement fixture coverage.
-- [in_progress] Wire architecture checks and validate on CI and the Windows guest.
-- [pending] Record exact evidence and commit the reviewed implementation.
+- [complete] Wire architecture checks and validate on CI and the Windows guest.
+- [complete] Record exact evidence and commit the reviewed implementation.
 
 The current bounded slice does not publish production OpenAdapter or rendering
 caps. CreateDevice must fail without modifying runtime outputs. Reuse the
 existing identity decoder and preserve the original opaque runtime handle.
 The next rendering slice remains embedded D3D9 with exact runtime ownership.
+
+## 2026-10-06 embedded D3D9 continuation
+- [complete] Audit shared runtime identity/selection and offscreen construction.
+- [complete] Implement the embedded renderer without public factory or implicit WSI.
+- [in_progress] Validate negative controls, architecture builds and runtime ownership.
+- [pending] Record source/evidence and the remaining typed device/rendering gates.
 
 ## Previous next-step checkpoint (historical)
 GS7c0b9e3 CI34620365858 ALL5PASS. Both original/rebuilt GS16payloadwords
@@ -230,6 +242,9 @@ is a candidate package and must not replace it. This thread selects
 PWF_PLAN_ROOT=/home/sunf/droidvm-repos/dxvk-umd-ci/.planning/dxvk-umd explicitly.
 
 ## Errors
+- Generated local support-staging cleanup using rm -rf was rejected before
+  mutation by command policy. List the known generated .lib files and delete
+  only those files, followed by empty directories; preserve all archives.
 - Guest fixture runner fourth attempt put /link and its option on separate
   response-file lines; CL treated NODEFAULTLIB as a compiler option. Pass
   /link /NODEFAULTLIB:oldnames.lib after @compile.rsp on the actual command.

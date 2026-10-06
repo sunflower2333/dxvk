@@ -511,3 +511,40 @@ transfers separate. Guest sources match all nine input hashes; downloaded EXE
 hash2fc771f057c2994e614c24129f76a416bdbe968eb11c253cc437fe52dfb1d85b.
 Driver58623/oem10.inf, DWM1644/Explorer5828 retained. No installation or
 configuration changed. Full CI still required for normal toolchain/architectures.
+
+Next renderer audit: D3D9InterfaceEx constructor acquires the API singleton,
+enumerates displays/adapters, and may change process DPI awareness. Its public
+CreateDeviceEx calls DxvkAdapter::createDevice() without RuntimeBackend and
+then InitialReset; InitialReset invokes ResetState and ResetSwapChain, which
+constructs the implicit presenter. D3D9DeviceEx constructor already accepts
+an owned DxvkDevice but depends on parent config/options/compatibility and
+starts/synchronizes its command thread. A private parent and separate offscreen
+state initialization are required. RuntimeGpu already accepts raw device
+HANDLE/common D3DDDI_DEVICECALLBACKS; its identity still uses D3D10 wrappers.
+Factor renderer-neutral adapter identity/selection/runtime validation with
+focused shared-contract tests before reusing it for the D3D9 embedded core.
+
+Offline37408748554 ALL4PASS at sourceaac5172: x64/x86 production DDI plus
+D3D9 fixture execution, ARM64 compile and Linux sanitizers/negative controls.
+Next constructor detail: ResetState's render-state defaults are independent
+of the implicit swapchain, while InitialReset invokes both state and WSI
+initialization. An explicit offscreen initializer can reuse defaults without
+ResetSwapChain; swapchain-dependent COM methods must not become native DDIs.
+
+Full37408749906 ALL6PASS at sourceaac5172. Logs confirm42429 D3D9 checks on
+x64/x86 and native ARM64; previous D3D10 rotation/runtime/entry/lifetime and
+resource fixtures also passed. Full artifact IDs: x64 11388846935,
+x86 11387858864, ARM64 11388661772, native validation 11388318354. These are
+development contract/build results; production OpenAdapter/rendering admission
+and real DX8-DX9 system runtime acceptance remain open.
+
+Private D3D9Adapter construction queries Vulkan capabilities and format tables
+but does not enumerate displays. Its parent can receive exactly the selected
+instance/adapter and skip singleton/DPI/display setup; the private parent's
+public CreateDeviceEx must reject direct device creation. ResetState plus
+explicit viewport/scissor and a recording/submission barrier form offscreen
+initialization. FPU_PRESERVE prevents native construction changing caller FPU.
+The concrete device remains internal; the development probe returns only
+swapchain count and destroys it synchronously. An active caller dispatcher is
+required across constructor worker joins and destruction. This source slice
+does not wire typed CreateDevice or claim successful target GPU construction.

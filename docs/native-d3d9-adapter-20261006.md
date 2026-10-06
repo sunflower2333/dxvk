@@ -49,9 +49,16 @@ confirms ARM64 and only a KERNEL32 import. Driver `100.6.101.58623` /
 registration or VM configuration changed.
 
 Local existing sanitizer checks passed: identity 69, runtime identity 180,
-shader container 147. Offline MSVC x86/x64 execution and ARM64 compilation,
-full embedded production builds, and native ARM64 CI execution include the
-new fixture. Exact CI results will be recorded after those workflows finish.
+shader container 147. Exact implementation source is
+`aac5172b1c0983dbe58b4f6fe4c8a1a3cd7e7e03`.
+[Offline CI 37408748554](https://github.com/sunflower2333/dxvk/actions/runs/37408748554)
+passed all four jobs, including MSVC x86/x64 execution and ARM64 compilation.
+[Full CI 37408749906](https://github.com/sunflower2333/dxvk/actions/runs/37408749906)
+passed all six jobs, including three embedded production builds and native
+ARM64 execution. Each architecture executed exactly 42,429 D3D9 adapter checks.
+Previous D3D10 ownership, rotation and resource regressions also passed.
+Full builds retain the production export/import gates; rendering admission
+and all eight native admission gaps remain open.
 
 Workspace evidence: `artifacts/dxvk-native-d3d9-20261006/`. Reusable guest
 recipes: `.planning/dxvk-umd-remote-20261005/{assemble-guest-umd-support.sh,

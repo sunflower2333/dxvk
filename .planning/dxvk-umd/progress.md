@@ -1934,3 +1934,43 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
   sanitizer gates pass. Exact compact probe restored
   from25a9edd. Source proof verifies helper differs only by that short circuit;
   new CI/native build/compact GPU acceptance remain pending.
+
+- ae61dded3d2ba9b93327abf1c9ea46bb981d7717 committed/pushed once; only
+  consolidatedCI37541475016 triggers. Linux identity/shader jobs pass; three
+  architecture core builds remain active. Native comparator positive342 and
+  exact guard-removal negative exit1 independently link70primary+15Vulkan
+  dependency inputs (8864cdc8), archive de684fb7, source/Git/build/after-run.
+  Original positive70ea6e45/negative d31f257b/staticKERNEL32/AA64PE+COFF verify,
+  zero warnings, installedSYS/desktop/candidate retained. Root reviewed rerun
+  preserves agent receipts and also verifies exact compiler flags/paths,
+  unique positive/negative cases and DWM1552/Explorer6464. Evidence bc5eaa4d.
+- While ae61dde builds, local uncommitted typed query slice implements explicit
+  six-type mapping, owned query tokens, Begin/End translation, completion-only
+  S_FALSE, owned pending output and full EVENT BOOL, post-result epoch checks
+  and worker cleanup. New fixture covers snapshots/reentry/concurrency, guarded
+  output/cached results, strict failures/retry, stale/wrong-device handles and
+  reset before publication. Separate57input preflight01 archive76b27cb9 records
+  exactly4changedinputs; native strict compile/execution is delegated. No query
+  CI push or GPU acceptance yet. Preserve ae61dde candidate acceptance first.
+
+- ae61dde consolidatedCI37541475016 all6SUCCESS independently verifies five
+  raw ZIPs, three architectures/typed220595,15 native ARM64 executions and342
+  comparator positive/exact-reverted-negative checks. Root reviewed fresh reruns
+  and ZIP-member proofs retain the agent's originals. Exact ARM candidateDLL
+  41c0c950/probeb9c2dc84 staged with verified receipt; no installed driver change.
+- Original compact stride16/color12 probe passes clip37diagnostics1 (33.4559408s)
+  andclip38diagnostics0 (28.9399387s): all640/ac340bd5,4864totalpixels,+1056bytes,
+  88renders, ctx1/1alloc15/15lock14/14residency15/15remaining0wrong0. Root
+  independently recomputes all640rawpixels from exact rational half-spaces for
+  both runs. Eight frozen helpers/8payloads/3scripts/LimitedUSER1/58readiness,
+  installedSYS and DWM1552/Explorer6464 verify unchanged. GPUarchivesd8edab34
+  and72407194, finalroot-clip-checkpoint-verified-01.json and acceptance doc retained.
+  Vertex-input equality fix resolves the original compact-layout GPU failure.
+- Uncommitted query preflight01 strict native ARM64 fixture passes272881;
+  root reviews/reruns with exact count/fourchanges/compiler/desktop pins.
+  CreateQuery now reads only input QueryType, leaving output hQuery unread.
+  New--queries probe includes192 independently logged pixels and actual
+  occlusion64/16/0, guarded unissued/begun pending, EVENT fullBOOL/cached/reuse,
+  ordered timestamp pair, disjoint/frequency and owned stale-token cleanup.
+  Fresh preflight02 frozen57inputs/archive0e9aa70a has exactly5changedfiles,
+  delegated for native fixture/probe compile verification; queryGPU/CI pending.

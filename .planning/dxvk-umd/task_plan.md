@@ -696,5 +696,6 @@ gates and native fixture/semantic controls remain required.
 - [complete] Implement typed depth/stencil ownership and native clear semantics; exact targetdepth29/30 pixel/readiness proofs pass.
 - [complete] Implement and independently verify fixed-function transforms/material/lights, native controls, CI and targetfixed31/32 pixels.
 - [complete] Implement and independently verify SYSTEMMEM/BufBlt, native controls, consolidated CI and targetbuffer-transfer33/34 pixel/byte/readiness gates.
-- [in_progress] Implement typed SetClipPlane with copied homogeneous coefficients, bounded indices and independent native/GPU acceptance.
+- [complete] Implement typed SetClipPlane and fix vertex-input comparison; native controls, exact CI and compact GPU clip37/38 pass.
+- [in_progress] Implement owned typed queries with completion-only output, native controls and independent GPU acceptance.
 - [pending] Complete remaining state/resource/presentation/reset and ordinary DX8-DX11 acceptance.

@@ -1459,3 +1459,20 @@ defect. Runtime causality still needs a new UMD and the unchanged compact probe.
 The portable tested helper retains all old comparison fields/arrays and changes
 only the short circuit; production eq delegates directly to it. No Mesa patch,
 layout workaround, caps/export change or ordinary-runtime admission is included.
+
+Exact ae61dde candidate and original compact25a9edd probe pass clip37/38 with
+diagnostics1/0, all640raw rational-oracle pixels/4864total+1056bytes. This
+resolves the compact-layout defect after correcting equality's divisor loop;
+no padded-layout workaround is accepted. Both retain all prior slices, balanced
+runtime/worker cleanup, installedSYS/desktop and58readiness fields. Full
+source/native/CI/archive/helper/pixel joins are recorded in
+artifacts/dxvk-native-d3d9-clip-planes-20261007/root-clip-checkpoint-verified-01.json.
+
+Query native ABI has Begin1/End2, opposite COM flags. Completed EVENT requires
+four-byte BOOL TRUE even when the core's cached EVENT writes only a bool byte.
+Pending/failure output stays untouched through owned storage and post-result
+device epoch checks. Unissued/begun queries must not invoke the core's implicit
+first-GetData issue. VCACHE is NVIDIA-specific in this renderer and unavailable
+on matched Adreno830; do not fabricate those hints or advertise target support.
+Native query preflight01 passes272881; revised probe/source preflight02 remains
+under build verification. GPU query acceptance and ordinary runtime remain open.

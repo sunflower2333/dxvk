@@ -30,9 +30,23 @@ and DWM1552/Explorer4184 continuity retain all54 sensitive readiness values.
 Typed programmable VS/PS create/bind/delete and six constant uploads are
 implemented with bounded caller snapshots and worker ownership. Native
 fixture107385PASS and four compiled semantic controls independently verify
-56 source/after-run/archive/nativePE/driver/desktop links. Next commit/build
-all architecture gates, then verify the576pixel --shader oracle on the target.
-Full shader CI and actual programmable pixels remain pending.
+56 source/after-run/archive/nativePE/driver/desktop links. Source8c4e097 is
+pushed and all56 positive fixture inputs match its committed bytes. Offline
+37486999026 all4PASS and API37486881619/package37486881554PASS.
+Full37486995183 all6PASS; independently retained3architecture artifacts and
+14 actual native ARM64 execution hashes/107385 device checks verify. Target22
+passes384 old pixels then fails SM1stage7 firstpixel with clearcolour; VS1
+probe lacks the D3D9-required input DCL. Correct the probe alone and compile/
+verify it against the unchanged8c4e097 DLL before a fresh576pixel target run.
+Failed22 remains immutable; actual programmable pixels are still pending.
+Transferred shader harness hashes/native Windows parsing verify. Fresh before22
+still has signed58624/oem17/PnP0/SYSsha and unchanged readiness values. Explorer
+is now2488 before this GPU test; DWM1552 remains. Compare each upcoming run with
+this fresh baseline, without claiming historical Explorer continuity from21.
+After22 same driver/desktop and58 selected sensitive values remain unchanged.
+Earlier Explorer ApplicationError1000 fault in installedviogpud3d.dll,
+exceptionc0000005/RVA10db80, remains a separate stability diagnosis; map the
+actual installed binary before inferring its source from a different CI DLL.
 Textures/buffers, indexed/multistream drawing, presentation/reset and ordinary
 DX8-DX11 remain open. Keep the full goal active; no caps, production exports
 or paired binary pin widening until their mandatory contracts are ready.

@@ -33,8 +33,29 @@ The new `--shader` target probe retains the 192 clear and 192 fixed-function
 draw pixels, and adds 192 pixels from actual SM1.1, SM2.0 and SM3.0 programs.
 SM3 float/int/Boolean constants affect both vertex placement and pixel colour.
 The independent shader checksum is `1384c5a5`; padding and a nonzero
-vertex-start offset remain part of the oracle. Production architecture CI and
-the target programmable shader run are pending.
+vertex-start offset remain part of the oracle. Source `8c4e097` full
+[CI37486995183](https://github.com/sunflower2333/dxvk/actions/runs/37486995183)
+passes all six jobs, and offline37486999026 passes all four. Independently
+retained artifacts verify all three architectures, 107,385 device checks per
+architecture and 14 actual native ARM64 execution hashes. API37486881619 and
+package37486881554 also pass. Exact ARM64 artifact11424158285 is retained.
+
+First target22 passes the previous384 clear/draw pixels, creates both SM1
+shaders and submits stage7 successfully, but its first shader pixel retains
+the clear colour. The original probe omitted `dcl_position v0` from the
+SM1 vertex program. D3D9 requires this semantic association even in vs_1_1;
+DXVK binds declaration elements through that signature. The correction adds
+the missing declaration to the probe, preserving production source8c4e097,
+the pixel/checksum oracle, Mesa8443 and installed58624. Its target proof is
+pending. Failed22 archive `24ec8d89ae202daf8405b14c203bcad6c00422d6882e8bb4b9d03f4228dcb6d0`
+remains immutable. Fresh exact signed driver/PnP/SYSsha, DWM1552/Explorer2488
+and58 selected failure/reset/readiness values remain unchanged through22.
+
+Before22, Explorer had restarted. Its Application Error1000 record identifies
+the installed `viogpud3d.dll`, exceptionc0000005, RVA10db80, for oldPID4184.
+That fault predates the new candidate GPU run and remains a separate driver
+stability issue. Source mapping requires the actual installed binary; the
+retained fdfd CI legacy DLL has a different timestamp and smaller image.
 
 Production D3D9 OpenAdapter and rendering caps remain closed. Textures/buffers,
 indexed/multistream/edge-flag drawing, depth/stencil, remaining legacy state,
@@ -45,3 +66,6 @@ Contracts: [shader token format](https://learn.microsoft.com/en-us/windows-hardw
 [native vertex shader creation](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_createvertexshaderfunc),
 [pixel code byte count](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/ns-d3dumddi-_d3dddiarg_createpixelshader),
 [constant register counts](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/ns-d3dumddi-_d3dddiarg_setvertexshaderconst).
+The [vs_1_1 input register contract](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-vs-registers-vs-1-1)
+requires DCL; [dcl_usage](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dcl-usage-input-register---vs)
+is supported by shader models1–3.

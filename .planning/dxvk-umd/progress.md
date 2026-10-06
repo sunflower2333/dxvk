@@ -1423,3 +1423,48 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
   pixels. SM3 uses float/int/bool in both stages; independent checksum1384c5a5.
   Commit exact source, complete architecture gates and run in Limited USER.
   Ordinary admission, caps and paired pins remain closed; full goal active.
+
+### Exact shader source, CI and target harness preparation
+
+- Committed/pushed8c4e097feb6e29dfaaff5b3c5e6041dac770f295. All56 positive02
+  fixture inputs independently match Git bytes. Offline37486999026 all4PASS;
+  API37486881619PASS. Full37486995183 identity/shader/x64/x86PASS, ARM64
+  renderer/runtime still pending; package37486881554 linked separately.
+- Added strict shader mode to the Limited USER harness and independent pixel
+  verifier:576pixels, nine readbacks, six SM1-3 creates, six F/I/B uploads,
+  three independent checksums, balanced callbacks/residency and exact payloads.
+  All3 transferred script hashes/native Windows syntax verify. Inline parser
+  check failed Windows command-shell quoting; transferred script fixes it.
+- Fresh before22 signed58624/oem17/binding0002/PnP0/SYSsha still verifies.
+  All58 selected failure/reset/epoch/timeout/admission values match old21.
+  Explorer2488 replaced4184 before any new GPU test; DWM1552 remains. Retain
+  this explicit fresh baseline and check continuity within upcoming runs.
+  Guest absolute clock differs from host UTC; use within-guest lifetime and
+  monotonic run durations. No clock/VM/registry/package changes performed.
+- Two guessed helper/roadmap paths and one workspace-relative SDK read were
+  wrong; discovered the existing files and corrected their workspace roots.
+
+### Shader production gates and failed target22
+
+- Full37486995183 all6SUCCESS, offline37486999026 all4SUCCESS, API37486881619
+  and package37486881554SUCCESS. All4 downloaded full artifacts independently
+  verify3architecture PE/import/export contracts,107385device checks perarch,
+  42429adapter/49backend/45reject checks and14actual nativeARM64 execution
+  hashes. Source8c4e097 ARMartifact11424158285 retained. Exact minimal candidate
+  archiveade4a8520cfcabced6e43a3eccf5c15aee99bc807af589db7a803eb41fbf908b
+  and3staged payload hashes/nativePE/source receipt verify.
+- Target22 Limited USER/session1/source8c4e097/Mesa8443/58624 fails SM1stage7
+  firstpixel:actualff17293b clear vs expectedff204060. Previous384clear/draw
+  pixels PASS; both24byteVS/20bytePS createS_OK and7nonempty KMT submits succeed.
+  Residency10/10/remaining0 recorded; no balanced-context/total-shader-pixel
+  acceptance claimed. Owned task removedexit1. Archive24ec8d89ae202daf8405b14c203bcad6c00422d6882e8bb4b9d03f4228dcb6d0
+  immutable; fresh driver/desktop/58sensitive values unchanged through22.
+- Microsoft vs_1_1 input contract requires DCL, and actual DXVK BindInputLayout
+  uses that semantic signature. Original probe forgotdcl_positionv0; input
+  cannot bind. Add3token declaration toprobeonly (VS36bytes), preserve shader
+  pixel/checksum/geometry oracle and production8c4e097 DLL. Compile/verify new
+  pinned probe before fresh run; actual programmable acceptance still pending.
+- Explorer old4184 ApplicationError1000 before22 faults installedviogpud3d.dll
+  c0000005/RVA10db80/module timestamp6ac2defb. CI-fdfd legacyDLL timestamp
+  6ac4a23c/image21000 does not match; no source-cause inference. Retain event,
+  inspect actual installed binary for separate stability diagnosis.

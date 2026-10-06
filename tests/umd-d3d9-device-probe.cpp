@@ -340,7 +340,10 @@ public:
         if (FAILED(hr)) return hr;
         // Actual assembled SM1.1, SM2.0 and SM3.0 programs. SM3 uses float,
         // integer and boolean constants in both stages to select the output.
-        const UINT vs1[] = {0xfffe0101,0x00000002,0xc00f0000,0x90e40000,0xa0e40000,0x0000ffff};
+        // D3D9 requires the semantic declaration even for vs_1_1. Without it,
+        // v0 has no vertex input binding and the quad degenerates to one point.
+        const UINT vs1[] = {0xfffe0101,0x0000001f,0x80000000,0x900f0000,
+          0x00000002,0xc00f0000,0x90e40000,0xa0e40000,0x0000ffff};
         const UINT ps1[] = {0xffff0101,0x00000001,0x800f0000,0xa0e40000,0x0000ffff};
         const UINT vs2[] = {0xfffe0200,0x0200001f,0x80000000,0x900f0000,
           0x03000002,0xc00f0000,0x90e40000,0xa0e40000,0x0000ffff};

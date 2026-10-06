@@ -1004,3 +1004,50 @@ verified; new quad/scissor/colour-mask checks have no target receipt yet.
   pixels. SM3 uses float/int/bool in both stages; independent checksum1384c5a5.
   Commit exact source, complete architecture gates and run in Limited USER.
   Ordinary admission, caps and paired pins remain closed; full goal active.
+
+### Shader validation continuation and next texture contract
+
+- Exact shader source8c4e097 and56 native positive fixture input bytes match.
+  Offline37486999026 all4PASS; API37486881619PASS; full37486995183 x64/x86,
+  identity and shader CPU PASS, ARM64 renderer/native execution pending.
+  Strict576pixel shader harness is transferred and all3 hashes/parser checks
+  pass. Fresh target baseline records DWM1552/Explorer2488 and exact signed
+  58624/oem17/binding0002/PnP0/SYSsha;58 failure/reset/readiness values remain
+  identical to historical21. Explorer changed before this new GPU test.
+- Texture DDI is a coherent mip chain, not independent offscreen surfaces.
+  WDK26100 flags distinguish Texture/CubeMap/Volume, with MipLevels and SurfCount
+  determining the group. Existing surface slice ignores reserved MipLevels
+  appropriately when no texture flags exist. Keep that behavior for surfaces.
+- [Microsoft CreateResource](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_createresource)
+  defines all implied attachments in atomic creation, retained raw runtime
+  hResource versus returned private token, and permits deferred allocations.
+  A2D mip chain has one surface per level; a cube has six times the levels.
+- [Microsoft TexBlt](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_texblt)
+  must copy all common corresponding mip levels, including differently sized
+  top levels. Arbitrary individual-level copies use Blt. Avoid a top-level-only
+  upload implementation that silently leaves lower mip data stale.
+- Native texture-stage state combines fixed-function D3DTSS and D3DSAMP state
+  enum values; explicit mapping is required. Retained SDK also includes native
+  colorkey states33/34, which cannot be cast to public texture/sampler enums.
+  [SetTextureStageState contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_settexturestagestate).
+- [D3DDDI_SURFACEINFO](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dukmdt/ns-d3dukmdt-_d3dddi_surfaceinfo)
+  restricts pSysMem to SYSTEMMEM and preserves caller pitch/slice pitch. Reuse
+  external lifetime/padding checks; texture creation and teardown must retain
+  worker-owned underlying DXVK texture plus typed subresource surfaces.
+
+### First shader target refusal is a probe input declaration error
+
+Source8c4e097 passes all full/offline/API/package CI and independent actual
+artifacts. Target22 returnsS_OK for shader create/draw/readback and all7KMT
+submits; old384pixelsPASS but first shader pixel remainsclearff17293b rather
+thanff204060. VS1 probe omitsdcl_positionv0. Actual core BindInputLayout maps
+elements only through shader semantics, and pinned sm3IoMap requires DCL for
+VS inputs even beforeSM3. [Microsoft vs_1_1 input registers](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx9-graphics-reference-asm-vs-registers-vs-1-1)
+explicitly require DCL; [dcl_usage](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dcl-usage-input-register---vs)
+supportsvs1.1. Correct onlytheprobe and retain unchanged productionDLL8c4e097,
+pixel expectations/checksums/Mesa/KMD. No programmable pixel acceptance yet.
+Failed22 archive24ec8d89ae202daf8405b14c203bcad6c00422d6882e8bb4b9d03f4228dcb6d0
+and same-run driver/desktop/58 sensitive-value continuity independently retain.
+Earlier Explorer fault identifies installedviogpud3d.dllc0000005/RVA10db80,
+timestamp6ac2defb. Retainedfdfd legacyDLL has another timestamp and smaller
+image; exact installed bytes are required before attributing its source.

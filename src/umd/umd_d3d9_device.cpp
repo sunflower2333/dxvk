@@ -77,6 +77,10 @@ struct Device {
   HANDLE target = nullptr;
   UINT targetIndex = 0;
   HANDLE depthStencil = nullptr;
+  // Runtime light indices can be sparse. Map them to reusable compact renderer
+  // slots instead of allowing an arbitrary index to resize its private vector.
+  struct Light { UINT slot = 0; bool enabled = false; };
+  std::unordered_map<UINT, Light> lights;
 
   HRESULT close() noexcept {
     if (closing) return S_OK;
@@ -100,6 +104,8 @@ struct Device {
         for (UINT i = 0; i < streams.size(); ++i)
           if (streams[i].buffer) backend->setStreamSource(i, nullptr, 0, 0);
         if (indices) backend->setIndices(nullptr);
+        for (const auto& light : lights)
+          if (light.second.enabled) backend->setLightEnabled(light.second.slot, false);
         if (!resources.empty() || !declarations.empty() || !shaders.empty()) backend->flush();
       } } catch (...) { hr = E_FAIL; }
       resources.clear();
@@ -115,6 +121,7 @@ struct Device {
       indices = nullptr;
       target = nullptr;
       depthStencil = nullptr;
+      lights.clear();
       backend.reset();
     }); }
     catch (...) { hr = E_FAIL; }
@@ -889,6 +896,97 @@ HRESULT APIENTRY setRenderState(HANDLE handle, const D3DDDIARG_RENDERSTATE* args
   });
 }
 
+bool transformType(D3DTRANSFORMSTATETYPE type) {
+  const UINT value = UINT(type);
+  return type == D3DTS_VIEW || type == D3DTS_PROJECTION
+    || (value >= UINT(D3DTS_TEXTURE0) && value <= UINT(D3DTS_TEXTURE7))
+    || (value >= UINT(D3DTS_WORLD) && value < UINT(D3DTS_WORLD) + 256);
+}
+template<typename Args, bool Multiply>
+HRESULT APIENTRY setTransform(HANDLE handle, const Args* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  if (!transformType(input.TransformType)) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) {
+    return device.backend->setTransform(input.TransformType, input.Matrix, Multiply);
+  });
+}
+HRESULT APIENTRY setMaterial(HANDLE handle, const D3DDDIARG_SETMATERIAL* args) {
+  if (!args) return E_INVALIDARG;
+  const D3DMATERIAL9 material = {args->Diffuse, args->Ambient, args->Specular, args->Emissive, args->Power};
+  return operation(handle, [&](Device& device) { return device.backend->setMaterial(material); });
+}
+HRESULT APIENTRY createLight(HANDLE handle, const D3DDDIARG_CREATELIGHT* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  return operation(handle, [&](Device& device) {
+    if (device.lights.count(input.Index)) return E_INVALIDARG;
+    UINT slot = 0;
+    while (std::any_of(device.lights.begin(), device.lights.end(), [&](const auto& light) {
+      return light.second.slot == slot;
+    })) {
+      if (slot == UINT_MAX) return E_OUTOFMEMORY;
+      ++slot;
+    }
+    device.lights.emplace(input.Index, Device::Light{slot, false});
+    try {
+      D3DLIGHT9 light = {};
+      light.Type = D3DLIGHT_DIRECTIONAL;
+      light.Diffuse = {1.0f, 1.0f, 1.0f, 0.0f};
+      light.Direction.z = 1.0f;
+      const HRESULT hr = result(device.backend->setLight(slot, light));
+      if (FAILED(hr)) device.lights.erase(input.Index);
+      return hr;
+    } catch (...) {
+      device.lights.erase(input.Index);
+      throw;
+    }
+  });
+}
+HRESULT APIENTRY setLight(HANDLE handle, const D3DDDIARG_SETLIGHT* args, const D3DDDI_LIGHT* properties) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  // The SDK defines three enum values (0/1/2), rather than independent bits.
+  if (input.DataType != D3DDDI_SETLIGHT_ENABLE && input.DataType != D3DDDI_SETLIGHT_DISABLE
+      && input.DataType != D3DDDI_SETLIGHT_DATA) return E_INVALIDARG;
+  D3DLIGHT9 light = {};
+  return preparedOperation(handle, [&](Device& device) {
+    const auto entry = device.lights.find(input.Index);
+    if (entry == device.lights.end()) return E_INVALIDARG;
+    if (input.DataType == D3DDDI_SETLIGHT_DATA) {
+      if (!properties || uintptr_t(properties) > UINTPTR_MAX - sizeof(*properties)) return E_INVALIDARG;
+      const auto value = *properties;
+      if (value.Type != D3DLIGHT_POINT && value.Type != D3DLIGHT_SPOT
+          && value.Type != D3DLIGHT_DIRECTIONAL) return E_INVALIDARG;
+      light = {value.Type, value.Diffuse, value.Specular, value.Ambient,
+        value.Position, value.Direction, value.Range, value.Falloff,
+        value.Attenuation0, value.Attenuation1, value.Attenuation2, value.Theta, value.Phi};
+    } else if (input.DataType == D3DDDI_SETLIGHT_ENABLE && !entry->second.enabled
+        && std::count_if(device.lights.begin(), device.lights.end(), [](const auto& item) {
+          return item.second.enabled;
+        }) >= dxvk::caps::MaxEnabledLights) return D3DERR_INVALIDCALL;
+    return S_OK;
+  }, [&](Device& device) {
+    auto& owned = device.lights.at(input.Index);
+    if (input.DataType == D3DDDI_SETLIGHT_DATA) return device.backend->setLight(owned.slot, light);
+    const bool enable = input.DataType == D3DDDI_SETLIGHT_ENABLE;
+    const HRESULT hr = result(device.backend->setLightEnabled(owned.slot, enable));
+    if (SUCCEEDED(hr)) owned.enabled = enable;
+    return hr;
+  });
+}
+HRESULT APIENTRY destroyLight(HANDLE handle, const D3DDDIARG_DESTROYLIGHT* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.lights.find(input.Index);
+    if (entry == device.lights.end()) return E_INVALIDARG;
+    const HRESULT hr = result(device.backend->setLightEnabled(entry->second.slot, false));
+    if (SUCCEEDED(hr)) device.lights.erase(entry);
+    return hr;
+  }, true);
+}
+
 HRESULT APIENTRY setViewport(HANDLE handle, const D3DDDIARG_VIEWPORTINFO* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
@@ -1183,6 +1281,12 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnSetVertexShaderConstB = vertexConstantsB;
   table.pfnSetPixelShaderConstB = pixelConstantsB;
   table.pfnSetRenderState = setRenderState;
+  table.pfnSetTransform = setTransform<D3DDDIARG_SETTRANSFORM, false>;
+  table.pfnMultiplyTransform = setTransform<D3DDDIARG_MULTIPLYTRANSFORM, true>;
+  table.pfnSetMaterial = setMaterial;
+  table.pfnCreateLight = createLight;
+  table.pfnSetLight = setLight;
+  table.pfnDestroyLight = destroyLight;
   table.pfnSetViewport = setViewport;
   table.pfnSetZRange = setZRange;
   table.pfnSetScissorRect = setScissorRect;

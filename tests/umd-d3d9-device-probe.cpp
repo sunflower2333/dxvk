@@ -135,7 +135,7 @@ public:
       && locks == unlocks && !m_context && !wrongThreads ? S_OK : E_FAIL;
   }
   HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false,
-                          bool buffers = false, bool depthStencil = false) {
+                          bool buffers = false, bool depthStencil = false, bool fixedFunction = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -223,6 +223,19 @@ public:
               const UINT right = stage == 30 || stage == 37 ? 4u : 6u;
               if (!(x >= 3 && x < right && y >= 2 && y < 6)) expected = 0xff07131f;
             }
+          }
+          if (stage >= 38 && stage <= 43) {
+            const RECT fixedBounds[] = {{2,2,6,6},{4,3,8,7},{3,3,5,5},{5,3,7,5},{1,3,3,5},{4,2,6,4}};
+            const UINT fixedColors[] = {0xffb03d87,0xff63ba49,0xffd18c37,0xff75a5d1,0xff9f68cb,0xff43b49c};
+            const auto& bounds = fixedBounds[stage-38];
+            expected = LONG(x) >= bounds.left && LONG(x) < bounds.right
+              && LONG(y) >= bounds.top && LONG(y) < bounds.bottom ? fixedColors[stage-38] : 0xff0b1723;
+          }
+          if (stage >= 44 && stage <= 58) {
+            const UINT lightColors[] = {0xff0000ff,0xff000000,0xffff0000,0xff00ff00,0xff0000ff,
+              0xff00ff00,0xff000000,0xff00ff00,0xff00ffff,0xff0000ff,0xffff00ff,
+              0xff0000ff,0xffff00ff,0xff0000ff,0xff00ffff};
+            expected = lightColors[stage-44];
           }
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
@@ -831,6 +844,163 @@ public:
         hr = state(D3DDDIRS_STENCILENABLE,0); if (FAILED(hr)) return hr;
         std::printf("D3D9_DEPTH_READBACK PASS pixels=%u checksum=%08x padding=retained formats=D16/D24S8 depth=less/gequal/write stencil=preserved/masked clear=preclipped/computed/empty\n",checked,checksum);
       }
+      if (fixedFunction) {
+        if (!api.pfnSetTransform || !api.pfnMultiplyTransform || !api.pfnSetMaterial
+            || !api.pfnCreateLight || !api.pfnSetLight || !api.pfnDestroyLight) return E_FAIL;
+        struct FixedVertex { float x,y,z,nx,ny,nz; D3DCOLOR color; };
+        static_assert(sizeof(FixedVertex) == 28);
+        const D3DDDIVERTEXELEMENT fixedElements[] = {{0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0},
+          {0,12,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_NORMAL,0},{0,24,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+        D3DDDIARG_CREATEVERTEXSHADERDECL fixedDeclaration = {3,nullptr};
+        hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&fixedDeclaration,fixedElements); if (FAILED(hr)) return hr;
+        hr = api.pfnSetVertexShaderDecl(m_driverDevice,fixedDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        const D3DDDIARG_SETSTREAMSOURCEUM fixedStream = {0,sizeof(FixedVertex)};
+        const D3DDDIARG_VIEWPORTINFO fixedViewport = {0,0,8,8};
+        hr = api.pfnSetViewport(m_driverDevice,&fixedViewport); if (FAILED(hr)) return hr;
+        for (const auto fixedState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_ZENABLE,0},
+          {D3DDDIRS_STENCILENABLE,0},{D3DDDIRS_SCISSORTESTENABLE,0},{D3DDDIRS_AMBIENT,0},
+          {D3DDDIRS_SPECULARENABLE,0},{D3DDDIRS_NORMALIZENORMALS,1},{D3DDDIRS_LOCALVIEWER,0},
+          {D3DDDIRS_DIFFUSEMATERIALSOURCE,D3DMCS_MATERIAL},{D3DDDIRS_AMBIENTMATERIALSOURCE,D3DMCS_MATERIAL},
+          {D3DDDIRS_EMISSIVEMATERIALSOURCE,D3DMCS_MATERIAL},{D3DDDIRS_SPECULARMATERIALSOURCE,D3DMCS_MATERIAL}}) {
+          hr = state(fixedState.State,fixedState.Value); if (FAILED(hr)) return hr;
+        }
+        const D3DMATRIX identity = [] {
+          D3DMATRIX matrix = {}; matrix._11 = matrix._22 = matrix._33 = matrix._44 = 1.0f; return matrix;
+        }();
+        auto fixedMatrix = [&](UINT fixedStage, D3DTRANSFORMSTATETYPE type, const D3DMATRIX& matrix, bool multiply) {
+          HRESULT status;
+          if (multiply) {
+            const D3DDDIARG_MULTIPLYTRANSFORM args = {type,matrix};
+            status = api.pfnMultiplyTransform(m_driverDevice,&args);
+          } else {
+            const D3DDDIARG_SETTRANSFORM args = {type,matrix};
+            status = api.pfnSetTransform(m_driverDevice,&args);
+          }
+          std::printf("D3D9_FIXED_TRANSFORM stage=%u type=%u multiply=%u hr=%08lx\n",
+            fixedStage,UINT(type),UINT(multiply),static_cast<unsigned long>(status));
+          return status;
+        };
+        auto fixedData = [&](UINT fixedStage, UINT index, const D3DDDI_LIGHT& light) {
+          const D3DDDIARG_SETLIGHT args = {index,D3DDDI_SETLIGHT_DATA};
+          const HRESULT status = api.pfnSetLight(m_driverDevice,&args,&light);
+          std::printf("D3D9_FIXED_LIGHT_DATA stage=%u index=%u type=%u hr=%08lx\n",
+            fixedStage,index,UINT(light.Type),static_cast<unsigned long>(status));
+          return status;
+        };
+        auto fixedEnable = [&](UINT fixedStage, UINT index, bool enable) {
+          const D3DDDIARG_SETLIGHT args = {index,enable ? D3DDDI_SETLIGHT_ENABLE : D3DDDI_SETLIGHT_DISABLE};
+          const HRESULT status = api.pfnSetLight(m_driverDevice,&args,reinterpret_cast<const D3DDDI_LIGHT*>(UINT_PTR(1)));
+          std::printf("D3D9_FIXED_LIGHT_ENABLE stage=%u index=%u enable=%u hr=%08lx\n",
+            fixedStage,index,UINT(enable),static_cast<unsigned long>(status));
+          return status;
+        };
+        D3DDDI_LIGHT primary = {}; primary.Type = D3DLIGHT_DIRECTIONAL;
+        primary.Diffuse = {1,0,0,0}; primary.Direction.z = 1;
+        constexpr UINT firstLight = UINT_MAX, secondLight = 7, reusedLight = 0x80000001u;
+        checked = 0; checksum = 2166136261u;
+        for (UINT fixedStage = 38; fixedStage <= 58; ++fixedStage) {
+          for (const auto type : {D3DTS_WORLD,D3DTS_VIEW,D3DTS_PROJECTION}) {
+            hr = fixedMatrix(fixedStage,type,identity,false); if (FAILED(hr)) return hr;
+          }
+          hr = state(D3DDDIRS_LIGHTING,fixedStage >= 44 ? 1 : 0); if (FAILED(hr)) return hr;
+          hr = state(D3DDDIRS_COLORVERTEX,fixedStage >= 44 ? 0 : 1); if (FAILED(hr)) return hr;
+          D3DDDIARG_SETMATERIAL material = {};
+          material.Diffuse = material.Ambient = {1,1,1,1};
+          if (fixedStage == 44 || fixedStage == 48) material.Emissive.b = 1;
+          hr = api.pfnSetMaterial(m_driverDevice,&material); if (FAILED(hr)) return hr;
+          FixedVertex fixedVertices[5] = {};
+          fixedVertices[0] = {1000,1000,.5f,0,0,-1,0xff000000};
+          const UINT transformColors[] = {0xffb03d87,0xff63ba49,0xffd18c37,0xff75a5d1,0xff9f68cb,0xff43b49c};
+          for (UINT v = 1; v < 5; ++v) {
+            fixedVertices[v] = {fixedStage < 44 ? (v == 1 || v == 3 ? -.625f : .375f) : (v == 1 || v == 3 ? -2.0f : 2.0f),
+              fixedStage < 44 ? (v <= 2 ? .625f : -.375f) : (v <= 2 ? 2.0f : -2.0f),
+              .5f,0,0,fixedStage >= 51 ? 1.0f : -1.0f,fixedStage < 44 ? transformColors[fixedStage-38] : 0xffa040d0};
+          }
+          if (fixedStage == 39 || fixedStage == 41 || fixedStage == 42 || fixedStage == 43) {
+            D3DMATRIX translation = identity;
+            translation._41 = fixedStage == 42 ? -.5f : fixedStage == 43 ? .25f : .5f;
+            translation._42 = fixedStage == 39 ? -.25f : fixedStage == 43 ? .25f : 0.0f;
+            const auto type = fixedStage == 42 ? D3DTS_VIEW : fixedStage == 43 ? D3DTS_PROJECTION : D3DTS_WORLD;
+            hr = fixedMatrix(fixedStage,type,translation,false); if (FAILED(hr)) return hr;
+            if (fixedStage != 39) {
+              D3DMATRIX scaling = identity; scaling._11 = scaling._22 = .5f;
+              hr = fixedMatrix(fixedStage,type,scaling,true); if (FAILED(hr)) return hr;
+            }
+          } else if (fixedStage == 40) {
+            D3DMATRIX translation = identity; translation._41 = -.25f; translation._42 = .25f;
+            hr = fixedMatrix(fixedStage,D3DTS_VIEW,translation,false); if (FAILED(hr)) return hr;
+            D3DMATRIX scaling = identity; scaling._11 = scaling._22 = .5f;
+            hr = fixedMatrix(fixedStage,D3DTS_PROJECTION,scaling,false); if (FAILED(hr)) return hr;
+          }
+          if (fixedStage == 45 || fixedStage == 52 || fixedStage == 54) {
+            const D3DDDIARG_CREATELIGHT args = {fixedStage == 45 ? firstLight : fixedStage == 52 ? secondLight : reusedLight};
+            hr = api.pfnCreateLight(m_driverDevice,&args);
+            std::printf("D3D9_FIXED_LIGHT_CREATE stage=%u index=%u hr=%08lx\n",
+              fixedStage,args.Index,static_cast<unsigned long>(hr));
+            if (FAILED(hr)) return hr;
+          }
+          if (fixedStage == 45 || fixedStage == 47 || fixedStage == 50) {
+            if (fixedStage == 47) primary.Diffuse = {0,1,0,0};
+            if (fixedStage == 50) primary.Direction.z = -1;
+            hr = fixedData(fixedStage,firstLight,primary); if (FAILED(hr)) return hr;
+          }
+          if (fixedStage == 46 || fixedStage == 48 || fixedStage == 49) {
+            hr = fixedEnable(fixedStage,firstLight,fixedStage != 48); if (FAILED(hr)) return hr;
+          }
+          if (fixedStage == 52) {
+            D3DDDI_LIGHT secondary = {}; secondary.Type = D3DLIGHT_DIRECTIONAL;
+            secondary.Diffuse = {0,0,1,0}; secondary.Direction.z = -1;
+            hr = fixedData(fixedStage,secondLight,secondary); if (FAILED(hr)) return hr;
+            hr = fixedEnable(fixedStage,secondLight,true); if (FAILED(hr)) return hr;
+          }
+          if (fixedStage == 53) {
+            const D3DDDIARG_DESTROYLIGHT args = {firstLight};
+            hr = api.pfnDestroyLight(m_driverDevice,&args);
+            std::printf("D3D9_FIXED_LIGHT_DESTROY stage=%u index=%u hr=%08lx\n",
+              fixedStage,firstLight,static_cast<unsigned long>(hr));
+            if (FAILED(hr)) return hr;
+            const D3DDDIARG_SETLIGHT stale = {firstLight,D3DDDI_SETLIGHT_ENABLE};
+            if (api.pfnSetLight(m_driverDevice,&stale,nullptr) != E_INVALIDARG) return E_FAIL;
+          }
+          if (fixedStage >= 54) {
+            if (fixedStage == 54) {
+              primary = {}; primary.Type = D3DLIGHT_DIRECTIONAL;
+              primary.Diffuse = {1,0,0,0}; primary.Direction.z = -1;
+            } else if (fixedStage == 55) {
+              primary = {}; primary.Type = D3DLIGHT_POINT;
+              primary.Ambient = {1,0,0,0}; primary.Position.z = -4;
+              primary.Range = primary.Attenuation0 = 1;
+            } else if (fixedStage == 56) primary.Range = 1000;
+            else if (fixedStage == 57) {
+              primary = {}; primary.Type = D3DLIGHT_SPOT;
+              primary.Ambient = {0,1,0,0}; primary.Position.z = -4; primary.Direction.z = 1;
+              primary.Range = 1000; primary.Attenuation0 = primary.Falloff = 1;
+              primary.Theta = primary.Phi = .25f;
+            } else primary.Theta = primary.Phi = 3.14159265358979323846f;
+            hr = fixedData(fixedStage,reusedLight,primary); if (FAILED(hr)) return hr;
+            if (fixedStage == 54) {
+              hr = fixedEnable(fixedStage,reusedLight,true); if (FAILED(hr)) return hr;
+            }
+          }
+          hr = api.pfnSetStreamSourceUm(m_driverDevice,&fixedStream,fixedVertices); if (FAILED(hr)) return hr;
+          fill.FillColor = 0xff0b1723;
+          hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
+          hr = state(D3DDDIRS_SCENECAPTURE,1); if (FAILED(hr)) return hr;
+          hr = api.pfnDrawPrimitive(m_driverDevice,&primitive,nullptr);
+          std::printf("D3D9_FIXED_DRAW stage=%u lighting=%u normal_z=%d hr=%08lx\n",
+            fixedStage,UINT(fixedStage >= 44),fixedStage >= 51 ? 1 : -1,static_cast<unsigned long>(hr));
+          const HRESULT ended = state(D3DDDIRS_SCENECAPTURE,0);
+          if (FAILED(hr)) return hr;
+          if (FAILED(ended)) return ended;
+          hr = readback(fixedStage); if (FAILED(hr)) return hr;
+        }
+        const D3DDDIARG_DESTROYLIGHT retire = {secondLight};
+        hr = api.pfnDestroyLight(m_driverDevice,&retire); if (FAILED(hr)) return hr;
+        // Leave one owned enabled light for DestroyDevice's worker cleanup.
+        std::printf("D3D9_FIXED_LIGHT_CLOSE index=%u enabled=1\n",reusedLight);
+        hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,fixedDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        std::printf("D3D9_FIXED_READBACK PASS pixels=%u checksum=%08x padding=retained transforms=world/view/projection/multiply lights=directional/point/spot lifetime=sparse/enable/disable/destroy/reuse\n",checked,checksum);
+      }
     }
     hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
     if (FAILED(hr)) return hr;
@@ -1071,24 +1241,25 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  const bool depthStencil = argc == 3 && !wcscmp(argv[2], L"--depth");
+  const bool fixedFunction = argc == 3 && !wcscmp(argv[2], L"--fixed-function");
+  const bool depthStencil = fixedFunction || (argc == 3 && !wcscmp(argv[2], L"--depth"));
   const bool buffers = depthStencil || (argc == 3 && !wcscmp(argv[2], L"--buffer"));
   const bool textures = buffers || (argc == 3 && !wcscmp(argv[2], L"--texture"));
   const bool shaders = textures || (argc == 3 && !wcscmp(argv[2], L"--shader"));
   const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

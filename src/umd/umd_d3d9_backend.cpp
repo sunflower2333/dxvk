@@ -132,6 +132,19 @@ HRESULT D3D9Backend::setShaderConstantB(D3D9ShaderStage stage, UINT first, UINT 
   return stage == D3D9ShaderStage::Vertex ? m_state->d3d->SetVertexShaderConstantB(first, values, count)
                                         : m_state->d3d->SetPixelShaderConstantB(first, values, count);
 }
+HRESULT D3D9Backend::setTransform(D3DTRANSFORMSTATETYPE state, const D3DMATRIX& matrix, bool multiply) {
+  return multiply ? m_state->d3d->MultiplyTransform(state, &matrix)
+                  : m_state->d3d->SetTransform(state, &matrix);
+}
+HRESULT D3D9Backend::setMaterial(const D3DMATERIAL9& material) {
+  return m_state->d3d->SetMaterial(&material);
+}
+HRESULT D3D9Backend::setLight(UINT index, const D3DLIGHT9& light) {
+  return m_state->d3d->SetLight(index, &light);
+}
+HRESULT D3D9Backend::setLightEnabled(UINT index, bool enable) {
+  return m_state->d3d->LightEnable(index, enable);
+}
 HRESULT D3D9Backend::setRenderState(D3DRENDERSTATETYPE state, DWORD value) {
   return m_state->d3d->SetRenderState(state, value);
 }

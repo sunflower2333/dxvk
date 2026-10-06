@@ -135,6 +135,10 @@ public:
   HRESULT setShaderConstantF(D3D9ShaderStage stage, UINT first, UINT count, const float* values);
   HRESULT setShaderConstantI(D3D9ShaderStage stage, UINT first, UINT count, const INT* values);
   HRESULT setShaderConstantB(D3D9ShaderStage stage, UINT first, UINT count, const BOOL* values);
+  HRESULT setTransform(D3DTRANSFORMSTATETYPE state, const D3DMATRIX& matrix, bool multiply);
+  HRESULT setMaterial(const D3DMATERIAL9& material);
+  HRESULT setLight(UINT index, const D3DLIGHT9& light);
+  HRESULT setLightEnabled(UINT index, bool enable);
   HRESULT setRenderState(D3DRENDERSTATETYPE state, DWORD value);
   HRESULT setScene(bool capture);
   HRESULT setSoftwareVertexProcessing(bool enable);

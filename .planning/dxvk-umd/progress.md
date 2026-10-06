@@ -1700,3 +1700,30 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
  lighting acceptance. SYSTEMMEM/managedBufferBlt, other resources, queries,
  presentation/reset and ordinary system-runtime DX8-DX11 remain mandatory.
  No production caps/exports/registration/installation or paired pins change.
+
+
+### Typed fixed-function transform/material/light implementation
+
+- Add typed SetTransform/MultiplyTransform for VIEW/PROJECTION, texture0..7
+ and world0..255, plus copied SetMaterial. The renderer reuses DXVK's existing
+ fixed-function matrices and lighting instead of translating them a second time.
+- CreateLight maps arbitrary sparse runtime indices to reusable compact private
+ slots. Native ENABLE=0/DISABLE=1/DATA=2 follows the actual target SDK enum.
+ Point/spot/directional DATA snapshots copy after device serialization and
+ before callback pumping; DATA preserves enabled state. Unsupported enums,
+ unowned/stale indices and more than8active lights reject. Exact-success-only
+ enable/retire state, retry/exception creation rollback, recreation and enabled
+ close cleanup are covered by native controlled fixtures.
+- User-requested build verifier independently passes frozen preflight02:
+ native ARM64 /W4/WX probe and202248device checks, compile7.1772515s/run0.1041418s.
+ All56source/archive/after-run hashes match the exact5worktree inputs; KERNEL32
+ only/static runtime, ARM64 PE/COFF, signed58624/oem17/SYSsha and desktop retain.
+ This is uncommitted-source preflight; full renderer CI and committed controls
+ remain pending. Earlierpreflight01 retained separately without final GPU probe.
+- Implement21actual GPU stages38..58:1344new fixed-function pixels checksum
+ b3416e11, total3712including prior2368. Independent CPU matrix/lighting math
+ derives expectations before GPU execution. Cover world/view/projection and
+ noncommutative multiplication, emissive material, directional normal response,
+ enable/disable/DATA preservation, sparse destroy/reuse, point range and spot
+ cones. Leave one enabled owned light for actual DestroyDevice worker cleanup.
+ No caps/exports/registration/installation or paired pins change.

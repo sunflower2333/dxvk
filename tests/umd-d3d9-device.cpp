@@ -85,6 +85,15 @@ struct Fixture {
   D3DVIEWPORT9 viewport = {0,0,0,0,0.0f,1.0f};
   RECT scissor = {};
   bool scene = false, software = false;
+  HRESULT fixedResult = S_OK, lightResult = S_OK, lightEnableResult = S_OK;
+  bool throwLight = false, multiplyTransform = false;
+  unsigned transformSets = 0, materialSets = 0, lightSets = 0, lightEnableSets = 0;
+  D3DTRANSFORMSTATETYPE transformState = D3DTS_WORLD;
+  D3DMATRIX transform = {};
+  D3DMATERIAL9 material = {};
+  UINT lightSlot = 0;
+  std::vector<D3DLIGHT9> lights;
+  std::vector<bool> lightsEnabled;
   unsigned shaderCreates = 0, shaderCloses = 0, shaderSets = 0, constantSets = 0;
   HRESULT shaderResult = S_OK, constantResult = S_OK;
   bool nullShader = false;
@@ -337,6 +346,7 @@ dxvk::umd::D3D9Backend::~D3D9Backend() {
   for (const auto texture : m_state->textures) CHECK(!texture);
   CHECK(f->bufferCreates == f->bufferCloses && !m_state->indices);
   for (const auto stream : m_state->streams) CHECK(!stream);
+  for (const auto enabled : f->lightsEnabled) CHECK(!enabled);
   ++f->backendCloses;
   if (!f->adapterValid) {
     uint32_t fence = 99;
@@ -443,6 +453,38 @@ HRESULT dxvk::umd::D3D9Backend::setShaderConstantI(D3D9ShaderStage stage, UINT f
 }
 HRESULT dxvk::umd::D3D9Backend::setShaderConstantB(D3D9ShaderStage stage, UINT first, UINT count, const BOOL* values) {
   return captureConstants(stage, first, count, values, size_t(count) * 4, 'B');
+}
+HRESULT dxvk::umd::D3D9Backend::setTransform(D3DTRANSFORMSTATETYPE state, const D3DMATRIX& matrix,
+    bool multiply) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  ++f->transformSets;
+  if (f->fixedResult != S_OK) return f->fixedResult;
+  f->transformState = state; f->transform = matrix; f->multiplyTransform = multiply;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setMaterial(const D3DMATERIAL9& material) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  ++f->materialSets;
+  if (f->fixedResult != S_OK) return f->fixedResult;
+  f->material = material; return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setLight(UINT index, const D3DLIGHT9& light) {
+  CHECK(GetCurrentThreadId() != f->caller && index <= f->lights.size() && index < 64);
+  ++f->lightSets;
+  if (f->throwLight) throw std::bad_alloc();
+  if (f->lightResult != S_OK) return f->lightResult;
+  if (index == f->lights.size()) {
+    f->lights.emplace_back(); f->lightsEnabled.push_back(false);
+  }
+  f->lightSlot = index; f->lights[index] = light;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setLightEnabled(UINT index, bool enable) {
+  CHECK(GetCurrentThreadId() != f->caller && index < f->lights.size());
+  ++f->lightEnableSets;
+  if (f->lightEnableResult != S_OK) return f->lightEnableResult;
+  f->lightSlot = index; f->lightsEnabled[index] = enable;
+  return S_OK;
 }
 HRESULT dxvk::umd::D3D9Backend::setRenderState(D3DRENDERSTATETYPE state, DWORD value) {
   CHECK(GetCurrentThreadId() != f->caller);
@@ -693,6 +735,12 @@ static void createDevice() {
   expectedTable.pfnSetVertexShaderConstB = f->table.pfnSetVertexShaderConstB;
   expectedTable.pfnSetPixelShaderConstB = f->table.pfnSetPixelShaderConstB;
   expectedTable.pfnSetRenderState = f->table.pfnSetRenderState;
+  expectedTable.pfnSetTransform = f->table.pfnSetTransform;
+  expectedTable.pfnMultiplyTransform = f->table.pfnMultiplyTransform;
+  expectedTable.pfnSetMaterial = f->table.pfnSetMaterial;
+  expectedTable.pfnCreateLight = f->table.pfnCreateLight;
+  expectedTable.pfnSetLight = f->table.pfnSetLight;
+  expectedTable.pfnDestroyLight = f->table.pfnDestroyLight;
   expectedTable.pfnSetViewport = f->table.pfnSetViewport;
   expectedTable.pfnSetZRange = f->table.pfnSetZRange;
   expectedTable.pfnSetScissorRect = f->table.pfnSetScissorRect;
@@ -1966,7 +2014,187 @@ static void bufferContracts() {
   }
 }
 
+static void fixedFunctionContracts() {
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    CHECK(f->table.pfnSetTransform && f->table.pfnMultiplyTransform && f->table.pfnSetMaterial
+      && f->table.pfnCreateLight && f->table.pfnSetLight && f->table.pfnDestroyLight);
+    CHECK(f->table.pfnSetTransform(f->device,nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnMultiplyTransform(f->device,nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnSetMaterial(f->device,nullptr) == E_INVALIDARG);
+    D3DDDIARG_SETTRANSFORM transform = {};
+    for (unsigned row = 0; row < 4; ++row)
+      for (unsigned column = 0; column < 4; ++column)
+        transform.Matrix.m[row][column] = float(row * 4 + column) * 0.25f - 2.0f;
+    const auto matrix = transform.Matrix;
+    for (const auto type : {D3DTS_VIEW,D3DTS_PROJECTION,D3DTS_TEXTURE0,D3DTS_TEXTURE7,
+        D3DTS_WORLD,D3DTS_WORLDMATRIX(255)}) {
+      transform.TransformType = type; transform.Matrix = matrix;
+      f->queryHook = [&] { transform.TransformType = D3DTS_WORLD; transform.Matrix = {}; };
+      CHECK(f->table.pfnSetTransform(f->device,&transform) == S_OK);
+      CHECK(f->transformState == type && snapshot(f->transform) == snapshot(matrix) && !f->multiplyTransform);
+      D3DDDIARG_MULTIPLYTRANSFORM multiply = {type,matrix};
+      f->queryHook = [&] { multiply.TransformType = D3DTS_VIEW; multiply.Matrix = {}; };
+      CHECK(f->table.pfnMultiplyTransform(f->device,&multiply) == S_OK);
+      CHECK(f->transformState == type && snapshot(f->transform) == snapshot(matrix) && f->multiplyTransform);
+    }
+    const auto sets = f->transformSets;
+    for (const UINT value : {0u,1u,4u,15u,24u,255u,512u,UINT_MAX}) {
+      transform.TransformType = static_cast<D3DTRANSFORMSTATETYPE>(value);
+      CHECK(f->table.pfnSetTransform(f->device,&transform) == E_INVALIDARG);
+      D3DDDIARG_MULTIPLYTRANSFORM multiply = {transform.TransformType,matrix};
+      CHECK(f->table.pfnMultiplyTransform(f->device,&multiply) == E_INVALIDARG);
+    }
+    CHECK(f->transformSets == sets);
+    D3DDDIARG_SETMATERIAL material = {{.1f,.2f,.3f,.4f},{.5f,.6f,.7f,.8f},
+      {.9f,1.0f,1.1f,1.2f},{1.3f,1.4f,1.5f,1.6f},17.5f};
+    const auto expected = material;
+    f->queryHook = [&] { material = {}; };
+    CHECK(f->table.pfnSetMaterial(f->device,&material) == S_OK);
+    CHECK(snapshot(f->material) == snapshot(expected));
+    for (const HRESULT failure : {S_FALSE,E_FAIL,DXGI_ERROR_WAS_STILL_DRAWING}) {
+      const HRESULT result = failure == S_FALSE ? E_FAIL
+        : failure == DXGI_ERROR_WAS_STILL_DRAWING ? D3DERR_WASSTILLDRAWING : failure;
+      f->fixedResult = failure;
+      transform = {D3DTS_WORLD,matrix};
+      CHECK(f->table.pfnSetTransform(f->device,&transform) == result);
+      CHECK(f->table.pfnSetMaterial(f->device,&material) == result);
+      CHECK(snapshot(f->material) == snapshot(expected));
+    }
+    f->fixedResult = S_OK;
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    CHECK(f->table.pfnCreateLight(f->device,nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnSetLight(f->device,nullptr,nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnDestroyLight(f->device,nullptr) == E_INVALIDARG);
+    const auto ignored = reinterpret_cast<const D3DDDI_LIGHT*>(UINT_PTR(1));
+    UINT slot = 0;
+    for (const UINT index : {0u,23u,0x80000000u,UINT_MAX}) {
+      D3DDDIARG_CREATELIGHT create = {index};
+      CHECK(f->table.pfnCreateLight(f->device,&create) == S_OK && f->lightSlot == slot);
+      CHECK(f->lights[slot].Type == D3DLIGHT_DIRECTIONAL && !f->lightsEnabled[slot]
+        && f->lights[slot].Diffuse.r == 1 && f->lights[slot].Diffuse.g == 1
+        && f->lights[slot].Diffuse.b == 1 && f->lights[slot].Diffuse.a == 0 && f->lights[slot].Direction.z == 1);
+      CHECK(f->table.pfnCreateLight(f->device,&create) == E_INVALIDARG);
+      for (const auto type : {D3DLIGHT_POINT,D3DLIGHT_SPOT,D3DLIGHT_DIRECTIONAL}) {
+        D3DDDI_LIGHT properties = {type,{.1f,.2f,.3f,.4f},{.5f,.6f,.7f,.8f},
+          {.9f,1.0f,1.1f,1.2f},{2,3,4},{5,6,7},8,9,10,11,12,13,14};
+        const auto expected = properties;
+        D3DDDIARG_SETLIGHT args = {index,D3DDDI_SETLIGHT_DATA};
+        f->queryHook = [&] {
+          // Serialization must reject reentry before inspecting a pointed light.
+          CHECK(f->table.pfnSetLight(f->device,&args,ignored) == D3DERR_WASSTILLDRAWING);
+          CHECK(f->table.pfnCreateLight(f->device,&create) == D3DERR_WASSTILLDRAWING);
+          D3DDDIARG_DESTROYLIGHT destroy = {index};
+          CHECK(f->table.pfnDestroyLight(f->device,&destroy) == D3DERR_WASSTILLDRAWING);
+          properties = {}; args = {12345,D3DDDI_SETLIGHT_DISABLE};
+        };
+        CHECK(f->table.pfnSetLight(f->device,&args,&properties) == S_OK);
+        CHECK(f->lightSlot == slot && snapshot(f->lights[slot]) == snapshot(expected)
+          && !f->lightsEnabled[slot]);
+      }
+      D3DDDIARG_SETLIGHT args = {index,D3DDDI_SETLIGHT_ENABLE};
+      CHECK(f->table.pfnSetLight(f->device,&args,ignored) == S_OK && f->lightsEnabled[slot]);
+      args.DataType = D3DDDI_SETLIGHT_DATA;
+      D3DDDI_LIGHT properties = {}; properties.Type = D3DLIGHT_DIRECTIONAL;
+      CHECK(f->table.pfnSetLight(f->device,&args,&properties) == S_OK && f->lightsEnabled[slot]);
+      const auto last = snapshot(f->lights[slot]);
+      CHECK(f->table.pfnSetLight(f->device,&args,nullptr) == E_INVALIDARG);
+      CHECK(f->table.pfnSetLight(f->device,&args,
+        reinterpret_cast<const D3DDDI_LIGHT*>(UINTPTR_MAX)) == E_INVALIDARG);
+      for (const UINT type : {0u,4u,UINT_MAX}) {
+        properties.Type = static_cast<D3DLIGHTTYPE>(type);
+        CHECK(f->table.pfnSetLight(f->device,&args,&properties) == E_INVALIDARG);
+      }
+      for (const UINT type : {3u,4u,UINT_MAX}) {
+        args.DataType = static_cast<D3DDDI_SETLIGHT_TYPE>(type);
+        CHECK(f->table.pfnSetLight(f->device,&args,ignored) == E_INVALIDARG);
+      }
+      CHECK(snapshot(f->lights[slot]) == last && f->lightsEnabled[slot]);
+      args = {index,D3DDDI_SETLIGHT_DISABLE};
+      f->lightEnableResult = S_FALSE;
+      CHECK(f->table.pfnSetLight(f->device,&args,ignored) == E_FAIL && f->lightsEnabled[slot]);
+      f->lightEnableResult = S_OK;
+      CHECK(f->table.pfnSetLight(f->device,&args,ignored) == S_OK && !f->lightsEnabled[slot]);
+      ++slot;
+    }
+    D3DDDIARG_SETLIGHT absent = {12345,D3DDDI_SETLIGHT_DATA};
+    CHECK(f->table.pfnSetLight(f->device,&absent,ignored) == E_INVALIDARG);
+    D3DDDIARG_DESTROYLIGHT destroy = {12345};
+    CHECK(f->table.pfnDestroyLight(f->device,&destroy) == E_INVALIDARG);
+    destroy.Index = 23;
+    D3DDDIARG_SETLIGHT enable = {23,D3DDDI_SETLIGHT_ENABLE};
+    CHECK(f->table.pfnSetLight(f->device,&enable,nullptr) == S_OK);
+    f->lightEnableResult = DXGI_ERROR_WAS_STILL_DRAWING;
+    CHECK(f->table.pfnDestroyLight(f->device,&destroy) == D3DERR_WASSTILLDRAWING && f->lightsEnabled[1]);
+    f->lightEnableResult = S_OK;
+    CHECK(f->table.pfnDestroyLight(f->device,&destroy) == S_OK && !f->lightsEnabled[1]);
+    CHECK(f->table.pfnSetLight(f->device,&enable,ignored) == E_INVALIDARG);
+    CHECK(f->table.pfnDestroyLight(f->device,&destroy) == E_INVALIDARG);
+    D3DDDIARG_CREATELIGHT recreate = {23};
+    CHECK(f->table.pfnCreateLight(f->device,&recreate) == S_OK && f->lightSlot == 1
+      && f->lights[1].Diffuse.r == 1 && !f->lightsEnabled[1]);
+    CHECK(f->table.pfnSetLight(f->device,&enable,nullptr) == S_OK);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    D3DDDIARG_CREATELIGHT create = {UINT_MAX};
+    for (const HRESULT failure : {S_FALSE,E_FAIL,DXGI_ERROR_WAS_STILL_DRAWING}) {
+      f->lightResult = failure;
+      const HRESULT expected = failure == S_FALSE ? E_FAIL
+        : failure == DXGI_ERROR_WAS_STILL_DRAWING ? D3DERR_WASSTILLDRAWING : failure;
+      CHECK(f->table.pfnCreateLight(f->device,&create) == expected);
+      D3DDDIARG_SETLIGHT bind = {UINT_MAX,D3DDDI_SETLIGHT_ENABLE};
+      CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == E_INVALIDARG);
+    }
+    f->lightResult = S_OK; f->throwLight = true;
+    CHECK(f->table.pfnCreateLight(f->device,&create) == E_OUTOFMEMORY);
+    f->throwLight = false;
+    CHECK(f->table.pfnCreateLight(f->device,&create) == S_OK && f->lightSlot == 0);
+    for (UINT index = 1; index <= 8; ++index) {
+      create.Index = index * 101;
+      CHECK(f->table.pfnCreateLight(f->device,&create) == S_OK && f->lightSlot == index);
+    }
+    D3DDDIARG_SETLIGHT bind = {UINT_MAX,D3DDDI_SETLIGHT_ENABLE};
+    CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == S_OK);
+    for (UINT index = 1; index <= 7; ++index) {
+      bind.Index = index * 101;
+      CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == S_OK);
+      CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == S_OK);
+    }
+    bind.Index = 808;
+    CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == D3DERR_INVALIDCALL && !f->lightsEnabled[8]);
+    bind = {UINT_MAX,D3DDDI_SETLIGHT_DISABLE};
+    f->lightEnableResult = S_FALSE;
+    CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == E_FAIL);
+    bind = {808,D3DDDI_SETLIGHT_ENABLE};
+    CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == D3DERR_INVALIDCALL);
+    f->lightEnableResult = S_OK;
+    bind = {UINT_MAX,D3DDDI_SETLIGHT_DISABLE};
+    CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == S_OK);
+    bind = {808,D3DDDI_SETLIGHT_ENABLE};
+    CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == S_OK && f->lightsEnabled[8]);
+    D3DDDIARG_DESTROYLIGHT destroy = {101};
+    CHECK(f->table.pfnDestroyLight(f->device,&destroy) == S_OK && !f->lightsEnabled[1]);
+    create.Index = 909;
+    CHECK(f->table.pfnCreateLight(f->device,&create) == S_OK && f->lightSlot == 1);
+    bind = {909,D3DDDI_SETLIGHT_ENABLE};
+    CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == S_OK);
+    // Losing the owner epoch must reject before pointed light preparation.
+    ++f->generation;
+    CHECK(f->table.pfnSetLight(f->device,&bind,nullptr) == D3DERR_DEVICELOST);
+    bind.DataType = D3DDDI_SETLIGHT_DATA;
+    CHECK(f->table.pfnSetLight(f->device,&bind,reinterpret_cast<const D3DDDI_LIGHT*>(UINT_PTR(1)))
+      == D3DERR_DEVICELOST);
+    closeDevice(); closeAdapter();
+  }
+}
+
 int main() {
+  fixedFunctionContracts();
   depthContracts();
   bufferContracts();
   textureContracts();

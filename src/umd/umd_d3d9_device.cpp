@@ -76,6 +76,7 @@ struct Device {
   HANDLE indices = nullptr;
   HANDLE target = nullptr;
   UINT targetIndex = 0;
+  HANDLE depthStencil = nullptr;
 
   HRESULT close() noexcept {
     if (closing) return S_OK;
@@ -90,6 +91,7 @@ struct Device {
             if (surface.locked) backend->unlockSurface(*surface.backend, false);
         }
         if (target) backend->setRenderTarget(nullptr);
+        if (depthStencil) backend->setDepthStencil(nullptr);
         if (declaration) backend->setVertexDeclaration(nullptr);
         if (boundShaders[0]) backend->setShader(ShaderStage::Vertex, nullptr);
         if (boundShaders[1]) backend->setShader(ShaderStage::Pixel, nullptr);
@@ -111,6 +113,8 @@ struct Device {
       userStride = 0;
       streams = {};
       indices = nullptr;
+      target = nullptr;
+      depthStencil = nullptr;
       backend.reset();
     }); }
     catch (...) { hr = E_FAIL; }
@@ -189,18 +193,20 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   if (!args || !args->hResource || !args->pSurfList || !args->SurfCount) return E_INVALIDARG;
   const auto input = *args;
   const bool buffer = input.Flags.VertexBuffer || input.Flags.IndexBuffer;
-  if (input.Flags.Value & ~(buffer ? UINT(0x1800cc) : UINT(0x10081))) return E_INVALIDARG;
+  if (input.Flags.Value & ~(buffer ? UINT(0x1800cc) : UINT(0x10083))) return E_INVALIDARG;
   if (buffer && (bool(input.Flags.VertexBuffer) == bool(input.Flags.IndexBuffer) || input.SurfCount != 1))
     return E_INVALIDARG;
   const bool target = input.Flags.RenderTarget != 0;
+  const bool depth = input.Flags.ZBuffer != 0;
   const bool texture = input.Flags.Texture != 0;
-  if (input.Flags.NotLockable && !target && !texture && !buffer) return E_INVALIDARG;
-  if (target && (input.MultisampleType != D3DDDIMULTISAMPLE_NONE || input.MultisampleQuality))
+  if (depth && (target || texture || input.SurfCount != 1)) return E_INVALIDARG;
+  if (input.Flags.NotLockable && !target && !texture && !buffer && !depth) return E_INVALIDARG;
+  if ((target || depth) && (input.MultisampleType != D3DDDIMULTISAMPLE_NONE || input.MultisampleQuality))
     return E_INVALIDARG;
   if (input.Pool != D3DDDIPOOL_SYSTEMMEM && input.Pool != D3DDDIPOOL_VIDEOMEMORY
       && input.Pool != D3DDDIPOOL_LOCALVIDMEM && input.Pool != D3DDDIPOOL_NONLOCALVIDMEM)
     return E_INVALIDARG;
-  if (target && input.Pool == D3DDDIPOOL_SYSTEMMEM) return E_INVALIDARG;
+  if ((target || depth) && input.Pool == D3DDDIPOOL_SYSTEMMEM) return E_INVALIDARG;
   if (texture && (!input.MipLevels || input.MipLevels != input.SurfCount || input.MipLevels > 32
       || (input.Flags.NotLockable && input.Pool == D3DDDIPOOL_SYSTEMMEM))) return E_INVALIDARG;
   const auto format = static_cast<D3DFORMAT>(input.Format);
@@ -208,6 +214,8 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
     if (input.Pool == D3DDDIPOOL_SYSTEMMEM) return D3DERR_NOTAVAILABLE;
     if (input.Flags.IndexBuffer ? (format != D3DFMT_INDEX16 && format != D3DFMT_INDEX32)
                                 : format != D3DFMT_VERTEXDATA) return E_INVALIDARG;
+  } else if (depth) {
+    if (format != D3DFMT_D16 && format != D3DFMT_D24S8) return E_INVALIDARG;
   } else if (format != D3DFMT_A8R8G8B8 && format != D3DFMT_X8R8G8B8) return E_INVALIDARG;
   dxvk::umd::D3D9BufferDesc bufferDesc;
   std::vector<dxvk::umd::D3D9SurfaceDesc> descriptions;
@@ -234,7 +242,8 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       dxvk::umd::D3D9SurfaceDesc desc;
       desc.width = info.Width; desc.height = info.Height; desc.format = format;
       desc.renderTarget = target; desc.systemMemory = input.Pool == D3DDDIPOOL_SYSTEMMEM;
-      desc.lockable = !input.Flags.NotLockable && (!texture || desc.systemMemory);
+      desc.depthStencil = depth;
+      desc.lockable = !depth && !input.Flags.NotLockable && (!texture || desc.systemMemory);
       if (!desc.width || !desc.height || desc.width > UINT(INT_MAX / 4) || desc.height > UINT(INT_MAX))
         return E_INVALIDARG;
       if (texture && i) {
@@ -312,6 +321,11 @@ HRESULT APIENTRY destroyResource(HANDLE handle, HANDLE token) {
       if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
       device.target = nullptr;
     }
+    if (device.depthStencil == token) {
+      const HRESULT hr = result(device.backend->setDepthStencil(nullptr));
+      if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+      device.depthStencil = nullptr;
+    }
     for (UINT i = 0; i < device.boundTextures.size(); ++i) {
       if (device.boundTextures[i] != token) continue;
       const HRESULT hr = result(device.backend->setTexture(i < 16 ? i : D3DVERTEXTEXTURESAMPLER0 + i - 16, nullptr));
@@ -351,28 +365,51 @@ HRESULT APIENTRY setRenderTarget(HANDLE handle, const D3DDDIARG_SETRENDERTARGET*
   });
 }
 
+HRESULT APIENTRY setDepthStencil(HANDLE handle, const D3DDDIARG_SETDEPTHSTENCIL* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  return operation(handle, [&](Device& device) {
+    auto depth = input.hZBuffer ? surface(device, input.hZBuffer, 0) : nullptr;
+    if (input.hZBuffer && (!depth || !depth->desc.depthStencil || depth->locked)) return E_INVALIDARG;
+    const HRESULT hr = result(device.backend->setDepthStencil(depth ? depth->backend.get() : nullptr));
+    if (SUCCEEDED(hr)) device.depthStencil = input.hZBuffer;
+    return hr;
+  });
+}
+
 HRESULT APIENTRY clear(HANDLE handle, const D3DDDIARG_CLEAR* args, UINT count, const RECT* rects) {
   if (!args || (count && !rects)) return E_INVALIDARG;
   const auto input = *args;
   constexpr UINT computeRects = 8; // D3DCLEAR_COMPUTERECTS, native DDI only.
-  if (input.Flags != D3DCLEAR_TARGET && input.Flags != (D3DCLEAR_TARGET | computeRects)) return E_INVALIDARG;
-  try {
-    std::vector<RECT> areas;
+  constexpr UINT buffers = D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL;
+  if (!(input.Flags & buffers) || (input.Flags & ~(buffers | computeRects))) return E_INVALIDARG;
+  if ((input.Flags & D3DCLEAR_ZBUFFER) && (!std::isfinite(input.FillDepth)
+      || input.FillDepth < 0.0f || input.FillDepth > 1.0f)) return E_INVALIDARG;
+  if ((input.Flags & D3DCLEAR_STENCIL) && input.FillStencil > 255) return E_INVALIDARG;
+  std::vector<RECT> areas;
+  return preparedOperation(handle, [&](Device& device) {
+    auto target = (input.Flags & D3DCLEAR_TARGET) ? surface(device, device.target, device.targetIndex) : nullptr;
+    auto depth = (input.Flags & (D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL))
+      ? surface(device, device.depthStencil, 0) : nullptr;
+    if ((input.Flags & D3DCLEAR_TARGET) && (!target || target->locked)) return E_INVALIDARG;
+    if ((input.Flags & (D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL)) && (!depth || depth->locked)) return E_INVALIDARG;
+    if ((input.Flags & D3DCLEAR_STENCIL) && depth->desc.format != D3DFMT_D24S8) return E_INVALIDARG;
+    if (uint64_t(count) * sizeof(RECT) > UINTPTR_MAX - reinterpret_cast<uintptr_t>(rects)) return E_INVALIDARG;
     if (count) areas.assign(rects, rects + count);
-    return operation(handle, [&](Device& device) {
-      auto target = surface(device, device.target, device.targetIndex);
-      if (!target || target->locked) return E_INVALIDARG;
-      for (const auto& area : areas) {
-        if (area.right < area.left || area.bottom < area.top) return E_INVALIDARG;
-        if (!(input.Flags & computeRects) && (area.left < 0 || area.top < 0
-            || UINT(area.right) > target->desc.width || UINT(area.bottom) > target->desc.height))
-          return E_INVALIDARG;
+    for (const auto& area : areas) {
+      if (area.right < area.left || area.bottom < area.top) return E_INVALIDARG;
+      if (!(input.Flags & computeRects)) {
+        if (area.left < 0 || area.top < 0) return E_INVALIDARG;
+        for (const auto item : {target, depth})
+          if (item && (UINT(area.right) > item->desc.width || UINT(area.bottom) > item->desc.height))
+            return E_INVALIDARG;
       }
-      return device.backend->clear(input.FillColor, count, count ? areas.data() : nullptr,
-                                    (input.Flags & computeRects) != 0);
-    });
-  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
-    catch (...) { return E_FAIL; }
+    }
+    return S_OK;
+  }, [&](Device& device) {
+    return device.backend->clear(input.Flags & buffers, input.FillColor, input.FillDepth,
+      input.FillStencil, count, count ? areas.data() : nullptr, (input.Flags & computeRects) != 0);
+  });
 }
 
 HRESULT APIENTRY blt(HANDLE handle, const D3DDDIARG_BLT* args) {
@@ -382,7 +419,8 @@ HRESULT APIENTRY blt(HANDLE handle, const D3DDDIARG_BLT* args) {
   return operation(handle, [&](Device& device) {
     auto src = surface(device, input.hSrcResource, input.SrcSubResourceIndex);
     auto dst = surface(device, input.hDstResource, input.DstSubResourceIndex);
-    if (!src || !dst || src->locked || dst->locked || src->desc.format != dst->desc.format
+    if (!src || !dst || src->locked || dst->locked || src->desc.depthStencil || dst->desc.depthStencil
+        || src->desc.format != dst->desc.format
         || !validArea(input.SrcRect, src->desc) || !validArea(input.DstRect, dst->desc)
         || input.SrcRect.right - input.SrcRect.left != input.DstRect.right - input.DstRect.left
         || input.SrcRect.bottom - input.SrcRect.top != input.DstRect.bottom - input.DstRect.top)
@@ -959,6 +997,11 @@ bool drawBindings(Device& device, const Declaration& declaration, uint64_t first
 bool drawTarget(Device& device) {
   auto target = surface(device, device.target, device.targetIndex);
   if (!target || target->locked) return false;
+  if (device.depthStencil) {
+    auto depth = surface(device, device.depthStencil, 0);
+    if (!depth || depth->locked || depth->desc.width < target->desc.width
+        || depth->desc.height < target->desc.height) return false;
+  }
   for (const auto binding : device.boundTextures) {
     if (!binding) continue;
     for (const auto& level : device.resources.at(binding)->surfaces)
@@ -1116,6 +1159,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnCreateResource = createResource;
   table.pfnDestroyResource = destroyResource;
   table.pfnSetRenderTarget = setRenderTarget;
+  table.pfnSetDepthStencil = setDepthStencil;
   table.pfnClear = clear;
   table.pfnBlt = blt;
   table.pfnLock = lockResource;

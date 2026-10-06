@@ -1912,6 +1912,22 @@ namespace dxvk {
     if (unlikely(!Count && pRects))
       return D3D_OK;
 
+    return ClearInternal(Count, pRects, Flags, Color, Z, Stencil, false);
+  }
+
+
+  HRESULT D3D9DeviceEx::ClearNative(DWORD count, const D3DRECT* rects, DWORD flags,
+      D3DCOLOR color, float depth, DWORD stencil, bool computeRects) {
+    if (!m_parent->IsNativeRenderer())
+      return D3DERR_INVALIDCALL;
+    if (!computeRects && !count)
+      return D3D_OK;
+    return ClearInternal(count, rects, flags, color, depth, stencil, !computeRects);
+  }
+
+
+  HRESULT D3D9DeviceEx::ClearInternal(DWORD Count, const D3DRECT* pRects, DWORD Flags,
+      D3DCOLOR Color, float Z, DWORD Stencil, bool preclipped) {
     D3D9DeviceLock lock = LockDevice();
     BindFramebuffer();
 
@@ -1930,16 +1946,17 @@ namespace dxvk {
     VkOffset3D offset = { int32_t(vp.X),    int32_t(vp.Y),      0  };
     VkExtent3D extent = {         vp.Width,         vp.Height,  1u };
 
-    if (scissor) {
-      offset.x = std::max<int32_t> (offset.x, sc.left);
-      offset.y = std::max<int32_t> (offset.y, sc.top);
-
-      extent.width  = std::min<uint32_t>(extent.width,  sc.right  - offset.x);
-      extent.height = std::min<uint32_t>(extent.height, sc.bottom - offset.y);
+    if (!preclipped && scissor) {
+      const int64_t right = std::min<int64_t>(int64_t(vp.X) + vp.Width, sc.right);
+      const int64_t bottom = std::min<int64_t>(int64_t(vp.Y) + vp.Height, sc.bottom);
+      offset.x = std::max<int32_t>(offset.x, sc.left);
+      offset.y = std::max<int32_t>(offset.y, sc.top);
+      extent.width  = uint32_t(std::max<int64_t>(0, right - offset.x));
+      extent.height = uint32_t(std::max<int64_t>(0, bottom - offset.y));
     }
 
     // This becomes pretty unreadable in one singular if statement...
-    if (Count) {
+    if (!preclipped && Count) {
       // If pRects is null, or our first rect encompasses the viewport:
       if (!pRects)
         Count = 0;
@@ -1976,10 +1993,12 @@ namespace dxvk {
       VkClearValue             clearValue) {
 
       VkExtent3D imageExtent = imageView->mipLevelExtent(0);
-      extent.width = std::min(imageExtent.width, extent.width);
-      extent.height = std::min(imageExtent.height, extent.height);
-
       if (unlikely(uint32_t(offset.x) >= imageExtent.width || uint32_t(offset.y) >= imageExtent.height))
+        return;
+
+      extent.width = std::min(imageExtent.width - uint32_t(offset.x), extent.width);
+      extent.height = std::min(imageExtent.height - uint32_t(offset.y), extent.height);
+      if (!extent.width || !extent.height)
         return;
 
       const bool fullClear = align(extent.width, alignment) == align(imageExtent.width, alignment)
@@ -2048,13 +2067,21 @@ namespace dxvk {
     // A Hat in Time and other UE3 games only gets partial clears here
     // because of an oversized rt height due to their weird alignment...
     // This works around that.
-    uint32_t alignment = m_d3d9Options.lenientClear ? 8 : 1;
+    uint32_t alignment = !preclipped && m_d3d9Options.lenientClear ? 8 : 1;
 
-    if (extent.width == 0 || extent.height == 0) {
+    if (!preclipped && (extent.width == 0 || extent.height == 0)) {
       return D3D_OK;
     }
 
-    if (!Count) {
+    if (preclipped) {
+      for (uint32_t i = 0; i < Count; ++i) {
+        if (pRects[i].x2 <= pRects[i].x1 || pRects[i].y2 <= pRects[i].y1)
+          continue;
+        ClearViewRect(alignment, {pRects[i].x1, pRects[i].y1, 0},
+          {uint32_t(pRects[i].x2 - pRects[i].x1), uint32_t(pRects[i].y2 - pRects[i].y1), 1u});
+      }
+    }
+    else if (!Count) {
       // Clear our viewport & scissor minified region in this rendertarget.
       ClearViewRect(alignment, offset, extent);
     }

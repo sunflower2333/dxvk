@@ -10,7 +10,7 @@ namespace dxvk::umd {
 struct D3D9SurfaceDesc {
   UINT width = 0, height = 0;
   D3DFORMAT format = D3DFMT_UNKNOWN;
-  bool renderTarget = false, systemMemory = false, lockable = true;
+  bool renderTarget = false, depthStencil = false, systemMemory = false, lockable = true;
   void* systemData = nullptr;
   UINT systemPitch = 0;
 };
@@ -117,7 +117,9 @@ public:
   HRESULT setTextureStageState(UINT stage, D3DTEXTURESTAGESTATETYPE state, DWORD value);
   HRESULT setSamplerState(UINT stage, D3DSAMPLERSTATETYPE state, DWORD value);
   HRESULT setRenderTarget(D3D9SurfaceResource* target);
-  HRESULT clear(D3DCOLOR color, UINT count, const RECT* rects, bool computeRects);
+  HRESULT setDepthStencil(D3D9SurfaceResource* depth);
+  HRESULT clear(DWORD flags, D3DCOLOR color, float depth, DWORD stencil,
+                UINT count, const RECT* rects, bool computeRects);
   HRESULT copySurface(D3D9SurfaceResource& destination, const RECT& destinationRect,
                       D3D9SurfaceResource& source, const RECT& sourceRect,
                       const D3D9SurfaceUpload* upload = nullptr);

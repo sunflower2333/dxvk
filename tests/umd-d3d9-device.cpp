@@ -65,6 +65,10 @@ struct Fixture {
   HRESULT surfaceResult = S_OK, surfaceUnlockResult = S_OK;
   bool nullSurface = false, badMapping = false;
   bool lastComputeRects = false, teardownDiscard = false;
+  HRESULT depthResult = S_OK, clearResult = S_OK;
+  unsigned depthSets = 0;
+  DWORD clearFlags = 0, clearStencil = 0;
+  float clearDepth = 0.0f;
   std::vector<dxvk::umd::D3D9SurfaceDesc> descriptions;
   std::vector<RECT> clearRects;
   unsigned declarationCreates = 0, declarationCloses = 0, declarationSets = 0, draws = 0;
@@ -202,6 +206,7 @@ struct dxvk::umd::D3D9Backend::State {
   RuntimeBackend bridge;
   mwd_allocation allocation = {};
   D3D9SurfaceResource* target = nullptr;
+  D3D9SurfaceResource* depth = nullptr;
   D3D9VertexDeclaration* declaration = nullptr;
   std::array<D3D9Shader*, 2> shaders = {};
   std::array<D3D9TextureResource*, 20> textures = {};
@@ -312,19 +317,20 @@ struct dxvk::umd::D3D9SurfaceResource::State {
   std::vector<uint8_t> bytes;
   RECT area = {};
   bool locked = false;
+  unsigned depthBindings = 0;
   unsigned* textureLevels = nullptr;
 };
 dxvk::umd::D3D9SurfaceResource::D3D9SurfaceResource() : m_state(std::make_unique<State>()) { }
 dxvk::umd::D3D9SurfaceResource::~D3D9SurfaceResource() {
   CHECK(GetCurrentThreadId() != f->caller);
-  CHECK(!m_state->locked);
+  CHECK(!m_state->locked && !m_state->depthBindings);
   if (m_state->textureLevels) --*m_state->textureLevels;
   ++f->surfaceCloses;
 }
 dxvk::umd::D3D9Backend::D3D9Backend() : m_state(std::make_unique<State>()) { }
 dxvk::umd::D3D9Backend::~D3D9Backend() {
   CHECK(GetCurrentThreadId() != f->caller);
-  CHECK(f->surfaceCreates == f->surfaceCloses && !m_state->target);
+  CHECK(f->surfaceCreates == f->surfaceCloses && !m_state->target && !m_state->depth);
   CHECK(f->declarationCreates == f->declarationCloses && !m_state->declaration);
   CHECK(f->shaderCreates == f->shaderCloses && !m_state->shaders[0] && !m_state->shaders[1]);
   CHECK(f->textureCreates == f->textureCloses);
@@ -502,13 +508,28 @@ HRESULT dxvk::umd::D3D9Backend::setRenderTarget(D3D9SurfaceResource* target) {
   m_state->target = target;
   return S_OK;
 }
-HRESULT dxvk::umd::D3D9Backend::clear(D3DCOLOR color, UINT count, const RECT* rects, bool computeRects) {
-  CHECK(GetCurrentThreadId() != f->caller && m_state->target);
+HRESULT dxvk::umd::D3D9Backend::setDepthStencil(D3D9SurfaceResource* depth) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  ++f->depthSets;
+  if (f->depthResult != S_OK) return f->depthResult;
+  if (depth) CHECK(depth->m_state->desc.depthStencil && !depth->m_state->locked);
+  if (m_state->depth) --m_state->depth->m_state->depthBindings;
+  m_state->depth = depth;
+  if (depth) ++depth->m_state->depthBindings;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::clear(DWORD flags, D3DCOLOR color, float depth, DWORD stencil,
+    UINT count, const RECT* rects, bool computeRects) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (flags & D3DCLEAR_TARGET) CHECK(m_state->target);
+  if (flags & (D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL)) CHECK(m_state->depth);
   ++f->clears;
+  f->clearFlags = flags; f->clearDepth = depth; f->clearStencil = stencil;
   f->lastComputeRects = computeRects;
   f->clearRects.clear();
   if (count) f->clearRects.assign(rects, rects + count);
-  if (!count && !computeRects) return S_OK;
+  if (f->clearResult != S_OK) return f->clearResult;
+  if ((!count && !computeRects) || !(flags & D3DCLEAR_TARGET)) return S_OK;
   auto& state = *m_state->target->m_state;
   for (size_t i = 0; i < state.bytes.size(); i += 4) std::memcpy(state.bytes.data() + i, &color, 4);
   return S_OK;
@@ -648,6 +669,7 @@ static void createDevice() {
   expectedTable.pfnCreateResource = f->table.pfnCreateResource;
   expectedTable.pfnDestroyResource = f->table.pfnDestroyResource;
   expectedTable.pfnSetRenderTarget = f->table.pfnSetRenderTarget;
+  expectedTable.pfnSetDepthStencil = f->table.pfnSetDepthStencil;
   expectedTable.pfnClear = f->table.pfnClear;
   expectedTable.pfnBlt = f->table.pfnBlt;
   expectedTable.pfnLock = f->table.pfnLock;
@@ -752,6 +774,184 @@ static D3DDDIARG_CREATERESOURCE resourceArgs(HANDLE cookie, D3DDDI_SURFACEINFO* 
   args.Rotation = static_cast<D3DDDI_ROTATION>(UINT_MAX);
   if (!target) { args.MultisampleType = static_cast<D3DDDIMULTISAMPLE_TYPE>(UINT_MAX); args.MultisampleQuality = UINT_MAX; }
   return args;
+}
+
+static D3DDDIARG_CREATERESOURCE depthArgs(HANDLE cookie, D3DDDI_SURFACEINFO* info, D3DFORMAT format) {
+  auto args = resourceArgs(cookie, info, 1, true);
+  args.Flags.RenderTarget = 0; args.Flags.ZBuffer = 1;
+  args.Format = static_cast<D3DDDIFORMAT>(format);
+  return args;
+}
+
+static void depthContracts() {
+  for (const auto format : {D3DFMT_D16, D3DFMT_D24S8}) {
+    Fixture fixture; initialize(fixture); createDevice();
+    CHECK(f->table.pfnSetDepthStencil);
+    char cookie, targetCookie;
+    D3DDDI_SURFACEINFO info = {8,4,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto args = depthArgs(&cookie, &info, format);
+    const auto valid = args;
+    auto before = snapshot(args);
+    f->surfaceResult = S_FALSE;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == E_FAIL && snapshot(args) == before);
+    f->surfaceResult = S_OK; f->nullSurface = true;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == E_FAIL && snapshot(args) == before);
+    f->nullSurface = false;
+    for (unsigned field = 0; field < 8; ++field) {
+      args = valid;
+      if (field == 0) args.Flags.RenderTarget = 1;
+      if (field == 1) args.Flags.Texture = 1;
+      if (field == 2) args.SurfCount = 2;
+      if (field == 3) args.Pool = D3DDDIPOOL_SYSTEMMEM;
+      if (field == 4) args.Format = static_cast<D3DDDIFORMAT>(D3DFMT_A8R8G8B8);
+      if (field == 5) args.Format = static_cast<D3DDDIFORMAT>(D3DFMT_D32);
+      if (field == 6) args.MultisampleType = D3DDDIMULTISAMPLE_2_SAMPLES;
+      if (field == 7) args.MultisampleQuality = 1;
+      before = snapshot(args);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG && snapshot(args) == before);
+    }
+    args = valid; args.Flags.NotLockable = 1;
+    f->queryHook = [&] { info.Width = 200; args.Format = static_cast<D3DDDIFORMAT>(D3DFMT_D32); };
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE depth = args.hResource;
+    CHECK(f->descriptions.size() == 1 && f->descriptions[0].depthStencil
+      && !f->descriptions[0].renderTarget && !f->descriptions[0].systemMemory
+      && !f->descriptions[0].lockable && f->descriptions[0].width == 8
+      && f->descriptions[0].height == 4 && f->descriptions[0].format == format);
+    info.Width = 8;
+    D3DDDIARG_SETDEPTHSTENCIL bind = {depth};
+    CHECK(f->table.pfnSetDepthStencil(f->device, nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnSetDepthStencil(nullptr, &bind) == E_INVALIDARG);
+    bind.hZBuffer = reinterpret_cast<HANDLE>(UINT_PTR(0xcafef00d));
+    CHECK(f->table.pfnSetDepthStencil(f->device, &bind) == E_INVALIDARG);
+    bind.hZBuffer = depth;
+    f->depthResult = S_FALSE;
+    CHECK(f->table.pfnSetDepthStencil(f->device, &bind) == E_FAIL);
+    D3DDDIARG_CLEAR fill = {}; fill.Flags = D3DCLEAR_ZBUFFER | 8; fill.FillDepth = 0.375f;
+    CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == E_INVALIDARG);
+    f->depthResult = S_OK;
+    f->queryHook = [&] { bind.hZBuffer = nullptr; };
+    CHECK(f->table.pfnSetDepthStencil(f->device, &bind) == S_OK);
+    CHECK(f->table.pfnClear(f->device, &fill, 0, reinterpret_cast<const RECT*>(UINT_PTR(1))) == S_OK);
+    CHECK(f->lastComputeRects && f->clearFlags == D3DCLEAR_ZBUFFER && f->clearDepth == 0.375f);
+    fill.Flags = D3DCLEAR_ZBUFFER;
+    CHECK(f->table.pfnClear(f->device, &fill, 0, reinterpret_cast<const RECT*>(UINT_PTR(1))) == S_OK);
+    CHECK(!f->lastComputeRects && f->clearRects.empty());
+    const auto validFill = fill;
+    for (const float invalid : {-0.1f,1.1f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+      fill.FillDepth = invalid;
+      CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == E_INVALIDARG);
+    }
+    fill = validFill;
+    for (const UINT invalid : {0u,8u,0x10u,0x80000002u}) {
+      fill.Flags = invalid;
+      CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == E_INVALIDARG);
+    }
+    fill = validFill;
+    RECT rects[2] = {{1,1,7,4},{0,0,0,0}};
+    const auto saved = snapshot(rects);
+    f->queryHook = [&] {
+      CHECK(f->table.pfnClear(f->device, &fill, 1, reinterpret_cast<const RECT*>(UINT_PTR(1))) == D3DERR_WASSTILLDRAWING);
+      rects[0] = {-100,-100,900,900}; fill.FillDepth = 0.875f; fill.Flags = D3DCLEAR_TARGET;
+    };
+    CHECK(f->table.pfnClear(f->device, &fill, 2, rects) == S_OK);
+    CHECK(f->clearFlags == D3DCLEAR_ZBUFFER && f->clearDepth == 0.375f
+      && f->clearRects.size() == 2 && !std::memcmp(f->clearRects.data(), saved.data(), sizeof(rects)));
+    fill = validFill;
+    CHECK(f->table.pfnClear(f->device, &fill, 1, rects) == E_INVALIDARG);
+    fill.Flags |= 8;
+    CHECK(f->table.pfnClear(f->device, &fill, 1, rects) == S_OK && f->lastComputeRects);
+    rects[0] = {2,1,1,3};
+    CHECK(f->table.pfnClear(f->device, &fill, 1, rects) == E_INVALIDARG);
+    fill.Flags = D3DCLEAR_STENCIL | 8; fill.FillDepth = std::numeric_limits<float>::quiet_NaN(); fill.FillStencil = 7;
+    CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == (format == D3DFMT_D24S8 ? S_OK : E_INVALIDARG));
+    fill.FillStencil = 256;
+    CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == E_INVALIDARG);
+    D3DDDIARG_LOCK map = {}; map.hResource = depth;
+    const auto mapping = snapshot(map);
+    CHECK(f->table.pfnLock(f->device, &map) == E_INVALIDARG && snapshot(map) == mapping);
+    D3DDDIARG_BLT copy = {}; copy.hSrcResource = copy.hDstResource = depth;
+    copy.SrcRect = copy.DstRect = {0,0,8,4};
+    CHECK(f->table.pfnBlt(f->device, &copy) == E_INVALIDARG);
+    args = resourceArgs(&targetCookie, &info, 1, true);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE target = args.hResource;
+    bind.hZBuffer = target;
+    CHECK(f->table.pfnSetDepthStencil(f->device, &bind) == E_INVALIDARG);
+    D3DDDIARG_SETRENDERTARGET rt = {0,depth,0};
+    CHECK(f->table.pfnSetRenderTarget(f->device, &rt) == E_INVALIDARG);
+    rt.hRenderTarget = target;
+    CHECK(f->table.pfnSetRenderTarget(f->device, &rt) == S_OK);
+    fill = validFill; fill.Flags = D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | 8; fill.FillColor = 0xff135724;
+    CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == S_OK
+      && f->clearFlags == (D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER));
+    f->clearResult = S_FALSE;
+    CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == E_FAIL);
+    f->clearResult = S_OK; f->depthResult = DXGI_ERROR_WAS_STILL_DRAWING;
+    CHECK(f->table.pfnDestroyResource(f->device, depth) == D3DERR_WASSTILLDRAWING);
+    CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == S_OK);
+    f->depthResult = S_OK; f->flushResult = DXGI_ERROR_WAS_STILL_DRAWING;
+    CHECK(f->table.pfnDestroyResource(f->device, depth) == D3DERR_WASSTILLDRAWING);
+    CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == E_INVALIDARG);
+    f->flushResult = S_OK;
+    bind.hZBuffer = depth;
+    CHECK(f->table.pfnSetDepthStencil(f->device, &bind) == S_OK);
+    CHECK(f->table.pfnDestroyResource(f->device, depth) == S_OK);
+    CHECK(f->table.pfnSetDepthStencil(f->device, &bind) == E_INVALIDARG);
+    CHECK(f->table.pfnDestroyResource(f->device, depth) == E_INVALIDARG);
+    args = valid;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    bind.hZBuffer = args.hResource;
+    CHECK(f->table.pfnSetDepthStencil(f->device, &bind) == S_OK);
+    // Close must unbind the remaining depth resource before worker retirement.
+    closeAdapter(); closeDevice();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char targetCookie, depthOwners[2];
+    D3DDDI_SURFACEINFO info = {8,4,1,nullptr,0,0};
+    auto args = resourceArgs(&targetCookie, &info, 1, true);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const D3DDDIARG_SETRENDERTARGET rt = {0,args.hResource,0};
+    CHECK(f->table.pfnSetRenderTarget(f->device, &rt) == S_OK);
+    HANDLE depthResources[2] = {};
+    for (UINT i = 0; i < 2; ++i) {
+      info.Width = i ? 4 : 8; info.Height = i ? 2 : 4;
+      args = depthArgs(&depthOwners[i], &info, D3DFMT_D16);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+      depthResources[i] = args.hResource;
+    }
+    const D3DDDIVERTEXELEMENT element = {0,0,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITIONT,0};
+    D3DDDIARG_CREATEVERTEXSHADERDECL declaration = {1,nullptr};
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device, &declaration, &element) == S_OK);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device, declaration.ShaderHandle) == S_OK);
+    const float vertex[] = {0,0,0.5f,1};
+    const D3DDDIARG_SETSTREAMSOURCEUM stream = {0,sizeof(vertex)};
+    CHECK(f->table.pfnSetStreamSourceUm(f->device, &stream, vertex) == S_OK);
+    f->expectedDrawBytes = sizeof(vertex);
+    const D3DDDIARG_DRAWPRIMITIVE primitive = {D3DPT_POINTLIST,0,1};
+    D3DDDIARG_SETDEPTHSTENCIL bind = {depthResources[0]};
+    CHECK(f->table.pfnSetDepthStencil(f->device, &bind) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &primitive, nullptr) == S_OK);
+    CHECK(f->draws == 1);
+    bind.hZBuffer = depthResources[1];
+    CHECK(f->table.pfnSetDepthStencil(f->device, &bind) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &primitive, nullptr) == E_INVALIDARG && f->draws == 1);
+    CHECK(f->table.pfnDestroyResource(f->device, depthResources[1]) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &primitive, nullptr) == S_OK && f->draws == 2);
+    closeAdapter(); closeDevice();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie;
+    D3DDDI_SURFACEINFO info = {8,4,1,nullptr,0,0};
+    auto args = depthArgs(&cookie, &info, D3DFMT_D24S8);
+    const auto before = snapshot(args);
+    f->surfaceHook = [&] { ++f->generation; };
+    CHECK(f->table.pfnCreateResource(f->device, &args) == D3DERR_DEVICELOST && snapshot(args) == before);
+    CHECK(f->surfaceCreates == f->surfaceCloses);
+    closeAdapter(); closeDevice();
+  }
 }
 
 static void resourceContracts() {
@@ -1767,6 +1967,7 @@ static void bufferContracts() {
 }
 
 int main() {
+  depthContracts();
   bufferContracts();
   textureContracts();
   shaderContracts();

@@ -170,7 +170,10 @@ HRESULT D3D9Backend::createSurface(const D3D9SurfaceDesc& desc,
   auto resource = std::make_unique<D3D9SurfaceResource>();
   auto& state = *resource->m_state;
   state.desc = desc;
-  const HRESULT hr = desc.renderTarget
+  const HRESULT hr = desc.depthStencil
+    ? m_state->d3d->CreateDepthStencilSurface(desc.width, desc.height, desc.format,
+        D3DMULTISAMPLE_NONE, 0, FALSE, &state.surface, nullptr)
+    : desc.renderTarget
     ? m_state->d3d->CreateRenderTarget(desc.width, desc.height, desc.format,
         D3DMULTISAMPLE_NONE, 0, desc.lockable, &state.surface, nullptr)
     : m_state->d3d->CreateOffscreenPlainSurface(desc.width, desc.height, desc.format,
@@ -185,6 +188,10 @@ HRESULT D3D9Backend::setRenderTarget(D3D9SurfaceResource* target) {
   const HRESULT hr = m_state->d3d->SetNativeRenderTarget(surface);
   if (SUCCEEDED(hr)) m_state->target = surface;
   return hr;
+}
+
+HRESULT D3D9Backend::setDepthStencil(D3D9SurfaceResource* depth) {
+  return m_state->d3d->SetDepthStencilSurface(depth ? depth->m_state->surface.ptr() : nullptr);
 }
 
 HRESULT D3D9Backend::createTexture(const D3D9SurfaceDesc* levels, UINT count,
@@ -221,24 +228,14 @@ HRESULT D3D9Backend::setSamplerState(UINT stage, D3DSAMPLERSTATETYPE state, DWOR
   return m_state->d3d->SetSamplerState(stage, state, value);
 }
 
-HRESULT D3D9Backend::clear(D3DCOLOR color, UINT count, const RECT* rects, bool computeRects) {
-  if (computeRects) {
-    std::vector<D3DRECT> areas;
-    areas.reserve(count);
-    for (UINT i = 0; i < count; ++i)
-      areas.push_back({rects[i].left, rects[i].top, rects[i].right, rects[i].bottom});
-    return m_state->d3d->Clear(count, count ? areas.data() : nullptr,
-                              D3DCLEAR_TARGET, color, 1.0f, 0);
-  }
-  // The runtime already clipped these rectangles. ColorFill avoids applying
-  // the current viewport and scissor a second time. Empty preclipped clear
-  // is a no-op, unlike the public API's zero-count Clear.
-  for (UINT i = 0; i < count; ++i) {
-    if (rects[i].left == rects[i].right || rects[i].top == rects[i].bottom) continue;
-    const HRESULT hr = m_state->d3d->ColorFill(m_state->target.ptr(), &rects[i], color);
-    if (FAILED(hr)) return hr;
-  }
-  return S_OK;
+HRESULT D3D9Backend::clear(DWORD flags, D3DCOLOR color, float depth, DWORD stencil,
+    UINT count, const RECT* rects, bool computeRects) {
+  std::vector<D3DRECT> areas;
+  areas.reserve(count);
+  for (UINT i = 0; i < count; ++i)
+    areas.push_back({rects[i].left, rects[i].top, rects[i].right, rects[i].bottom});
+  return m_state->d3d->ClearNative(count, count ? areas.data() : nullptr,
+                                  flags, color, depth, stencil, computeRects);
 }
 
 static void copyRows(void* destination, UINT destinationPitch, const void* source,

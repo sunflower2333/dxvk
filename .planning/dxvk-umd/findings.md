@@ -1214,3 +1214,29 @@ native controlled/semantic and actual target GPU gates before acceptance.
   Preclipped clear must avoid a second viewport/scissor clip; computed clear
   must use the actual intersection, including empty/outside scissor rectangles.
   No production caps/exports or paired pins are widened at this checkpoint.
+
+### Native depth/stencil implementation and preflight
+
+- Add worker-owned D16/D24S8 default-pool depth surfaces and native
+  SetDepthStencil binding. Reject color/texture/buffer aliases, unsupported
+  pool/multisample/lock/copy contracts and undersized depth attachments at draw.
+  Destroy/close unbind before retirement; retryable failure retains ownership.
+- Native Clear snapshots caller rectangles after device serialization and
+  independently dispatches TARGET/ZBUFFER/STENCIL. Validate requested aspects,
+  finite depth0..1 and stencil0..255; ignored fields stay ignored. Private
+  ClearNative preserves preclipped rectangles and zero-count no-op, while
+  computed clears clip against actual viewport/scissor intersections. Fix
+  empty/disjoint clipping and image-extent bounds in shared renderer logic.
+- Frozen uncommitted preflight03 compiles native ARM64 probe and actual DDI
+  fixture under/W4/WX,182260checksPASS,compile6.903271s,run0.1019123s.
+  All56current source hashes match frozen inputs before commit. Preflight02
+  had178063checks before adding independent depth-size draw coverage. Earlier01
+  compiled178063checks but used an incorrectSourceCommit field; preserve it as
+  preflight only and exclude it from committed-source acceptance. Actual full
+  renderer CI, committed fixture/semantic controls and GPU depth remain pending.
+- Fourteen new GPU stages24..37 are implemented:896depth pixels, independently
+  calculated checksumeac96ea5,total2368including prior1472. CoverD16less/gequal/
+  ZWRITE, D24S8 independent aspects/write masks, preclipped and computed clear,
+  empty rectangles, disjoint scissor and combined color/depth/stencil. Every
+  case initializes distinguishable color/depth/stencil before rendering; no
+  production caps/exports/registration or package pins change.

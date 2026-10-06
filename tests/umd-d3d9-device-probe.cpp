@@ -134,7 +134,8 @@ public:
     return contexts == 1 && contextCloses == 1 && allocations && allocations == deallocations
       && locks == unlocks && !m_context && !wrongThreads ? S_OK : E_FAIL;
   }
-  HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false, bool buffers = false) {
+  HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false,
+                          bool buffers = false, bool depthStencil = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -213,6 +214,16 @@ public:
           }
           if (stage >= 18 && stage <= 23)
             expected = stage <= 20 ? 0xffa03658 : stage == 21 ? 0xff2785b3 : 0xffe19c47;
+          if (stage >= 24 && stage <= 37) {
+            const UINT depthColors[] = {0xff39a57b,0xffc0472a,0xff356bd1,0xff438bc2,
+              0xff7bb85f,0xffdd9235,0xffdd9235,0xff7bb85f,0xff8b57c5,0xffbd6382,
+              0xff4eac77,0xff649dd8,0xffceaf45,0xff2fafbf};
+            expected = depthColors[stage - 24];
+            if (stage == 29 || stage == 30 || stage == 36 || stage == 37) {
+              const UINT right = stage == 30 || stage == 37 ? 4u : 6u;
+              if (!(x >= 3 && x < right && y >= 2 && y < 6)) expected = 0xff07131f;
+            }
+          }
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
               stage, x, y, actual, expected);
@@ -670,6 +681,156 @@ public:
         hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,declaration.ShaderHandle); if (FAILED(hr)) return hr;
         std::printf("D3D9_BUFFER_READBACK PASS pixels=%u checksum=%08x padding=retained streams=3/7 indices=16/32 base=negative/positive dynamic=nooverwrite/discard\n",checked,checksum);
       }
+      if (depthStencil) {
+        if (!api.pfnSetDepthStencil) return E_FAIL;
+        char depthOwners[2];
+        HANDLE depthSurfaces[2] = {};
+        D3DDDI_SURFACEINFO depthInfo = {8,8,1,nullptr,0,0};
+        for (UINT depthSlot = 0; depthSlot < 2; ++depthSlot) {
+          D3DDDIARG_CREATERESOURCE depthResource = {};
+          depthResource.hResource = &depthOwners[depthSlot];
+          depthResource.Format = static_cast<D3DDDIFORMAT>(depthSlot ? D3DFMT_D24S8 : D3DFMT_D16);
+          depthResource.Pool = D3DDDIPOOL_LOCALVIDMEM;
+          depthResource.Flags.ZBuffer = depthResource.Flags.NotLockable = 1;
+          depthResource.pSurfList = &depthInfo; depthResource.SurfCount = 1;
+          hr = api.pfnCreateResource(m_driverDevice,&depthResource);
+          std::printf("D3D9_DEPTH_CREATE slot=%u format=%u hr=%08lx\n",depthSlot,
+            UINT(depthResource.Format),static_cast<unsigned long>(hr));
+          if (FAILED(hr)) return hr;
+          depthSurfaces[depthSlot] = depthResource.hResource;
+        }
+        D3DDDIVERTEXELEMENT depthElements[] = {{0,0,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITIONT,0},
+          {0,16,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+        D3DDDIARG_CREATEVERTEXSHADERDECL depthDeclaration = {2,nullptr};
+        hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&depthDeclaration,depthElements); if (FAILED(hr)) return hr;
+        hr = api.pfnSetVertexShaderDecl(m_driverDevice,depthDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        for (const auto depthTextureState : {D3DDDIARG_TEXTURESTAGESTATE{0,D3DDDITSS_COLOROP,D3DTOP_SELECTARG1},
+          {0,D3DDDITSS_COLORARG1,D3DTA_DIFFUSE},{0,D3DDDITSS_ALPHAOP,D3DTOP_SELECTARG1},
+          {0,D3DDDITSS_ALPHAARG1,D3DTA_DIFFUSE},{1,D3DDDITSS_COLOROP,D3DTOP_DISABLE}}) {
+          hr = api.pfnSetTextureStageState(m_driverDevice,&depthTextureState); if (FAILED(hr)) return hr;
+        }
+        for (const auto depthState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_LIGHTING,0},
+          {D3DDDIRS_CULLMODE,D3DCULL_NONE},{D3DDDIRS_ALPHABLENDENABLE,0},{D3DDDIRS_ALPHATESTENABLE,0},
+          {D3DDDIRS_FOGENABLE,0},{D3DDDIRS_DITHERENABLE,0},{D3DDDIRS_COLORWRITEENABLE,15},
+          {D3DDDIRS_SRGBWRITEENABLE,0}}) {
+          hr = state(depthState.State,depthState.Value); if (FAILED(hr)) return hr;
+        }
+        const D3DDDIARG_ZRANGE depthRange = {0.0f,1.0f};
+        hr = api.pfnSetZRange(m_driverDevice,&depthRange); if (FAILED(hr)) return hr;
+        auto depthArea = [&](const D3DDDIARG_VIEWPORTINFO& depthViewport, const RECT& depthScissor, bool enable) {
+          HRESULT depthStatus = api.pfnSetViewport(m_driverDevice,&depthViewport);
+          if (SUCCEEDED(depthStatus)) depthStatus = api.pfnSetScissorRect(m_driverDevice,&depthScissor);
+          if (SUCCEEDED(depthStatus)) depthStatus = state(D3DDDIRS_SCISSORTESTENABLE,enable ? 1 : 0);
+          return depthStatus;
+        };
+        const D3DDDIARG_VIEWPORTINFO depthFullViewport = {0,0,8,8}, depthClipViewport = {2,1,4,5};
+        const RECT depthClipScissor = {3,2,7,7}, depthOutsideScissor = {7,7,8,8}, depthExplicit = {0,0,4,8};
+        auto depthClear = [&](UINT depthStage, UINT depthFlags, float depthValue, UINT stencilValue,
+                              UINT depthCount, const RECT* depthRects) {
+          D3DDDIARG_CLEAR depthClearArgs = {};
+          depthClearArgs.Flags = depthFlags; depthClearArgs.FillDepth = depthValue;
+          depthClearArgs.FillStencil = stencilValue; depthClearArgs.FillColor = 0xffb062c4;
+          const HRESULT depthStatus = api.pfnClear(m_driverDevice,&depthClearArgs,depthCount,depthRects);
+          std::printf("D3D9_DEPTH_CLEAR stage=%u flags=%u depth=%.3f stencil=%u rects=%u hr=%08lx\n",
+            depthStage,depthFlags,depthValue,stencilValue,depthCount,static_cast<unsigned long>(depthStatus));
+          return depthStatus;
+        };
+        auto depthDraw = [&](UINT depthStage, float depthValue, D3DCOLOR depthColor) {
+          for (UINT depthVertex = 1; depthVertex < 5; ++depthVertex) {
+            vertices[depthVertex].z = depthValue; vertices[depthVertex].color = depthColor;
+          }
+          HRESULT depthStatus = api.pfnSetStreamSourceUm(m_driverDevice,&stream,vertices);
+          if (SUCCEEDED(depthStatus)) depthStatus = state(D3DDDIRS_SCENECAPTURE,1);
+          if (FAILED(depthStatus)) return depthStatus;
+          depthStatus = api.pfnDrawPrimitive(m_driverDevice,&primitive,nullptr);
+          std::printf("D3D9_DEPTH_DRAW stage=%u depth=%.3f color=%08x hr=%08lx\n",
+            depthStage,depthValue,depthColor,static_cast<unsigned long>(depthStatus));
+          const HRESULT depthEnded = state(D3DDDIRS_SCENECAPTURE,0);
+          return FAILED(depthStatus) ? depthStatus : depthEnded;
+        };
+        checked = 0; checksum = 2166136261u;
+        for (UINT depthStage = 24; depthStage <= 37; ++depthStage) {
+          D3DDDIARG_SETDEPTHSTENCIL depthBind = {depthSurfaces[depthStage <= 31 ? 0 : 1]};
+          hr = api.pfnSetDepthStencil(m_driverDevice,&depthBind); if (FAILED(hr)) return hr;
+          hr = depthArea(depthFullViewport,full,false); if (FAILED(hr)) return hr;
+          for (const auto depthState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_ZENABLE,1},
+            {D3DDDIRS_ZWRITEENABLE,1},{D3DDDIRS_ZFUNC,D3DCMP_LESS},{D3DDDIRS_STENCILENABLE,depthStage >= 32 ? 1u : 0u},
+            {D3DDDIRS_STENCILFUNC,D3DCMP_EQUAL},{D3DDDIRS_STENCILREF,7},{D3DDDIRS_STENCILMASK,255},
+            {D3DDDIRS_STENCILWRITEMASK,255},{D3DDDIRS_STENCILFAIL,D3DSTENCILOP_KEEP},
+            {D3DDDIRS_STENCILZFAIL,D3DSTENCILOP_KEEP},{D3DDDIRS_STENCILPASS,D3DSTENCILOP_KEEP},
+            {D3DDDIRS_TWOSIDEDSTENCILMODE,0}}) {
+            hr = state(depthState.State,depthState.Value); if (FAILED(hr)) return hr;
+          }
+          fill.Flags = D3DCLEAR_TARGET; fill.FillColor = 0xff07131f;
+          hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
+          const float initialDepth = depthStage == 27 || depthStage == 29 || depthStage == 30
+            || depthStage == 32 || depthStage == 37 ? 0.0f : depthStage == 26 ? 0.5f : 0.75f;
+          hr = depthClear(depthStage,D3DCLEAR_ZBUFFER | (depthStage >= 32 ? D3DCLEAR_STENCIL : 0),
+            initialDepth,depthStage == 32 ? 7u : depthStage == 34 ? 160u : 0u,1,&full);
+          if (FAILED(hr)) return hr;
+          if (depthStage == 24 || depthStage == 25 || depthStage == 26) {
+            hr = state(D3DDDIRS_ZWRITEENABLE,depthStage == 25 ? 0 : 1); if (FAILED(hr)) return hr;
+            hr = state(D3DDDIRS_ZFUNC,depthStage == 26 ? D3DCMP_GREATEREQUAL : D3DCMP_LESS); if (FAILED(hr)) return hr;
+            hr = depthDraw(depthStage,depthStage == 26 ? 0.75f : 0.25f,
+              depthStage == 26 ? 0xff356bd1 : 0xff39a57b); if (FAILED(hr)) return hr;
+            hr = depthDraw(depthStage,depthStage == 26 ? 0.25f : 0.625f,0xffc0472a); if (FAILED(hr)) return hr;
+          } else if (depthStage <= 31) {
+            if (depthStage != 28) {
+              hr = depthArea(depthClipViewport,depthStage == 31 ? depthOutsideScissor : depthClipScissor,true);
+              if (FAILED(hr)) return hr;
+            }
+            hr = depthClear(depthStage,D3DCLEAR_ZBUFFER | (depthStage >= 29 ? 8 : 0),
+              depthStage == 28 || depthStage == 31 ? 0.0f : 1.0f,0,
+              depthStage == 27 || depthStage == 30 ? 1u : 0u,
+              depthStage == 27 ? &full : depthStage == 30 ? &depthExplicit : reinterpret_cast<const RECT*>(UINT_PTR(1)));
+            if (FAILED(hr)) return hr;
+            hr = depthArea(depthFullViewport,full,false); if (FAILED(hr)) return hr;
+            hr = depthDraw(depthStage,0.5f,depthStage == 27 ? 0xff438bc2
+              : depthStage == 28 || depthStage == 31 ? 0xff7bb85f : 0xffdd9235); if (FAILED(hr)) return hr;
+          } else if (depthStage == 32 || depthStage == 33) {
+            hr = depthClear(depthStage,depthStage == 32 ? D3DCLEAR_ZBUFFER : D3DCLEAR_STENCIL,
+              1.0f,7,1,&full); if (FAILED(hr)) return hr;
+            hr = depthDraw(depthStage,0.5f,depthStage == 32 ? 0xff8b57c5 : 0xffbd6382); if (FAILED(hr)) return hr;
+          } else if (depthStage == 34) {
+            for (const auto depthState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_ZENABLE,0},
+              {D3DDDIRS_STENCILFUNC,D3DCMP_ALWAYS},{D3DDDIRS_STENCILREF,181},
+              {D3DDDIRS_STENCILWRITEMASK,15},{D3DDDIRS_STENCILPASS,D3DSTENCILOP_REPLACE}}) {
+              hr = state(depthState.State,depthState.Value); if (FAILED(hr)) return hr;
+            }
+            hr = depthDraw(depthStage,0.5f,0xffc0472a); if (FAILED(hr)) return hr;
+            hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
+            for (const auto depthState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_STENCILFUNC,D3DCMP_EQUAL},
+              {D3DDDIRS_STENCILREF,165},{D3DDDIRS_STENCILWRITEMASK,0},{D3DDDIRS_STENCILPASS,D3DSTENCILOP_KEEP}}) {
+              hr = state(depthState.State,depthState.Value); if (FAILED(hr)) return hr;
+            }
+            hr = depthDraw(depthStage,0.5f,0xff4eac77); if (FAILED(hr)) return hr;
+          } else {
+            hr = depthArea(depthClipViewport,depthClipScissor,true); if (FAILED(hr)) return hr;
+            hr = depthClear(depthStage,depthStage == 37 ? 15u : D3DCLEAR_STENCIL | (depthStage == 36 ? 8u : 0u),
+              1.0f,7,depthStage == 36 ? 0u : 1u,
+              depthStage == 35 ? &full : depthStage == 36 ? reinterpret_cast<const RECT*>(UINT_PTR(1)) : &depthExplicit);
+            if (FAILED(hr)) return hr;
+            if (depthStage == 35) {
+              hr = depthClear(depthStage,D3DCLEAR_STENCIL,0.0f,0,0,reinterpret_cast<const RECT*>(UINT_PTR(1)));
+              if (FAILED(hr)) return hr;
+            }
+            hr = depthArea(depthFullViewport,full,false); if (FAILED(hr)) return hr;
+            hr = state(D3DDDIRS_ZENABLE,depthStage == 37 ? 1 : 0); if (FAILED(hr)) return hr;
+            hr = depthDraw(depthStage,0.5f,depthStage == 35 ? 0xff649dd8 : depthStage == 36 ? 0xffceaf45 : 0xff2fafbf);
+            if (FAILED(hr)) return hr;
+          }
+          hr = readback(depthStage); if (FAILED(hr)) return hr;
+        }
+        for (HANDLE depthResource : depthSurfaces) {
+          hr = api.pfnDestroyResource(m_driverDevice,depthResource); if (FAILED(hr)) return hr;
+          const D3DDDIARG_SETDEPTHSTENCIL staleDepth = {depthResource};
+          if (api.pfnSetDepthStencil(m_driverDevice,&staleDepth) != E_INVALIDARG) return E_FAIL;
+        }
+        hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,depthDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        hr = state(D3DDDIRS_ZENABLE,0); if (FAILED(hr)) return hr;
+        hr = state(D3DDDIRS_STENCILENABLE,0); if (FAILED(hr)) return hr;
+        std::printf("D3D9_DEPTH_READBACK PASS pixels=%u checksum=%08x padding=retained formats=D16/D24S8 depth=less/gequal/write stencil=preserved/masked clear=preclipped/computed/empty\n",checked,checksum);
+      }
     }
     hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
     if (FAILED(hr)) return hr;
@@ -910,23 +1071,24 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  const bool buffers = argc == 3 && !wcscmp(argv[2], L"--buffer");
+  const bool depthStencil = argc == 3 && !wcscmp(argv[2], L"--depth");
+  const bool buffers = depthStencil || (argc == 3 && !wcscmp(argv[2], L"--buffer"));
   const bool textures = buffers || (argc == 3 && !wcscmp(argv[2], L"--texture"));
   const bool shaders = textures || (argc == 3 && !wcscmp(argv[2], L"--shader"));
   const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

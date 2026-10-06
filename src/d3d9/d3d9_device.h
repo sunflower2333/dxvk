@@ -1107,6 +1107,10 @@ namespace dxvk {
     // RT0 contract; native resources still require this device's ownership.
     HRESULT SetNativeRenderTarget(IDirect3DSurface9* target);
 
+    // A preclipped native clear must not apply viewport/scissor clipping again.
+    HRESULT ClearNative(DWORD count, const D3DRECT* rects, DWORD flags,
+                        D3DCOLOR color, float depth, DWORD stencil, bool computeRects);
+
     // Native DDI shader code has an explicit byte count. Preserve that bound
     // through analysis and compilation instead of walking a public API pointer.
     HRESULT CreateNativeVertexShader(const DWORD* code, UINT bytes, IDirect3DVertexShader9** shader);
@@ -1236,6 +1240,9 @@ namespace dxvk {
             D3D9ConstantBufferLayout  BoolLayout);
 
   private:
+
+    HRESULT ClearInternal(DWORD count, const D3DRECT* rects, DWORD flags,
+                          D3DCOLOR color, float depth, DWORD stencil, bool preclipped);
 
     template<bool AllowFlush = true, typename Cmd>
     void EmitCs(Cmd&& command) {

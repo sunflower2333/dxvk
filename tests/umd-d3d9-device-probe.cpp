@@ -135,7 +135,8 @@ public:
       && locks == unlocks && !m_context && !wrongThreads ? S_OK : E_FAIL;
   }
   HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false,
-                          bool buffers = false, bool depthStencil = false, bool fixedFunction = false) {
+                          bool buffers = false, bool depthStencil = false, bool fixedFunction = false,
+                          bool bufferTransfer = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -237,6 +238,8 @@ public:
               0xff0000ff,0xffff00ff,0xff0000ff,0xff00ffff};
             expected = lightColors[stage-44];
           }
+          if (stage >= 59 && stage <= 66)
+            expected = stage == 59 ? 0xffa05c71 : stage <= 63 ? 0xffb08746 : 0xff65b82f;
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
               stage, x, y, actual, expected);
@@ -1001,6 +1004,213 @@ public:
         hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,fixedDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
         std::printf("D3D9_FIXED_READBACK PASS pixels=%u checksum=%08x padding=retained transforms=world/view/projection/multiply lights=directional/point/spot lifetime=sparse/enable/disable/destroy/reuse\n",checked,checksum);
       }
+      if (bufferTransfer) {
+        if (!api.pfnBufBlt || !api.pfnSetStreamSource || !api.pfnSetIndices
+            || !api.pfnDrawIndexedPrimitive) return E_FAIL;
+        constexpr UINT vertexBytes = 160, payloadBytes = 140, stride = 28;
+        using ByteImage = std::array<uint8_t,vertexBytes>;
+        using VertexPayload = std::array<uint8_t,payloadBytes>;
+        std::array<ByteImage,9> expected;
+        for (auto& image : expected) image.fill(0xcd);
+        expected[4].fill(0xa9); expected[5].fill(0xa6);
+        auto vertexPayload = [&](UINT color) {
+          VertexPayload bytes; bytes.fill(0xcd);
+          for (UINT v = 0; v < 5; ++v) {
+            const float position[] = {v == 0 ? 1000.0f : v == 1 || v == 3 ? -2.0f : 10.0f,
+              v == 0 ? 1000.0f : v <= 2 ? -2.0f : 10.0f,.5f,1.0f};
+            const UINT diffuse = v == 0 ? 0xff000000 : color;
+            std::memcpy(bytes.data() + v * stride + 3,position,sizeof(position));
+            std::memcpy(bytes.data() + v * stride + 19,&diffuse,sizeof(diffuse));
+          }
+          return bytes;
+        };
+        const auto firstPayload = vertexPayload(0xffa05c71);
+        const auto secondPayload = vertexPayload(0xffb08746);
+        const auto thirdPayload = vertexPayload(0xff65b82f);
+        std::copy(firstPayload.begin(),firstPayload.end(),expected[0].begin() + 5);
+        std::copy(secondPayload.begin(),secondPayload.end(),expected[2].begin() + 9);
+        std::array<uint8_t,192> borrowedInput, borrowedOutput;
+        std::array<uint8_t,64> borrowedIndices;
+        borrowedInput.fill(0xcd); borrowedOutput.fill(0xcd); borrowedIndices.fill(0xcd);
+        std::copy(expected[0].begin(),expected[0].end(),borrowedInput.begin() + 16);
+        std::copy(expected[4].begin(),expected[4].end(),borrowedOutput.begin() + 16);
+        std::copy_n(expected[5].begin(),32,borrowedIndices.begin() + 16);
+        void* external[] = {borrowedInput.data()+16,nullptr,nullptr,nullptr,
+          borrowedOutput.data()+16,borrowedIndices.data()+16,nullptr,nullptr,nullptr};
+        const UINT sizes[] = {160,160,160,160,160,32,32,64,160};
+        char transferOwners[9]; HANDLE transferResources[9] = {};
+        for (UINT slot = 0; slot < 9; ++slot) {
+          const bool systemPool = slot == 0 || slot == 2 || slot == 4 || slot == 5 || slot == 7 || slot == 8;
+          const bool dynamic = slot == 2 || slot == 3 || slot == 4 || slot == 7;
+          D3DDDI_SURFACEINFO info = {sizes[slot],UINT_MAX,UINT_MAX,external[slot],UINT_MAX,UINT_MAX};
+          D3DDDIARG_CREATERESOURCE resource = {};
+          resource.hResource = &transferOwners[slot]; resource.pSurfList = &info; resource.SurfCount = 1;
+          resource.Pool = systemPool ? D3DDDIPOOL_SYSTEMMEM : D3DDDIPOOL_LOCALVIDMEM;
+          resource.Format = static_cast<D3DDDIFORMAT>(slot == 5 || slot == 6 ? D3DFMT_INDEX16 : slot == 7 ? D3DFMT_INDEX32 : D3DFMT_VERTEXDATA);
+          resource.Flags.VertexBuffer = slot < 5 || slot == 8;
+          resource.Flags.IndexBuffer = slot >= 5 && slot <= 7;
+          resource.Flags.Dynamic = dynamic;
+          resource.Flags.WriteOnly = slot == 1 || slot == 3 || slot == 6;
+          hr = api.pfnCreateResource(m_driverDevice,&resource);
+          std::printf("D3D9_TRANSFER_CREATE slot=%u bytes=%u pool=%s borrowed=%u dynamic=%u hr=%08lx\n",
+            slot,sizes[slot],systemPool ? "system" : "default",UINT(external[slot] != nullptr),UINT(dynamic),static_cast<unsigned long>(hr));
+          if (FAILED(hr)) return hr;
+          transferResources[slot] = resource.hResource;
+          if (!external[slot]) {
+            D3DDDIARG_LOCK mapping = {}; mapping.hResource = resource.hResource; mapping.Flags.WriteOnly = 1;
+            hr = api.pfnLock(m_driverDevice,&mapping); if (FAILED(hr)) return hr;
+            if (!mapping.pSurfData || mapping.Pitch || mapping.SlicePitch) return E_FAIL;
+            std::memcpy(mapping.pSurfData,expected[slot].data(),sizes[slot]);
+            D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = resource.hResource;
+            hr = api.pfnUnlock(m_driverDevice,&unmap); if (FAILED(hr)) return hr;
+          }
+        }
+        const D3DDDIVERTEXELEMENT transferElements[] = {{0,3,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITIONT,0},
+          {0,19,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+        D3DDDIARG_CREATEVERTEXSHADERDECL transferDeclaration = {2,nullptr};
+        hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&transferDeclaration,transferElements); if (FAILED(hr)) return hr;
+        hr = api.pfnSetVertexShaderDecl(m_driverDevice,transferDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        const D3DDDIARG_SETSTREAMSOURCEUM noUser = {0,UINT_MAX};
+        hr = api.pfnSetStreamSourceUm(m_driverDevice,&noUser,nullptr); if (FAILED(hr)) return hr;
+        const D3DDDIARG_VIEWPORTINFO transferViewport = {0,0,8,8};
+        hr = api.pfnSetViewport(m_driverDevice,&transferViewport); if (FAILED(hr)) return hr;
+        for (const auto transferState : {D3DDDIARG_RENDERSTATE{D3DDDIRS_LIGHTING,0},
+          {D3DDDIRS_COLORVERTEX,1},{D3DDDIRS_ZENABLE,0},{D3DDDIRS_STENCILENABLE,0},
+          {D3DDDIRS_SCISSORTESTENABLE,0},{D3DDDIRS_COLORWRITEENABLE,15}}) {
+          hr = state(transferState.State,transferState.Value); if (FAILED(hr)) return hr;
+        }
+        auto transfer = [&](UINT stage,UINT source,UINT srcOffset,UINT destination,UINT dstOffset,UINT count) {
+          D3DDDIARG_BUFFERBLT args = {};
+          args.hSrcResource = transferResources[source]; args.SrcRange = {srcOffset,count};
+          args.hDstResource = transferResources[destination]; args.Offset = dstOffset;
+          const HRESULT status = api.pfnBufBlt(m_driverDevice,&args);
+          std::printf("D3D9_TRANSFER_COPY stage=%u src=%u src_offset=%u dst=%u dst_offset=%u bytes=%u hr=%08lx\n",
+            stage,source,srcOffset,destination,dstOffset,count,static_cast<unsigned long>(status));
+          if (SUCCEEDED(status)) {
+            const auto snapshot = expected[source];
+            std::copy_n(snapshot.begin()+srcOffset,count,expected[destination].begin()+dstOffset);
+          }
+          return status;
+        };
+        UINT bytesChecked = 0, byteChecksum = 2166136261u;
+        auto verifyBytes = [&](UINT stage,UINT slot) -> HRESULT {
+          HRESULT status = transfer(stage,slot,0,8,0,sizes[slot]); if (FAILED(status)) return status;
+          D3DDDIARG_LOCK mapping = {}; mapping.hResource = transferResources[8];
+          mapping.Flags.ReadOnly = mapping.Flags.RangeValid = 1; mapping.Range = {0,sizes[slot]};
+          status = api.pfnLock(m_driverDevice,&mapping); if (FAILED(status)) return status;
+          if (!mapping.pSurfData || mapping.Pitch || mapping.SlicePitch) status = E_FAIL;
+          UINT stageChecksum = 2166136261u;
+          for (UINT i = 0; i < sizes[slot] && SUCCEEDED(status); ++i) {
+            const uint8_t actual = static_cast<const uint8_t*>(mapping.pSurfData)[i];
+            if (actual != expected[slot][i]) {
+              std::printf("D3D9_TRANSFER_BYTE_MISMATCH stage=%u slot=%u offset=%u actual=%02x expected=%02x\n",
+                stage,slot,i,unsigned(actual),unsigned(expected[slot][i]));
+              status = E_FAIL; break;
+            }
+            ++bytesChecked; byteChecksum = (byteChecksum ^ actual) * 16777619u;
+            stageChecksum = (stageChecksum ^ actual) * 16777619u;
+          }
+          D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = transferResources[8];
+          const HRESULT unlocked = api.pfnUnlock(m_driverDevice,&unmap);
+          if (FAILED(status)) return status;
+          if (FAILED(unlocked)) return unlocked;
+          std::printf("D3D9_TRANSFER_BYTE_READBACK stage=%u slot=%u bytes=%u checksum=%08x\n",stage,slot,sizes[slot],stageChecksum);
+          return S_OK;
+        };
+        auto writeRange = [&](UINT stage,UINT slot,UINT offset,const void* data,UINT count) -> HRESULT {
+          D3DDDIARG_LOCK mapping = {}; mapping.hResource = transferResources[slot];
+          mapping.Flags.WriteOnly = mapping.Flags.RangeValid = 1;
+          mapping.Flags.NotifyOnly = external[slot] != nullptr; mapping.Range = {offset,count};
+          HRESULT status = api.pfnLock(m_driverDevice,&mapping);
+          std::printf("D3D9_TRANSFER_LOCK stage=%u slot=%u offset=%u bytes=%u notify=%u hr=%08lx\n",
+            stage,slot,offset,count,UINT(mapping.Flags.NotifyOnly),static_cast<unsigned long>(status));
+          if (FAILED(status)) return status;
+          if (!mapping.pSurfData || mapping.Pitch || mapping.SlicePitch
+              || (external[slot] && mapping.pSurfData != static_cast<uint8_t*>(external[slot])+offset)) return E_FAIL;
+          std::memcpy(mapping.pSurfData,data,count);
+          D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = transferResources[slot];
+          unmap.Flags.NotifyOnly = mapping.Flags.NotifyOnly;
+          status = api.pfnUnlock(m_driverDevice,&unmap);
+          if (SUCCEEDED(status)) std::memcpy(expected[slot].data()+offset,data,count);
+          return status;
+        };
+        auto verifyExternal = [&](UINT slot) {
+          const auto pointer = static_cast<const uint8_t*>(external[slot]);
+          if (std::memcmp(pointer,expected[slot].data(),sizes[slot])) return false;
+          for (UINT guard = 0; guard < 16; ++guard)
+            if (pointer[int(guard)-16] != 0xcd || pointer[sizes[slot]+guard] != 0xcd) return false;
+          return true;
+        };
+        auto transferDraw = [&](UINT stage,UINT vertexSlot,UINT offset,UINT indexSlot) -> HRESULT {
+          const D3DDDIARG_SETSTREAMSOURCE stream = {0,transferResources[vertexSlot],offset,stride};
+          HRESULT status = api.pfnSetStreamSource(m_driverDevice,&stream); if (FAILED(status)) return status;
+          if (indexSlot) {
+            const D3DDDIARG_SETINDICES indices = {transferResources[indexSlot],indexSlot == 6 ? 2u : 4u};
+            status = api.pfnSetIndices(m_driverDevice,&indices); if (FAILED(status)) return status;
+          }
+          fill.FillColor = 0xff091725;
+          status = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(status)) return status;
+          status = state(D3DDDIRS_SCENECAPTURE,1); if (FAILED(status)) return status;
+          if (indexSlot) {
+            const D3DDDIARG_DRAWINDEXEDPRIMITIVE indexed = {D3DPT_TRIANGLELIST,0,1,4,3,2};
+            status = api.pfnDrawIndexedPrimitive(m_driverDevice,&indexed);
+          } else {
+            const D3DDDIARG_DRAWPRIMITIVE strip = {D3DPT_TRIANGLESTRIP,1,2};
+            status = api.pfnDrawPrimitive(m_driverDevice,&strip,nullptr);
+          }
+          std::printf("D3D9_TRANSFER_DRAW stage=%u vertex=%u offset=%u stride=28 mode=%s index_start=%u hr=%08lx\n",
+            stage,vertexSlot,offset,indexSlot == 6 ? "index16" : indexSlot == 7 ? "index32" : "vertex",
+            indexSlot ? 3u : 0u,static_cast<unsigned long>(status));
+          const HRESULT ended = state(D3DDDIRS_SCENECAPTURE,0);
+          if (FAILED(status)) return status;
+          if (FAILED(ended)) return ended;
+          return readback(stage);
+        };
+        checked = 0; checksum = 2166136261u;
+        hr = transfer(59,0,5,1,13,payloadBytes); if (FAILED(hr)) return hr;
+        hr = transferDraw(59,1,13,0); if (FAILED(hr)) return hr;
+        hr = verifyBytes(59,1); if (FAILED(hr)) return hr;
+        hr = transfer(60,2,9,3,13,payloadBytes); if (FAILED(hr)) return hr;
+        hr = transferDraw(60,3,13,0); if (FAILED(hr)) return hr;
+        hr = verifyBytes(60,3); if (FAILED(hr)) return hr;
+        hr = transfer(61,3,13,3,17,payloadBytes); if (FAILED(hr)) return hr;
+        hr = transferDraw(61,3,17,0); if (FAILED(hr)) return hr;
+        hr = verifyBytes(61,3); if (FAILED(hr)) return hr;
+        hr = transfer(62,3,17,3,13,payloadBytes); if (FAILED(hr)) return hr;
+        hr = transferDraw(62,3,13,0); if (FAILED(hr)) return hr;
+        hr = verifyBytes(62,3); if (FAILED(hr)) return hr;
+        hr = transfer(63,3,13,4,5,payloadBytes); if (FAILED(hr)) return hr;
+        if (!verifyExternal(4)) return E_FAIL;
+        hr = transferDraw(63,4,5,0); if (FAILED(hr)) return hr;
+        hr = verifyBytes(63,4); if (FAILED(hr)) return hr;
+        hr = writeRange(64,0,5,thirdPayload.data(),payloadBytes); if (FAILED(hr)) return hr;
+        if (!verifyExternal(0)) return E_FAIL;
+        hr = transfer(64,0,5,2,9,payloadBytes); if (FAILED(hr)) return hr;
+        hr = transferDraw(64,2,9,0); if (FAILED(hr)) return hr;
+        hr = verifyBytes(64,2); if (FAILED(hr)) return hr;
+        const UINT16 indices16[] = {1,2,3,3,2,4};
+        hr = writeRange(65,5,1,indices16,sizeof(indices16)); if (FAILED(hr)) return hr;
+        if (!verifyExternal(5)) return E_FAIL;
+        hr = transfer(65,5,1,6,6,sizeof(indices16)); if (FAILED(hr)) return hr;
+        hr = transferDraw(65,2,9,6); if (FAILED(hr)) return hr;
+        hr = verifyBytes(65,6); if (FAILED(hr)) return hr;
+        const UINT indices32[] = {1,2,3,3,2,4};
+        hr = writeRange(66,1,1,indices32,sizeof(indices32)); if (FAILED(hr)) return hr;
+        hr = transfer(66,1,1,7,12,sizeof(indices32)); if (FAILED(hr)) return hr;
+        hr = transferDraw(66,2,9,7); if (FAILED(hr)) return hr;
+        hr = verifyBytes(66,7); if (FAILED(hr)) return hr;
+        if (!verifyExternal(0) || !verifyExternal(4) || !verifyExternal(5)) return E_FAIL;
+        for (HANDLE resource : transferResources) {
+          hr = api.pfnDestroyResource(m_driverDevice,resource); if (FAILED(hr)) return hr;
+          if (api.pfnDestroyResource(m_driverDevice,resource) != E_INVALIDARG) return E_FAIL;
+        }
+        D3DDDIARG_BUFFERBLT stale = {};
+        stale.hSrcResource = transferResources[0]; stale.hDstResource = transferResources[1]; stale.SrcRange = {5,payloadBytes};
+        if (api.pfnBufBlt(m_driverDevice,&stale) != E_INVALIDARG) return E_FAIL;
+        hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,transferDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
+        std::printf("D3D9_TRANSFER_READBACK PASS pixels=%u checksum=%08x bytes=%u byte_checksum=%08x guards=retained pools=system/default copies=range/overlap/readback indices=16/32\n",
+          checked,checksum,bytesChecked,byteChecksum);
+      }
     }
     hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
     if (FAILED(hr)) return hr;
@@ -1241,7 +1451,8 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  const bool fixedFunction = argc == 3 && !wcscmp(argv[2], L"--fixed-function");
+  const bool bufferTransfer = argc == 3 && !wcscmp(argv[2], L"--buffer-transfer");
+  const bool fixedFunction = bufferTransfer || (argc == 3 && !wcscmp(argv[2], L"--fixed-function"));
   const bool depthStencil = fixedFunction || (argc == 3 && !wcscmp(argv[2], L"--depth"));
   const bool buffers = depthStencil || (argc == 3 && !wcscmp(argv[2], L"--buffer"));
   const bool textures = buffers || (argc == 3 && !wcscmp(argv[2], L"--texture"));
@@ -1249,17 +1460,17 @@ int wmain(int argc, WCHAR** argv) {
   const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

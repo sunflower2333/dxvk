@@ -9086,6 +9086,65 @@ namespace dxvk {
   }
 
 
+  bool D3D9DeviceEx::IsNativeRenderer() const noexcept {
+    return m_parent->IsNativeRenderer();
+  }
+
+
+  HRESULT D3D9DeviceEx::CopyNativeBuffer(D3D9CommonBuffer* destination, UINT destinationOffset,
+      D3D9CommonBuffer* source, UINT sourceOffset, UINT bytes, const void* upload) {
+    D3D9DeviceLock lock = LockDevice();
+    if (!IsNativeRenderer() || !destination || !source
+        || destination->GetLockCount() || source->GetLockCount()
+        || uint64_t(destinationOffset) + bytes > destination->Desc()->Size
+        || uint64_t(sourceOffset) + bytes > source->Desc()->Size)
+      return D3DERR_INVALIDCALL;
+    if (!bytes) return D3D_OK;
+
+    // Preserve bytes outside the requested destination range and make staged
+    // source writes visible before the actual GPU-to-GPU copy.
+    if (source->NeedsUpload()) FlushBuffer(source);
+    if (destination != source && destination->NeedsUpload()) FlushBuffer(destination);
+    auto srcBuffer = source->GetBuffer<D3D9_COMMON_BUFFER_TYPE_REAL>();
+    VkDeviceSize srcOffset = sourceOffset;
+    if (upload) {
+      ThrottleAllocation();
+      auto staging = AllocStagingBuffer(bytes);
+      std::memcpy(staging.mapPtr, upload, bytes);
+      srcBuffer = staging.slice.buffer();
+      srcOffset = staging.slice.offset();
+    }
+    auto dstBuffer = destination->GetBuffer<D3D9_COMMON_BUFFER_TYPE_REAL>();
+    Rc<DxvkBuffer> dstMapping;
+    if (destination->GetMapMode() == D3D9_COMMON_BUFFER_MAP_MODE_BUFFER)
+      dstMapping = destination->GetBuffer<D3D9_COMMON_BUFFER_TYPE_MAPPING>();
+    EmitCs([
+      cSrcBuffer = std::move(srcBuffer), cSrcOffset = srcOffset,
+      cDstBuffer = std::move(dstBuffer), cDstMapping = std::move(dstMapping),
+      cDstOffset = destinationOffset, cBytes = bytes
+    ](DxvkContext* ctx) {
+      if (cDstBuffer == cSrcBuffer)
+        ctx->copyBufferRegion(cDstBuffer, cDstOffset, cSrcOffset, cBytes);
+      else
+        ctx->copyBuffer(cDstBuffer, cDstOffset, cSrcBuffer, cSrcOffset, cBytes);
+      if (cDstMapping != nullptr)
+        ctx->copyBuffer(cDstMapping, cDstOffset, cDstBuffer, cDstOffset, cBytes);
+    });
+    destination->SetNeedsReadback(true);
+    TrackBufferMappingBufferSequenceNumber(destination);
+    // SYSTEMMEM can be consumed by dynamic per-draw CPU uploads immediately.
+    // Join its mapping write before returning, even when it has no external
+    // runtime pointer. DEFAULT locks retain their usual deferred wait.
+    if (destination->Desc()->Pool == D3DPOOL_SYSTEMMEM) {
+      WaitForResource(*destination->GetBuffer<D3D9_COMMON_BUFFER_TYPE_MAPPING>(),
+        destination->GetMappingBufferSequenceNumber(), D3DLOCK_READONLY);
+      destination->SetNeedsReadback(false);
+    }
+    ConsiderFlush(GpuFlushType::ImplicitWeakHint);
+    return D3D_OK;
+  }
+
+
   HRESULT D3D9DeviceEx::FlushRuntimeSubmission() {
     D3D9DeviceLock lock = LockDevice();
     ExecuteFlush(false);

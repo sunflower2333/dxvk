@@ -116,6 +116,10 @@ struct Fixture {
   std::vector<std::vector<uint8_t>> uploads;
   unsigned bufferCreates = 0, bufferCloses = 0, bufferLocks = 0, bufferUnlocks = 0;
   HRESULT bufferResult = S_OK, bufferUnlockResult = S_OK;
+  HRESULT bufferCopyResult = S_OK;
+  unsigned bufferCopies = 0;
+  UINT bufferDestinationOffset = 0, bufferSourceOffset = 0, bufferCopyBytes = 0;
+  std::vector<uint8_t> bufferCopiedData;
   bool nullBuffer = false, badBufferMapping = false;
   std::function<void()> bufferHook;
   std::vector<dxvk::umd::D3D9BufferDesc> bufferDescriptions;
@@ -227,6 +231,8 @@ struct dxvk::umd::D3D9BufferResource::State {
   D3D9BufferDesc desc;
   std::vector<uint8_t> bytes;
   bool locked = false;
+  bool readOnly = false;
+  UINT offset = 0, length = 0;
   unsigned bindings = 0;
 };
 dxvk::umd::D3D9BufferResource::D3D9BufferResource() : m_state(std::make_unique<State>()) {
@@ -237,12 +243,14 @@ dxvk::umd::D3D9BufferResource::~D3D9BufferResource() {
   ++f->bufferCloses;
 }
 HRESULT dxvk::umd::D3D9Backend::createBuffer(const D3D9BufferDesc& desc,
-    std::unique_ptr<D3D9BufferResource>& output) {
+    std::unique_ptr<D3D9BufferResource>& output, const void* initialData) {
   CHECK(GetCurrentThreadId() != f->caller);
   if (f->bufferResult != S_OK) return f->bufferResult;
   if (f->nullBuffer) return S_OK;
   auto buffer = std::make_unique<D3D9BufferResource>();
   buffer->m_state->desc = desc; buffer->m_state->bytes.resize(desc.bytes,0x6d);
+  CHECK(bool(initialData) == bool(desc.systemData) && (!desc.systemData || desc.systemMemory));
+  if (initialData) std::memcpy(buffer->m_state->bytes.data(), initialData, desc.bytes);
   f->bufferDescriptions.push_back(desc);
   if (f->bufferHook) { auto hook = std::move(f->bufferHook); hook(); }
   output = std::move(buffer); return S_OK;
@@ -253,14 +261,43 @@ HRESULT dxvk::umd::D3D9Backend::lockBuffer(D3D9BufferResource& buffer, UINT offs
   CHECK(bytes && uint64_t(offset) + bytes <= buffer.m_state->bytes.size());
   ++f->bufferLocks; f->bufferOffset = offset; f->bufferBytes = bytes; f->bufferFlags = flags;
   buffer.m_state->locked = true;
+  buffer.m_state->offset = offset; buffer.m_state->length = bytes;
+  buffer.m_state->readOnly = (flags & D3DLOCK_READONLY) != 0;
   data = f->badBufferMapping ? nullptr : buffer.m_state->bytes.data() + offset;
+  if (data && buffer.m_state->desc.systemData) {
+    data = static_cast<uint8_t*>(buffer.m_state->desc.systemData) + offset;
+    if (buffer.m_state->readOnly) std::memcpy(data, buffer.m_state->bytes.data() + offset, bytes);
+  }
   return S_OK;
 }
-HRESULT dxvk::umd::D3D9Backend::unlockBuffer(D3D9BufferResource& buffer) {
+HRESULT dxvk::umd::D3D9Backend::unlockBuffer(D3D9BufferResource& buffer, const void* upload) {
   CHECK(GetCurrentThreadId() != f->caller && buffer.m_state->locked);
   ++f->bufferUnlocks;
   if (f->bufferUnlockResult != S_OK) return f->bufferUnlockResult;
+  if (upload) {
+    CHECK(buffer.m_state->desc.systemData && !buffer.m_state->readOnly);
+    std::memcpy(buffer.m_state->bytes.data() + buffer.m_state->offset, upload, buffer.m_state->length);
+  }
+  if (buffer.m_state->desc.systemData && !upload && !buffer.m_state->readOnly)
+    f->teardownDiscard = true;
   buffer.m_state->locked = false; return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::copyBuffer(D3D9BufferResource& destination, UINT destinationOffset,
+    D3D9BufferResource& source, UINT sourceOffset, UINT bytes, const void* upload) {
+  CHECK(GetCurrentThreadId() != f->caller && !destination.m_state->locked && !source.m_state->locked);
+  CHECK(bytes && uint64_t(sourceOffset) + bytes <= source.m_state->bytes.size()
+    && uint64_t(destinationOffset) + bytes <= destination.m_state->bytes.size());
+  CHECK(!source.m_state->desc.systemData || upload);
+  ++f->bufferCopies; f->bufferDestinationOffset = destinationOffset;
+  f->bufferSourceOffset = sourceOffset; f->bufferCopyBytes = bytes;
+  if (f->bufferCopyResult != S_OK) return f->bufferCopyResult;
+  const auto data = upload ? static_cast<const uint8_t*>(upload) : source.m_state->bytes.data() + sourceOffset;
+  f->bufferCopiedData.assign(data, data + bytes);
+  std::memcpy(destination.m_state->bytes.data() + destinationOffset, f->bufferCopiedData.data(), bytes);
+  if (destination.m_state->desc.systemData)
+    std::memcpy(static_cast<uint8_t*>(destination.m_state->desc.systemData) + destinationOffset,
+      f->bufferCopiedData.data(), bytes);
+  return S_OK;
 }
 HRESULT dxvk::umd::D3D9Backend::setStreamSource(UINT stream, D3D9BufferResource* buffer,
     UINT offset, UINT stride) {
@@ -714,6 +751,7 @@ static void createDevice() {
   expectedTable.pfnSetDepthStencil = f->table.pfnSetDepthStencil;
   expectedTable.pfnClear = f->table.pfnClear;
   expectedTable.pfnBlt = f->table.pfnBlt;
+  expectedTable.pfnBufBlt = f->table.pfnBufBlt;
   expectedTable.pfnLock = f->table.pfnLock;
   expectedTable.pfnUnlock = f->table.pfnUnlock;
   expectedTable.pfnSetTexture = f->table.pfnSetTexture;
@@ -1741,6 +1779,195 @@ static D3DDDIARG_CREATERESOURCE bufferArgs(HANDLE cookie, D3DDDI_SURFACEINFO* in
   return args;
 }
 
+static void bufferTransferContracts() {
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    CHECK(f->table.pfnBufBlt);
+    char borrowedCookie, videoCookie, ownedCookie;
+    std::array<uint8_t,64> external, expected;
+    for (size_t i = 0; i < external.size(); ++i) expected[i] = external[i] = uint8_t(0xa0 + i);
+    D3DDDI_SURFACEINFO info = {64,UINT_MAX,UINT_MAX,external.data(),UINT_MAX,UINT_MAX};
+    auto borrowed = bufferArgs(&borrowedCookie, &info); borrowed.Pool = D3DDDIPOOL_SYSTEMMEM;
+    auto invalid = borrowed;
+    info.pSysMem = reinterpret_cast<void*>(UINTPTR_MAX);
+    const auto prior = snapshot(invalid);
+    CHECK(f->table.pfnCreateResource(f->device, &invalid) == E_INVALIDARG && snapshot(invalid) == prior);
+    info.pSysMem = external.data();
+    f->queryHook = [&] {
+      auto nested = borrowed; nested.pSurfList = reinterpret_cast<D3DDDI_SURFACEINFO*>(UINT_PTR(1));
+      CHECK(f->table.pfnCreateResource(f->device, &nested) == D3DERR_WASSTILLDRAWING);
+      external.fill(0xdd); info.Width = 1; info.pSysMem = reinterpret_cast<void*>(UINT_PTR(1));
+      borrowed.Pool = D3DDDIPOOL_VIDEOMEMORY;
+    };
+    CHECK(f->table.pfnCreateResource(f->device, &borrowed) == S_OK);
+    CHECK(f->bufferDescriptions.back().systemMemory && f->bufferDescriptions.back().systemData == external.data()
+      && f->bufferDescriptions.back().bytes == 64);
+    auto read = [&](HANDLE resource, bool notify, const std::array<uint8_t,64>& bytes) {
+      D3DDDIARG_LOCK mapping = {}; mapping.hResource = resource;
+      mapping.Flags.ReadOnly = 1; mapping.Flags.NotifyOnly = notify;
+      CHECK(f->table.pfnLock(f->device,&mapping) == S_OK);
+      CHECK(mapping.Pitch == 0 && mapping.SlicePitch == 0);
+      for (size_t i = 0; i < bytes.size(); ++i) CHECK(static_cast<uint8_t*>(mapping.pSurfData)[i] == bytes[i]);
+      D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = resource; unmap.Flags.NotifyOnly = notify;
+      CHECK(f->table.pfnUnlock(f->device,&unmap) == S_OK);
+    };
+    read(borrowed.hResource,true,expected);
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = borrowed.hResource;
+    const auto unchanged = snapshot(mapping);
+    CHECK(f->table.pfnLock(f->device,&mapping) == E_INVALIDARG && snapshot(mapping) == unchanged);
+    mapping.Flags.NotifyOnly = mapping.Flags.RangeValid = 1; mapping.Range = {7,13};
+    CHECK(f->table.pfnLock(f->device,&mapping) == S_OK && mapping.pSurfData == external.data() + 7);
+    for (UINT i = 0; i < 13; ++i) expected[7+i] = external[7+i] = uint8_t(0x41+i);
+    D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = borrowed.hResource;
+    CHECK(f->table.pfnUnlock(f->device,&unmap) == E_INVALIDARG);
+    unmap.Flags.NotifyOnly = 1;
+    f->queryHook = [&] {
+      CHECK(f->table.pfnUnlock(f->device,&unmap) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnDestroyResource(f->device,borrowed.hResource) == D3DERR_WASSTILLDRAWING);
+      external.fill(0xee); unmap.Flags.Value = 0; unmap.hResource = nullptr;
+    };
+    CHECK(f->table.pfnUnlock(f->device,&unmap) == S_OK);
+    read(borrowed.hResource,true,expected);
+    mapping = {}; mapping.hResource = borrowed.hResource;
+    mapping.Flags.NotifyOnly = mapping.Flags.RangeValid = 1; mapping.Range = {9,3};
+    CHECK(f->table.pfnLock(f->device,&mapping) == S_OK);
+    for (UINT i = 0; i < 3; ++i) expected[9+i] = external[9+i] = uint8_t(0x91+i);
+    unmap = {}; unmap.hResource = borrowed.hResource; unmap.Flags.NotifyOnly = 1;
+    f->bufferUnlockResult = S_FALSE;
+    CHECK(f->table.pfnUnlock(f->device,&unmap) == E_FAIL);
+    CHECK(f->table.pfnDestroyResource(f->device,borrowed.hResource) == E_INVALIDARG);
+    f->bufferUnlockResult = DXGI_ERROR_WAS_STILL_DRAWING;
+    CHECK(f->table.pfnUnlock(f->device,&unmap) == D3DERR_WASSTILLDRAWING);
+    f->bufferUnlockResult = S_OK;
+    CHECK(f->table.pfnUnlock(f->device,&unmap) == S_OK);
+    read(borrowed.hResource,true,expected);
+
+    info = {64,UINT_MAX,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto video = bufferArgs(&videoCookie,&info);
+    video.Flags.NotLockable = video.Flags.WriteOnly = 1;
+    CHECK(f->table.pfnCreateResource(f->device,&video) == S_OK);
+    auto owned = bufferArgs(&ownedCookie,&info,D3DFMT_INDEX32); owned.Pool = D3DDDIPOOL_SYSTEMMEM;
+    CHECK(f->table.pfnCreateResource(f->device,&owned) == S_OK && f->bufferDescriptions.back().systemMemory
+      && !f->bufferDescriptions.back().systemData);
+    D3DDDIARG_BUFFERBLT copy = {video.hResource,borrowed.hResource,11,{3,17}};
+    const std::vector<uint8_t> copied(expected.begin()+3,expected.begin()+20);
+    const auto count = f->bufferCopies;
+    f->queryHook = [&] {
+      CHECK(f->table.pfnBufBlt(f->device,&copy) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnDestroyResource(f->device,video.hResource) == D3DERR_WASSTILLDRAWING);
+      external.fill(0xcc); copy = {nullptr,nullptr,UINT_MAX,{UINT_MAX,UINT_MAX}};
+    };
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == S_OK);
+    CHECK(f->bufferCopies == count+1 && f->bufferDestinationOffset == 11 && f->bufferSourceOffset == 3
+      && f->bufferCopyBytes == 17 && f->bufferCopiedData == copied);
+    std::array<uint8_t,64> destination; destination.fill(0x6d);
+    for (UINT i = 0; i < 17; ++i) destination[11+i] = copied[i];
+    // Raw buffer transfer includes VB-to-IB; public write-only/nonlockable
+    // restrictions do not block an internal copy or its preserved guard bytes.
+    copy = {owned.hResource,video.hResource,0,{0,64}};
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == S_OK);
+    read(owned.hResource,false,destination);
+    mapping = {}; mapping.hResource = video.hResource; mapping.Flags.ReadOnly = 1;
+    CHECK(f->table.pfnLock(f->device,&mapping) == E_INVALIDARG);
+    CHECK(f->table.pfnBufBlt(f->device,nullptr) == E_INVALIDARG);
+    const auto valid = copy;
+    for (UINT field = 0; field < 6; ++field) {
+      copy = valid;
+      if (field == 0) copy.hSrcResource = nullptr;
+      if (field == 1) copy.hDstResource = nullptr;
+      if (field == 2) copy.Offset = 1;
+      if (field == 3) copy.SrcRange.Offset = 1;
+      if (field == 4) copy.Offset = UINT_MAX;
+      if (field == 5) copy.SrcRange = {UINT_MAX,2};
+      const auto before = snapshot(copy); const auto calls = f->bufferCopies;
+      CHECK(f->table.pfnBufBlt(f->device,&copy) == E_INVALIDARG && snapshot(copy) == before
+        && f->bufferCopies == calls);
+    }
+    copy = {owned.hResource,video.hResource,64,{64,0}};
+    const auto calls = f->bufferCopies;
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == S_OK && f->bufferCopies == calls);
+    copy.Offset = 65;
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == E_INVALIDARG && f->bufferCopies == calls);
+    copy = valid;
+    mapping = {}; mapping.hResource = owned.hResource;
+    CHECK(f->table.pfnLock(f->device,&mapping) == S_OK);
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == E_INVALIDARG && f->bufferCopies == calls);
+    unmap = {}; unmap.hResource = owned.hResource;
+    CHECK(f->table.pfnUnlock(f->device,&unmap) == S_OK);
+    copy = {video.hResource,borrowed.hResource,11,{3,17}};
+    mapping = {}; mapping.hResource = borrowed.hResource; mapping.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnLock(f->device,&mapping) == S_OK);
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == E_INVALIDARG && f->bufferCopies == calls);
+    unmap = {}; unmap.hResource = borrowed.hResource; unmap.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnUnlock(f->device,&unmap) == S_OK);
+    for (const HRESULT failure : {S_FALSE,E_OUTOFMEMORY,DXGI_ERROR_WAS_STILL_DRAWING}) {
+      f->bufferCopyResult = failure; copy = valid;
+      CHECK(f->table.pfnBufBlt(f->device,&copy) == (failure == S_FALSE ? E_FAIL
+        : failure == DXGI_ERROR_WAS_STILL_DRAWING ? D3DERR_WASSTILLDRAWING : failure));
+      read(owned.hResource,false,destination);
+    }
+    f->bufferCopyResult = S_OK;
+    // GPU-to-borrowed SYSTEMMEM must update only the requested byte range.
+    external.fill(0xad); destination.fill(0xad);
+    copy = {borrowed.hResource,video.hResource,2,{11,17}};
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == S_OK);
+    for (UINT i = 0; i < 17; ++i) destination[2+i] = copied[i];
+    CHECK(external == destination);
+    char surfaceCookie; D3DDDI_SURFACEINFO surfaceInfo = {1,1,0,nullptr,0,0};
+    auto surfaceArgs = resourceArgs(&surfaceCookie,&surfaceInfo,1,true);
+    CHECK(f->table.pfnCreateResource(f->device,&surfaceArgs) == S_OK);
+    copy = {owned.hResource,surfaceArgs.hResource,0,{0,1}};
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == E_INVALIDARG);
+    copy = {surfaceArgs.hResource,owned.hResource,0,{0,1}};
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == E_INVALIDARG);
+    Fixture other; initialize(other); createDevice();
+    copy = {owned.hResource,video.hResource,0,{0,1}};
+    CHECK(other.table.pfnBufBlt(other.device,&copy) == E_INVALIDARG);
+    closeDevice(); closeAdapter(); f = &fixture;
+    const HANDLE stale = video.hResource;
+    CHECK(f->table.pfnDestroyResource(f->device,stale) == S_OK);
+    copy = {owned.hResource,stale,0,{0,1}};
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == E_INVALIDARG);
+    D3DDDIARG_SETSTREAMSOURCE stream = {0,borrowed.hResource,0,12};
+    CHECK(f->table.pfnSetStreamSource(f->device,&stream) == S_OK);
+    mapping = {}; mapping.hResource = borrowed.hResource; mapping.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnLock(f->device,&mapping) == S_OK);
+    f->teardownDiscard = false;
+    closeDevice(); CHECK(f->teardownDiscard); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie; D3DDDI_SURFACEINFO info = {64,0,0,nullptr,0,0};
+    auto buffer = bufferArgs(&cookie,&info); buffer.Pool = D3DDDIPOOL_SYSTEMMEM; buffer.Flags.Dynamic = 1;
+    CHECK(f->table.pfnCreateResource(f->device,&buffer) == S_OK);
+    std::array<uint8_t,64> expected;
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = buffer.hResource;
+    CHECK(f->table.pfnLock(f->device,&mapping) == S_OK);
+    for (UINT i = 0; i < 64; ++i) expected[i] = static_cast<uint8_t*>(mapping.pSurfData)[i] = uint8_t(i+0x10);
+    D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = buffer.hResource;
+    CHECK(f->table.pfnUnlock(f->device,&unmap) == S_OK);
+    for (const D3DDDIARG_BUFFERBLT args : {
+        D3DDDIARG_BUFFERBLT{buffer.hResource,buffer.hResource,5,{0,17}},
+        D3DDDIARG_BUFFERBLT{buffer.hResource,buffer.hResource,0,{7,19}},
+        D3DDDIARG_BUFFERBLT{buffer.hResource,buffer.hResource,4,{4,31}}}) {
+      const auto original = expected;
+      for (UINT i = 0; i < args.SrcRange.Size; ++i) expected[args.Offset+i] = original[args.SrcRange.Offset+i];
+      CHECK(f->table.pfnBufBlt(f->device,&args) == S_OK);
+      mapping.Flags.ReadOnly = 1;
+      CHECK(f->table.pfnLock(f->device,&mapping) == S_OK);
+      for (UINT i = 0; i < 64; ++i) CHECK(static_cast<uint8_t*>(mapping.pSurfData)[i] == expected[i]);
+      CHECK(f->table.pfnUnlock(f->device,&unmap) == S_OK);
+    }
+    ++f->generation;
+    CHECK(f->table.pfnFlush(f->device) == D3DERR_DEVICELOST);
+    D3DDDIARG_BUFFERBLT copy = {buffer.hResource,buffer.hResource,0,{0,1}};
+    CHECK(f->table.pfnBufBlt(f->device,&copy) == D3DERR_DEVICELOST);
+    auto create = buffer; create.pSurfList = reinterpret_cast<D3DDDI_SURFACEINFO*>(UINT_PTR(1));
+    CHECK(f->table.pfnCreateResource(f->device,&create) == D3DERR_DEVICELOST);
+    closeDevice(); closeAdapter();
+  }
+}
+
 static void bufferContracts() {
   {
     Fixture fixture; initialize(fixture); createDevice();
@@ -1758,7 +1985,6 @@ static void bufferContracts() {
     }
     args = original; args.SurfCount = 2; reject(E_INVALIDARG);
     args = original; args.Format = static_cast<D3DDDIFORMAT>(D3DFMT_INDEX16); reject(E_INVALIDARG);
-    args = original; args.Pool = D3DDDIPOOL_SYSTEMMEM; reject(D3DERR_NOTAVAILABLE);
     args = original;
     for (const UINT bytes : {UINT(0),UINT_MAX,UINT_MAX-254}) {
       info.Width = bytes; reject(E_INVALIDARG);
@@ -2194,6 +2420,7 @@ static void fixedFunctionContracts() {
 }
 
 int main() {
+  bufferTransferContracts();
   fixedFunctionContracts();
   depthContracts();
   bufferContracts();

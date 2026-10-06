@@ -147,6 +147,14 @@ namespace dxvk {
       memoryFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     }
 
+    // Native BufBlt can copy either direction, including dedicated buffers
+    // whose Vulkan usage is not inherited from a shared allocator buffer.
+    if (m_parent->IsNativeRenderer()) {
+      info.usage  |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+      info.stages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
+      info.access |= VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+    }
+
     return m_parent->GetDXVKDevice()->createBuffer(info, memoryFlags);
   }
 
@@ -164,6 +172,11 @@ namespace dxvk {
 
     if (!(m_desc.Usage & D3DUSAGE_WRITEONLY))
       info.access |= VK_ACCESS_HOST_READ_BIT;
+
+    if (m_parent->IsNativeRenderer()) {
+      info.usage  |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+      info.access |= VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_READ_BIT;
+    }
 
     VkMemoryPropertyFlags memoryFlags = 
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT

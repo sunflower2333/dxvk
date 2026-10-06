@@ -4,6 +4,7 @@
 #include "umd_runtime_validation.h"
 #include "../d3d9/d3d9_interface.h"
 #include "../d3d9/d3d9_device.h"
+#include "../d3d9/d3d9_buffer.h"
 #include <dxgi.h>
 #include <new>
 #include <vector>
@@ -48,6 +49,10 @@ D3D9Shader::~D3D9Shader() = default;
 struct D3D9BufferResource::State {
   Com<IDirect3DVertexBuffer9> vertex;
   Com<IDirect3DIndexBuffer9> index;
+  D3D9BufferDesc desc;
+  void* mapping = nullptr;
+  UINT offset = 0, bytes = 0;
+  bool readOnly = false;
 };
 D3D9BufferResource::D3D9BufferResource() : m_state(std::make_unique<State>()) { }
 D3D9BufferResource::~D3D9BufferResource() = default;
@@ -62,23 +67,67 @@ HRESULT D3D9Backend::flush() noexcept {
 }
 
 HRESULT D3D9Backend::createBuffer(const D3D9BufferDesc& desc,
-    std::unique_ptr<D3D9BufferResource>& output) {
+    std::unique_ptr<D3D9BufferResource>& output, const void* initialData) {
   auto buffer = std::make_unique<D3D9BufferResource>();
+  buffer->m_state->desc = desc;
+  const auto pool = desc.systemMemory ? D3DPOOL_SYSTEMMEM : D3DPOOL_DEFAULT;
   const DWORD usage = (desc.dynamic ? D3DUSAGE_DYNAMIC : 0) | (desc.writeOnly ? D3DUSAGE_WRITEONLY : 0);
   const HRESULT hr = desc.index
-    ? m_state->d3d->CreateIndexBuffer(desc.bytes, usage, desc.format, D3DPOOL_DEFAULT, &buffer->m_state->index, nullptr)
-    : m_state->d3d->CreateVertexBuffer(desc.bytes, usage, desc.fvf, D3DPOOL_DEFAULT, &buffer->m_state->vertex, nullptr);
+    ? m_state->d3d->CreateIndexBuffer(desc.bytes, usage, desc.format, pool, &buffer->m_state->index, nullptr)
+    : m_state->d3d->CreateVertexBuffer(desc.bytes, usage, desc.fvf, pool, &buffer->m_state->vertex, nullptr);
   if (hr != S_OK || !(desc.index ? bool(buffer->m_state->index) : bool(buffer->m_state->vertex)))
     return FAILED(hr) ? hr : E_FAIL;
+  if (initialData) {
+    void* data = nullptr;
+    const HRESULT locked = lockBuffer(*buffer, 0, desc.bytes, 0, data);
+    if (locked != S_OK) return locked;
+    if (!buffer->m_state->mapping) { unlockBuffer(*buffer); return E_FAIL; }
+    std::memcpy(buffer->m_state->mapping, initialData, desc.bytes);
+    const HRESULT unlocked = unlockBuffer(*buffer);
+    if (unlocked != S_OK) return unlocked;
+  }
   output = std::move(buffer);
   return S_OK;
 }
 HRESULT D3D9Backend::lockBuffer(D3D9BufferResource& buffer, UINT offset, UINT bytes, DWORD flags, void*& data) {
-  return buffer.m_state->index ? buffer.m_state->index->Lock(offset, bytes, &data, flags)
-                              : buffer.m_state->vertex->Lock(offset, bytes, &data, flags);
+  auto& state = *buffer.m_state;
+  void* mapping = nullptr;
+  const HRESULT hr = state.index ? state.index->Lock(offset, bytes, &mapping, flags)
+                                : state.vertex->Lock(offset, bytes, &mapping, flags);
+  if (hr != S_OK) return hr;
+  state.mapping = mapping; state.offset = offset; state.bytes = bytes;
+  state.readOnly = (flags & D3DLOCK_READONLY) != 0;
+  data = mapping;
+  if (mapping && state.desc.systemData) {
+    data = static_cast<uint8_t*>(state.desc.systemData) + offset;
+    if (state.readOnly) std::memcpy(data, mapping, bytes);
+  }
+  return S_OK;
 }
-HRESULT D3D9Backend::unlockBuffer(D3D9BufferResource& buffer) {
-  return buffer.m_state->index ? buffer.m_state->index->Unlock() : buffer.m_state->vertex->Unlock();
+HRESULT D3D9Backend::unlockBuffer(D3D9BufferResource& buffer, const void* upload) {
+  auto& state = *buffer.m_state;
+  if (upload && !state.readOnly) {
+    if (!state.mapping) return E_FAIL;
+    std::memcpy(state.mapping, upload, state.bytes);
+  }
+  const HRESULT hr = state.index ? state.index->Unlock() : state.vertex->Unlock();
+  if (hr == S_OK) state.mapping = nullptr;
+  return hr;
+}
+HRESULT D3D9Backend::copyBuffer(D3D9BufferResource& destination, UINT destinationOffset,
+    D3D9BufferResource& source, UINT sourceOffset, UINT bytes, const void* upload) {
+  auto common = [](D3D9BufferResource::State& state) {
+    return state.index ? static_cast<D3D9IndexBuffer*>(state.index.ptr())->GetCommonBuffer()
+                       : static_cast<D3D9VertexBuffer*>(state.vertex.ptr())->GetCommonBuffer();
+  };
+  const HRESULT hr = m_state->d3d->CopyNativeBuffer(common(*destination.m_state), destinationOffset,
+    common(*source.m_state), sourceOffset, bytes, upload);
+  if (hr != S_OK || !bytes || !destination.m_state->desc.systemData) return hr;
+  void* data = nullptr;
+  const HRESULT locked = lockBuffer(destination, destinationOffset, bytes, D3DLOCK_READONLY, data);
+  if (locked != S_OK) return locked;
+  if (!data) { unlockBuffer(destination); return E_FAIL; }
+  return unlockBuffer(destination);
 }
 HRESULT D3D9Backend::setStreamSource(UINT stream, D3D9BufferResource* buffer, UINT offset, UINT stride) {
   return m_state->d3d->SetStreamSource(stream, buffer ? buffer->m_state->vertex.ptr() : nullptr, offset, stride);

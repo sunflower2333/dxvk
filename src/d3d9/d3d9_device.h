@@ -1116,6 +1116,14 @@ namespace dxvk {
     HRESULT CreateNativeVertexShader(const DWORD* code, UINT bytes, IDirect3DVertexShader9** shader);
     HRESULT CreateNativePixelShader(const DWORD* code, UINT bytes, IDirect3DPixelShader9** shader);
 
+    // Native owned buffer copies also keep the CPU mapping coherent. A caller
+    // upload is already snapshotted before the runtime callback pump starts.
+    bool IsNativeRenderer() const noexcept;
+
+    HRESULT CopyNativeBuffer(D3D9CommonBuffer* destination, UINT destinationOffset,
+                             D3D9CommonBuffer* source, UINT sourceOffset, UINT bytes,
+                             const void* upload);
+
     HRESULT FlushRuntimeSubmission();
 
     /**

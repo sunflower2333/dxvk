@@ -41,6 +41,8 @@ struct Resource {
   dxvk::umd::D3D9BufferDesc bufferDesc;
   std::unique_ptr<dxvk::umd::D3D9BufferResource> buffer;
   bool bufferLocked = false;
+  bool bufferReadOnly = false;
+  UINT bufferLockOffset = 0, bufferLockBytes = 0;
   // Member order releases mip surfaces before their owning texture.
   std::unique_ptr<dxvk::umd::D3D9TextureResource> texture;
   std::vector<Surface> surfaces;
@@ -218,13 +220,13 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       || (input.Flags.NotLockable && input.Pool == D3DDDIPOOL_SYSTEMMEM))) return E_INVALIDARG;
   const auto format = static_cast<D3DFORMAT>(input.Format);
   if (buffer) {
-    if (input.Pool == D3DDDIPOOL_SYSTEMMEM) return D3DERR_NOTAVAILABLE;
     if (input.Flags.IndexBuffer ? (format != D3DFMT_INDEX16 && format != D3DFMT_INDEX32)
                                 : format != D3DFMT_VERTEXDATA) return E_INVALIDARG;
   } else if (depth) {
     if (format != D3DFMT_D16 && format != D3DFMT_D24S8) return E_INVALIDARG;
   } else if (format != D3DFMT_A8R8G8B8 && format != D3DFMT_X8R8G8B8) return E_INVALIDARG;
   dxvk::umd::D3D9BufferDesc bufferDesc;
+  std::vector<uint8_t> bufferInitialData;
   std::vector<dxvk::umd::D3D9SurfaceDesc> descriptions;
   return preparedOperation(handle, [&](Device&) {
     // Serialize before reading pointed metadata: nested callbacks must not
@@ -234,12 +236,20 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
     if (listBytes > UINTPTR_MAX - reinterpret_cast<uintptr_t>(input.pSurfList)) return E_INVALIDARG;
     if (buffer) {
       const auto info = input.pSurfList[0];
-      if (!info.Width || info.Width > UINT_MAX - 255 || info.pSysMem) return E_INVALIDARG;
+      if (!info.Width || info.Width > UINT_MAX - 255
+          || (info.pSysMem && input.Pool != D3DDDIPOOL_SYSTEMMEM)) return E_INVALIDARG;
       if (input.Flags.IndexBuffer && info.Width % (format == D3DFMT_INDEX16 ? 2 : 4)) return E_INVALIDARG;
       bufferDesc.bytes = info.Width; bufferDesc.format = format;
       bufferDesc.fvf = input.Flags.VertexBuffer ? input.Fvf : 0;
       bufferDesc.index = input.Flags.IndexBuffer != 0; bufferDesc.dynamic = input.Flags.Dynamic != 0;
       bufferDesc.writeOnly = input.Flags.WriteOnly != 0; bufferDesc.lockable = !input.Flags.NotLockable;
+      bufferDesc.systemMemory = input.Pool == D3DDDIPOOL_SYSTEMMEM;
+      bufferDesc.systemData = const_cast<void*>(info.pSysMem);
+      if (info.pSysMem) {
+        if (bufferDesc.bytes > UINTPTR_MAX - reinterpret_cast<uintptr_t>(info.pSysMem)) return E_INVALIDARG;
+        const auto data = static_cast<const uint8_t*>(info.pSysMem);
+        bufferInitialData.assign(data, data + bufferDesc.bytes);
+      }
       // Height, depth, pitches and mip count are reserved for linear resources.
       return S_OK;
     }
@@ -280,7 +290,8 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       resource->surfaces.reserve(descriptions.size());
       if (buffer) {
         resource->bufferDesc = bufferDesc;
-        const HRESULT hr = result(device.backend->createBuffer(bufferDesc, resource->buffer));
+        const HRESULT hr = result(device.backend->createBuffer(bufferDesc, resource->buffer,
+          bufferInitialData.empty() ? nullptr : bufferInitialData.data()));
         if (FAILED(hr)) return hr;
         if (!resource->buffer) return E_FAIL;
       } else if (texture) {
@@ -436,6 +447,32 @@ HRESULT APIENTRY blt(HANDLE handle, const D3DDDIARG_BLT* args) {
   });
 }
 
+HRESULT APIENTRY bufferBlt(HANDLE handle, const D3DDDIARG_BUFFERBLT* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  std::vector<uint8_t> upload;
+  return preparedOperation(handle, [&](Device& device) {
+    const auto src = device.resources.find(input.hSrcResource);
+    const auto dst = device.resources.find(input.hDstResource);
+    if (src == device.resources.end() || dst == device.resources.end()
+        || !src->second->buffer || !dst->second->buffer
+        || src->second->bufferLocked || dst->second->bufferLocked
+        || uint64_t(input.SrcRange.Offset) + input.SrcRange.Size > src->second->bufferDesc.bytes
+        || uint64_t(input.Offset) + input.SrcRange.Size > dst->second->bufferDesc.bytes)
+      return E_INVALIDARG;
+    if (input.SrcRange.Size && src->second->bufferDesc.systemData) {
+      const auto data = static_cast<const uint8_t*>(src->second->bufferDesc.systemData) + input.SrcRange.Offset;
+      upload.assign(data, data + input.SrcRange.Size);
+    }
+    return S_OK;
+  }, [&](Device& device) {
+    if (!input.SrcRange.Size) return S_OK;
+    return device.backend->copyBuffer(*device.resources.at(input.hDstResource)->buffer, input.Offset,
+      *device.resources.at(input.hSrcResource)->buffer, input.SrcRange.Offset, input.SrcRange.Size,
+      upload.empty() ? nullptr : upload.data());
+  });
+}
+
 HRESULT APIENTRY lockResource(HANDLE handle, D3DDDIARG_LOCK* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
@@ -444,7 +481,8 @@ HRESULT APIENTRY lockResource(HANDLE handle, D3DDDIARG_LOCK* args) {
     const auto resource = device.resources.find(input.hResource);
     if (resource != device.resources.end() && resource->second->buffer) {
       auto& item = *resource->second;
-      if (input.SubResourceIndex || input.Flags.Value & ~UINT(0x21f) || item.bufferLocked
+      if (input.SubResourceIndex || input.Flags.Value & ~UINT(0x29f) || item.bufferLocked
+          || bool(input.Flags.NotifyOnly) != bool(item.bufferDesc.systemData)
           || !item.bufferDesc.lockable || (input.Flags.ReadOnly && item.bufferDesc.writeOnly)
           || (input.Flags.NoOverwrite && input.Flags.Discard) || (input.Flags.Discard && input.Flags.ReadOnly)
           || ((input.Flags.NoOverwrite || input.Flags.Discard) && !item.bufferDesc.dynamic)) return E_INVALIDARG;
@@ -458,6 +496,8 @@ HRESULT APIENTRY lockResource(HANDLE handle, D3DDDIARG_LOCK* args) {
       const HRESULT hr = result(device.backend->lockBuffer(*item.buffer, offset, bytes, flags, data));
       if (FAILED(hr)) return hr;
       item.bufferLocked = true;
+      item.bufferReadOnly = input.Flags.ReadOnly != 0;
+      item.bufferLockOffset = offset; item.bufferLockBytes = bytes;
       if (!data) {
         if (result(device.backend->unlockBuffer(*item.buffer)) == S_OK) item.bufferLocked = false;
         return E_FAIL;
@@ -490,12 +530,26 @@ HRESULT APIENTRY unlockResource(HANDLE handle, const D3DDDIARG_UNLOCK* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
   if (input.Flags.Value & ~UINT(1)) return E_INVALIDARG;
-  return operation(handle, [&](Device& device) {
+  std::vector<uint8_t> upload;
+  return preparedOperation(handle, [&](Device& device) {
+    const auto resource = device.resources.find(input.hResource);
+    if (resource != device.resources.end() && resource->second->buffer) {
+      const auto& item = *resource->second;
+      if (input.SubResourceIndex || !item.bufferLocked
+          || bool(input.Flags.NotifyOnly) != bool(item.bufferDesc.systemData)) return E_INVALIDARG;
+      if (item.bufferDesc.systemData && !item.bufferReadOnly) {
+        const auto data = static_cast<const uint8_t*>(item.bufferDesc.systemData) + item.bufferLockOffset;
+        upload.assign(data, data + item.bufferLockBytes);
+      }
+    }
+    return S_OK;
+  }, [&](Device& device) {
     const auto resource = device.resources.find(input.hResource);
     if (resource != device.resources.end() && resource->second->buffer) {
       auto& item = *resource->second;
-      if (input.SubResourceIndex || input.Flags.Value || !item.bufferLocked) return E_INVALIDARG;
-      const HRESULT hr = result(device.backend->unlockBuffer(*item.buffer));
+      if (input.SubResourceIndex || !item.bufferLocked
+          || bool(input.Flags.NotifyOnly) != bool(item.bufferDesc.systemData)) return E_INVALIDARG;
+      const HRESULT hr = result(device.backend->unlockBuffer(*item.buffer, upload.empty() ? nullptr : upload.data()));
       if (SUCCEEDED(hr)) item.bufferLocked = false;
       return hr;
     }
@@ -1260,6 +1314,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnSetDepthStencil = setDepthStencil;
   table.pfnClear = clear;
   table.pfnBlt = blt;
+  table.pfnBufBlt = bufferBlt;
   table.pfnLock = lockResource;
   table.pfnUnlock = unlockResource;
   table.pfnSetTexture = setTexture;

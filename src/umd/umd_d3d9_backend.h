@@ -19,6 +19,8 @@ struct D3D9BufferDesc {
   UINT bytes = 0, fvf = 0;
   D3DFORMAT format = D3DFMT_VERTEXDATA;
   bool index = false, dynamic = false, writeOnly = false, lockable = true;
+  bool systemMemory = false;
+  void* systemData = nullptr;
 };
 
 class D3D9BufferResource {
@@ -100,9 +102,13 @@ public:
 
   IDirect3DDevice9Ex* device() const noexcept;
   HRESULT flush() noexcept;
-  HRESULT createBuffer(const D3D9BufferDesc& desc, std::unique_ptr<D3D9BufferResource>& result);
+  HRESULT createBuffer(const D3D9BufferDesc& desc, std::unique_ptr<D3D9BufferResource>& result,
+                       const void* initialData = nullptr);
   HRESULT lockBuffer(D3D9BufferResource& buffer, UINT offset, UINT bytes, DWORD flags, void*& data);
-  HRESULT unlockBuffer(D3D9BufferResource& buffer);
+  HRESULT unlockBuffer(D3D9BufferResource& buffer, const void* upload = nullptr);
+  HRESULT copyBuffer(D3D9BufferResource& destination, UINT destinationOffset,
+                     D3D9BufferResource& source, UINT sourceOffset, UINT bytes,
+                     const void* upload = nullptr);
   HRESULT setStreamSource(UINT stream, D3D9BufferResource* buffer, UINT offset, UINT stride);
   HRESULT setIndices(D3D9BufferResource* buffer);
   HRESULT drawPrimitiveBuffers(D3DPRIMITIVETYPE type, UINT start, UINT count);

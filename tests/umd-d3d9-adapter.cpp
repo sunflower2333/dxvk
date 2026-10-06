@@ -11,6 +11,12 @@
 #include <new>
 #include <thread>
 
+// The adapter fixture isolates the handshake from backend construction.
+HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdentity>&,
+                                      D3DDDIARG_CREATEDEVICE*) {
+  return D3DERR_NOTAVAILABLE;
+}
+
 static std::atomic<unsigned> checks{0};
 #define CHECK(condition) do { const auto n = ++checks; if (!(condition)) { \
   std::fprintf(stderr, "D3D9 adapter check %u failed at line %d: %s\n", n, __LINE__, #condition); \

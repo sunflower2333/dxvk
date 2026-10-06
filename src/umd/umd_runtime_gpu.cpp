@@ -66,7 +66,7 @@ std::shared_ptr<RuntimeGpu> RuntimeGpu::create(HANDLE device,
   result->m_device = device;
   result->m_identity = std::move(identity);
   result->m_service = std::move(service);
-  // Copy only callbacks in the negotiated D3D10 table. Never retain a pointer
+  // Copy only callbacks in the common D3D9/D3D10 table. Never retain a pointer
   // to runtime-owned tables or read a newer whole-WDK structure from old input.
   auto& copy = result->m_callbacks;
   copy.pfnAllocateCb = cb.pfnAllocateCb; copy.pfnDeallocateCb = cb.pfnDeallocateCb;
@@ -87,12 +87,12 @@ bool RuntimeGpu::Call::live(bool cleanup) const {
 }
 
 HRESULT RuntimeGpu::identity() {
-  if (!m_live || m_removed || !m_device || !m_identity) return DXGI_ERROR_DEVICE_REMOVED;
+  if (!m_live || m_removed || !m_device || !m_identity || !m_identity->available()) return DXGI_ERROR_DEVICE_REMOVED;
   if (m_querying) return DXGI_ERROR_WAS_STILL_DRAWING;
   Pending pending(m_querying);
   RuntimeIdentity current;
   HRESULT hr = queryRuntimeIdentity(m_identity->runtime, m_identity->query, current);
-  if (!m_live) return DXGI_ERROR_DEVICE_REMOVED;
+  if (!m_live || !m_identity->available()) return DXGI_ERROR_DEVICE_REMOVED;
   if (hr == S_OK && (std::memcmp(current.luid.data(), &m_identity->luid, sizeof(LUID))
       || current.generation != m_identity->generation || current.capabilities != m_identity->capabilities))
     hr = DXGI_ERROR_DEVICE_REMOVED;
@@ -123,6 +123,7 @@ HRESULT RuntimeGpu::context() {
   if (!m_live) return DXGI_ERROR_DEVICE_REMOVED;
   m_context = create.hContext;
   if (hr == S_OK && !m_context) hr = E_FAIL;
+  if (hr == S_OK && !m_identity->available()) hr = DXGI_ERROR_DEVICE_REMOVED;
   Context reply;
   reply.expected = m_identity->generation;
   if (hr == S_OK) {
@@ -130,7 +131,7 @@ HRESULT RuntimeGpu::context() {
     escape.hDevice = m_device; escape.hContext = m_context;
     escape.pPrivateDriverData = &reply; escape.PrivateDriverDataSize = sizeof(reply);
     hr = exact(cb.pfnEscapeCb(m_identity->runtime, &escape));
-    if (!m_live) return DXGI_ERROR_DEVICE_REMOVED;
+    if (!m_live || !m_identity->available()) hr = DXGI_ERROR_DEVICE_REMOVED;
   }
   if (hr == S_OK && (!reply.header.valid(sizeof(reply)) || reply.opcode != 1 || reply.flags
       || reply.expected != m_identity->generation || reply.generation != reply.expected
@@ -390,12 +391,12 @@ int32_t MWD_CALL RuntimeGpu::completed(void* ptr, uint32_t* out) {
   if (!out) return E_POINTER;
   *out = 0;
   Call call(ptr); auto& self = *call.value;
-  if (!call.live(true) || !self.m_info.context_id) return DXGI_ERROR_DEVICE_REMOVED;
+  if (!call.live(true) || !self.m_info.context_id || !self.m_identity->available()) return DXGI_ERROR_DEVICE_REMOVED;
   Fence info; info.expected = self.m_info.generation;
   D3DDDICB_ESCAPE request = {}; request.hDevice = self.m_device; request.hContext = self.m_context;
   request.pPrivateDriverData = &info; request.PrivateDriverDataSize = sizeof(info);
   HRESULT hr = exact(self.m_callbacks.pfnEscapeCb(self.m_identity->runtime, &request));
-  if (!call.live(true)) return DXGI_ERROR_DEVICE_REMOVED;
+  if (!call.live(true) || !self.m_identity->available()) return DXGI_ERROR_DEVICE_REMOVED;
   if (hr == S_OK && (!info.header.valid(sizeof(info)) || info.opcode != 2 || info.flags || info.reserved
       || info.expected != self.m_info.generation || info.generation != info.expected
       || info.context != self.m_info.context_id || info.completed > UINT32_MAX)) hr = E_FAIL;

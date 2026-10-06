@@ -597,3 +597,19 @@ hashes tied to downloaded artifacts.166retained CI files hashed. Public API
 Windows37415565405 and package37415565396 alsoPASS at exact2a.
 The embedded checkpoint does not establish successful target construction,
 typed device/resource/rendering semantics or ordinary DX8/DX9 activation.
+
+Typed-device continuation recovered clean c1ec9e0. The D3D9 adapter stores
+only raw adapter/query identity today and unconditionally rejects CreateDevice.
+RuntimeGpu already copies DEVICECALLBACKS and accepts a neutral AdapterIdentity
+plus RuntimeService. The embedded D3D9Backend requires synchronous caller
+pumping during construction and teardown; its development probe does not pump.
+Connect the typed lifecycle with controlled backend fixture coverage before
+resource/rendering DDIs. Keep zero caps and production OpenAdapter absent.
+
+Guest initial lifecycle fixture PASS63962 checks, nativeARM64 compile2.961s/
+run0.061s with /W4 /WX. Safety review identified the raw adapter lifetime edge:
+after callback CloseAdapter, RuntimeGpu identity and fence/context escapes
+must stop before reading an expired adapter handle. Added an optional shared
+identity lifetime gate used by D3D9; device-only unlock/deallocate/context
+cleanup remains callable. D3D10's default absent gate preserves its contract.
+Added adapter-close-before-Flush and close-during-CreateContext controls.

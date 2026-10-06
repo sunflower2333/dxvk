@@ -13,8 +13,8 @@
 
 namespace dxvk::umd {
 
-// The current native interface is D3D10, without free-threaded callback
-// admission. Runtime callbacks must stay on the thread inside the DDI.
+// Native D3D9 and D3D10 do not admit free-threaded runtime callbacks.
+// Runtime callbacks must stay on the thread inside the DDI.
 class RuntimeService final {
 public:
   // Storage is reserved by object creation. Destroy DDIs may run inside a
@@ -70,7 +70,7 @@ public:
     std::unique_lock<std::mutex> lock(m_mutex);
     if (m_closed) return DXGI_ERROR_DEVICE_REMOVED;
     if (caller) { lock.unlock(); return function(); }
-    // Outside a synchronous pump there is no legal D3D10 callback thread to
+    // Outside a synchronous pump there is no legal runtime callback thread to
     // execute this request. Fail before reading runtime handles or backing.
     if (!m_pumps && !m_deferred) return DXGI_ERROR_UNSUPPORTED;
     Request request;

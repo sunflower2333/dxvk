@@ -44,6 +44,8 @@ ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-ada
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
 ninja -C build-umd src/umd/dxvk-umd-runtime-backend-test.exe
 if ($LASTEXITCODE) { throw 'Runtime backend descriptor test build failed' }
+ninja -C build-umd src/umd/dxvk-umd-d3d9-device-test.exe
+if ($LASTEXITCODE) { throw 'Typed D3D9 device lifecycle test build failed' }
 ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-native-lifetime-test.exe src/umd/dxvk-umd-runtime-gpu-test.exe src/umd/dxvk-umd-predication-test.exe src/umd/dxvk-umd-stream-output-test.exe src/umd/dxvk-umd-texture1d-test.exe
 if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-rotation-test.exe
@@ -72,6 +74,7 @@ if ($arch -ne 'arm64') {
     & build-umd/src/umd/dxvk-umd-adapter-test.exe | Tee-Object (Join-Path $OutputDirectory 'adapter-test.txt')
     if ($LASTEXITCODE) { throw 'Adapter lifecycle test failed' }
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-adapter-test.exe d3d9-adapter-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-device-test.exe d3d9-device-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-native-entry-test.exe native-entry-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-native-lifetime-test.exe native-lifetime-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-predication-test.exe predication-test
@@ -92,10 +95,12 @@ ninja -C build-umd src/umd/dxvk-umd-backend-probe.exe "src/umd/$LibraryName.dll"
 if ($LASTEXITCODE) { throw 'DXVK UMD development build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d9-backend-test.exe
 if ($LASTEXITCODE) { throw 'Embedded D3D9 rejection test build failed' }
+ninja -C build-umd src/umd/dxvk-umd-d3d9-device-probe.exe
+if ($LASTEXITCODE) { throw 'Typed D3D9 target lifecycle probe build failed' }
 if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-backend-test.exe d3d9-backend-test
 }
-foreach ($name in @("$LibraryName.dll", 'dxvk-umd-backend-probe.exe', 'dxvk-umd-ddi-probe.exe', 'dxvk-umd-predication-probe.exe', 'dxvk-umd-stream-output-probe.exe')) {
+foreach ($name in @("$LibraryName.dll", 'dxvk-umd-backend-probe.exe', 'dxvk-umd-ddi-probe.exe', 'dxvk-umd-predication-probe.exe', 'dxvk-umd-stream-output-probe.exe', 'dxvk-umd-d3d9-device-probe.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
     $imports = & dumpbin /imports $path | Out-String
     if ($LASTEXITCODE -or $imports -match 'D3D11CreateDevice|D3D11CoreCreateDevice|D3D11CreateDeviceAndSwapChain|Direct3DCreate9|Direct3DCreate9Ex|Direct3DCreate9On12') { throw "Forbidden D3D runtime import: $name" }
@@ -122,7 +127,7 @@ foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.ex
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }
     Copy-Item $path $OutputDirectory
 }
-foreach ($name in @('dxvk-umd-runtime-backend-test.exe', 'dxvk-umd-d3d9-backend-test.exe')) {
+foreach ($name in @('dxvk-umd-runtime-backend-test.exe', 'dxvk-umd-d3d9-backend-test.exe', 'dxvk-umd-d3d9-device-test.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
     $headers = & dumpbin /headers $path | Out-String
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }
@@ -140,8 +145,8 @@ STATUS=DDI development candidate; not registered or installable as the system UM
 Development DDIs include restricted SM4 VS/GS/PS, GS stream output, SO targets/stats/overflow, DrawAuto and predication. Null-GS passthrough and general shader interfaces remain pending. Same-source WARP and embedded Turnip SO probes verify bytes, append/reset, gaps, split buffers, overflow and predicated DrawAuto pixels; hardware execution remains required.
 Occlusion predication uses a synchronous CPU/GPU correctness fallback with a two-second query deadline; no efficient GPU conditional rendering claim. Same-source WARP and embedded Turnip DDI probes cover both outcomes, inversion, query reuse, unbinding and resource operations. Real target execution remains required.
 Native OpenAdapter10_2 negotiates exact identity/generation; incomplete production interfaces and feature levels remain unadvertised.
-Typed D3D9 adapter development bridge saves the runtime handle/query owner and validates identity, caps buffer sizes, reentry, close and reset. Counts/rendering caps are zero and CreateDevice is unavailable. VioGpuDxvkOpenAdapter9ForTest is a harness helper; production OpenAdapter is absent.
-The private D3D9 translation core is embedded without public Direct3DCreate9 exports/imports. It shares exact-LUID Turnip selection and copied callback ownership with D3D10, requires runtime ownership, and initializes offscreen state without display enumeration, DPI mutation or an implicit swapchain. VioGpuDxvkProbeD3D9BackendForTest is a synchronous construction/teardown helper requiring an active callback dispatcher; negative CI controls are not GPU construction or runtime activation proof. Typed D3D9 device/resource/rendering DDIs remain pending.
+Typed D3D9 adapter development bridge saves the runtime handle/query owner and validates identity, caps buffer sizes, reentry, close and reset. Development CreateDevice constructs the embedded offscreen renderer with copied callbacks and a separate driver token; only Flush and DestroyDevice are published. Counts/rendering caps remain zero. VioGpuDxvkOpenAdapter9ForTest is a harness helper; production OpenAdapter is absent.
+The private D3D9 translation core is embedded without public Direct3DCreate9 exports/imports. It shares exact-LUID Turnip selection and copied callback ownership with D3D10, requires runtime ownership, and initializes offscreen state without display enumeration, DPI mutation or an implicit swapchain. VioGpuDxvkProbeD3D9BackendForTest is a synchronous construction/teardown helper requiring an active callback dispatcher; negative CI controls are not GPU construction or runtime activation proof. Typed D3D9 resource/rendering DDIs remain pending. Device lifecycle fixture substitutes only the backend; real typed adapter/device/RuntimeGpu/callback dispatch and cleanup execute. Nested/concurrent destruction during an active operation returns WASSTILLDRAWING and preserves the device for a later retry.
 Production entry/lifetime fixtures use controlled callbacks and a WARP backend; they are not ordinary Microsoft runtime activation.
 Native resource creation unwinds failed staged owners; destruction retires private storage before callbacks. Allocation identity/reset checks and cleanup fixtures are included.
 Native backend receives copied runtime callbacks before vkCreateDevice; Turnip internal BO allocation/map/submit use one runtime-owned context through private Mesa v1. Actual GPU/system-runtime acceptance pending.

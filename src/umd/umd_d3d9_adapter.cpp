@@ -10,9 +10,8 @@
 
 namespace {
 struct Adapter {
-  HANDLE runtime = nullptr;
-  PFND3DDDI_QUERYADAPTERINFOCB query = nullptr;
-  dxvk::umd::RuntimeIdentity identity;
+  std::shared_ptr<const dxvk::umd::AdapterIdentity> identity;
+  std::shared_ptr<std::atomic<bool>> live = std::make_shared<std::atomic<bool>>(true);
   std::atomic<bool> closed{false}, removed{false};
   std::atomic_flag querying = ATOMIC_FLAG_INIT;
 };
@@ -52,17 +51,18 @@ HRESULT current(const std::shared_ptr<Adapter>& adapter) noexcept {
   struct Guard { Adapter& adapter; ~Guard() { adapter.querying.clear(); } } guard{*adapter};
   try {
     dxvk::umd::RuntimeIdentity observed;
+    const auto& expected = *adapter->identity;
     const HRESULT hr = queryError(dxvk::umd::queryRuntimeIdentity(
-      adapter->runtime, adapter->query, observed));
+      expected.runtime, expected.query, observed));
     if (adapter->closed || adapter->removed) return D3DERR_DEVICELOST;
     if (hr == D3DERR_DEVICELOST || hr == D3DERR_DEVICENOTRESET) {
       adapter->removed = true;
       return D3DERR_DEVICELOST;
     }
     if (FAILED(hr)) return hr;
-    if (observed.luid != adapter->identity.luid
-        || observed.generation != adapter->identity.generation
-        || observed.capabilities != adapter->identity.capabilities) {
+    if (std::memcmp(observed.luid.data(), &expected.luid, sizeof(LUID))
+        || observed.generation != expected.generation
+        || observed.capabilities != expected.capabilities) {
       adapter->removed = true;
       return D3DERR_DEVICELOST;
     }
@@ -106,11 +106,46 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
   // identifier, with no D3D10-style packed build requirement.
   if (args->Interface != 9 || args->Flags.Value) return D3DERR_NOTAVAILABLE;
   if (!args->hDevice || !args->pCallbacks || !args->pDeviceFuncs) return E_INVALIDARG;
-  hr = current(adapter);
-  if (FAILED(hr)) return hr;
-  // No embedded D3D9 device yet. Preserve all in/out handles, command buffers,
-  // allocation/patch lists and function tables on this admission failure.
-  return D3DERR_NOTAVAILABLE;
+  try {
+    // Snapshot inputs before the first callback can reenter or replace them.
+    // Legacy command/allocation/patch buffers are obsolete and never read.
+    D3DDDI_DEVICECALLBACKS callbacks = {};
+    const auto& source = *args->pCallbacks;
+    callbacks.pfnAllocateCb = source.pfnAllocateCb;
+    callbacks.pfnDeallocateCb = source.pfnDeallocateCb;
+    callbacks.pfnLockCb = source.pfnLockCb; callbacks.pfnUnlockCb = source.pfnUnlockCb;
+    callbacks.pfnCreateContextCb = source.pfnCreateContextCb;
+    callbacks.pfnDestroyContextCb = source.pfnDestroyContextCb;
+    callbacks.pfnEscapeCb = source.pfnEscapeCb; callbacks.pfnRenderCb = source.pfnRenderCb;
+    D3DDDI_DEVICEFUNCS table = {};
+    auto output = args->pDeviceFuncs;
+    D3DDDIARG_CREATEDEVICE local = {};
+    local.hDevice = args->hDevice; local.Interface = args->Interface;
+    local.Version = args->Version; local.Flags = args->Flags;
+    local.pCallbacks = &callbacks; local.pDeviceFuncs = &table;
+    hr = current(adapter);
+    if (FAILED(hr)) return hr;
+    hr = dxvk::umd::createAdapterDevice9(adapter->identity, &local);
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    struct DeviceGuard {
+      HANDLE handle;
+      PFND3DDDI_DESTROYDEVICE destroy;
+      ~DeviceGuard() { if (handle) destroy(handle); }
+    } guard{local.hDevice, table.pfnDestroyDevice};
+    hr = current(adapter);
+    {
+      std::lock_guard<std::mutex> lock(adaptersMutex);
+      if (SUCCEEDED(hr)) hr = state(adapter);
+      if (SUCCEEDED(hr)) {
+        *output = table;
+        args->hDevice = local.hDevice;
+        guard.handle = nullptr;
+        return S_OK;
+      }
+    }
+    return hr;
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
 }
 
 HRESULT APIENTRY closeAdapter(HANDLE handle) {
@@ -118,6 +153,7 @@ HRESULT APIENTRY closeAdapter(HANDLE handle) {
   const auto entry = adapters.find(handle);
   if (entry == adapters.end()) return E_INVALIDARG;
   entry->second->closed = true;
+  *entry->second->live = false;
   adapters.erase(entry);
   return S_OK;
 }
@@ -132,11 +168,18 @@ extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter9ForTest(D3DDDIARG_OPENADAPTER*
   struct Guard { ~Guard() { opening = false; } } guard;
   try {
     auto adapter = std::make_shared<Adapter>();
-    adapter->runtime = args->hAdapter;
-    adapter->query = args->pAdapterCallbacks->pfnQueryAdapterInfoCb;
+    auto identity = std::make_shared<dxvk::umd::AdapterIdentity>();
+    identity->runtime = args->hAdapter;
+    identity->query = args->pAdapterCallbacks->pfnQueryAdapterInfoCb;
+    dxvk::umd::RuntimeIdentity observed;
     const HRESULT hr = queryError(dxvk::umd::queryRuntimeIdentity(
-      adapter->runtime, adapter->query, adapter->identity));
+      identity->runtime, identity->query, observed));
     if (FAILED(hr)) return hr;
+    std::memcpy(&identity->luid, observed.luid.data(), sizeof(LUID));
+    identity->generation = observed.generation;
+    identity->capabilities = observed.capabilities;
+    identity->live = adapter->live;
+    adapter->identity = std::move(identity);
     const D3DDDI_ADAPTERFUNCS functions = {getCaps, createDevice, closeAdapter};
     std::lock_guard<std::mutex> lock(adaptersMutex);
     // Opaque tokens are never reused, including after shared owners expire.

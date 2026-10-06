@@ -863,3 +863,35 @@ match downloaded artifacts;166retained CI files hashed. Guest49check receipt
 was already verified. Finalized embedded checkpoint/roadmap/planning records
 and marked the bounded embedded continuation complete. Next remains actual
 typed D3D9 device/resource/rendering implementation and target GPU proof.
+
+Continued at clean c1ec9e0 with PWF_PLAN_ROOT pinned to this plan. Skill catchup
+and memory quick pass add no project history. Read adapter/backend/runtime
+service and existing WDK next-device findings; began typed creation/destruction
+audit with no source changes yet. Independent runtime/callback and teardown
+fixtures precede real target construction and resource/rendering gates.
+
+Both Windows22 and Android8022 SSH are currently reachable. Implemented typed
+D3D9 device construction/Flush/destruction, monotonic tokens and runtime-handle
+reservation, pre-callback input snapshots and post-construction identity
+publication. Narrowed backend header to an opaque state for isolated lifecycle
+compilation. Added controlled backend fixture exercising actual RuntimeGpu
+context/allocation/map/terminal unlock-deallocate-context order, input mutation,
+duplicate creation, nested/concurrent Flush/destroy, stale tokens and cleanup
+after failure/reset/close. Wired full/offline/native ARM64 checks. Compiler
+verification is next; resource/rendering and target construction remain open.
+
+Guest corrected fixture PASS63962 checks then lifetime-gated fixture PASS66400
+checks (/W4 /WX, compile3.040s/run0.063s). Local identity69/runtime180/owner49/
+shader147 sanitizer suite PASS. Added real-KMT-only target lifecycle probe;
+it opens the chosen display, drives the actual typed adapter/device DDIs,
+verifies original-caller callback execution and balanced context/BO/map
+teardown, and presents nothing. Guest compiler preflight and exact source
+CI follow. Installed Mesa is older than paired37312838033, so target setup
+may require isolated process-only ICD selection, without driver installation.
+
+Guest fourth worktree attempt compiles both lifecycle and real-KMT probe
+with /W4 /WX. Final fixture66403PASS; compile2.871s/run0.062s. Its new fence
+cleanup control rejects adapter escapes after CloseAdapter. Source review
+complete; prepare exact-source commit, architecture CI and guest receipt rerun.
+Evidence stays under the workspace artifacts/dxvk-native-d3d9-device-20261006,
+outside the checkout. No installed driver or desktop configuration changed.

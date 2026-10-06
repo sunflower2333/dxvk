@@ -7,9 +7,12 @@ the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-Implement typed native D3D9 device/resource/state/clear/draw/readback DDIs
-using the now validated embedded core. Production OpenAdapter/rendering caps
-remain closed and successful target GPU construction remains unproven.
+Validate typed native D3D9 device lifecycle on all architectures and the target.
+CreateDevice/Flush/DestroyDevice are implemented with copied runtime callbacks,
+caller dispatch, separate tokens and an adapter lifetime gate. Guest controlled
+fixture66403PASS and target probe compiler preflightPASS; fullCI and realGPU
+construction remain pending. Then add resource/state/clear/draw/readback DDIs.
+Production OpenAdapter/rendering caps remain closed.
 Embedded source2a4095c full37415595130 ALL6PASS: three builds and native ARM64
 execution with42429adapter/49owner/45DLL-rejection checks per architecture.
 166retained CI files hashed; independent PE/import/export checks and all13
@@ -74,9 +77,9 @@ The next rendering slice remains embedded D3D9 with exact runtime ownership.
 - [complete] Record source/evidence and the remaining typed device/rendering gates.
 
 ## Next typed D3D9 device continuation
-- [pending] Implement device creation/destruction with raw runtime handles and callback dispatch.
+- [complete] Implement device creation/destruction with raw runtime handles and callback dispatch.
 - [pending] Add typed offscreen resource/state/clear/draw/readback ownership.
-- [pending] Validate failure/reentry/teardown on all architectures and actual target GPU.
+- [in_progress] Validate failure/reentry/teardown on all architectures and actual target GPU.
 - [pending] Implement runtime presentation/reset and prove ordinary DX8/DX9 acceptance.
 
 ## Previous next-step checkpoint (historical)
@@ -248,6 +251,15 @@ is a candidate package and must not replace it. This thread selects
 PWF_PLAN_ROOT=/home/sunf/droidvm-repos/dxvk-umd-ci/.planning/dxvk-umd explicitly.
 
 ## Errors
+- Hardware harness header search first guessed WDK/um/d3dkmthk.h; the actual
+  canonical header is in SDK/shared. Located it with rg --files and audited
+  typed KMT render/escape/allocation fields before implementation.
+- First guest typed-device compile accepted all production sources but rejected
+  the fixture's mixed-type auto declarator. Split the two snapshot declarations;
+  retain the first attempt logs before compiling the corrected source.
+- Typed-device recovery read guessed umd_runtime_backend.h and umd_device files;
+  those are absent. Locate runtime bridge/native implementation with rg --files
+  before further source reads. No edits depended on the guesses.
 - Embedded9b4168b full37412713033 compiled all three cores but failed DLL
   linking because the annotation singleton lived in excluded d3d9_main.cpp.
   Source2a4095c moves it into shared d3d9_annotation.cpp; full37415595130 ALL6PASS.

@@ -1232,12 +1232,12 @@ public:
       }
       if (clipPlanes) {
         if (!api.pfnSetClipPlane || !api.pfnSetTransform) return E_FAIL;
-        // Diagnostic: retain the passing stride, with color adjacent to POSITION.
+        // Diagnostic: retain stride and insert one DWORD before color.
         // Lighting stays disabled and homogeneous positions are unchanged.
-        struct ClipVertex { float x,y,z; D3DCOLOR color; float pad0,pad1,pad2; };
+        struct ClipVertex { float x,y,z,pad0; D3DCOLOR color; float pad1,pad2; };
         static_assert(sizeof(ClipVertex) == 28);
         const D3DDDIVERTEXELEMENT clipElements[] = {{0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0},
-          {0,12,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+          {0,16,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
         D3DDDIARG_CREATEVERTEXSHADERDECL clipDeclaration = {2,nullptr};
         hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&clipDeclaration,clipElements); if (FAILED(hr)) return hr;
         hr = api.pfnSetVertexShaderDecl(m_driverDevice,clipDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
@@ -1288,9 +1288,9 @@ public:
           hr = state(D3DDDIRS_CLIPPLANEENABLE,mask);
           std::printf("D3D9_CLIP_ENABLE stage=%u mask=%u hr=%08lx\n",stage,mask,static_cast<unsigned long>(hr));
           if (FAILED(hr)) return hr;
-          ClipVertex clipVertices[5] = {{1000,1000,.5f,0xff000000,0,0,1},
-            {-2,2,.5f,clipColors[stage-67],0,0,1},{2,2,.5f,clipColors[stage-67],0,0,1},
-            {-2,-2,.5f,clipColors[stage-67],0,0,1},{2,-2,.5f,clipColors[stage-67],0,0,1}};
+          ClipVertex clipVertices[5] = {{1000,1000,.5f,0,0xff000000,0,1},
+            {-2,2,.5f,0,clipColors[stage-67],0,1},{2,2,.5f,0,clipColors[stage-67],0,1},
+            {-2,-2,.5f,0,clipColors[stage-67],0,1},{2,-2,.5f,0,clipColors[stage-67],0,1}};
           hr = api.pfnSetStreamSourceUm(m_driverDevice,&clipStream,clipVertices); if (FAILED(hr)) return hr;
           fill.FillColor = 0xff091725;
           hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;

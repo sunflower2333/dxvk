@@ -18,9 +18,10 @@ three nonempty GPU submits, context1/1, allocations7/7, locks6/6,
 residency6/6 and wrong-thread0. Eight payloads, three scripts, native ARM64,
 Limited USER/session1 and driver/desktop continuity independently verify.
 Failed16/17 receipts remain immutable. Probe offline37472553344 all4PASS.
-Next add typed vertex declarations, supported render state, UM vertex snapshot
-and nonindexed draw with meaningful failure/reentry tests and a hardware pixel
-oracle. Draws, presentation/reset and ordinary DX8-DX11 remain open; keep the
+Typed declaration/state/UMstream/nonindexed draw worktree is implemented.
+Native fixture89329PASS and three compiled semantic mutations independently
+verify. Next commit and build all architecture production gates, then run the
+strict384-pixel clear+draw oracle in the existing VM. Draws, presentation/reset and ordinary DX8-DX11 remain open; keep the
 full goal active. Do not widen caps, production exports or paired binary pins.
 
 Matched Mesa8443c71 fixes the measured missing runtime bridge on pinned3e50dd4.
@@ -527,3 +528,13 @@ subsequent reads use the known .planning/dxvk-umd-remote-20261005 script directo
 An unnecessary Windows CIM query had invalid shell quoting; no remote changes.
 Exact Mesa3e50dd4 was absent from the integration worktree's object store; fetch
 only that source SHA with depth1 before creating the isolated candidate.
+
+## Typed D3D9 draw continuation
+- [complete] Implement owned vertex declarations and supported state/UMstream/nonindexed draw.
+- [complete] Verify caller snapshots, reset/retirement/reentry/ranges with native fixture and semantic controls.
+- [pending] Build exact production source on all three architectures and verify target draw/readback pixels.
+- [pending] Continue textures/buffers/shaders, presentation/reset and ordinary DX8-DX11 acceptance.
+
+| Draw error | Resolution |
+| --- | --- |
+| First native compile used guessed DestroyVertexShaderDecl table name | Actual SDK names pfnDeleteVertexShaderDecl; corrected all references, retain worktree01 failure. |

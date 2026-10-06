@@ -2,6 +2,7 @@
 #include "umd_d3d9_backend.h"
 #include "umd_runtime_gpu.h"
 #include <atomic>
+#include <algorithm>
 #include <cstring>
 #include <mutex>
 #include <new>
@@ -10,6 +11,8 @@
 #include <vector>
 #include <limits>
 #include <climits>
+#include <cmath>
+#include <utility>
 
 namespace {
 HRESULT result(HRESULT hr) {
@@ -34,6 +37,10 @@ struct Resource {
   HANDLE runtime = nullptr;
   std::vector<Surface> surfaces;
 };
+struct Declaration {
+  std::unique_ptr<dxvk::umd::D3D9VertexDeclaration> backend;
+  UINT streams = 0, streamZeroSize = 0;
+};
 struct Device {
   std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>(true);
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
@@ -43,6 +50,10 @@ struct Device {
   std::atomic<bool> removed{false};
   std::unordered_map<HANDLE, std::unique_ptr<Resource>> resources;
   std::unordered_set<HANDLE> runtimeResources;
+  std::unordered_map<HANDLE, std::unique_ptr<Declaration>> declarations;
+  HANDLE declaration = nullptr;
+  const void* userVertices = nullptr;
+  UINT userStride = 0;
   HANDLE target = nullptr;
   UINT targetIndex = 0;
 
@@ -57,10 +68,15 @@ struct Device {
           for (auto& surface : entry.second->surfaces)
             if (surface.locked) backend->unlockSurface(*surface.backend, false);
         if (target) backend->setRenderTarget(nullptr);
-        if (!resources.empty()) backend->flush();
+        if (declaration) backend->setVertexDeclaration(nullptr);
+        if (!resources.empty() || !declarations.empty()) backend->flush();
       } } catch (...) { hr = E_FAIL; }
       resources.clear();
       runtimeResources.clear();
+      declarations.clear();
+      declaration = nullptr;
+      userVertices = nullptr;
+      userStride = 0;
       backend.reset();
     }); }
     catch (...) { hr = E_FAIL; }
@@ -82,8 +98,8 @@ uintptr_t nextHandle = 1;
 // Serialize the device before inspecting its private handles. A runtime
 // callback can reenter any DDI while its worker is suspended; it must receive
 // a retry result without touching in-progress renderer or resource storage.
-template<typename Function>
-HRESULT operation(HANDLE handle, Function&& function, bool cleanup = false) noexcept {
+template<typename Prepare, typename Function>
+HRESULT preparedOperation(HANDLE handle, Prepare&& prepare, Function&& function, bool cleanup = false) noexcept {
   std::shared_ptr<Device> owner;
   {
     std::lock_guard<std::mutex> lock(devicesMutex);
@@ -100,18 +116,29 @@ HRESULT operation(HANDLE handle, Function&& function, bool cleanup = false) noex
   } guard{*owner};
   HRESULT hr;
   try {
-    hr = result(owner->service->run([&] {
-      if (!cleanup) {
-        const auto runtime = owner->gpu->backend();
-        const HRESULT status = runtime.create.callbacks->status(runtime.create.owner);
-        if (FAILED(status)) return status;
-      }
-      return function(*owner);
-    }));
+    // Snapshot user data on the DDI caller before the callback pump starts.
+    // Device serialization protects private bindings during this preparation.
+    hr = result(prepare(*owner));
+    if (SUCCEEDED(hr)) {
+      hr = result(owner->service->run([&] {
+        if (!cleanup) {
+          const auto runtime = owner->gpu->backend();
+          const HRESULT status = runtime.create.callbacks->status(runtime.create.owner);
+          if (FAILED(status)) return status;
+        }
+        return function(*owner);
+      }));
+    }
   } catch (const std::bad_alloc&) { hr = E_OUTOFMEMORY; }
     catch (...) { hr = E_FAIL; }
   if (hr == D3DERR_DEVICELOST || hr == D3DERR_DEVICENOTRESET) owner->removed = true;
   return hr;
+}
+
+template<typename Function>
+HRESULT operation(HANDLE handle, Function&& function, bool cleanup = false) noexcept {
+  return preparedOperation(handle, [](Device&) { return S_OK; },
+                           std::forward<Function>(function), cleanup);
 }
 
 Surface* surface(Device& device, HANDLE resource, UINT index) {
@@ -302,6 +329,214 @@ HRESULT APIENTRY unlockResource(HANDLE handle, const D3DDDIARG_UNLOCK* args) {
   });
 }
 
+HRESULT APIENTRY createVertexDeclaration(HANDLE handle, D3DDDIARG_CREATEVERTEXSHADERDECL* args,
+    const D3DDDIVERTEXELEMENT* inputElements) {
+  if (!args || !inputElements) return E_INVALIDARG;
+  const UINT count = args->NumVertexElements;
+  if (!count || count > 64) return E_INVALIDARG;
+  try {
+    std::vector<D3DVERTEXELEMENT9> elements;
+    elements.reserve(size_t(count) + 1);
+    UINT streams = 0, extent = 0;
+    constexpr UINT sizes[] = {4,8,12,16,4,4,4,8,4,4,8,4,8,4,4,4,8};
+    for (UINT i = 0; i < count; ++i) {
+      const auto item = inputElements[i];
+      // Some runtimes include the terminator in the counted declaration.
+      if (item.Stream == 0xff && item.Type == D3DDECLTYPE_UNUSED) {
+        if (i + 1 != count || !i || item.Offset || item.Method || item.Usage || item.UsageIndex)
+          return E_INVALIDARG;
+        break;
+      }
+      if (item.Stream >= 16 || item.Type >= D3DDECLTYPE_UNUSED
+          || item.Method != D3DDECLMETHOD_DEFAULT || item.Usage > D3DDECLUSAGE_SAMPLE
+          || item.UsageIndex >= 16) return E_INVALIDARG;
+      elements.push_back({item.Stream,item.Offset,item.Type,item.Method,item.Usage,item.UsageIndex});
+      streams |= UINT(1) << item.Stream;
+      if (!item.Stream) extent = (std::max)(extent, UINT(item.Offset) + sizes[item.Type]);
+    }
+    elements.push_back(D3DDECL_END());
+    return operation(handle, [&](Device& device) {
+      auto declaration = std::make_unique<Declaration>();
+      declaration->streams = streams; declaration->streamZeroSize = extent;
+      const HRESULT hr = result(device.backend->createVertexDeclaration(elements.data(), declaration->backend));
+      if (FAILED(hr)) return hr;
+      if (!declaration->backend) return E_FAIL;
+      const auto runtime = device.gpu->backend();
+      const HRESULT status = runtime.create.callbacks->status(runtime.create.owner);
+      if (FAILED(status)) return status;
+      std::lock_guard<std::mutex> lock(devicesMutex);
+      if (!nextHandle) return E_OUTOFMEMORY;
+      const HANDLE token = reinterpret_cast<HANDLE>(nextHandle++);
+      device.declarations.emplace(token, std::move(declaration));
+      args->ShaderHandle = token;
+      return S_OK;
+    });
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
+}
+
+HRESULT APIENTRY setVertexDeclaration(HANDLE handle, HANDLE token) {
+  return operation(handle, [&](Device& device) {
+    auto entry = device.declarations.find(token);
+    if (token && entry == device.declarations.end()) return E_INVALIDARG;
+    const HRESULT hr = result(device.backend->setVertexDeclaration(token ? entry->second->backend.get() : nullptr));
+    if (SUCCEEDED(hr)) device.declaration = token;
+    return hr;
+  });
+}
+
+HRESULT APIENTRY destroyVertexDeclaration(HANDLE handle, HANDLE token) {
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.declarations.find(token);
+    if (entry == device.declarations.end()) return E_INVALIDARG;
+    if (device.declaration == token) {
+      const HRESULT hr = result(device.backend->setVertexDeclaration(nullptr));
+      if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+      device.declaration = nullptr;
+    }
+    const HRESULT hr = result(device.backend->flush());
+    if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+    device.declarations.erase(entry);
+    return hr;
+  }, true);
+}
+
+bool renderState(D3DDDIRENDERSTATETYPE input, D3DRENDERSTATETYPE& output) {
+  // Native-only legacy commands must never become ignored public states.
+#define D3D9_STATE(name) case D3DDDIRS_##name: output = D3DRS_##name; return true
+  switch (input) {
+    D3D9_STATE(ZENABLE); D3D9_STATE(FILLMODE); D3D9_STATE(SHADEMODE);
+    D3D9_STATE(ZWRITEENABLE); D3D9_STATE(ALPHATESTENABLE); D3D9_STATE(LASTPIXEL);
+    D3D9_STATE(SRCBLEND); D3D9_STATE(DESTBLEND); D3D9_STATE(CULLMODE);
+    D3D9_STATE(ZFUNC); D3D9_STATE(ALPHAREF); D3D9_STATE(ALPHAFUNC);
+    D3D9_STATE(DITHERENABLE); D3D9_STATE(ALPHABLENDENABLE); D3D9_STATE(FOGENABLE);
+    D3D9_STATE(SPECULARENABLE); D3D9_STATE(FOGCOLOR); D3D9_STATE(FOGTABLEMODE);
+    D3D9_STATE(FOGSTART); D3D9_STATE(FOGEND); D3D9_STATE(FOGDENSITY);
+    D3D9_STATE(RANGEFOGENABLE); D3D9_STATE(STENCILENABLE); D3D9_STATE(STENCILFAIL);
+    D3D9_STATE(STENCILZFAIL); D3D9_STATE(STENCILPASS); D3D9_STATE(STENCILFUNC);
+    D3D9_STATE(STENCILREF); D3D9_STATE(STENCILMASK); D3D9_STATE(STENCILWRITEMASK);
+    D3D9_STATE(TEXTUREFACTOR); D3D9_STATE(WRAP0); D3D9_STATE(WRAP1);
+    D3D9_STATE(WRAP2); D3D9_STATE(WRAP3); D3D9_STATE(WRAP4); D3D9_STATE(WRAP5);
+    D3D9_STATE(WRAP6); D3D9_STATE(WRAP7); D3D9_STATE(CLIPPING); D3D9_STATE(LIGHTING);
+    D3D9_STATE(AMBIENT); D3D9_STATE(FOGVERTEXMODE); D3D9_STATE(COLORVERTEX);
+    D3D9_STATE(LOCALVIEWER); D3D9_STATE(NORMALIZENORMALS);
+    D3D9_STATE(DIFFUSEMATERIALSOURCE); D3D9_STATE(SPECULARMATERIALSOURCE);
+    D3D9_STATE(AMBIENTMATERIALSOURCE); D3D9_STATE(EMISSIVEMATERIALSOURCE);
+    D3D9_STATE(VERTEXBLEND); D3D9_STATE(CLIPPLANEENABLE); D3D9_STATE(POINTSIZE);
+    D3D9_STATE(POINTSIZE_MIN); D3D9_STATE(POINTSPRITEENABLE); D3D9_STATE(POINTSCALEENABLE);
+    D3D9_STATE(POINTSCALE_A); D3D9_STATE(POINTSCALE_B); D3D9_STATE(POINTSCALE_C);
+    D3D9_STATE(MULTISAMPLEANTIALIAS); D3D9_STATE(MULTISAMPLEMASK);
+    D3D9_STATE(PATCHEDGESTYLE); D3D9_STATE(DEBUGMONITORTOKEN); D3D9_STATE(POINTSIZE_MAX);
+    D3D9_STATE(INDEXEDVERTEXBLENDENABLE); D3D9_STATE(COLORWRITEENABLE);
+    D3D9_STATE(TWEENFACTOR); D3D9_STATE(BLENDOP); D3D9_STATE(POSITIONDEGREE);
+    D3D9_STATE(NORMALDEGREE); D3D9_STATE(SCISSORTESTENABLE); D3D9_STATE(SLOPESCALEDEPTHBIAS);
+    D3D9_STATE(ANTIALIASEDLINEENABLE); D3D9_STATE(MINTESSELLATIONLEVEL);
+    D3D9_STATE(MAXTESSELLATIONLEVEL); D3D9_STATE(ADAPTIVETESS_X); D3D9_STATE(ADAPTIVETESS_Y);
+    D3D9_STATE(ADAPTIVETESS_Z); D3D9_STATE(ADAPTIVETESS_W);
+    D3D9_STATE(ENABLEADAPTIVETESSELLATION); D3D9_STATE(TWOSIDEDSTENCILMODE);
+    D3D9_STATE(CCW_STENCILFAIL); D3D9_STATE(CCW_STENCILZFAIL); D3D9_STATE(CCW_STENCILPASS);
+    D3D9_STATE(CCW_STENCILFUNC); D3D9_STATE(COLORWRITEENABLE1); D3D9_STATE(COLORWRITEENABLE2);
+    D3D9_STATE(COLORWRITEENABLE3); D3D9_STATE(BLENDFACTOR); D3D9_STATE(SRGBWRITEENABLE);
+    D3D9_STATE(DEPTHBIAS); D3D9_STATE(WRAP8); D3D9_STATE(WRAP9); D3D9_STATE(WRAP10);
+    D3D9_STATE(WRAP11); D3D9_STATE(WRAP12); D3D9_STATE(WRAP13); D3D9_STATE(WRAP14);
+    D3D9_STATE(WRAP15); D3D9_STATE(SEPARATEALPHABLENDENABLE); D3D9_STATE(SRCBLENDALPHA);
+    D3D9_STATE(DESTBLENDALPHA); D3D9_STATE(BLENDOPALPHA);
+    default: return false;
+  }
+#undef D3D9_STATE
+}
+
+HRESULT APIENTRY setRenderState(HANDLE handle, const D3DDDIARG_RENDERSTATE* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  D3DRENDERSTATETYPE mapped = D3DRS_ZENABLE;
+  if (input.State == D3DDDIRS_SCENECAPTURE || input.State == D3DDDIRS_SOFTWAREVERTEXPROCESSING) {
+    if (input.Value > 1) return E_INVALIDARG;
+  } else if (!renderState(input.State, mapped)) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) {
+    if (input.State == D3DDDIRS_SCENECAPTURE) return device.backend->setScene(input.Value != 0);
+    if (input.State == D3DDDIRS_SOFTWAREVERTEXPROCESSING)
+      return device.backend->setSoftwareVertexProcessing(input.Value != 0);
+    return device.backend->setRenderState(mapped, input.Value);
+  });
+}
+
+HRESULT APIENTRY setViewport(HANDLE handle, const D3DDDIARG_VIEWPORTINFO* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  if (!input.Width || !input.Height || uint64_t(input.X) + input.Width > INT_MAX
+      || uint64_t(input.Y) + input.Height > INT_MAX) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) {
+    return device.backend->setViewport(input.X,input.Y,input.Width,input.Height);
+  });
+}
+HRESULT APIENTRY setZRange(HANDLE handle, const D3DDDIARG_ZRANGE* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  if (!std::isfinite(input.MinZ) || !std::isfinite(input.MaxZ) || input.MinZ < 0.0f
+      || input.MaxZ > 1.0f || input.MinZ > input.MaxZ) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) { return device.backend->setZRange(input.MinZ,input.MaxZ); });
+}
+HRESULT APIENTRY setScissorRect(HANDLE handle, const RECT* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  if (input.left > input.right || input.top > input.bottom) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) { return device.backend->setScissorRect(input); });
+}
+
+HRESULT APIENTRY setStreamSourceUm(HANDLE handle, const D3DDDIARG_SETSTREAMSOURCEUM* args,
+    const void* vertices) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  if (input.Stream || (vertices && !input.Stride)) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) {
+    device.userVertices = vertices;
+    device.userStride = vertices ? input.Stride : 0;
+    return S_OK;
+  });
+}
+
+HRESULT APIENTRY drawPrimitive(HANDLE handle, const D3DDDIARG_DRAWPRIMITIVE* args,
+    const UINT* flags) {
+  if (!args || flags) return E_INVALIDARG; // Per-edge line-fill flags need their own path.
+  const auto input = *args;
+  uint64_t count = input.PrimitiveCount;
+  switch (input.PrimitiveType) {
+    case D3DPT_POINTLIST: break;
+    case D3DPT_LINELIST: count *= 2; break;
+    case D3DPT_LINESTRIP: if (count) ++count; break;
+    case D3DPT_TRIANGLELIST: count *= 3; break;
+    case D3DPT_TRIANGLESTRIP:
+    case D3DPT_TRIANGLEFAN: if (count) count += 2; break;
+    default: return E_INVALIDARG;
+  }
+  if (count > UINT_MAX) return E_INVALIDARG;
+  std::vector<uint8_t> vertices;
+  UINT stride = 0;
+  return preparedOperation(handle, [&](Device& device) {
+    const auto declaration = device.declarations.find(device.declaration);
+    auto target = surface(device,device.target,device.targetIndex);
+    if (declaration == device.declarations.end() || !target || target->locked
+        || !device.userVertices || !device.userStride) return E_INVALIDARG;
+    if (declaration->second->streams != 1
+        || declaration->second->streamZeroSize > device.userStride) return E_INVALIDARG;
+    stride = device.userStride;
+    if (!count) return S_OK;
+    const uint64_t offset = uint64_t(input.VStart) * stride;
+    const uint64_t size = count * stride;
+    const auto base = reinterpret_cast<uintptr_t>(device.userVertices);
+    // DXVK's UP upload uses 32-bit sizes. Check both upload and host ranges
+    // before touching memory, including alignment headroom for its buffer.
+    if (size > UINT_MAX - 255 || offset > UINTPTR_MAX - base
+        || size > UINTPTR_MAX - base - offset) return E_INVALIDARG;
+    vertices.resize(size_t(size));
+    std::memcpy(vertices.data(),reinterpret_cast<const void*>(base + uintptr_t(offset)),vertices.size());
+    return S_OK;
+  }, [&](Device& device) {
+    return count ? device.backend->drawPrimitive(input.PrimitiveType,input.PrimitiveCount,vertices.data(),stride) : S_OK;
+  });
+}
+
 void releaseRuntime(const std::shared_ptr<Device>& owner) {
   std::lock_guard<std::mutex> lock(devicesMutex);
   const auto entry = runtimeDevices.find(owner->runtime);
@@ -389,6 +624,15 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnBlt = blt;
   table.pfnLock = lockResource;
   table.pfnUnlock = unlockResource;
+  table.pfnCreateVertexShaderDecl = createVertexDeclaration;
+  table.pfnSetVertexShaderDecl = setVertexDeclaration;
+  table.pfnDeleteVertexShaderDecl = destroyVertexDeclaration;
+  table.pfnSetRenderState = setRenderState;
+  table.pfnSetViewport = setViewport;
+  table.pfnSetZRange = setZRange;
+  table.pfnSetScissorRect = setScissorRect;
+  table.pfnSetStreamSourceUm = setStreamSourceUm;
+  table.pfnDrawPrimitive = drawPrimitive;
   {
     std::lock_guard<std::mutex> lock(devicesMutex);
     if (!nextHandle) return E_OUTOFMEMORY;

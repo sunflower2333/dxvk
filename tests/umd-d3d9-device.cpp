@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 #include <climits>
+#include <limits>
 
 static std::atomic<unsigned> checks{0};
 #define CHECK(c) do { const auto n = ++checks; if (!(c)) { \
@@ -65,6 +66,20 @@ struct Fixture {
   bool lastComputeRects = false, teardownDiscard = false;
   std::vector<dxvk::umd::D3D9SurfaceDesc> descriptions;
   std::vector<RECT> clearRects;
+  unsigned declarationCreates = 0, declarationCloses = 0, declarationSets = 0, draws = 0;
+  HRESULT declarationResult = S_OK, stateResult = S_OK, drawResult = S_OK;
+  bool nullDeclaration = false;
+  std::function<void()> declarationHook;
+  std::vector<D3DVERTEXELEMENT9> declarationElements;
+  std::vector<uint8_t> drawVertices;
+  size_t expectedDrawBytes = 0;
+  UINT drawStride = 0, drawCount = 0;
+  D3DPRIMITIVETYPE drawType = D3DPT_POINTLIST;
+  D3DRENDERSTATETYPE renderState = D3DRS_ZENABLE;
+  DWORD renderValue = 0;
+  D3DVIEWPORT9 viewport = {0,0,0,0,0.0f,1.0f};
+  RECT scissor = {};
+  bool scene = false, software = false;
   void runtime() const { CHECK(callbacksValid && GetCurrentThreadId() == caller); }
 };
 static Fixture* f;
@@ -158,7 +173,16 @@ struct dxvk::umd::D3D9Backend::State {
   RuntimeBackend bridge;
   mwd_allocation allocation = {};
   D3D9SurfaceResource* target = nullptr;
+  D3D9VertexDeclaration* declaration = nullptr;
 };
+
+struct dxvk::umd::D3D9VertexDeclaration::State { };
+dxvk::umd::D3D9VertexDeclaration::D3D9VertexDeclaration() : m_state(std::make_unique<State>()) {
+  CHECK(GetCurrentThreadId() != f->caller); ++f->declarationCreates;
+}
+dxvk::umd::D3D9VertexDeclaration::~D3D9VertexDeclaration() {
+  CHECK(GetCurrentThreadId() != f->caller); ++f->declarationCloses;
+}
 struct dxvk::umd::D3D9SurfaceResource::State {
   D3D9SurfaceDesc desc;
   std::vector<uint8_t> bytes;
@@ -175,6 +199,7 @@ dxvk::umd::D3D9Backend::D3D9Backend() : m_state(std::make_unique<State>()) { }
 dxvk::umd::D3D9Backend::~D3D9Backend() {
   CHECK(GetCurrentThreadId() != f->caller);
   CHECK(f->surfaceCreates == f->surfaceCloses && !m_state->target);
+  CHECK(f->declarationCreates == f->declarationCloses && !m_state->declaration);
   ++f->backendCloses;
   if (!f->adapterValid) {
     uint32_t fence = 99;
@@ -221,6 +246,67 @@ HRESULT dxvk::umd::D3D9Backend::flush() noexcept {
   CHECK(GetCurrentThreadId() != f->caller); ++f->backendFlushes;
   if (f->flushResult != S_OK) return f->flushResult;
   return m_state->bridge.create.callbacks->status(m_state->bridge.create.owner);
+}
+
+HRESULT dxvk::umd::D3D9Backend::createVertexDeclaration(const D3DVERTEXELEMENT9* elements,
+    std::unique_ptr<D3D9VertexDeclaration>& output) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->declarationResult != S_OK) return f->declarationResult;
+  if (f->nullDeclaration) return S_OK;
+  auto declaration = std::make_unique<D3D9VertexDeclaration>();
+  f->declarationElements.clear();
+  for (auto p = elements; p->Stream != 0xff; ++p) f->declarationElements.push_back(*p);
+  if (f->declarationHook) { auto hook = std::move(f->declarationHook); hook(); }
+  output = std::move(declaration);
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setVertexDeclaration(D3D9VertexDeclaration* declaration) {
+  CHECK(GetCurrentThreadId() != f->caller); ++f->declarationSets;
+  if (f->stateResult != S_OK) return f->stateResult;
+  m_state->declaration = declaration;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setRenderState(D3DRENDERSTATETYPE state, DWORD value) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->stateResult != S_OK) return f->stateResult;
+  f->renderState = state; f->renderValue = value;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setScene(bool capture) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->stateResult != S_OK) return f->stateResult;
+  if (f->scene == capture) return D3DERR_INVALIDCALL;
+  f->scene = capture; return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setSoftwareVertexProcessing(bool enable) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->stateResult != S_OK) return f->stateResult;
+  f->software = enable; return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setViewport(UINT x, UINT y, UINT width, UINT height) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->stateResult != S_OK) return f->stateResult;
+  f->viewport.X = x; f->viewport.Y = y; f->viewport.Width = width; f->viewport.Height = height;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setZRange(float minimum, float maximum) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->stateResult != S_OK) return f->stateResult;
+  f->viewport.MinZ = minimum; f->viewport.MaxZ = maximum;
+  return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setScissorRect(const RECT& area) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->stateResult != S_OK) return f->stateResult;
+  f->scissor = area; return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::drawPrimitive(D3DPRIMITIVETYPE type, UINT count,
+    const void* vertices, UINT stride) {
+  CHECK(GetCurrentThreadId() != f->caller && m_state->target && m_state->declaration);
+  ++f->draws; f->drawStride = stride; f->drawCount = count; f->drawType = type;
+  const auto bytes = static_cast<const uint8_t*>(vertices);
+  f->drawVertices.assign(bytes, bytes + f->expectedDrawBytes);
+  return f->drawResult;
 }
 
 HRESULT dxvk::umd::D3D9Backend::createSurface(const D3D9SurfaceDesc& desc,
@@ -340,6 +426,15 @@ static void createDevice() {
   expectedTable.pfnBlt = f->table.pfnBlt;
   expectedTable.pfnLock = f->table.pfnLock;
   expectedTable.pfnUnlock = f->table.pfnUnlock;
+  expectedTable.pfnCreateVertexShaderDecl = f->table.pfnCreateVertexShaderDecl;
+  expectedTable.pfnSetVertexShaderDecl = f->table.pfnSetVertexShaderDecl;
+  expectedTable.pfnDeleteVertexShaderDecl = f->table.pfnDeleteVertexShaderDecl;
+  expectedTable.pfnSetRenderState = f->table.pfnSetRenderState;
+  expectedTable.pfnSetViewport = f->table.pfnSetViewport;
+  expectedTable.pfnSetZRange = f->table.pfnSetZRange;
+  expectedTable.pfnSetScissorRect = f->table.pfnSetScissorRect;
+  expectedTable.pfnSetStreamSourceUm = f->table.pfnSetStreamSourceUm;
+  expectedTable.pfnDrawPrimitive = f->table.pfnDrawPrimitive;
   CHECK(snapshot(f->table) == snapshot(expectedTable));
 }
 static void closeDevice(HRESULT expected = S_OK) {
@@ -558,9 +653,201 @@ static void resourceContracts() {
   }
 }
 
+static void drawContracts() {
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    CHECK(f->table.pfnCreateVertexShaderDecl && f->table.pfnSetVertexShaderDecl
+      && f->table.pfnDeleteVertexShaderDecl && f->table.pfnSetRenderState
+      && f->table.pfnSetViewport && f->table.pfnSetZRange && f->table.pfnSetScissorRect
+      && f->table.pfnSetStreamSourceUm && f->table.pfnDrawPrimitive);
+    D3DDDIVERTEXELEMENT elements[3] = {{0,0,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITIONT,0},
+      {0,16,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}, {0xff,0,D3DDECLTYPE_UNUSED,0,0,0}};
+    D3DDDIARG_CREATEVERTEXSHADERDECL declaration = {2,reinterpret_cast<HANDLE>(UINT_PTR(0xdead))};
+    auto prior = snapshot(declaration);
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,nullptr,elements) == E_INVALIDARG);
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,nullptr) == E_INVALIDARG);
+    for (const UINT count : {UINT(0),UINT(65),UINT_MAX}) {
+      declaration.NumVertexElements = count; prior = snapshot(declaration);
+      CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,elements) == E_INVALIDARG);
+      CHECK(snapshot(declaration) == prior);
+    }
+    declaration.NumVertexElements = 2; prior = snapshot(declaration);
+    for (unsigned field = 0; field < 5; ++field) {
+      auto invalid = elements[0];
+      if (field == 0) invalid.Stream = 16;
+      if (field == 1) invalid.Type = D3DDECLTYPE_UNUSED;
+      if (field == 2) invalid.Method = D3DDECLMETHOD_CROSSUV;
+      if (field == 3) invalid.Usage = D3DDECLUSAGE_SAMPLE + 1;
+      if (field == 4) invalid.UsageIndex = 16;
+      declaration.NumVertexElements = 1; const auto before = snapshot(declaration);
+      const auto queries = f->queries;
+      CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,&invalid) == E_INVALIDARG);
+      CHECK(snapshot(declaration) == before && f->queries == queries);
+    }
+    declaration.NumVertexElements = 2;
+    f->declarationResult = S_FALSE;
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,elements) == E_FAIL && snapshot(declaration) == prior);
+    f->declarationResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,elements) == E_OUTOFMEMORY && snapshot(declaration) == prior);
+    f->declarationResult = S_OK; f->nullDeclaration = true;
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,elements) == E_FAIL && snapshot(declaration) == prior);
+    f->nullDeclaration = false;
+    f->queryHook = [&] {
+      elements[1].Offset = 200; declaration.NumVertexElements = UINT_MAX;
+      CHECK(f->table.pfnDestroyDevice(f->device) == D3DERR_WASSTILLDRAWING);
+    };
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,elements) == S_OK);
+    const HANDLE token = declaration.ShaderHandle;
+    CHECK(token != f->device && token != reinterpret_cast<HANDLE>(UINT_PTR(0xdead)));
+    CHECK(f->declarationElements.size() == 2 && f->declarationElements[1].Offset == 16);
+    elements[1].Offset = 16;
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device,token) == S_OK);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device,&fixture) == E_INVALIDARG);
+    CHECK(f->table.pfnDestroyResource(f->device,token) == E_INVALIDARG);
+    char cookie;
+    D3DDDI_SURFACEINFO info = {8,8,0,nullptr,0,0};
+    auto resource = resourceArgs(&cookie,&info,1,true);
+    CHECK(f->table.pfnCreateResource(f->device,&resource) == S_OK);
+    CHECK(f->table.pfnDeleteVertexShaderDecl(f->device,resource.hResource) == E_INVALIDARG);
+    D3DDDIARG_SETRENDERTARGET target = {0,resource.hResource,0};
+    CHECK(f->table.pfnSetRenderTarget(f->device,&target) == S_OK);
+
+    D3DDDIARG_RENDERSTATE state = {D3DDDIRS_CULLMODE,D3DCULL_NONE};
+    f->queryHook = [&] { state.State = D3DDDIRS_STENCILENABLE; state.Value = 99; };
+    CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK
+      && f->renderState == D3DRS_CULLMODE && f->renderValue == D3DCULL_NONE);
+    for (const UINT invalid : {UINT(0),UINT(10),UINT(30),UINT(40),UINT(62+1),UINT(64),UINT(95),UINT(169),UINT(255),UINT_MAX}) {
+      state.State = static_cast<D3DDDIRENDERSTATETYPE>(invalid);
+      CHECK(f->table.pfnSetRenderState(f->device,&state) == E_INVALIDARG);
+    }
+    state = {D3DDDIRS_SCENECAPTURE,1};
+    CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK && f->scene);
+    CHECK(f->table.pfnSetRenderState(f->device,&state) == D3DERR_INVALIDCALL);
+    state.Value = 0;
+    CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK && !f->scene);
+    state = {D3DDDIRS_SOFTWAREVERTEXPROCESSING,1};
+    CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK && f->software);
+    state.Value = 2; CHECK(f->table.pfnSetRenderState(f->device,&state) == E_INVALIDARG);
+    D3DDDIARG_ZRANGE range = {0.2f,0.8f};
+    CHECK(f->table.pfnSetZRange(f->device,&range) == S_OK);
+    D3DDDIARG_VIEWPORTINFO viewport = {1,2,3,4};
+    f->queryHook = [&] { viewport = {0,0,1,1}; range = {0.0f,1.0f}; };
+    CHECK(f->table.pfnSetViewport(f->device,&viewport) == S_OK);
+    CHECK(f->viewport.X == 1 && f->viewport.Y == 2 && f->viewport.Width == 3 && f->viewport.Height == 4
+      && f->viewport.MinZ == 0.2f && f->viewport.MaxZ == 0.8f);
+    CHECK(f->table.pfnSetZRange(f->device,&range) == S_OK && f->viewport.X == 1 && f->viewport.Width == 3);
+    for (const D3DDDIARG_ZRANGE invalid : {D3DDDIARG_ZRANGE{-1.0f,0.5f},{0.0f,2.0f},{0.8f,0.2f},
+        {std::numeric_limits<float>::quiet_NaN(),1.0f},{0.0f,std::numeric_limits<float>::infinity()}})
+      CHECK(f->table.pfnSetZRange(f->device,&invalid) == E_INVALIDARG);
+    viewport = {UINT_MAX,0,1,1}; CHECK(f->table.pfnSetViewport(f->device,&viewport) == E_INVALIDARG);
+    viewport = {0,0,0,1}; CHECK(f->table.pfnSetViewport(f->device,&viewport) == E_INVALIDARG);
+    RECT scissor = {-1,2,6,7};
+    f->queryHook = [&] { scissor = {99,99,1,1}; };
+    CHECK(f->table.pfnSetScissorRect(f->device,&scissor) == S_OK && f->scissor.left == -1 && f->scissor.right == 6);
+    CHECK(f->table.pfnSetScissorRect(f->device,&scissor) == E_INVALIDARG);
+    scissor = {3,3,3,3}; CHECK(f->table.pfnSetScissorRect(f->device,&scissor) == S_OK);
+
+    std::array<uint8_t,240> vertices;
+    for (size_t i = 0; i < vertices.size(); ++i) vertices[i] = uint8_t(i ^ 0x5a);
+    D3DDDIARG_SETSTREAMSOURCEUM stream = {0,24};
+    CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,vertices.data()) == S_OK);
+    stream.Stream = 1; CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,vertices.data()) == E_INVALIDARG);
+    stream.Stream = 0; stream.Stride = 0;
+    CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,vertices.data()) == E_INVALIDARG);
+    D3DDDIARG_DRAWPRIMITIVE draw = {D3DPT_TRIANGLESTRIP,1,2};
+    f->expectedDrawBytes = 96;
+    const std::vector<uint8_t> expected(vertices.begin()+24,vertices.begin()+120);
+    f->queryHook = [&] {
+      CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnDeleteVertexShaderDecl(f->device,token) == D3DERR_WASSTILLDRAWING);
+      std::thread concurrent([&] { CHECK(f->table.pfnSetVertexShaderDecl(f->device,nullptr) == D3DERR_WASSTILLDRAWING); });
+      concurrent.join();
+      vertices.fill(0xe1); draw = {D3DPT_POINTLIST,UINT_MAX,UINT_MAX};
+    };
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == S_OK);
+    CHECK(f->drawVertices == expected && f->drawStride == 24 && f->drawCount == 2 && f->drawType == D3DPT_TRIANGLESTRIP);
+    // The DDI binding survives UP's internal stream-zero reset; a later draw
+    // snapshots the current caller bytes rather than the previous upload.
+    for (const auto test : {std::pair<D3DPRIMITIVETYPE,UINT>{D3DPT_POINTLIST,2}, {D3DPT_LINELIST,4},
+        {D3DPT_LINESTRIP,3},{D3DPT_TRIANGLELIST,6},{D3DPT_TRIANGLESTRIP,4},{D3DPT_TRIANGLEFAN,4}}) {
+      draw = {test.first,1,2}; f->expectedDrawBytes = size_t(test.second) * 24;
+      CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == S_OK);
+      CHECK(f->drawVertices == std::vector<uint8_t>(f->expectedDrawBytes,0xe1)
+        && f->drawType == test.first && f->drawCount == 2);
+    }
+    const auto draws = f->draws;
+    draw = {D3DPT_TRIANGLELIST,0,UINT_MAX};
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == E_INVALIDARG);
+    draw = {static_cast<D3DPRIMITIVETYPE>(0),0,1};
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == E_INVALIDARG);
+    draw = {D3DPT_POINTLIST,0,1};
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,reinterpret_cast<const UINT*>(UINT_PTR(1))) == E_INVALIDARG);
+    stream = {0,24};
+    CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,reinterpret_cast<void*>(UINTPTR_MAX-3)) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == E_INVALIDARG && f->draws == draws);
+    draw.PrimitiveCount = 0; draw.VStart = UINT_MAX;
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == S_OK && f->draws == draws);
+    stream.Stride = UINT_MAX;
+    CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,vertices.data()) == S_OK);
+    draw = {D3DPT_POINTLIST,0,1};
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == E_INVALIDARG);
+    stream.Stride = 4;
+    CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,vertices.data()) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,nullptr) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == E_INVALIDARG);
+    stream.Stride = 24;
+    CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,vertices.data()) == S_OK);
+    f->stateResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device,nullptr) == E_OUTOFMEMORY);
+    f->stateResult = S_OK; f->drawResult = E_OUTOFMEMORY; f->expectedDrawBytes = 24;
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == E_OUTOFMEMORY);
+    f->drawResult = S_OK;
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == S_OK);
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = resource.hResource; mapping.Flags.ReadOnly = 1;
+    CHECK(f->table.pfnLock(f->device,&mapping) == S_OK);
+    const auto calls = f->draws;
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == E_INVALIDARG && f->draws == calls);
+    D3DDDIARG_UNLOCK unlockTarget = {}; unlockTarget.hResource = resource.hResource;
+    CHECK(f->table.pfnUnlock(f->device,&unlockTarget) == S_OK);
+    auto otherStream = elements[0]; otherStream.Stream = 1;
+    D3DDDIARG_CREATEVERTEXSHADERDECL otherDeclaration = {1,nullptr};
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&otherDeclaration,&otherStream) == S_OK);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device,otherDeclaration.ShaderHandle) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == E_INVALIDARG && f->draws == calls);
+    CHECK(f->table.pfnDeleteVertexShaderDecl(f->device,otherDeclaration.ShaderHandle) == S_OK);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device,token) == S_OK);
+    const auto closes = f->declarationCloses;
+    f->flushResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnDeleteVertexShaderDecl(f->device,token) == E_OUTOFMEMORY && f->declarationCloses == closes);
+    f->flushResult = S_OK;
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device,token) == S_OK);
+    CHECK(f->table.pfnDeleteVertexShaderDecl(f->device,token) == S_OK && f->declarationCloses == closes + 1);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device,token) == E_INVALIDARG);
+    CHECK(f->table.pfnDeleteVertexShaderDecl(f->device,token) == E_INVALIDARG);
+    declaration.NumVertexElements = 3;
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,elements) == S_OK);
+    CHECK(declaration.ShaderHandle != token && f->declarationElements.size() == 2);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device,declaration.ShaderHandle) == S_OK);
+    closeDevice(); CHECK(f->declarationCreates == f->declarationCloses); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    D3DDDIVERTEXELEMENT element = {0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0};
+    D3DDDIARG_CREATEVERTEXSHADERDECL args = {1,reinterpret_cast<HANDLE>(UINT_PTR(0xdead))};
+    const auto original = snapshot(args);
+    f->declarationHook = [&] { f->queryHook = [&] { ++f->generation; }; };
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&args,&element) == D3DERR_DEVICELOST);
+    CHECK(snapshot(args) == original && f->declarationCreates == 1 && f->declarationCloses == 1);
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&args,&element) == D3DERR_DEVICELOST);
+    closeDevice(); closeAdapter();
+  }
+}
+
 int main() {
   ownedServiceStartup();
   resourceContracts();
+  drawContracts();
   {
     Fixture fixture; initialize(fixture);
     // A missing mandatory callback rejects before backend construction.

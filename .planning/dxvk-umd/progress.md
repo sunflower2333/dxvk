@@ -1342,3 +1342,21 @@ hash-verified against the original task config, retained under scripts/.
 - Full goal remains active. Next actual typed declarations/state/UMstream/
   nonindexed draw and pixel proof; no caps, production export or paired pin
   widening. Presentation/reset and ordinary DX8-DX11 still required.
+
+### Typed D3D9 draw source and native fixture
+
+- Owned bounded declarations, explicit public state mapping plus scene capture,
+  viewport/zrange/scissor and UMstream0/nonindexed draw implemented. Snapshot
+  selected vertices on DDI caller before first callback; native binding survives
+  public UP stream reset. Checked primitive/upload/pointer ranges and typed
+  handle/lifetime ownership; worker flush/release before retirement.
+- Native MSVC ARM64 controlled fixture02 PASS89329, compile4.3458338s,
+  run0.07881s. Probe source also compiles /W4/WX. First01 compile failed wrong
+  guessed DDI slot; actual SDK DeleteVertexShaderDecl fixed and failure retained.
+- Three semantic controls compile and correctly reject: vertex reread16172/768,
+  missing declaration identity22001/840, missing flush19651/822. All52 declared/
+  measured/source-archive hashes, evidence archives, native PE and installed
+  driver/desktop continuity independently verified. CPU fixture does not render.
+- --draw adds192 quad/scissor/partial-color-write pixels plus original192 clear
+  pixels; independently computed draw checksum53a03d45. Full production CI and
+  hardware draw proof next; ordinary admission/caps/paired pins unchanged.

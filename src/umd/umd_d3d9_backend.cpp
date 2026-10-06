@@ -26,6 +26,12 @@ struct D3D9SurfaceResource::State {
 D3D9SurfaceResource::D3D9SurfaceResource() : m_state(std::make_unique<State>()) { }
 D3D9SurfaceResource::~D3D9SurfaceResource() = default;
 
+struct D3D9VertexDeclaration::State {
+  Com<IDirect3DVertexDeclaration9> declaration;
+};
+D3D9VertexDeclaration::D3D9VertexDeclaration() : m_state(std::make_unique<State>()) { }
+D3D9VertexDeclaration::~D3D9VertexDeclaration() = default;
+
 D3D9Backend::D3D9Backend() : m_state(std::make_unique<State>()) { }
 D3D9Backend::~D3D9Backend() = default;
 IDirect3DDevice9Ex* D3D9Backend::device() const noexcept { return m_state->d3d.ptr(); }
@@ -33,6 +39,49 @@ HRESULT D3D9Backend::flush() noexcept {
   try { return m_state->d3d->FlushRuntimeSubmission(); }
   catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
   catch (...) { return D3DERR_DEVICELOST; }
+}
+
+HRESULT D3D9Backend::createVertexDeclaration(const D3DVERTEXELEMENT9* elements,
+    std::unique_ptr<D3D9VertexDeclaration>& output) {
+  auto declaration = std::make_unique<D3D9VertexDeclaration>();
+  const HRESULT hr = m_state->d3d->CreateVertexDeclaration(elements, &declaration->m_state->declaration);
+  if (SUCCEEDED(hr)) output = std::move(declaration);
+  return hr;
+}
+HRESULT D3D9Backend::setVertexDeclaration(D3D9VertexDeclaration* declaration) {
+  return m_state->d3d->SetVertexDeclaration(declaration ? declaration->m_state->declaration.ptr() : nullptr);
+}
+HRESULT D3D9Backend::setRenderState(D3DRENDERSTATETYPE state, DWORD value) {
+  return m_state->d3d->SetRenderState(state, value);
+}
+HRESULT D3D9Backend::setScene(bool capture) {
+  return capture ? m_state->d3d->BeginScene() : m_state->d3d->EndScene();
+}
+HRESULT D3D9Backend::setSoftwareVertexProcessing(bool enable) {
+  return m_state->d3d->SetSoftwareVertexProcessing(enable);
+}
+HRESULT D3D9Backend::setViewport(UINT x, UINT y, UINT width, UINT height) {
+  D3DVIEWPORT9 viewport = {};
+  const HRESULT hr = m_state->d3d->GetViewport(&viewport);
+  if (FAILED(hr)) return hr;
+  viewport.X = x; viewport.Y = y; viewport.Width = width; viewport.Height = height;
+  return m_state->d3d->SetViewport(&viewport);
+}
+HRESULT D3D9Backend::setZRange(float minimum, float maximum) {
+  D3DVIEWPORT9 viewport = {};
+  const HRESULT hr = m_state->d3d->GetViewport(&viewport);
+  if (FAILED(hr)) return hr;
+  viewport.MinZ = minimum; viewport.MaxZ = maximum;
+  return m_state->d3d->SetViewport(&viewport);
+}
+HRESULT D3D9Backend::setScissorRect(const RECT& area) {
+  return m_state->d3d->SetScissorRect(&area);
+}
+HRESULT D3D9Backend::drawPrimitive(D3DPRIMITIVETYPE type, UINT count,
+    const void* vertices, UINT stride) {
+  // The native DDI owns the user-memory binding. The public UP call's
+  // implicit stream-zero unbind must not retire that native binding.
+  return m_state->d3d->DrawPrimitiveUP(type, count, vertices, stride);
 }
 
 HRESULT D3D9Backend::createSurface(const D3D9SurfaceDesc& desc,

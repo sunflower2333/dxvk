@@ -950,3 +950,20 @@ verify192 actual pixels with diagnostics1/0. The missing residency ownership
 was the measured harness gate for16/17. No installed KMD Render/reset/timeout
 record changes. Do not generalize this proof to older09 loss, ordinary runtime
 admission, drawing, presentation/reset, or long-term stability.
+
+### D3D9 draw callback lifetime
+
+The original operation helper checked identity before executing its body.
+A UM draw therefore cannot first copy caller memory in that body: the query
+callback can overwrite it. A serialized preparation step now snapshots on
+the DDI caller before entering RuntimeService::run/pumping. The native fixture
+mutates arguments and vertices in the first query callback; production consumes
+the old snapshot, while a separately compiled reread mutation fails. Bounded
+UP upload sizes and pointer ranges are checked before any memory access.
+
+The actual SDK declaration deletion slot is pfnDeleteVertexShaderDecl.
+SCENECAPTURE62 is a native scene command, not a public render state.
+Non-null DrawPrimitive edge flags describe line-fill triangle edges and need
+a separate path; this slice accepts the fast path only. Multi-stream/buffer
+and indexed draw remain explicit gates. The clear/readback slice18/19 remains
+verified; new quad/scissor/colour-mask checks have no target receipt yet.

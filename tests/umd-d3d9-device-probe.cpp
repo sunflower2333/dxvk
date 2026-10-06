@@ -134,7 +134,7 @@ public:
     return contexts == 1 && contextCloses == 1 && allocations && allocations == deallocations
       && locks == unlocks && !m_context && !wrongThreads ? S_OK : E_FAIL;
   }
-  HRESULT verifyRendering() {
+  HRESULT verifyRendering(bool drawing = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -197,6 +197,12 @@ public:
           UINT expected = stage == 1 ? 0xff123456 :
             x >= 2 && x < 6 && y >= 2 && y < 6 ? 0xffd03070 : 0xff2468ac;
           if (stage == 3 && x >= 4 && y >= 4) expected = 0xff80c020;
+          if (stage == 4) expected = 0xff3c72b9;
+          if (stage >= 5) {
+            expected = x >= 2 && x < 6 && y >= 1 && y < 7 ? 0xffe08020 : 0xff173149;
+            if (stage == 6 && x >= 1 && x < 7 && y >= 2 && y < 6)
+              expected = (expected & 0xff00ff00) | (0xff901fe3 & 0x00ff00ff);
+          }
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
               stage, x, y, actual, expected);
@@ -236,12 +242,85 @@ public:
     copy.SrcSubResourceIndex = 1; copy.SrcRect = smallArea; copy.DstRect = {4,4,8,8};
     hr = readback(3);
     if (FAILED(hr)) return hr;
+    std::printf("D3D9_CLEAR_READBACK PASS pixels=%u checksum=%08x padding=retained surfaces=2\n", checked, checksum);
+    if (drawing) {
+      if (!api.pfnCreateVertexShaderDecl || !api.pfnSetVertexShaderDecl || !api.pfnDeleteVertexShaderDecl
+          || !api.pfnSetRenderState || !api.pfnSetViewport || !api.pfnSetZRange
+          || !api.pfnSetScissorRect || !api.pfnSetStreamSourceUm || !api.pfnDrawPrimitive) return E_FAIL;
+      bind.SubResourceIndex = 0;
+      hr = api.pfnSetRenderTarget(m_driverDevice,&bind);
+      if (FAILED(hr)) return hr;
+      copy.SrcSubResourceIndex = 0; copy.SrcRect = copy.DstRect = full;
+      D3DDDIVERTEXELEMENT elements[] = {{0,0,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITIONT,0},
+        {0,16,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+      D3DDDIARG_CREATEVERTEXSHADERDECL declaration = {2,nullptr};
+      hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&declaration,elements);
+      std::printf("D3D9_DRAW_DECLARATION hr=%08lx\n", static_cast<unsigned long>(hr));
+      if (FAILED(hr)) return hr;
+      hr = api.pfnSetVertexShaderDecl(m_driverDevice,declaration.ShaderHandle);
+      if (FAILED(hr)) return hr;
+      auto state = [&](D3DDDIRENDERSTATETYPE id, UINT value) {
+        D3DDDIARG_RENDERSTATE args = {id,value};
+        const HRESULT status = api.pfnSetRenderState(m_driverDevice,&args);
+        std::printf("D3D9_DRAW_STATE id=%u value=%u hr=%08lx\n", UINT(id),value,static_cast<unsigned long>(status));
+        return status;
+      };
+      for (const auto item : {D3DDDIARG_RENDERSTATE{D3DDDIRS_ZENABLE,0}, {D3DDDIRS_LIGHTING,0},
+          {D3DDDIRS_CULLMODE,D3DCULL_NONE},{D3DDDIRS_ALPHABLENDENABLE,0},{D3DDDIRS_DITHERENABLE,0},
+          {D3DDDIRS_FOGENABLE,0},{D3DDDIRS_COLORWRITEENABLE,15},{D3DDDIRS_SCISSORTESTENABLE,0}}) {
+        hr = state(item.State,item.Value); if (FAILED(hr)) return hr;
+      }
+      const D3DDDIARG_VIEWPORTINFO viewport = {0,0,8,8};
+      hr = api.pfnSetViewport(m_driverDevice,&viewport);
+      if (FAILED(hr)) return hr;
+      const D3DDDIARG_ZRANGE range = {0.2f,0.8f};
+      hr = api.pfnSetZRange(m_driverDevice,&range);
+      if (FAILED(hr)) return hr;
+      struct Vertex { float x,y,z,w; D3DCOLOR color; };
+      static_assert(sizeof(Vertex) == 20);
+      Vertex vertices[] = {{1000,1000,0.5f,1,0xff000000}, {-0.5f,-0.5f,0.5f,1,0xff3c72b9},
+        {7.5f,-0.5f,0.5f,1,0xff3c72b9}, {-0.5f,7.5f,0.5f,1,0xff3c72b9}, {7.5f,7.5f,0.5f,1,0xff3c72b9}};
+      const D3DDDIARG_SETSTREAMSOURCEUM stream = {0,sizeof(Vertex)};
+      hr = api.pfnSetStreamSourceUm(m_driverDevice,&stream,vertices);
+      if (FAILED(hr)) return hr;
+      const D3DDDIARG_DRAWPRIMITIVE primitive = {D3DPT_TRIANGLESTRIP,1,2};
+      auto draw = [&](unsigned stage) {
+        HRESULT status = state(D3DDDIRS_SCENECAPTURE,1);
+        if (FAILED(status)) return status;
+        status = api.pfnDrawPrimitive(m_driverDevice,&primitive,nullptr);
+        std::printf("D3D9_DRAW stage=%u primitives=2 vertex_start=1 hr=%08lx\n", stage,static_cast<unsigned long>(status));
+        const HRESULT ended = state(D3DDDIRS_SCENECAPTURE,0);
+        if (FAILED(status)) return status;
+        if (FAILED(ended)) return ended;
+        return readback(stage);
+      };
+      checked = 0; checksum = 2166136261u;
+      hr = draw(4); if (FAILED(hr)) return hr;
+      fill.Flags = D3DCLEAR_TARGET; fill.FillColor = 0xff173149;
+      hr = api.pfnClear(m_driverDevice,&fill,1,&full);
+      if (FAILED(hr)) return hr;
+      const RECT centerScissor = {2,1,6,7};
+      hr = api.pfnSetScissorRect(m_driverDevice,&centerScissor);
+      if (FAILED(hr)) return hr;
+      hr = state(D3DDDIRS_SCISSORTESTENABLE,1); if (FAILED(hr)) return hr;
+      for (auto& vertex : vertices) vertex.color = 0xffe08020;
+      hr = draw(5); if (FAILED(hr)) return hr;
+      const RECT maskScissor = {1,2,7,6};
+      hr = api.pfnSetScissorRect(m_driverDevice,&maskScissor);
+      if (FAILED(hr)) return hr;
+      hr = state(D3DDDIRS_COLORWRITEENABLE,5); if (FAILED(hr)) return hr;
+      for (auto& vertex : vertices) vertex.color = 0xff901fe3;
+      hr = draw(6); if (FAILED(hr)) return hr;
+      hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,declaration.ShaderHandle);
+      if (FAILED(hr)) return hr;
+      if (api.pfnSetVertexShaderDecl(m_driverDevice,declaration.ShaderHandle) != E_INVALIDARG) return E_FAIL;
+      std::printf("D3D9_DRAW_READBACK PASS pixels=%u checksum=%08x padding=retained vertex_start=1 stages=3\n", checked,checksum);
+    }
     hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
     if (FAILED(hr)) return hr;
     hr = api.pfnDestroyResource(m_driverDevice, system.hResource);
     if (FAILED(hr)) return hr;
     if (api.pfnDestroyResource(m_driverDevice, target.hResource) != E_INVALIDARG) return E_FAIL;
-    std::printf("D3D9_CLEAR_READBACK PASS pixels=%u checksum=%08x padding=retained surfaces=2\n", checked, checksum);
     hr = verify();
     // This workload records real clears and image-to-buffer transfers. Empty
     // submit acceptance is insufficient for its rendering oracle.
@@ -476,19 +555,20 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  const bool rendering = argc == 3 && !wcscmp(argv[2], L"--render");
+  const bool drawing = argc == 3 && !wcscmp(argv[2], L"--draw");
+  const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering() : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

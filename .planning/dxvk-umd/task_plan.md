@@ -7,57 +7,37 @@ the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Next Step
-Typed D3D9 surface/clear/readback source dde00ed is pushed. Native fixture
-77449PASS and three independently compiled semantic controls caught intended
-regressions. Full37464752821 all6PASS and offline37464754567 all4PASS; exact
-three-architecture artifacts and14native execution hashes independently verify.
-Probe-only aaa70c9 corrects missing WDDM2 paging queue/residency ownership.
-Unchanged production dde00ed/Mesa8443/installed58624 now pass target18/19
-with diagnostics1/0:192 actual pixels, checksumffefa655, intact padding,
-three nonempty GPU submits, context1/1, allocations7/7, locks6/6,
-residency6/6 and wrong-thread0. Eight payloads, three scripts, native ARM64,
-Limited USER/session1 and driver/desktop continuity independently verify.
-Failed16/17 receipts remain immutable. Probe offline37472553344 all4PASS.
-Typed declaration/state/UMstream/nonindexed draw worktree is implemented.
-Native fixture89329PASS and three compiled semantic mutations independently
-verify. Sourcec874d55 full37477931517 all6PASS/offline37477937872 all4PASS;
-three architecture artifacts and14 actual ARM64 execution hashes independently
-verify. Target draw20/21 both independently PASS384 pixels, clearffefa655 /
-draw53a03d45, six nonempty KMT submits and balanced ctx1/1 alloc10/10 lock9/9
-residency10/10 wrong0, diagnostics1/0. Eight payloads, three scripts, native
-ARM64 and Limited USER/session1 verify. Fresh signed58624/oem17/PnP0/SYSsha
-and DWM1552/Explorer4184 continuity retain all54 sensitive readiness values.
-Typed programmable VS/PS create/bind/delete and six constant uploads are
-implemented with bounded caller snapshots and worker ownership. Native
-fixture107385PASS and four compiled semantic controls independently verify
-56 source/after-run/archive/nativePE/driver/desktop links. Source8c4e097 is
-pushed and all56 positive fixture inputs match its committed bytes. Offline
-37486999026 all4PASS and API37486881619/package37486881554PASS.
-Full37486995183 all6PASS; independently retained3architecture artifacts and
-14 actual native ARM64 execution hashes/107385 device checks verify. Target22
-passes384 old pixels then fails SM1stage7 firstpixel with clearcolour; VS1
-probe lacks the D3D9-required input DCL. Probe-only correctionb3e83c8 passes
-offline37491825113 all4/API37491604110/package37491604172. Native ARM64 probe
-compile0.7457505s/all51source hashes/nativePE/imports/6CLI controls verify.
-Target23/24 independently PASS576pixels diagnostics1/0:clearffefa655,
-draw53a03d45,shader1384c5a5, nine nonempty submits, ctx1/1alloc12/12locks11/11
-residency12/12remaining0wrong0. All8payloads3scripts/LimitedUSER/nativeARM
-and fresh signed58624/DWM1552/Explorer2488/58sensitive values verify.
-Failed22 remains immutable. Continue typed2D textures/samplers/mips next.
-Transferred shader harness hashes/native Windows parsing verify. Fresh before22
-still has signed58624/oem17/PnP0/SYSsha and unchanged readiness values. Explorer
-is now2488 before this GPU test; DWM1552 remains. Compare each upcoming run with
-this fresh baseline, without claiming historical Explorer continuity from21.
-After22 same driver/desktop and58 selected sensitive values remain unchanged.
-Earlier Explorer ApplicationError1000 fault in installedviogpud3d.dll,
-exceptionc0000005/RVA10db80, remains a separate stability diagnosis; map the
-actual installed binary before inferring its source from a different CI DLL.
-Actual installed9d72bfee hash matches signed58624 Mesa D3D10 Zink UMD source
-eaad15fa, image11833344/timestamp6ac2defb; matching PDB/dump diagnosis remains
-open. It is separate from the smalllegacyshim and uninstalledDXVKcandidate.
-Textures/buffers, indexed/multistream drawing, presentation/reset and ordinary
-DX8-DX11 remain open. Keep the full goal active; no caps, production exports
-or paired binary pin widening until their mandatory contracts are ready.
+Exact source787419696fc828bdc0f1c9d7d5337135fce0c82f implements coherent
+static2D mip chains, all-common-level TexBlt and explicit sampler/state mapping.
+Native ARM64 fixture134906PASS and four compiled semantic controls independently
+verify56source/archive/after-run/Git/nativePE/driver/desktop links. Full
+37498655517 all6SUCCESS, offline37498596397 all4SUCCESS, API37498554766 and
+package37498554868SUCCESS. Retained3architecture artifacts and14actual native
+ARM64 execution hashes independently verify134906device checks perarchitecture.
+Target texture25/26 independently verify1088pixels diagnostics1/0:192clear
+ffefa655,192draw53a03d45,192shader1384c5a5,512texture d3afb9c5. Seventeen
+nonempty submits, ctx1/1alloc13/13lock12/12residency13/13remaining0wrong0.
+All8payloads3scripts/nativeARM64/LimitedUSERsession1 verify; tasks removedexit0.
+Durations4.2857411s/6.5034715s. Fresh signed58624/oem17/binding0002/PnP0/SYSsha,
+DWM1552/Explorer6464 and58 selected readiness fields remain unchanged through
+both runs. Explorer6464 is a fresh baseline; prior2488 has a second recorded
+installed Mesa D3D10 UMD fault c0000005/RVA10db80. MatchingPDB/dump causation
+and long-term desktop stability remain open, separate from uninstalledDXVK.
+
+Continue typed vertex/index buffers, range locks, resource-bound streams and
+indexed drawing next. Then remaining state/resource contracts and runtime
+presentation/reset, with ordinary system-runtime DX8-DX11 rendering acceptance.
+Keep the full goal active; no Finish, production exports/caps or paired pins
+until mandatory contracts and actual ordinary-runtime acceptance are complete.
+
+User-provided EWDK copy C:\Users\USER\EWDK_br_release_svc_im_28000_260714-1640.iso
+is truncated17912889344bytes versus descriptor19785189376bytes; no active
+transfer and no mount/build. Complete-source location is requested asynchronously.
+EWDK-specific production KMD runner is prepared with automatic compiler/kit
+inventory and input hashes. Existing portable nativeMSVC14.44/26100 remains
+the separate provenance for controlled fixtures. WindowsSSH22 uses the existing
+Androidroot socat bridgeguestforward; curve25519-sha256 negotiation recovers
+access without service/VM/image changes. AndroidSSH8022/ADB5555 are reachable.
 
 Matched Mesa8443c71 fixes the measured missing runtime bridge on pinned3e50dd4.
 Full ARM64 CI37453384744 all3PASS; multiarchitecture37453381660 all4PASS.
@@ -603,3 +583,13 @@ then catches the Windows `small` macro collision in the new probe. Rename
 that local variable; no sampler implementation or pixel expectation changes.
 Full37497509867 still builds the original source. Replacement exact-source
 gates and native fixture/semantic controls remain required.
+
+## 2026-10-07 typed texture acceptance and EWDK continuation
+- [complete] Implement coherent texture/mip/sampler and snapshot/lifetime contracts.
+- [complete] Validate native134906check fixture and four compiled semantic controls.
+- [complete] Verify full/offline/API/package CI and all exact architecture artifacts.
+- [complete] Verify target1088pixels diagnostics1/0 and fresh driver/readiness continuity.
+- [complete] Record immutable evidence and current ordinary-runtime limits.
+- [in_progress] Locate complete EWDK, inventory actual tools and build driver on target.
+- [in_progress] Audit typed VB/IB/range locks/streams/indexed drawing against local DDI docs.
+- [pending] Complete remaining state/resource/presentation/reset and ordinary DX8-DX11 acceptance.

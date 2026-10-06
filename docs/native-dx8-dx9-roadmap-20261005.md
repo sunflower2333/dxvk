@@ -45,8 +45,18 @@ clear/draw/shader pixels with diagnostics enabled/disabled, nine nonempty
 submissions and balanced callbacks/residency. Signed58624 and the fresh
 DWM1552/Explorer2488 baseline remain continuous through these runs. An earlier
 Explorer fault in the installed Mesa D3D10 UMD remains separately recorded.
-Textures/buffers, remaining drawing/state semantics, presentation/reset and
-ordinary system-runtime acceptance remain open.
+The [texture checkpoint](native-d3d9-textures-20261007.md) adds coherent
+static2D mip chains, all-common-level TexBlt and explicit sampler/state
+mapping. Exact source7874196 full/offline/API/package CI passes; the native
+134906-check fixture and four compiled semantic controls independently verify.
+Target25/26 verify1088 pixels, including512 texture samples with checksum
+d3afb9c5, seventeen nonempty submissions and balanced callbacks/residency,
+diagnostics1/0. Fresh signed58624/DWM1552/Explorer6464 continuity and58
+selected readiness values remain unchanged through both runs. Earlier
+Explorer2488 also faults in the installed Mesa D3D10 UMD at the same RVA;
+long-term desktop stability remains open. Vertex/index buffers, remaining
+drawing/state semantics, presentation/reset and ordinary system-runtime
+acceptance remain open.
 Production OpenAdapter and rendering caps remain closed; the historical table
 is not an inventory of the new static core or device bridge.
 

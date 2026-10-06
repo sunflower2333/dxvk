@@ -1085,3 +1085,38 @@ ARM64 and x86 after production device/controlled fixture compilation succeeds.
 Rename the new probe local to `smallDestination`; preserve the `small` receipt
 string and all 1088 pixel expectations. Complete replacement architecture,
 native controlled/semantic and actual target GPU gates before acceptance.
+
+### Verified texture checkpoint and target EWDK preparation
+
+- Source7874196 full37498655517 all6/offline37498596397 all4/API37498554766/
+  package37498554868SUCCESS. All retained3architecture artifacts and14actual
+  ARM64 execution hashes independently verify134906device checks perarch,
+  42429adapter/49backend/45reject checks and closed production admission.
+- Native ARM64 positive worktree02PASS134906, compile5.8650081s/run0.0783895s;
+  four compiled controls reject upload-reread6909/1303, first-mip-only6907/1302,
+  no-identity21136/1376 and no-unbind4216/209. All56 source/archive/after-run/
+  mutation/Git/nativePE/driver/desktop links independently verify.
+- Target texture25/26 independently PASS1088pixels diagnostics1/0:clear192
+  ffefa655/draw19253a03d45/shader1921384c5a5/texture512d3afb9c5;17nonempty
+  KMTsubmits,ctx1/1alloc13/13lock12/12residency13/13remaining0wrong0. Durations
+  4.2857411s/6.5034715s. All8payloads3scripts/nativeARM64/LimitedUSERsession1
+  verify; owned tasks removedexit0. Archives0d6c57ad8bc2cb2f3adae0f3a9e883da5bc8b57bdda5c6d9b27f792e36f7db69
+  and0074886a0025fd89434b5668f0e14e547bc02c215b45f49418680ed3b9e9b3e3.
+  Fresh exactsigned58624/oem17/binding0002/PnP0/SYSsha/DWM1552/Explorer6464
+  and58selected failure/reset/epoch/timeout/admission fields unchanged.
+- Explorer6464 predates these runs; prior2488 also faulted in installedMesa
+  D3D10UMD c0000005/RVA10db80/timestamp6ac2defb. Preserve separate stability
+  diagnosis; do not claim historical desktop continuity or artifact-free UI.
+- WindowsSSH22 recovers with curve25519-sha256/publickey; existing root socat
+  forwards to guestLLA22. Packet capture/sshd accepted-key records confirmpath.
+  No service restart/VM/image/memory/clock/install/registry changes performed.
+  AndroidSSH8022 andADB5555 remainreachable. Initial Android file discovery
+  needed rootADB because the Termux app UID lacks storage access; root search
+  finds no full EWDK in scopedDownload/1DMP/data-local-tmp locations.
+- EWDK guestISO17912889344bytes stable, descriptor19785189376bytes; transfer
+  stopped and no scp/sftp/clientssh processes. Complete-source path requested
+  asynchronously. Read-only completed-image mount helper and automatically
+  inventoried EWDK production KMD runner are prepared, not yet executed.
+  Native controlled checks use the separate portableMSVC14.44/26100toolchain.
+- Continue typedvertex/index buffers and indexed/resource-stream drawing;
+  ordinary DX8-DX11 admission/presentation/reset remainopen. Fullgoalactive.

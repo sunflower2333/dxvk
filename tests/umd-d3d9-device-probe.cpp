@@ -1232,11 +1232,14 @@ public:
       }
       if (clipPlanes) {
         if (!api.pfnSetClipPlane || !api.pfnSetTransform) return E_FAIL;
-        struct ClipVertex { float x,y,z; D3DCOLOR color; };
-        static_assert(sizeof(ClipVertex) == 16);
+        // Diagnostic: match the previously passing fixed-function layout.
+        // Lighting stays disabled and the homogeneous positions are unchanged.
+        struct ClipVertex { float x,y,z,nx,ny,nz; D3DCOLOR color; };
+        static_assert(sizeof(ClipVertex) == 28);
         const D3DDDIVERTEXELEMENT clipElements[] = {{0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0},
-          {0,12,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
-        D3DDDIARG_CREATEVERTEXSHADERDECL clipDeclaration = {2,nullptr};
+          {0,12,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_NORMAL,0},
+          {0,24,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+        D3DDDIARG_CREATEVERTEXSHADERDECL clipDeclaration = {3,nullptr};
         hr = api.pfnCreateVertexShaderDecl(m_driverDevice,&clipDeclaration,clipElements); if (FAILED(hr)) return hr;
         hr = api.pfnSetVertexShaderDecl(m_driverDevice,clipDeclaration.ShaderHandle); if (FAILED(hr)) return hr;
         const D3DDDIARG_SETSTREAMSOURCEUM clipStream = {0,sizeof(ClipVertex)};
@@ -1264,13 +1267,6 @@ public:
         for (UINT index = 0; index < 6; ++index) {
           hr = plane(0,index,0,0,0,0); if (FAILED(hr)) return hr;
         }
-        // Diagnostic: force a fresh disabled-plane constant-buffer upload.
-        // The draw, geometry and all pixel expectations remain identical.
-        for (const UINT mask : {1u,0u}) {
-          hr = state(D3DDDIRS_CLIPPLANEENABLE,mask);
-          std::printf("D3D9_CLIP_REFRESH mask=%u hr=%08lx\n",mask,static_cast<unsigned long>(hr));
-          if (FAILED(hr)) return hr;
-        }
         const UINT clipColors[] = {0xff739a4c,0xffc85d8a,0xff49a1d2,0xff9a73c4,0xff4da57e,
           0xffce9341,0xfff0a236,0xff3dae96,0xffba567d,0xff64bdc9};
         checked = 0; checksum = 2166136261u;
@@ -1293,9 +1289,9 @@ public:
           hr = state(D3DDDIRS_CLIPPLANEENABLE,mask);
           std::printf("D3D9_CLIP_ENABLE stage=%u mask=%u hr=%08lx\n",stage,mask,static_cast<unsigned long>(hr));
           if (FAILED(hr)) return hr;
-          ClipVertex clipVertices[5] = {{1000,1000,.5f,0xff000000},
-            {-2,2,.5f,clipColors[stage-67]},{2,2,.5f,clipColors[stage-67]},
-            {-2,-2,.5f,clipColors[stage-67]},{2,-2,.5f,clipColors[stage-67]}};
+          ClipVertex clipVertices[5] = {{1000,1000,.5f,0,0,1,0xff000000},
+            {-2,2,.5f,0,0,1,clipColors[stage-67]},{2,2,.5f,0,0,1,clipColors[stage-67]},
+            {-2,-2,.5f,0,0,1,clipColors[stage-67]},{2,-2,.5f,0,0,1,clipColors[stage-67]}};
           hr = api.pfnSetStreamSourceUm(m_driverDevice,&clipStream,clipVertices); if (FAILED(hr)) return hr;
           fill.FillColor = 0xff091725;
           hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;

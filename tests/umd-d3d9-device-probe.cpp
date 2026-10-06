@@ -192,6 +192,15 @@ public:
       HRESULT status = api.pfnLock(m_driverDevice, &mapping);
       if (FAILED(status)) return status;
       if (mapping.pSurfData != backing.data() + 16 || mapping.Pitch != pitch) status = E_FAIL;
+      // Retain every clip-stage pixel even if its first comparison fails.
+      // The independent host oracle can then inspect the complete pattern.
+      if (stage >= 67 && stage <= 76 && SUCCEEDED(status)) {
+        for (UINT y = 0; y < 8; ++y) for (UINT x = 0; x < 8; ++x) {
+          UINT actual;
+          std::memcpy(&actual,backing.data() + 16 + size_t(y) * pitch + x * 4,4);
+          std::printf("D3D9_CLIP_PIXEL stage=%u x=%u y=%u value=%08x\n",stage,x,y,actual);
+        }
+      }
       for (UINT y = 0; y < 8 && SUCCEEDED(status); ++y) {
         for (UINT x = 0; x < 8; ++x) {
           UINT actual;

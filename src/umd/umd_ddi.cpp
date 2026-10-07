@@ -818,7 +818,7 @@ HRESULT openResourceData(Device* device, const D3D10DDIARG_OPENRESOURCE* args,
 }
 HRESULT createResourceData(Device* device,
     const D3D10DDIARG_CREATERESOURCE* args, Resource* resource,
-    D3D10DDI_HRTRESOURCE runtime) {
+    D3D10DDI_HRTRESOURCE runtime, bool cubeArrays10_1 = false) {
   resource->owner = device;
   UINT miscFlags = 0;
   bool shared = false;
@@ -838,7 +838,9 @@ HRESULT createResourceData(Device* device,
           || !dxvk::umd::texture3DInitialData(*args))) return E_INVALIDARG;
   D3D11_TEXTURE2D_DESC cube = {};
   if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURECUBE
-      && !dxvk::umd::textureCubeDesc(*args, miscFlags, cube)) return E_INVALIDARG;
+      && !(cubeArrays10_1
+        ? dxvk::umd::textureCubeArrayDesc10_1(*args, miscFlags, cube)
+        : dxvk::umd::textureCubeDesc(*args, miscFlags, cube))) return E_INVALIDARG;
   const bool presentable = (args->BindFlags & D3D10_DDI_BIND_PRESENT) != 0;
   if (presentable && (!device->memory.available() || !runtime.handle
       || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
@@ -982,6 +984,17 @@ void APIENTRY createResource(D3D10DDI_HDEVICE h,
   auto device = get(h);
   publishNewResource(device, out, [&](Resource* staged) {
     return createResourceData(device, args, staged, runtime);
+  });
+}
+// The official 10.1 table retains PFND3D10DDI_CREATERESOURCE's exact signature.
+// Selecting this entry preserves the declared interface rather than deriving
+// cube-array support from the embedded renderer's broader feature level.
+void APIENTRY createResource10_1(D3D10DDI_HDEVICE h,
+    const D3D10DDIARG_CREATERESOURCE* args, D3D10DDI_HRESOURCE out,
+    D3D10DDI_HRTRESOURCE runtime) {
+  auto device = get(h);
+  publishNewResource(device, out, [&](Resource* staged) {
+    return createResourceData(device, args, staged, runtime, true);
   });
 }
 void APIENTRY openResource(D3D10DDI_HDEVICE h, const D3D10DDIARG_OPENRESOURCE* args,
@@ -2779,7 +2792,7 @@ void populateDeviceFunctions(Table* table) {
     table->pfnResourceConvertRegion = deviceEntry<convertResourceRegion, true>;
     if constexpr (std::is_same_v<Table, D3D10_1DDI_DEVICEFUNCS>) {
       table->pfnCalcPrivateResourceSize = deviceEntry<resourceSize>;
-      table->pfnCreateResource = deviceEntry<createResource>;
+      table->pfnCreateResource = deviceEntry<createResource10_1>;
       table->pfnCalcPrivateShaderResourceViewSize = deviceEntry<shaderViewSize10_1>;
       table->pfnCreateShaderResourceView = deviceEntry<createShaderView10_1>;
       table->pfnCalcPrivateDepthStencilViewSize = deviceEntry<depthViewSize>;

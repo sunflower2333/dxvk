@@ -1,0 +1,104 @@
+--- a/src/umd/umd_d3d9_adapter.cpp
++++ b/src/umd/umd_d3d9_adapter.cpp
+@@ -1,4 +1,5 @@
+ #include "umd_d3d9_adapter.h"
++#include "umd_d3d8_compat.h"
+ #include "umd_runtime_query.h"
+ #include "../d3d9/d3d9_caps.h"
+ #include <dxgi.h>
+@@ -168,6 +169,7 @@
+     case D3DDDICAPS_GETFORMATCOUNT:
+     case D3DDDICAPS_GETD3DQUERYCOUNT: size = sizeof(UINT); break;
+     case D3DDDICAPS_GETD3D9CAPS: size = sizeof(D3DCAPS9); break;
++    case D3DDDICAPS_GETD3D8CAPS: size = dxvk::umd::d3d8CapsBytes; break;
+     case D3DDDICAPS_GETFORMATDATA: size = sizeof(formats); break;
+     case D3DDDICAPS_GETD3DQUERYDATA: size = sizeof(queries); break;
+     case D3DDDICAPS_GETGAMMARAMPCAPS: size = sizeof(DDIGAMMACAPS); break;
+@@ -183,6 +185,12 @@
+   hr = state(adapter);
+   if (FAILED(hr)) return hr;
+   switch (input.Type) {
++    case D3DDDICAPS_GETD3D8CAPS: {
++      const auto caps = nativeCaps();
++      if (dxvk::umd::projectD3D8Caps9(caps, input.pData, size)
++          != dxvk::umd::D3D8CapsResult::Success) return E_INVALIDARG;
++      break;
++    }
+     case D3DDDICAPS_GETFORMATCOUNT: {
+       const UINT count = _countof(formats); std::memcpy(input.pData, &count, size); break;
+     }
+--- a/tests/umd-d3d9-adapter.cpp
++++ b/tests/umd-d3d9-adapter.cpp
+@@ -1,4 +1,5 @@
+ #include "../src/umd/umd_d3d9_adapter.h"
++#include "../src/umd/umd_d3d8_compat.h"
+ #include <dxgi.h>
+ #include <array>
+ #include <atomic>
+@@ -264,6 +265,33 @@
+     CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG);
+     CHECK(snapshot(output) == original && snapshot(get) == requestBytes && first.calls == calls);
+   }
++  // DX8 typed caps contract only. Interface8 and ordinary production admission
++  // remain rejected until the x86 genuine-runtime resource/device gate passes.
++  Guarded<dxvk::umd::D3D8CapsPrefix> caps8;
++  get = {D3DDDICAPS_GETD3D8CAPS, nullptr, caps8.value.data(), sizeof(caps8.value)};
++  const auto caps8Request = snapshot(get);
++  CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK);
++  CHECK(snapshot(get) == caps8Request);
++  CHECK(caps8.value[0] == D3DDEVTYPE_HAL && caps8.value[49] == D3DVS_VERSION(1, 1));
++  CHECK(caps8.value[50] == 96 && caps8.value[51] == D3DPS_VERSION(1, 4));
++  CHECK(caps8.value[3] & D3DCAPS2_DYNAMICTEXTURES);
++  CHECK(!caps8.value[17] && !caps8.value[18] && !caps8.value[24]);
++  CHECK(!(caps8.value[4] & (D3DCAPS3_COPY_TO_VIDMEM | D3DCAPS3_COPY_TO_SYSTEMMEM)));
++  caps8.intact();
++  for (UINT bytes = 0; bytes <= sizeof(caps8.value) + 1; ++bytes) {
++    if (bytes == sizeof(caps8.value)) continue;
++    const auto outputBefore = snapshot(caps8); const auto calls = first.calls;
++    get = {D3DDDICAPS_GETD3D8CAPS, nullptr, caps8.value.data(), bytes};
++    const auto requestBefore = snapshot(get);
++    CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG);
++    CHECK(snapshot(caps8) == outputBefore && snapshot(get) == requestBefore && first.calls == calls);
++  }
++  get = {D3DDDICAPS_GETD3D8CAPS, nullptr, caps8.value.data(), sizeof(caps8.value)};
++  first.action = Action::ReplaceCapsOutput; changingCaps = &get;
++  const auto replacedBefore = replacedOutput;
++  CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK);
++  CHECK(replacedOutput == replacedBefore && caps8.value[49] == D3DVS_VERSION(1, 1));
++  caps8.intact(); changingCaps = nullptr;
+   Guarded<UINT> count;
+   get = {D3DDDICAPS_GETFORMATCOUNT, nullptr, &count.value, sizeof(UINT)};
+   const auto countBefore = snapshot(count); const auto callsBefore = first.calls;
+@@ -273,7 +301,7 @@
+   CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG);
+   CHECK(first.functions.pfnGetCaps(first.driver, nullptr) == E_INVALIDARG);
+   CHECK(snapshot(count) == countBefore && first.calls == callsBefore);
+-  for (const auto type : {D3DDDICAPS_GETD3D8CAPS, D3DDDICAPS_GETD3D7CAPS,
++  for (const auto type : {D3DDDICAPS_GETD3D7CAPS,
+       D3DDDICAPS_DDRAW, D3DDDICAPS_GETMULTISAMPLEQUALITYLEVELS, D3DDDICAPS_TYPE(999)}) {
+     get = {type, nullptr, &count.value, sizeof(UINT)};
+     CHECK(first.functions.pfnGetCaps(first.driver, &get) == D3DERR_NOTAVAILABLE);
+--- a/src/umd/meson.build
++++ b/src/umd/meson.build
+@@ -26,7 +26,7 @@
+   output        : 'umd_build_config.h',
+ )
+
+-umd_development = shared_library(umd_library_name, 'umd_ddi.cpp', 'umd_adapter.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d9_device.cpp', 'umd_contract.cpp', 'umd_shader.cpp', 'umd_runtime_query.cpp', 'umd_log.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_vulkan_loader.cpp',
++umd_development = shared_library(umd_library_name, 'umd_ddi.cpp', 'umd_adapter.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d8_compat.cpp', 'umd_d3d9_device.cpp', 'umd_contract.cpp', 'umd_shader.cpp', 'umd_runtime_query.cpp', 'umd_log.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_vulkan_loader.cpp',
+   link_with : [umd_backend],
+   dependencies : [dxvk_dep, dxbc_spirv_dep, lib_gdi32, lib_dxgi],
+   include_directories : dxvk_include_path,
+@@ -62,10 +62,10 @@
+ )
+
+ umd_d3d9_adapter_test = executable('dxvk-umd-d3d9-adapter-test',
+-  '../../tests/umd-d3d9-adapter.cpp', 'umd_d3d9_adapter.cpp', 'umd_runtime_query.cpp',
++  '../../tests/umd-d3d9-adapter.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d8_compat.cpp', 'umd_runtime_query.cpp',
+ )
+
+ umd_d3d9_device_test = executable('dxvk-umd-d3d9-device-test',
+-  '../../tests/umd-d3d9-device.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d9_device.cpp',
++  '../../tests/umd-d3d9-device.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d8_compat.cpp', 'umd_d3d9_device.cpp',
+   'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp', 'umd_allocation.cpp',
+ )

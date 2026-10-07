@@ -1,0 +1,10 @@
+{
+  "base": "c0ea2966f432f52752462bd5657b61a6b70677ec",
+  "scope": "proposed caps12 contract only; reserved files not modified; Interface8 admission not widened",
+  "inputs": {
+    "src/umd/umd_d3d9_adapter.cpp": "4a002d8b8e17bebfd2c1dd39ba8dd33a612a6dcb142720f76b8299cb9cc553f3",
+    "tests/umd-d3d9-adapter.cpp": "da5900202eec3138618bcab7b50c0fce4574aa7f7565861058969f8f6c3350b1",
+    "src/umd/meson.build": "6ad3d0feb5a44665df77a2053951437863935abbb55a77acf6d16b0c2e47ea46"
+  },
+  "patch_sha256": "f303518f239ead1bda36d034603fe4398fd06db4082cb6eb83b9d5f37fc4cfe6"
+}

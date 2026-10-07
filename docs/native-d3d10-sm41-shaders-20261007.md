@@ -108,7 +108,7 @@ parser units; its Windows static assertions use the original10 token header.
 
 Expected native markers (actual check counts must come from execution):
 
-- `^SM4.0/4.1 containers verified checks=688 typed_models=2 new_opcodes=4 hardware_admission=0$`
+- `^SM4.0/4.1 containers verified checks=715 typed_models=2 new_opcodes=4 hardware_admission=0$`
 - `^native D3D10/10.1 shaders verified checks=[0-9]+ callbacks=3 draws=18 pixels=4608 hardware_admission=0$`
 
 The native packet uses D3DCompile through the original system
@@ -184,5 +184,55 @@ count,18draw/4608pixel comparisons and three negative callbacks are unchanged.
 The Microsoft [system-value input declaration](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dcl-input-sv)
 describes constant interpolation; acceptance of this particular SGV encoding
 is based on the retained original native FXC bytes, not an inference from
-the header's ignored0 comment. Native acceptance of the follow-on remains
-pending a new explicit root handoff.
+the header's ignored0 comment. Its subsequent native result is retained below.
+
+## Retained SampleIndex pass and interpolation fixture correction
+
+Frozen a00 compiled18 ARM64 bigobj COFFs and two PE executables with
+first-party warnings0 and unchanged pinned parser warnings65. Native
+container688 passed. Nine completed draws matched2304 original-DXBC reference
+pixels, including the four-sample ps_index scene and its independent red
+average127–128. Three logical10.0 negative callbacks remained expected. The
+next ps_interpolation4.1/noGS Draw returned80070057; all three shader creates
+and typed target/state/bind calls had returned without errors. Allseven owned
+children exited/drained, collection/transfer completed, all12 retention checks
+passed and target ownership was released. Original227-file archive
+SHAd1b4e7f161619d89d5a28b1fb11abafebaa7cbd5047c937a29b78b471624bd93
+retains33 original DXBC/token pairs and HLSL. Complete18/4608 acceptance remains
+failed for that exact source.
+
+The original FXC31 VS output signature has SV_Position at register0,
+TEXCOORD0 at register1 and TEXCOORD1 at register2. FXC33 ps_interpolation
+has only TEXCOORD0 at input register0, and sample-mode6 declaration03003062
+reads v0.x. The HLSL fixture omitted position before TEXCOORD0. The production
+linker rejects that system-value/register mismatch correctly. Microsoft's
+[D3D10 linkage FAQ](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/direct3d10-frequently-asked-questions#shader-linkage)
+documents this position-first/omitted-position linkage error. The
+[signature contract](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-signatures)
+requires corresponding locations and argument ordering; the
+[DDI signature](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3d10umddi/ns-d3d10umddi-d3d10ddiarg_stage_io_signatures)
+supplies register unions and system values, without arbitrary HLSL semantic
+names. The controlled D3D11 reference's semantic matching did not establish
+that the original pair was valid for D3D10.
+
+The fixture correction adds an unused float4 SV_Position argument before
+sample float2 TEXCOORD0 in ps_interpolation. Its color expression, sample
+modifier and all pixel/readback/reference bodies stay unchanged. New native
+controls require position0/mask15 and TEXCOORD0 register1/mask3 in both
+producer signatures and the PS signature, plus the actual sample-mode6,
+v1.x declaration before either draw. The57 programs,18 draws,4608 pixel
+comparisons, independent MSAA oracle and three negative callback gates stay
+unchanged. A fresh packet must retain its own new HLSL/FXC bytes; none of the
+original a00 files are edited or reused as corrected outputs.
+
+The portable test extends to715 controls. It replays the exact46-word FXC33
+payload, accepts and preserves its sample declaration, and rejects its
+original incompatible producer linkage. A separately identified synthetic
+control changes both input-register words to1 with a compatible signature;
+its container/resolver/linkage succeed, unused position drops from consumed
+inputs, and wrong register/system/mask/signature/4.0 cases fail. These
+synthetic words are never substituted for original native FXC output.
+Production compiler/linker sources, interface negotiation, live callback
+ownership and admission requirements are unchanged by this fixture correction.
+Native compilation and the complete corrected WARP oracle remain pending a
+new explicit root handoff.

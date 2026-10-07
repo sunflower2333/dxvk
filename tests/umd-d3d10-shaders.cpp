@@ -97,7 +97,7 @@ float4 ps_info() : SV_Target {
   return float4(float(samples) / 4.0, 0.25, 0, 1);
 }
 float4 ps_index(uint sampleIndex : SV_SampleIndex) : SV_Target { return float4(float(sampleIndex) / 3.0, 0.25, 0, 1); }
-float4 ps_interpolation(sample float2 uv : TEXCOORD0) : SV_Target {
+float4 ps_interpolation(float4 position : SV_Position, sample float2 uv : TEXCOORD0) : SV_Target {
   return float4(frac(uv.x * 16.0) < 0.5 ? 1.0 : 0.0, 0.25, 0, 1);
 }
 )";
@@ -281,6 +281,34 @@ template<typename Table> void scene(Fixture<Table>& f, const char* pixelEntry, b
   Compiled vs(ShaderStage::Vertex, vertexQueries ? "vs_queries" : "vs_main", model41 ? "vs_4_1" : "vs_4_0");
   Compiled gs(ShaderStage::Geometry, geometryQueries ? "gs_queries" : "gs_main", model41 ? "gs_4_1" : "gs_4_0");
   Compiled ps(ShaderStage::Pixel, pixelEntry, model41 ? "ps_4_1" : "ps_4_0");
+  if (!std::strcmp(pixelEntry, "ps_interpolation")) {
+    // D3D10 links shared register locations. Keep unused position first so
+    // the sample-interpolated TEXCOORD0 stays at the producer's register1.
+    CHECK(ps.inputs.size() == 2 && ps.inputs[0].SystemValue == D3D10_SB_NAME_POSITION
+      && ps.inputs[0].Register == 0 && ps.inputs[0].Mask == 15);
+    CHECK(ps.inputs[1].SystemValue == D3D10_SB_NAME_UNDEFINED
+      && ps.inputs[1].Register == 1 && ps.inputs[1].Mask == 3);
+    for (const Compiled* producer : {&vs, &gs}) {
+      CHECK(producer->outputs.size() == 3
+        && producer->outputs[0].SystemValue == D3D10_SB_NAME_POSITION
+        && producer->outputs[0].Register == 0 && producer->outputs[0].Mask == 15);
+      CHECK(producer->outputs[1].SystemValue == D3D10_SB_NAME_UNDEFINED
+        && producer->outputs[1].Register == 1 && producer->outputs[1].Mask == 3);
+    }
+    unsigned declarations = 0;
+    for (size_t offset = 2; offset < ps.code.size();) {
+      const uint32_t token = ps.code[offset], count = (token >> 24) & 0x7f;
+      CHECK(count && count <= ps.code.size() - offset);
+      if ((token & 0x7ff) == 98) {
+        CHECK(count == 3 && ((token >> 11) & 15) == 6
+          && ps.code[offset + 1] == 0x00101012 && ps.code[offset + 2] == 1);
+        ++declarations;
+      }
+      offset += count;
+    }
+    CHECK(declarations == 1);
+    std::printf("D3D10_SHADER_INTERPOLATION producer_register=1 consumer_register=1 mask=1 sample_mode=6 unused_position=1\n");
+  }
   NativeShader<Table> vertex(f, vs), pixel(f, ps), geom(f, gs);
   RenderInputs inputs(f.backend.Get());
   NativeTarget<Table> target(f, samples);

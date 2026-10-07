@@ -208,5 +208,44 @@ int main() {
     CHECK(build(ShaderStage::Pixel, code, &varying, 1));
     code[0] = 0x40; CHECK(build(ShaderStage::Pixel, code, &varying, 1) == (interpolation < 6));
   }
+  // Exact retained native FXC program33: the original fixture omitted the
+  // producer's position before TEXCOORD0, so the consumer reads register0
+  // while the producer writes TEXCOORD0 at register1. Accept the legal sample
+  // declaration, but preserve the D3D10 linker's rejection of that mismatch.
+  const std::vector<uint32_t> interpolationOriginal{0x41, 0x2e, 0x0100086a,
+    0x03003062, 0x00101012, 0, 0x03000065, 0x001020f2, 0, 0x02000068, 1,
+    0x07000038, 0x00100012, 0, 0x0010100a, 0, 0x00004001, 0x41800000,
+    0x0500001a, 0x00100012, 0, 0x0010000a, 0, 0x07000031, 0x00100012,
+    0, 0x0010000a, 0, 0x00004001, 0x3f000000, 0x07000001, 0x00102012,
+    0, 0x0010000a, 0, 0x00004001, 0x3f800000, 0x08000036, 0x001020e2,
+    0, 0x00004002, 0, 0x3e800000, 0, 0x3f800000, 0x0100003e};
+  const ShaderSignatureEntry originalVarying{0, 0, 3};
+  const ShaderSignatureEntry producer[]{position, {0, 1, 3}};
+  CHECK(interpolationOriginal.size() == 46 && interpolationOriginal[1] == interpolationOriginal.size());
+  auto interpolationCode = interpolationOriginal;
+  CHECK(build(ShaderStage::Pixel, interpolationCode, &originalVarying, 1, &bytes));
+  CHECK(resolvePixelInputs(interpolationCode.data(), interpolationCode.size(), &originalVarying, 1, resolved)
+    && resolved.size() == 1 && resolved[0].mask == 1 && resolved[0].scalar == ShaderScalar::Float32);
+  CHECK(!linkVertexOutputs(producer, 2, resolved.data(), resolved.size(), linked) && linked.empty());
+  // Synthetic compatible-register control; these two word changes are never
+  // applied to the retained FXC binary. The new HLSL must generate its own
+  // compatible register declarations during a later native execution.
+  interpolationCode[5] = interpolationCode[16] = 1;
+  const ShaderSignatureEntry compatible[]{position, {0, 1, 3}};
+  CHECK(build(ShaderStage::Pixel, interpolationCode, compatible, 2));
+  CHECK(resolvePixelInputs(interpolationCode.data(), interpolationCode.size(), compatible, 2, resolved)
+    && resolved.size() == 1 && resolved[0].registerIndex == 1 && resolved[0].mask == 1
+    && resolved[0].scalar == ShaderScalar::Float32);
+  CHECK(linkVertexOutputs(producer, 2, resolved.data(), resolved.size(), linked)
+    && linked.size() == 2 && linked[1].scalar == ShaderScalar::Float32);
+  for (const ShaderSignatureEntry invalid : {ShaderSignatureEntry{0, 0, 3},
+      ShaderSignatureEntry{1, 1, 3}, ShaderSignatureEntry{0, 1, 2}, ShaderSignatureEntry{0, 32, 3}})
+    CHECK(!build(ShaderStage::Pixel, interpolationCode, &invalid, 1));
+  for (const ShaderSignatureEntry invalid : {ShaderSignatureEntry{0, 2, 3},
+      ShaderSignatureEntry{1, 1, 3}, ShaderSignatureEntry{0, 1, 2}, ShaderSignatureEntry{0, 32, 3}}) {
+    const ShaderSignatureEntry wrongProducer[]{position, invalid};
+    CHECK(!linkVertexOutputs(wrongProducer, 2, resolved.data(), resolved.size(), linked) && linked.empty());
+  }
+  interpolationCode[0] = 0x40; CHECK(!build(ShaderStage::Pixel, interpolationCode, compatible, 2));
   std::printf("SM4.0/4.1 containers verified checks=%u typed_models=2 new_opcodes=4 hardware_admission=0\n", checks);
 }

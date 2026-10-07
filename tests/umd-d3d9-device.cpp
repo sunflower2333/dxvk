@@ -1980,7 +1980,7 @@ static void textureContracts() {
 
 static void dynamicTextureContracts() {
   for (const D3DFORMAT format : {D3DFMT_A8R8G8B8, D3DFMT_X8R8G8B8}) {
-    for (const D3DDDIPOOL pool : {D3DDDIPOOL_VIDEOMEMORY, D3DDDIPOOL_LOCALVIDMEM,
+    for (const D3DDDI_POOL pool : {D3DDDIPOOL_VIDEOMEMORY, D3DDDIPOOL_LOCALVIDMEM,
         D3DDDIPOOL_NONLOCALVIDMEM, D3DDDIPOOL_SYSTEMMEM}) {
       Fixture fixture; initialize(fixture); createDevice();
       char cookie;

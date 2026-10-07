@@ -2292,3 +2292,15 @@ No native fixture, GPU or ordinary acceptance is claimed before actual results.
 Separate diagnostic777 strict native build/guards/SSH baseline passes original
 49member root review01; its exact478 candidate/SYS/desktop retain. Session1
 single-bit blocked contract trace is next while production CPU verification runs.
+
+## 2026-10-07 first dynamic verification failures retained
+Actual777 single-bit DeviceContract trace still rejects HAL with8876086a;
+preflight stops before both API attempts (actual0/core0), and selector/task/
+registration/SYS/desktop restoration verifies. Dynamic textures are required
+on the inspected branch but are insufficient for admission. Root's prepared
+successful-contract reviewer rejects the0attempt trace as intended; retain it
+as a failed preflight and independently review the complete failure evidence.
+Native531 adapter fixture passes42309. Full device fixture compile rejects
+the new test's misspelled D3DDDIPOOL type; official SDK defines D3DDDI_POOL.
+Fix that test type in a fresh committed packet. Original failed build/source/
+logs remain separate; no device execution or productionCI was attempted.

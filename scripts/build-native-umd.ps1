@@ -36,7 +36,8 @@ New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 # edit must not give an already-built DLL a new source/configuration identity.
 $configurationInputs = @('.github/workflows/build-native-umd.yml', 'scripts/build-native-umd.ps1',
     'meson.build', 'meson_options.txt', 'src/vulkan/meson.build', 'src/vulkan/vulkan_loader.cpp',
-    'src/vulkan/vulkan_loader.h', 'src/umd/meson.build', 'src/umd/umd_vulkan_loader.cpp', 'src/umd/viogpudxvk.def')
+    'src/vulkan/vulkan_loader.h', 'src/umd/meson.build', 'src/umd/umd_vulkan_loader.cpp', 'src/umd/viogpudxvk.def',
+    'scripts/owned-raw-process-f4bf37f-02.cs')
 $configurationBefore = @($configurationInputs | ForEach-Object {
     $name = $_
     $expectedBlob = (& git rev-parse ($buildSourceCommit + ':' + $name) | Out-String).Trim()
@@ -89,18 +90,47 @@ if ($LASTEXITCODE) { throw 'Native D3D10.1 shader compiler and rendering fixture
 ninja -C build-umd "src/umd/$LibraryName.dll.p/umd_ddi.cpp.obj" src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
 if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
+# Reuse the exact runner already exercised by native target CPU builds. Keep
+# the original bytes with failure diagnostics before compiling the C# type.
+$runnerSource = Join-Path $PSScriptRoot 'owned-raw-process-f4bf37f-02.cs'
+$runnerHash = 'd8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad'
+$retainedRunnerSource = Join-Path $OutputDirectory 'owned-raw-process-original.cs.txt'
+Copy-Item -LiteralPath $runnerSource -Destination $retainedRunnerSource
+if ((Get-FileHash -LiteralPath $retainedRunnerSource -Algorithm SHA256).Hash.ToLowerInvariant() -cne $runnerHash) {
+    throw 'Fixture runner differs from the native-tested original source'
+}
+$runnerReceipt = [ordered]@{source='scripts/owned-raw-process-f4bf37f-02.cs';sha256=$runnerHash;
+    retained_member='owned-raw-process-original.cs.txt';type_compiled=$false;
+    deadline_ms=30000;kill_wait_ms=5000;combined_pipe_drain_ms=20000;
+    powershell_version=$PSVersionTable.PSVersion.ToString();clr_version=[Environment]::Version.ToString()}
+$runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory 'native-fixture-runner-source.json') -Encoding UTF8
+Add-Type -TypeDefinition ([IO.File]::ReadAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($retainedRunnerSource)))
+$runnerReceipt.type_compiled = $true
+$runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory 'native-fixture-runner-source.json') -Encoding UTF8
 function Invoke-BoundedFixture([string]$Executable, [string]$Name) {
     $out = Join-Path $OutputDirectory "$Name.txt"
     $err = Join-Path $OutputDirectory "$Name.stderr.txt"
-    $process = Start-Process $Executable -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
-    $null = $process.Handle
-    if (!$process.WaitForExit(30000)) {
-        $process.Kill(); $process.WaitForExit()
-        throw "$Name exceeded its 30-second deadline"
+    $executablePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Executable)
+    $stdoutPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($out)
+    $stderrPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($err)
+    $process = [DxvkRawProcessF4_02]::Run($executablePath, '', $PWD.ProviderPath, $stdoutPath, $stderrPath, 30000)
+    [ordered]@{name=$Name;executable=$executablePath;arguments='';working_directory=$PWD.ProviderPath;
+        runner_sha256=$runnerHash;stdout_member="$Name.txt";stderr_member="$Name.stderr.txt";
+        deadline_ms=30000;expected_exit=0;pid=$process.Pid;start_utc=$process.StartUtc;
+        retained_process_handle=$process.ProcessHandle;exited=$process.Exited;
+        exit_code_available=$process.ExitCodeAvailable;
+        exit_code=$(if ($process.ExitCodeAvailable) { $process.ExitCode } else { $null });
+        timed_out=$process.TimedOut;child_still_running=$process.ChildStillRunning;
+        pipes_drained=$process.PipesDrained;stdout_bytes=$process.StdoutBytes;stderr_bytes=$process.StderrBytes;
+        seconds=$process.Seconds;capture_failure=$process.Failure
+    } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory "$Name.process.json") -Encoding UTF8
+    if (Test-Path -LiteralPath $out -PathType Leaf) { Get-Content -LiteralPath $out }
+    if ($process.TimedOut) { throw "$Name exceeded its 30-second deadline" }
+    if ($process.Failure -or !$process.Exited -or !$process.ExitCodeAvailable -or
+        !$process.PipesDrained -or $process.ChildStillRunning -or !$process.ProcessHandle) {
+        throw "$Name lost its process exit or output capture: $($process.Failure)"
     }
-    $process.WaitForExit()
-    Get-Content -LiteralPath $out
-    if ($null -eq $process.ExitCode -or $process.ExitCode -ne 0) {
+    if ($process.ExitCode -ne 0) {
         throw "$Name failed or lost its exit status: $(Get-Content -LiteralPath $err -Raw)"
     }
 }
@@ -238,6 +268,7 @@ if ($VulkanLoader -and !$widePrivateName) { throw 'Original DLL does not contain
     library_name="$LibraryName.dll";vulkan_loader=$VulkanLoader;
     loader_policy=$(if ($VulkanLoader) { 'module-local-private-no-fallback' } else { 'public-search' });
     private_name_present_in_original_dll=[bool]$widePrivateName;configuration_files=$configurationFiles;
+    fixture_runner=$runnerReceipt;
     configuration_source_before=$configurationBefore;configuration_source_after=$configurationAfter;
     all_configuration_sources_match_git=(@($configurationBefore | Where-Object { !$_.matches_git }).Count -eq 0);
     dll=[ordered]@{member="$LibraryName.dll";bytes=(Get-Item -LiteralPath $artifactDll).Length;sha256=$dllHash};

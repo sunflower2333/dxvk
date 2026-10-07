@@ -2319,3 +2319,11 @@ adds only legacy0x2000 to exact478 profile (28ef0 ->2aef0). No production caps
 change/device callback/GPU admission. Fixedb21 native fixtures compile warning
 free; device test fails at379107 because SYSTEMMEM binding wrongly expectsS_OK.
 Keep originals; correct fixture to verify rejected binding makes no backend call.
+
+2026-10-07 03:17 UTC: Correct dynamic fixture's SYSTEMMEM binding oracle.
+The actual DDI intentionally rejects sampling a SYSTEMMEM transfer resource.
+Now assert E_INVALIDARG and unchanged backend bind count for SYSTEMMEM, and
+assert exactly one bind plus one destroy-time unbind for video/native pools.
+Do not change production SetTexture semantics. Originalb21 failure379107 and
+zero-warning compile evidence are retained; fresh88-input packet03/native run
+required before production push.

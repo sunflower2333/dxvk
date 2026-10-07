@@ -2066,8 +2066,18 @@ static void dynamicTextureContracts() {
       CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
       unmap.SubResourceIndex = 0;
       CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
-      CHECK(f->table.pfnSetTexture(f->device, 0, texture) == S_OK);
+      const auto bindsBefore = f->textureSets;
+      if (pool == D3DDDIPOOL_SYSTEMMEM) {
+        // SYSTEMMEM textures remain transfer/lock resources even when
+        // dynamic. Sampling them cannot reach the private renderer.
+        CHECK(f->table.pfnSetTexture(f->device, 0, texture) == E_INVALIDARG);
+        CHECK(f->textureSets == bindsBefore);
+      } else {
+        CHECK(f->table.pfnSetTexture(f->device, 0, texture) == S_OK);
+        CHECK(f->textureSets == bindsBefore + 1);
+      }
       CHECK(f->table.pfnDestroyResource(f->device, texture) == S_OK);
+      CHECK(f->textureSets == bindsBefore + (pool == D3DDDIPOOL_SYSTEMMEM ? 0 : 2));
       CHECK(f->textureCreates == f->textureCloses && f->surfaceCreates == f->surfaceCloses);
       // Static SYSTEMMEM still rejects DISCARD without invoking the backend.
       levels[1].Width = 2; args = textureArgs(&cookie, levels, 3, true);

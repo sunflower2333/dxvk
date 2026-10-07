@@ -50,13 +50,14 @@ unexpected restart cause unresolved; no shell restoration or VM restart.
 Local rootb75d6d5 integrates functional DX11 graphics stages/tessellation/SO/
 class instances, query/owned-child/packedIA, DX10 format/MSAA policy and immutable
 DX8 identity/private DXVK9 backend. Integrated portable legacyAPI2800 and actual
-pinned SM1 compiler47 pass; private-child4029/input41/SM5metadata351/MSAA269 all pass. Future sole workflow builds/packages26 native cases; newer source not pushed.
+pinned SM1 compiler47 pass; private-child4029/input41/SM5metadata351/MSAA269 all pass. Future sole workflow builds/packages28 native cases, including SM4.1; newer source not pushed.
 Root integrates18 locked-buffer rendering stages and bounded per-buffer/combined
 copy sizes. Actual x86 strict device584971 passes the locked/teardown/FVF cases.
 DX11 agent prepares native f4 WARP15 execution; root ARM64 CPU4 is frozen328inputs.
 Final probe-only diagnostics use owned original callback snapshots, with25-call
-CPU controls; DX10 agent resumes common SM4.1 compiler omissions. Build verifier owns target official EWDK
-x86 CPU execution of frozen7c2, then releases the target for the frozen f4 packet.
+CPU controls; DX10 agent resumes common SM4.1 compiler omissions. Build verifier completes original collection/review of passing exactb75 official EWDK
+x86 CPU fixtures, then releases the target for frozen f4 WARP15. Root ARM64
+CPU4 uses unchanged b75 source packet02 with bounded fresh helper03.
 Native execution of integrated future source and genuine runtime8/10/11 remain
 required. No production admission opened.
 

@@ -27,6 +27,8 @@ $cases = [ordered]@{
     'dxvk-umd-multisample-policy-test.exe' = 'native multisample output policy verified checks=\d+'
     'dxvk-umd-d3d9-buffer-copy-test.exe' = 'D3D9 vertex copy PASS checks=\d+; bounded source offsets/partial tails/overflow, no GPU'
     'dxvk-umd-d3d9-runtime-callbacks-test.exe' = 'probe D3D9 typed runtime callbacks verified checks=\d+ calls=25 vista_callbacks=22 vista_functions=99 hardware_admission=0'
+    'dxvk-umd-sm41-container-test.exe' = 'SM4.0/4.1 containers verified checks=568 typed_models=2 new_opcodes=4 hardware_admission=0'
+    'dxvk-umd-d3d10-shader-test.exe' = 'native D3D10/10.1 shaders verified checks=\d+ callbacks=3 draws=18 pixels=4608 hardware_admission=0'
     'dxvk-umd-runtime-gpu-test.exe' = 'PASS \d+ runtime GPU checks'
     'dxvk-umd-native-entry-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=0 backend-calls=0'
     'dxvk-umd-native-lifetime-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=1'
@@ -55,7 +57,7 @@ foreach ($name in $cases.Keys) {
     }
     $text = Get-Content -LiteralPath $out -Raw
     Write-Host $text
-    if ($process.ExitCode -ne 0 -or $text -notmatch $cases[$name]) {
+    if ($null -eq $process.ExitCode -or $process.ExitCode -ne 0 -or $text -notmatch $cases[$name]) {
         throw "$name failed: exit=$($process.ExitCode) $(Get-Content -LiteralPath $err -Raw)"
     }
     Get-FileHash -Algorithm SHA256 -LiteralPath $exe | Format-List | Out-File -Append (Join-Path $root 'arm64-hashes.txt')

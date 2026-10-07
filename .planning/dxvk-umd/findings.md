@@ -2017,3 +2017,48 @@ conforming preprocessor now selected in a fresh helper, originalsource unchanged
 Root consolidated bounded fixture runner now rejects a missing ExitCode instead
 of treating it as success, and drains stdout after wait. ARM64 runner already
 compares explicit nonzero exit. Source/current driver goal remains active.
+
+
+## 2026-10-07 integrated DX8/DX10/DX11 and bounded native runners
+
+Root independently joins probe605 and callback428 original source/COFF evidence
+with integrated sources. Fresh root-agent-integrations-02 verifies six strict
+x64/x86 COFFs, the18-stage1152pixel6d390bc5 locked-buffer oracle, unchanged
+callback caps/permissions/runtime probe and all nine original f4 packet files.
+Attempt01 failed an assertion before saving a proof; it remains unaccepted.
+Latest live affe CI37580729947 remains all6PASS; newer root source is unpushed.
+
+SM4.1 agentc9c08fa is cleanly integrated as c9634b5. Logical10.0 rejects4.1
+before the broader backend; actual new portable568 and typed10/10.1 fixture18
+WARP draws/4608pixels are retained in the sole CI (28 native ARM64 cases).
+Native new shader rendering is pending. Integrated ClangASan portable checks
+are running under consolidated-linux-02 with raw logs and before/after source
+hashes. Earlier source-path searches guessed .github/scripts and a zsh glob;
+no files changed, and actual build/ARM64/Linux scripts are under scripts/.
+
+Build agent reports exact b75 x86 six positives544/2800/45802/584971/52/4237,
+34I386COFFs/9PEs, two intended semantic negatives and seven malformed CLI exits64.
+Twenty first-party/W4WX compiles have zero warnings. Fourteen pinned vendor
+units use repositoryW3/conforming preprocessing, retaining C4244/C4146 raw
+warnings. Original collection/independent review and explicit target release
+are pending; no hardware/runtime acceptance is implied.
+
+Root freezes fresh CPU helper03 from unchanged b75 packet02/328inputs/four
+fixtures. It reuses the tested f4 raw-process component and independent
+failure-preserving finalization, and adds conforming preprocessing. Original
+helper02 had unbounded kill/reap/pipe-drain calls and could lose its build
+receipt if a final continuity capture threw;02 remains unexecuted and retained.
+All fixture definitions, source/archive/compiler/SDK/library/candidate/desktop
+pins remain unchanged. Target ownership stays verifier until explicit release,
+then DX11 f4 WARP15, then root ARM64 CPU4 and the actual renderer/runtime gates.
+
+
+Integrated consolidated-linux-02 completes PASS in31.73s: ClangASan/UBSan
+SM4.1 568, existing shader147, boundedcopy4050444, privatechildren4029,
+MSAA269, identity69/runtimeidentity180/backend49 and vertex342+negative.
+Before/after integrated input hashes retain. Raw expected malformed-parser
+stderr is preserved, with no sanitizer findings. Agent reports final frozen
+c9 eight x64/x86 COFFs zero diagnostic bytes; root original review follows.
+One combined production push starts the sole CI while native target execution
+and original review continue; production admission and installed package stay
+closed/unchanged. Later hardware testing requires successful exact CI artifacts.

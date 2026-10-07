@@ -127,11 +127,11 @@ def prepare(workspace, output, native_originals=None, native_proof=None, native_
             pin.update(bytes=len(data), sha256=sha(data))
         native.update(accepted=True, original_archive_sha256=archive_pin['sha256'], original_proof_sha256=sha(native_proof.read_bytes()), original_proof_path=str(native_proof), original_archive_path=str(native_archive))
     files = [{'role': role, **pin} for role, pin in pins.items()] + files
-    manifest = {'schema': 'system-d3d8-phase-inputs-v1', 'ready': native['accepted'], 'probe_source': SOURCE, 'runner_source': runner_source,
+    manifest = {'schema': 'system-d3d8-phase-inputs-v1', 'ready': False, 'probe_source': SOURCE, 'runner_source': runner_source,
                 'core_source': CORE, 'core_ci_run': RUN, 'loader_source': '6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7', 'icd_source': '8443c71a5ab32b9d58b904fa51f4bf2f9089db8d',
                 'adapter_luid': 'ec6b000000000000', 'source_id': 0, 'user': {'account': r'DROIDVM\USER', 'sid': 'S-1-5-21-362894365-441372107-2852668596-1000'},
                 'native_cpu': native, 'files': files, 'helpers': rows, 'payload_originals': provenance,
-                'pending': [] if native['accepted'] else ['native6ae2 strict CPU success and independent original proof', 'actual native I386 probe/frontend hashes'],
+                'pending': ['native phase parser and independent root review before a separately authorized phase'] + ([] if native['accepted'] else ['native6ae2 strict CPU success and independent original proof', 'actual native I386 probe/frontend hashes']),
                 'native_phase_parse': 'pending', 'I386_KMT_names': 'pending', 'system_HAL_enumeration': 'pending', 'hardware_admission': False,
                 'registry_driver_writes': False, 'installation': False, 'payload_staged': False}
     (bundle / 'phase-inputs-original.json').write_text(json.dumps(manifest, indent=2) + '\n')

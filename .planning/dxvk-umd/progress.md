@@ -1,5 +1,18 @@
 # Progress
 
+2026-10-08 checkpoint: ROOT accepted combined cube02 failed originals and
+release4021b90e with directproof f1b472e9; target ROOT idle. Failure is missing
+release RuntimeObject import library, before any reference fixture. Complete
+member scan also finds AdvApi32/Synchronization, so fresh cube03 includesall3.
+ROOT acceptedf96 CPU03 prepared originals99d9b777 and locally reviewed owned
+CPU03 controller/host1bbb7e5a; queued after cube03, no target authorizationyet.
+ROOT aggregate3213fda has cube/SO/volume real-KMT probes and38 ARM cases.
+DX8 agent freezes shared physical-identity66bfbdf, nativeCPU08 preparation
+ongoing. Local strict4COFF/2PE and91included GCC/Clang controls pass. Latest
+publishedCI37689715890 remains green; four redundant workflows disabled,
+no new push. User authorizes passwordless Administrator when needed forbuild;
+actual graphics limitedUSER1 unchanged. Full goal remainsactive.
+
 2026-10-08 runtime03 continuation: root current native GPU staging PASS with
 original50224855 tar/coreb0fcbc3a/compute8efb72c1/probe54ed0539/statusae8c823d;
 rootstageproof5ff88170. Root review2d691375 admits only the frozen CPU05

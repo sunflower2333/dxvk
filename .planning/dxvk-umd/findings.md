@@ -1770,3 +1770,17 @@ factory interface/builds and native-entry six-failure live callback mutation;
 MSVC native execution remains pending. GeneralSM5graphics/SO/tessellation/class
 linkage and runtime activation are still incomplete. DX8 originalI386 runtime
 calls OpenAdapter Interface8 and CAPS12; its isolated bounded projection is pending.
+
+
+2026-10-07: Implement target-only DiscardRenderTarget1000 hint to accept observed
+runtime flags1081 without changing preservation, primary/shared ownership or
+feature advertisement. Add actual-shape four A8/X8/lockability controls with
+1024 readback pixels, failure/retry, invalid-output/no-backend and caller-mutation
+checks. Local strict official x64/x86 COFF01 first implementationx86 exposes
+preexisting signed count_if comparison; original failure retained, bounded count
+converted tosize_t. Fresh implementation02 passes both architectures; unchanged
+fixture01 objects both pass. Native MSVC and actual runtime still pending.
+Integrated callback fixes/ports source8d7a2ea is frozen for exclusive port_dx10
+native CPU verification. New consolidated build/package/execution lists include
+DX11 and compute fixtures, making17 future native ARM64 cases; no second workflow
+or push dispatched. Root will send new exact discard source packet next.

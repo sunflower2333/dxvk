@@ -25,7 +25,9 @@ flags1081/format22/pool3/16x16/mips0. Existing flag mask rejects documented
 DiscardRenderTarget1000. Both public APIs now return80070057; two devices close,
 registry34/critical58/SYS/desktop/raw KMT names/selector restore. Original42-member
 archive5c8740b3 and root review20d7a234 retain this failed runtime; no API/render
-acceptance. Implement the target-only discard hint and native controls next.
+acceptance. Target-only discard hint and four exact-shape/readback controls are now local;
+strict x64/x86 source/fixture COFF checks pass. Native MSVC/CI/runtime rerun
+remain required. Port_dx10 owns target CPU verification exclusively.
 
 Exact8d7 dynamic45/47 pass5824pixels+1056bytes each with diagnostics1/0;
 failed65s dynamic46 remains retained. Previous actual lifecycle01 returned two

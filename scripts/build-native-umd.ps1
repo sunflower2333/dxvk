@@ -52,6 +52,8 @@ ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-nativ
 if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-rotation-test.exe
 if ($LASTEXITCODE) { throw 'Production DXGI rotation fixture build failed' }
+ninja -C build-umd src/umd/dxvk-umd-d3d11-device-test.exe src/umd/dxvk-umd-compute-container-test.exe
+if ($LASTEXITCODE) { throw 'Typed D3D10.1/D3D11 and SM5 container fixture build failed' }
 ninja -C build-umd "src/umd/$LibraryName.dll.p/umd_ddi.cpp.obj" src/umd/dxvk-umd-ddi-probe.exe.p/.._.._tests_umd-ddi-probe.cpp.obj
 if ($LASTEXITCODE) { throw 'Early UMD/DDI compile checks failed' }
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
@@ -83,6 +85,8 @@ if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-predication-test.exe predication-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-stream-output-test.exe stream-output-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-texture1d-test.exe texture1d-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d11-device-test.exe d3d11-device-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-compute-container-test.exe compute-container-test
     & build-umd/src/umd/dxvk-umd-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'query-test.txt')
     if ($LASTEXITCODE) { throw 'Query completion test failed' }
     & build-umd/src/umd/dxvk-umd-allocation-test.exe | Tee-Object (Join-Path $OutputDirectory 'allocation-test.txt')
@@ -122,7 +126,7 @@ $exports = & dumpbin /exports "build-umd/src/umd/$LibraryName.dll" | Out-String
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bVioGpuDxvkQueryVulkanLoader\b' -or $exports -notmatch '\bVioGpuDxvkOpenAdapter9ForTest\b' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 if ($exports -notmatch '\bVioGpuDxvkProbeD3D9BackendForTest\b' -or $exports -match '\bDirect3DCreate9(?:Ex|On12)?\b') { throw 'Unexpected embedded D3D9 exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
-foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe')) {
+foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
     # Include ARM64 fixtures for execution by the target validation owner.
     $path = Join-Path 'build-umd/src/umd' $name
@@ -152,6 +156,7 @@ Typed D3D9 adapter development bridge saves the runtime handle/query owner and v
 The private D3D9 translation core is embedded without public Direct3DCreate9 exports/imports. It shares exact-LUID Turnip selection and copied callback ownership with D3D10, requires runtime ownership, and initializes offscreen state without display enumeration, DPI mutation or an implicit swapchain. VioGpuDxvkProbeD3D9BackendForTest is a synchronous construction/teardown helper requiring an active callback dispatcher; negative CI controls are not GPU construction or runtime activation proof. D3D9 surface DDIs support nonshared A8R8G8B8/X8R8G8B8 groups, nonsampled render-target0 binding, distinct computed/preclipped clears, straight blits, readback and CPU views with caller-owned padded system memory. Typed paths also implement static 2D mip chains and state, vertex/index buffers, indexed/multistream draw, depth/stencil, transforms/lights/clip planes and queries. Typed owned-allocation Present is implemented, but raw target presentation diagnostics reject before accepted screen pixels. Shared/opened resources, primary/flip presentation and ordinary runtime admission remain pending. The --render target probe independently requires exact clear/readback pixels, padding, subresource ordering and nonempty runtime render callbacks. The --draw probe adds quad/scissor/partial-color-write pixel checks with vertex-start offset and changing bound user-memory data. The --shader probe additionally requires SM1/2/3 pixel readback and float/int/bool constants used by both shader stages. Native shader entry points carry explicit code bounds through the existing translator; bytecode and constant arrays are copied on the DDI caller before callbacks. Shader tokens are distinct by device/stage, published after identity validation, and flushed/released on the renderer worker. Device/resource fixture substitutes only the backend; real typed adapter/device/RuntimeGpu/callback dispatch and cleanup execute. Nested/concurrent operations return WASSTILLDRAWING and preserve the device for a later retry.
 Production entry/lifetime fixtures use controlled callbacks and a WARP backend; they are not ordinary Microsoft runtime activation.
 Native resource creation unwinds failed staged owners; destruction retires private storage before callbacks. Allocation identity/reset checks and cleanup fixtures are included.
+Exact typed D3D10.0/10.1/11.0 development tables retain live core callbacks and use the runtime DXGI revision. D3D11 UAV/compute/indirect/LOD fixtures and SM5 container controls are included; higher production interfaces remain gated.
 Native backend receives copied runtime callbacks before vkCreateDevice; Turnip internal BO allocation/map/submit use one runtime-owned context through private Mesa v1. Actual GPU/system-runtime acceptance pending.
 Ordinary native DDI/Present jobs pump RuntimeGpu, runtime allocation and core callbacks on their original DDI caller; CalcPrivate remains concurrent. Worker requests between DDIs wait for the next permitted caller. Native Flush joins command recording and queue submission before returning, without waiting for GPU completion. DestroyDevice drains backend workers and closes allocations/context before return. No post-DestroyDevice runtime lifetime is assumed.
 The actual Microsoft runtime test requires candidate activation rejection on CI without VIOGPU and independently validates WARP Draw/readback/Present/immediate teardown. WARP control success is not candidate rendering or native admission. The dispatch integration still needs actual target/runtime proof.

@@ -16,6 +16,8 @@ $cases = [ordered]@{
     'dxvk-umd-d3d9-device-test.exe' = 'native D3D9 device PASS checks=\d+; controlled backend, no GPU rendering or runtime admission'
     'dxvk-umd-rotation-test.exe' = 'PASS native DXGI rotation: .*WARP only, admission closed'
     'dxvk-umd-texture1d-test.exe' = 'PASS Texture1D'
+    'dxvk-umd-d3d11-device-test.exe' = 'typed D3D10.1/D3D11 fixture PASS checks=\d+ callbacks=\d+ WARP controls; native Turnip/runtime acceptance remains gated'
+    'dxvk-umd-compute-container-test.exe' = 'compute container PASS checks=\d+ exact tokens/hash and malformed SM5 controls'
     'dxvk-umd-runtime-gpu-test.exe' = 'PASS \d+ runtime GPU checks'
     'dxvk-umd-native-entry-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=0 backend-calls=0'
     'dxvk-umd-native-lifetime-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=1'

@@ -1153,6 +1153,75 @@ static D3DDDIARG_CREATERESOURCE depthArgs(HANDLE cookie, D3DDDI_SURFACEINFO* inf
   return args;
 }
 
+static void discardTargetContracts() {
+  for (const auto format : {D3DFMT_A8R8G8B8, D3DFMT_X8R8G8B8}) {
+    for (const bool lockable : {false, true}) {
+      Fixture fixture; initialize(fixture); createDevice();
+      char targetCookie, readbackCookie;
+      // Exact shape emitted by the original Microsoft runtime in lifecycle02.
+      D3DDDI_SURFACEINFO info = {16,16,0,nullptr,0,0};
+      auto args = resourceArgs(&targetCookie, &info, 1, true);
+      args.Format = static_cast<D3DDDIFORMAT>(format);
+      args.MipLevels = 0;
+      args.Flags.NotLockable = !lockable;
+      args.Flags.DiscardRenderTarget = 1;
+      const auto valid = args;
+      const auto attempts = f->surfaceAttempts;
+      const auto queries = f->queries;
+      for (unsigned invalid = 0; invalid < 5; ++invalid) {
+        args = valid;
+        if (invalid == 0) args.Flags.RenderTarget = 0;
+        if (invalid == 1) { args.Flags.RenderTarget = 0; args.Flags.ZBuffer = 1; }
+        if (invalid == 2) args.Flags.SharedResource = 1;
+        if (invalid == 3) args.Flags.Primary = 1;
+        if (invalid == 4) args.Flags.Value |= 0x80000000u;
+        const auto before = snapshot(args);
+        CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG);
+        CHECK(snapshot(args) == before && f->surfaceAttempts == attempts && f->queries == queries);
+      }
+      args = valid;
+      f->surfaceResult = E_OUTOFMEMORY;
+      const auto before = snapshot(args);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == E_OUTOFMEMORY && snapshot(args) == before);
+      f->surfaceResult = S_OK;
+      f->queryHook = [&] { args.Flags.Primary = 1; info.Width = 512; };
+      CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+      const HANDLE target = args.hResource;
+      CHECK(target != &targetCookie && f->descriptions.size() == 1);
+      const auto& desc = f->descriptions[0];
+      CHECK(desc.width == 16 && desc.height == 16 && desc.format == format
+        && desc.renderTarget && !desc.depthStencil && !desc.systemMemory
+        && desc.lockable == lockable);
+      D3DDDIARG_SETRENDERTARGET bind = {0,target,0};
+      CHECK(f->table.pfnSetRenderTarget(f->device, &bind) == S_OK);
+      D3DDDIARG_CLEAR fill = {};
+      fill.Flags = D3DCLEAR_TARGET | 8; fill.FillColor = 0xff4c2b9a;
+      CHECK(f->table.pfnClear(f->device, &fill, 0, nullptr) == S_OK);
+      info.Width = 16;
+      args = resourceArgs(&readbackCookie, &info, 1);
+      args.Format = static_cast<D3DDDIFORMAT>(format);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+      const HANDLE readback = args.hResource;
+      D3DDDIARG_BLT copy = {}; copy.hSrcResource = target; copy.hDstResource = readback;
+      copy.SrcRect = copy.DstRect = {0,0,16,16};
+      CHECK(f->table.pfnBlt(f->device, &copy) == S_OK);
+      D3DDDIARG_LOCK mapping = {}; mapping.hResource = readback; mapping.Flags.ReadOnly = 1;
+      CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && mapping.pSurfData && mapping.Pitch == 64);
+      for (UINT y = 0; y < 16; ++y) for (UINT x = 0; x < 16; ++x) {
+        uint32_t pixel = 0;
+        std::memcpy(&pixel, static_cast<const uint8_t*>(mapping.pSurfData) + y * mapping.Pitch + x * 4, 4);
+        CHECK(pixel == 0xff4c2b9a);
+      }
+      D3DDDIARG_UNLOCK unlock = {}; unlock.hResource = readback;
+      CHECK(f->table.pfnUnlock(f->device, &unlock) == S_OK);
+      CHECK(f->table.pfnDestroyResource(f->device, target) == S_OK);
+      CHECK(f->table.pfnDestroyResource(f->device, readback) == S_OK);
+      CHECK(f->surfaceCreates == f->surfaceCloses && f->surfaceLocks == f->surfaceUnlocks);
+      closeDevice(); closeAdapter();
+    }
+  }
+}
+
 static void depthContracts() {
   for (const auto format : {D3DFMT_D16, D3DFMT_D24S8}) {
     Fixture fixture; initialize(fixture); createDevice();
@@ -3288,6 +3357,7 @@ static void presentationContracts() {
 int main() {
   deviceFunctionBounds();
   creationFlagContracts();
+  discardTargetContracts();
   presentationContracts();
   queryContracts();
   bufferTransferContracts();

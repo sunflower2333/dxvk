@@ -224,13 +224,17 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   if (!args || !args->hResource || !args->pSurfList || !args->SurfCount) return E_INVALIDARG;
   const auto input = *args;
   const bool buffer = input.Flags.VertexBuffer || input.Flags.IndexBuffer;
-  if (input.Flags.Value & ~(buffer ? UINT(0x1800cc) : UINT(0x10087))) return E_INVALIDARG;
+  if (input.Flags.Value & ~(buffer ? UINT(0x1800cc) : UINT(0x11087))) return E_INVALIDARG;
   if (buffer && (bool(input.Flags.VertexBuffer) == bool(input.Flags.IndexBuffer) || input.SurfCount != 1))
     return E_INVALIDARG;
   const bool target = input.Flags.RenderTarget != 0;
   const bool depth = input.Flags.ZBuffer != 0;
   const bool texture = input.Flags.Texture != 0;
   const bool dynamic = input.Flags.Dynamic != 0;
+  // DiscardRenderTarget permits dropping old pixels; retaining them is valid.
+  // The runtime supplies this hint for ordinary windowed back buffers. It does
+  // not imply primary ownership, sharing, or a different allocation contract.
+  if (input.Flags.DiscardRenderTarget && (!target || buffer || depth)) return E_INVALIDARG;
   if (!buffer && dynamic && (!texture || target || depth)) return E_INVALIDARG;
   if (depth && (target || texture || input.SurfCount != 1)) return E_INVALIDARG;
   if (input.Flags.NotLockable && !target && !texture && !buffer && !depth) return E_INVALIDARG;
@@ -1215,9 +1219,9 @@ HRESULT APIENTRY setLight(HANDLE handle, const D3DDDIARG_SETLIGHT* args, const D
         value.Position, value.Direction, value.Range, value.Falloff,
         value.Attenuation0, value.Attenuation1, value.Attenuation2, value.Theta, value.Phi};
     } else if (input.DataType == D3DDDI_SETLIGHT_ENABLE && !entry->second.enabled
-        && std::count_if(device.lights.begin(), device.lights.end(), [](const auto& item) {
+        && size_t(std::count_if(device.lights.begin(), device.lights.end(), [](const auto& item) {
           return item.second.enabled;
-        }) >= dxvk::caps::MaxEnabledLights) return D3DERR_INVALIDCALL;
+        })) >= dxvk::caps::MaxEnabledLights) return D3DERR_INVALIDCALL;
     return S_OK;
   }, [&](Device& device) {
     auto& owned = device.lights.at(input.Index);

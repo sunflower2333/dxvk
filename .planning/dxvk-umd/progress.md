@@ -2192,3 +2192,17 @@ used for the first native build. Microsoft local INF documentation maps the
 three UserModeDriverName entries to DX9, DX10 and DX11 in order; the SDK exposes
 separate KMTUMDVERSION queries. Root is preparing a read-only active-name check
 before any temporary legacy-only binding. No registry write has occurred.
+
+## 2026-10-07 session1 runtime negotiation preparation
+Root native build review01 PASS (60inputs/42members/2COFF/2PE/officialSDK).
+Names01 and baseline01 independently verify under original LimitedUSER session1.
+Bind01 changes only DX9 registration, but observed KMT lookup retains old path
+and no candidate frontend calls occur. Original registration is restored.
+Root33member failure trace remains verified, with34registration/58safety fields,
+signedSYS and originaldesktop retained. No rendering or ordinary admission.
+A process-local DX9 name selector is added to the diagnostic probe to obtain
+actual Microsoft OpenAdapter/GetCaps callbacks despite cached target naming.
+Only an exact original-package DX9 response changes; original function, other
+queries/versions and normal baseline are preserved. Native strict build and
+null-guard verification are delegated before session1 execution. No production
+UMD code, caps, normal exports or workflow configuration change.

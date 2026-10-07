@@ -1580,3 +1580,32 @@ probe uses genuine System32 d3d9.dll for Direct3DCreate9/Ex and enumeration,
 plus two null-input frontend guard checks. Native build/guard/baseline come
 before any temporary legacy-driver binding. No production export/caps, D3D10
 registration or renderer changes; no ordinary rendering acceptance claimed.
+
+## 2026-10-07 actual Microsoft runtime adapter gate
+Readonly native source a84fef4 builds both standalone ARM64 binaries with zero
+warnings. Root independently verifies60Git/archive/before/after inputs,42original
+archive members,2original COFFs/2PEs, sole frontend OpenAdapter, original SDK
+NuGet d3d9 import library/eight headers, guard checks and signedSYS/desktop.
+Microsoft System32 d3d9.dll SHA0658854da684062f722bd96135f40109f7beb7d724866d55cd4f8194e3d7d248.
+SSH session baseline sees0adapters; LimitedUSER session1 seesone1af4/1050 adapter,
+HAL caps8876086a, ExS_OK but zeroLUID and HAL8876086a. No device creation/render.
+Actual desktop KMT source0/LUID6e6c returns all three registered DX9/10/11 paths.
+Names-only original18memberarchive58f1eef56db7d6cb6799b9f38da86c4cd3dce606571d9b588f828205c7ba0bfe.
+Temporary first-slot-only binding retains DX10/11/Wow; actual KMT still returns
+the oldDX9 path during binding. System runtime logs no frontend OpenAdapter or
+GetCaps calls and repeats baseline failure. This target keeps cached driver
+names; registry write alone did not select the prototype. Exact registration
+restored;33memberarchive9b980659bea022f80930042a2e98e2115c39b03b2ca9f0d74daaae8caf063c60.
+Root verifies34registration fields/58failure-reset-epoch-timeout-admission fields
+unchanged, signedSYS/DWM1552/Explorer6464 retained. Initial root reviewer01
+incorrectly treated all1215registry values as static; its failure is preserved.
+Reviewer02 records ambient Native display counters separately and retains all
+established58stability gates and exact registration, source, task/token checks.
+Next diagnostic selects only this package's DX9 filename through the genuine
+Microsoft d3d9.dll process-local import slot for D3DKMTQueryAdapterInfo. Actual
+system PE imports confirm this documented GDI32 entry. Original query always
+runs first; only successful DX9 exact-package pathname responses can change.
+All other adapter/version/private/caps queries remain original. Import pointer
+and page protection restore; system DLL files/registry remain original. The
+frontend still always blocks CreateDevice. This is callback tracing, not
+ordinary runtime rendering/admission or presentation acceptance.

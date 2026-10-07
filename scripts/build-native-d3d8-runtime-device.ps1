@@ -80,6 +80,8 @@ function State {
   return [ordered]@{sys=(File-Row $sys);service=$status;enum_binding=$enum.Driver;active_values=$values;desktop=$desktop;
     system_d3d9=(File-Row 'C:\Windows\System32\d3d9.dll');system_d3d8_native=(File-Row 'C:\Windows\System32\d3d8.dll');
     system_d3d8_x86=(File-Row 'C:\Windows\SysWOW64\d3d8.dll');system_d3d9_x86=(File-Row 'C:\Windows\SysWOW64\d3d9.dll');
+    system_kernel32_x86=(File-Row 'C:\Windows\SysWOW64\kernel32.dll');system_kernelbase_x86=(File-Row 'C:\Windows\SysWOW64\kernelbase.dll');
+    system_apisetschema=(File-Row 'C:\Windows\System32\apisetschema.dll');
     candidates=@($Candidates | ForEach-Object { File-Row $_ });metadata='direct known Enum/Class, service API, files and Get-Process; no CIM'}
 }
 function Run([string]$Name, [string]$Exe, [string]$Arguments, [int]$Expected, [int]$Seconds) {
@@ -215,6 +217,14 @@ try {
   $receipt.manifest = File-Row $Manifest
   $receipt.auxiliaries = @()
   $before = State; $receipt.before = $before; Save-Receipt
+  $providerPins = [ordered]@{
+    system_kernel32_x86='51a5f4434691ea46e074957c1d41be6bd69f6050389600801cf1043915272237'
+    system_kernelbase_x86='612baaac75dcb1de8bd62815aec4c211abbf3b7fd6be0ede3ec27fac8885efbf'
+    system_apisetschema='e9418b4e61bfadc862bfc9e4d09813a333e18e9eb3dfdcb3104737c8922599c0'
+  }
+  foreach ($name in @($providerPins.Keys)) {
+    if (!$before[$name].present -or $before[$name].sha256 -cne $providerPins[$name]) { throw ('Original process API provider changed: '+$name) }
+  }
   if (!$before.system_d3d8_x86.present -or $before.system_d3d8_x86.sha256 -cne
       '65d8980c469e45d862c68ad046731fd85c19401d3436fd46c65c19db1182dad8') {
     throw 'Original Microsoft x86 D3D8 image differs; retain evidence and refresh inventory'
@@ -254,7 +264,7 @@ try {
   $env:PATH = $bin + ';' + $env:PATH
   $receipt.compiler_environment = [ordered]@{include=$env:INCLUDE;lib=$env:LIB;path_prefix=$bin;kit_root=$KitRoot;kit_version=$KitVersion}
   $headers = @('shared\d3d9.h','shared\d3d9caps.h','shared\d3d9types.h','shared\d3dukmdt.h',
-    'shared\d3dkmthk.h','um\d3dumddi.h','um\Windows.h','shared\bcrypt.h','shared\sddl.h','um\winnt.h')
+    'shared\d3dkmthk.h','um\d3dumddi.h','um\Windows.h','shared\bcrypt.h','shared\sddl.h','um\winnt.h','um\wow64apiset.h')
   New-Item -ItemType Directory (Join-Path $Root 'original-sdk-headers') | Out-Null
   $receipt.sdk = @($headers | ForEach-Object {
     $p = Join-Path $sdkInclude $_
@@ -292,6 +302,18 @@ try {
   }
   $built = @{}
   foreach ($group in $plan) { $built[$group.name] = Build-Group $group $source }
+  Run 'process-api-diagnostics' $built.probe '--process-api-diagnostics' 0 30
+  $apiOut = [IO.File]::ReadAllText((Join-Path $Root 'process-api-diagnostics.stdout.txt'))
+  foreach ($pattern in @(
+    '(?m)^D3D8_PROCESS_API provider=kernel32\.dll symbol=GetSystemWow64Directory2W present=0 error=127 ',
+    '(?m)^D3D8_PROCESS_API provider=kernelbase\.dll symbol=GetSystemWow64Directory2W present=1 error=0 .*owner_machine=014c owner_error=0\r?$',
+    '(?m)^D3D8_PROCESS_MACHINE process=014c native=aa64 effective=014c pointer_bytes=4 ',
+    '(?m)^D3D8_PROCESS_API_CANONICAL_DIRECTORY path=(?i:C:\\Windows\\SysWOW64) admission=0\r?$',
+    '(?m)^D3D8_PROCESS_API_DIAGNOSTICS_COMPLETE observed_providers=5 observed_lookup_rows=10 runtime_calls=0 KMT_calls=0 core_loads=0 admission=0\r?$'
+  )) {
+    if ($apiOut -cnotmatch $pattern) { throw ('Exact original I386 API-provider diagnostic missing: '+$pattern) }
+  }
+  $receipt['process_api_diagnostics'] = [ordered]@{executed=$true;runtime_factories=0;KMT_calls=0;core_loads=0;admission=$false}
   Run 'policy-positive' $built.policy '' 0 30
   $policyOut = [IO.File]::ReadAllText((Join-Path $Root 'policy-positive.stdout.txt'))
   if ($policyOut -notmatch ('(?m)^D3D8 runtime selector policy PASS checks=' + [regex]::Escape([string]$cpuManifest.native_policy_checks) + ';')) { throw 'Native policy positive missing' }
@@ -315,6 +337,7 @@ try {
     '--front-offscreen one two three four five six seven', '--front-offscreen one two three four five six seven extra',
     '--front-present', '--front-present missing', '--front-present one two three four five six',
     '--front-present one two three four five six seven', '--front-present one two three four five six seven extra')
+  $cli += @('--process-api-diagnostics extra', '--process-api-diagnostics one two')
   if ($cli.Count -ne $cpuManifest.malformed_cli_guards) { throw 'Frozen malformed CLI cardinality mismatch' }
   $index = 0
   foreach ($arguments in $cli) { Run ('invalid-cli-' + (++$index)) $built.probe $arguments 64 15 }

@@ -54,6 +54,32 @@ std::wstring path(HMODULE module) {
   require(length && length < std::size(value), "GetModuleFileName");
   return {value, length};
 }
+uint16_t moduleMachine(HMODULE module);
+struct ProcessApi {
+  FARPROC address = nullptr;
+  DWORD error = ERROR_SUCCESS;
+  HMODULE owner = nullptr;
+  DWORD ownerError = ERROR_SUCCESS;
+};
+ProcessApi lookupProcessApi(HMODULE provider, const char* symbol) {
+  SetLastError(ERROR_SUCCESS);
+  const FARPROC address = provider ? GetProcAddress(provider, symbol) : nullptr;
+  const DWORD error = provider ? GetLastError() : ERROR_MOD_NOT_FOUND;
+  return {address, error};
+}
+void traceProcessApi(ProcessApi& api, const wchar_t* name, const char* symbol) {
+  if (api.address) {
+    SetLastError(ERROR_SUCCESS);
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+        | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(api.address), &api.owner)) api.ownerError = GetLastError();
+  }
+  const auto ownerPath = api.owner ? path(api.owner) : std::wstring();
+  trace("D3D8_PROCESS_API provider=%ls symbol=%s present=%u error=%lu address=%p owner_path=%ls owner_machine=%04x owner_error=%lu",
+    name, symbol, unsigned(api.address != nullptr), api.error, reinterpret_cast<void*>(api.address),
+    ownerPath.c_str(), unsigned(api.owner ? moduleMachine(api.owner) : 0), api.ownerError);
+  SetLastError(api.error);
+}
 std::wstring systemDirectory() {
   // The legacy boolean is FALSE for an I386 process emulated on ARM64.
   // Resolve the documented signatures without raising the fixture's Vista
@@ -62,13 +88,29 @@ std::wstring systemDirectory() {
   using Directory = UINT (WINAPI*)(LPWSTR, UINT, WORD);
   const HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
   require(kernel != nullptr, "system-kernel32");
-  const FARPROC machineAddress = GetProcAddress(kernel, "IsWow64Process2");
-  const FARPROC directoryAddress = GetProcAddress(kernel, "GetSystemWow64Directory2W");
+  auto machineLookup = lookupProcessApi(kernel, "IsWow64Process2");
+  auto directoryLookup = lookupProcessApi(kernel, "GetSystemWow64Directory2W");
+  // Capture both original lookups/errors before tracing or owner queries.
+  traceProcessApi(machineLookup, L"kernel32.dll", "IsWow64Process2");
+  traceProcessApi(directoryLookup, L"kernel32.dll", "GetSystemWow64Directory2W");
+  HMODULE directoryProvider = kernel;
+  const bool alternate = !directoryLookup.address && directoryLookup.error == ERROR_PROC_NOT_FOUND;
+  if (alternate) {
+    // The retained target I386 Kernel32 omits this named export; its API-set
+    // host, already loaded KernelBase, exports the exact documented API.
+    directoryProvider = GetModuleHandleW(L"kernelbase.dll");
+    directoryLookup = lookupProcessApi(directoryProvider, "GetSystemWow64Directory2W");
+    traceProcessApi(directoryLookup, L"kernelbase.dll", "GetSystemWow64Directory2W");
+  }
+  const FARPROC machineAddress = machineLookup.address, directoryAddress = directoryLookup.address;
   Machines machines = nullptr; Directory wowDirectory = nullptr;
   static_assert(sizeof(machines) == sizeof(machineAddress) && sizeof(wowDirectory) == sizeof(directoryAddress));
   std::memcpy(&machines, &machineAddress, sizeof(machines));
   std::memcpy(&wowDirectory, &directoryAddress, sizeof(wowDirectory));
-  require(machines && wowDirectory, "explicit-process-machine-APIs");
+  SetLastError(machineLookup.error);
+  require(machines != nullptr, "IsWow64Process2-export");
+  SetLastError(directoryLookup.error);
+  require(wowDirectory != nullptr, "GetSystemWow64Directory2W-export");
   USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN, nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
   require(machines(GetCurrentProcess(), &processMachine, &nativeMachine) != FALSE, "IsWow64Process2");
   const USHORT effectiveMachine = processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? nativeMachine : processMachine;
@@ -83,6 +125,22 @@ std::wstring systemDirectory() {
     ? GetSystemDirectoryW(directory, MAX_PATH)
     : wowDirectory(directory, MAX_PATH, IMAGE_FILE_MACHINE_I386);
   require(length && length < MAX_PATH, "system-directory");
+  const std::wstring canonical(directory, length);
+  const auto actualKernel = path(kernel);
+  require(!_wcsicmp(actualKernel.c_str(), (canonical + L"\\kernel32.dll").c_str())
+    && moduleMachine(kernel) == IMAGE_FILE_MACHINE_I386, "canonical-I386-Kernel32-provider");
+  const auto validOwner = [&canonical](const ProcessApi& api) {
+    if (!api.owner || api.ownerError || moduleMachine(api.owner) != IMAGE_FILE_MACHINE_I386) return false;
+    const auto actual = path(api.owner);
+    return !_wcsicmp(actual.c_str(), (canonical + L"\\kernelbase.dll").c_str())
+      || !_wcsicmp(actual.c_str(), (canonical + L"\\kernel32.dll").c_str());
+  };
+  require(validOwner(machineLookup) && validOwner(directoryLookup), "canonical-I386-process-API-owners");
+  if (alternate) {
+    require(directoryProvider && directoryLookup.owner == directoryProvider
+      && !_wcsicmp(path(directoryProvider).c_str(), (canonical + L"\\kernelbase.dll").c_str()),
+      "canonical-I386-KernelBase-Directory2W-provider");
+  }
   trace("D3D8_SYSTEM_DIRECTORY machine=%04x api=%s path=%ls", unsigned(effectiveMachine),
     processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? "GetSystemDirectoryW" : "GetSystemWow64Directory2W", directory);
   return {directory, length};
@@ -98,6 +156,63 @@ uint16_t moduleMachine(HMODULE module) {
   require(dxvk::umd::diagnostic::runtimeImageRead(loaded, 0x3c, pe)
       && dxvk::umd::diagnostic::runtimeImageRead(loaded, size_t(pe) + 4, machine), "module-machine");
   return machine;
+}
+void processApiDiagnostics() {
+  // Observe already loaded providers only. A missing API is diagnostic data;
+  // this mode never chooses a fallback or admits a runtime/KMT invocation.
+  const auto executable = GetModuleHandleW(nullptr);
+  trace("D3D8_PROCESS_IMAGE path=%ls machine=%04x pointer_bytes=%zu",
+    path(executable).c_str(), unsigned(moduleMachine(executable)), sizeof(void*));
+  ProcessApi machineLookup, directoryLookup;
+  const wchar_t* providers[] = {L"kernel32.dll", L"kernelbase.dll",
+    L"api-ms-win-core-wow64-l1-1-0.dll", L"api-ms-win-core-wow64-l1-1-1.dll",
+    L"api-ms-win-core-wow64-l1-1-3.dll"};
+  for (size_t i = 0; i < std::size(providers); ++i) {
+    SetLastError(ERROR_SUCCESS);
+    const HMODULE provider = GetModuleHandleW(providers[i]);
+    const DWORD error = GetLastError();
+    const auto providerPath = provider ? path(provider) : std::wstring();
+    trace("D3D8_PROCESS_PROVIDER name=%ls present=%u error=%lu path=%ls machine=%04x pointer_bytes=%zu",
+      providers[i], unsigned(provider != nullptr), error, providerPath.c_str(),
+      unsigned(provider ? moduleMachine(provider) : 0), sizeof(void*));
+    auto process = lookupProcessApi(provider, "IsWow64Process2");
+    auto directory = lookupProcessApi(provider, "GetSystemWow64Directory2W");
+    traceProcessApi(process, providers[i], "IsWow64Process2");
+    traceProcessApi(directory, providers[i], "GetSystemWow64Directory2W");
+    if (!i) { machineLookup = process; directoryLookup = directory; }
+  }
+  using Machines = BOOL (WINAPI*)(HANDLE, USHORT*, USHORT*);
+  using Directory = UINT (WINAPI*)(LPWSTR, UINT, WORD);
+  Machines machines = nullptr; Directory wowDirectory = nullptr;
+  static_assert(sizeof(machines) == sizeof(machineLookup.address)
+    && sizeof(wowDirectory) == sizeof(directoryLookup.address));
+  std::memcpy(&machines, &machineLookup.address, sizeof(machines));
+  std::memcpy(&wowDirectory, &directoryLookup.address, sizeof(wowDirectory));
+  if (machines) {
+    USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN, nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
+    SetLastError(ERROR_SUCCESS);
+    const BOOL status = machines(GetCurrentProcess(), &processMachine, &nativeMachine);
+    const DWORD error = GetLastError();
+    trace("D3D8_PROCESS_API_RESULT symbol=IsWow64Process2 status=%u error=%lu process=%04x native=%04x",
+      unsigned(status != FALSE), error, unsigned(processMachine), unsigned(nativeMachine));
+  }
+  if (wowDirectory) {
+    wchar_t directory[MAX_PATH]{};
+    SetLastError(ERROR_SUCCESS);
+    const UINT count = wowDirectory(directory, MAX_PATH, IMAGE_FILE_MACHINE_I386);
+    const DWORD error = GetLastError();
+    trace("D3D8_PROCESS_API_RESULT symbol=GetSystemWow64Directory2W count=%u error=%lu requested_machine=014c path=%ls",
+      count, error, count && count < MAX_PATH ? directory : L"");
+  }
+  wchar_t directory[MAX_PATH]{};
+  SetLastError(ERROR_SUCCESS);
+  const UINT count = GetSystemDirectoryW(directory, MAX_PATH);
+  const DWORD error = GetLastError();
+  trace("D3D8_PROCESS_API_RESULT symbol=GetSystemDirectoryW count=%u error=%lu path=%ls",
+    count, error, count && count < MAX_PATH ? directory : L"");
+  const auto canonical = systemDirectory();
+  trace("D3D8_PROCESS_API_CANONICAL_DIRECTORY path=%ls admission=0", canonical.c_str());
+  trace("D3D8_PROCESS_API_DIAGNOSTICS_COMPLETE observed_providers=5 observed_lookup_rows=10 runtime_calls=0 KMT_calls=0 core_loads=0 admission=0");
 }
 void auditModules(const std::wstring& directory) {
   for (const auto* name : {L"d3d8.dll", L"d3d8thk.dll", L"d3d9.dll", L"dxgi.dll", L"d3d11.dll", L"d3d9on12.dll"}) {
@@ -578,6 +693,7 @@ int wmain(int argc, wchar_t** argv) {
   const bool selectedPresent = argc == 9 && !std::wcscmp(argv[1], L"--front-present");
   const bool selectedHardware = selectedOffscreen || selectedPresent;
   const bool kmtNames = argc == 4 && !std::wcscmp(argv[1], L"--kmt-names");
+  const bool processDiagnostics = argc == 2 && !std::wcscmp(argv[1], L"--process-api-diagnostics");
   const bool selected = selectedEnumerate || selectedHardware;
   const bool hardware = installedOffscreen || selectedHardware;
   LUID expectedLuid{}; UINT expectedSource = 0;
@@ -586,13 +702,19 @@ int wmain(int argc, wchar_t** argv) {
       || !policy::hexIdentity(std::wstring_view(argv[5]), 64))) return 64;
   if (selectedHardware && (!parseLuid(argv[7], expectedLuid) || !sourceId(argv[8], expectedSource))) return 64;
   if (kmtNames && (!parseLuid(argv[2], expectedLuid) || !sourceId(argv[3], expectedSource))) return 64;
-  if (!enumerate && !hardware && !selected && !guard && !kmtNames) return 64;
+  if (!enumerate && !hardware && !selected && !guard && !kmtNames && !processDiagnostics) return 64;
   if (guard) return d3d8RuntimeFrontGuard(argv[2]);
   if constexpr (sizeof(void*) != 4) {
     trace("D3D8_UNAVAILABLE required_machine=014c pointer_bytes=%zu exit=77", sizeof(void*)); return 77;
   }
   try {
     require(Permission::absent(), "diagnostic-pins-originally-absent");
+    if (processDiagnostics) {
+      require(!GetModuleHandleW(L"d3d8.dll") && !GetModuleHandleW(L"viogpudxvk.dll"), "process-diagnostics-no-graphics-factory");
+      processApiDiagnostics();
+      require(!GetModuleHandleW(L"d3d8.dll") && !GetModuleHandleW(L"viogpudxvk.dll"), "process-diagnostics-no-graphics-factory-after");
+      return traceFailed ? 1 : 0;
+    }
     if (kmtNames) {
       userGate();
       require(!GetModuleHandleW(L"d3d8.dll") && !GetModuleHandleW(L"viogpudxvk.dll"), "KMT-name-no-graphics-factory");

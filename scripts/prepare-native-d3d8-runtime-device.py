@@ -155,8 +155,9 @@ def main():
             {'name':'probe','kind':'exe','units':['tests/umd-d3d8-runtime-probe.cpp','tests/umd-d3d8-runtime-guard.cpp'],'output':'d3d8-runtime-probe.exe'},
             {'name':'policy','kind':'exe','units':['tests/umd-d3d8-runtime-policy.cpp'],'output':'d3d8-runtime-policy.exe'},
             {'name':'callbacks','kind':'exe','units':['tests/umd-d3d8-runtime-callbacks.cpp'],'output':'d3d8-runtime-callbacks.exe'}],
-        'native_policy_checks':args.policy_checks,'native_callback_checks':'derive actual stdout; mandatory forwarded=11','malformed_cli_guards':30,
-        'scope':'strict native CPU policies, callback ownership and malformed/null/non-system guards only; no valid API/selector/device/render/Present execution',
+        'native_policy_checks':args.policy_checks,'native_callback_checks':'derive actual stdout; mandatory forwarded=11','malformed_cli_guards':32,
+        'process_api_diagnostics':'one read-only loaded-provider/process-machine/canonical-directory observation; no graphics factory, KMT, core or admission',
+        'scope':'strict native CPU policies, callback ownership, malformed/null/non-system guards and readonly process API-provider diagnostics only; no genuine D3D8 factory/selector/device/render/Present execution',
         'core_required_for_cpu_build':False,'core_binary_built':False,'source_installation':False,'gpu_runs':0,'ci_dispatches':0}
     (args.output/'native-system-d3d8-device-x86-source-01.json').write_text(json.dumps(manifest,indent=2)+'\n')
     requirements = {'schema':'genuine-system-d3d8-device-preparation-v1','prepared':True,'hardware_accepted':False,'target_execution':'pending',

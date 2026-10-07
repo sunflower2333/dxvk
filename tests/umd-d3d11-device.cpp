@@ -338,6 +338,18 @@ uint pack(uint3 value){return value.x+(value.y<<8)+(value.z<<16);}
     malformed = code;
     malformed[offset + 1] = type | (i == 3 ? 2u | (2u << 4) : 1u); reject(malformed);
   }
+  const size_t flattened = declarations[3];
+  CHECK(code[flattened + 1] == UINT(RegisterType::eThreadIndexInGroup) << 12);
+  for (UINT bits : {4u,8u,16u,256u,1u << 22}) {
+    auto malformed = code; malformed[flattened + 1] |= bits; reject(malformed);
+  }
+  auto modifiedScalar = code;
+  modifiedScalar[flattened] = (3u << 24) | UINT(OpCode::eDclInput);
+  modifiedScalar[flattened + 1] |= 0x80000000u;
+  modifiedScalar.insert(modifiedScalar.begin() + flattened + 2, 0x41); reject(modifiedScalar);
+  auto overlappingScalar = code;
+  overlappingScalar.insert(overlappingScalar.begin() + flattened + 2,
+    {code[flattened],code[flattened + 1] | 1u}); reject(overlappingScalar);
   table.pfnDispatch(f.device, 2,2,2); ok(); CHECK(destination.read(96 * 4) == native);
   const D3D11DDI_HUNORDEREDACCESSVIEW empty{};
   table.pfnCsSetUnorderedAccessViews(f.device, 0, 1, &empty, nullptr);

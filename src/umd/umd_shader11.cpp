@@ -336,14 +336,23 @@ bool decodeShader11(ShaderStage stage, const uint32_t* code, size_t words, Shade
             || operand.getIndexDimensions() || operand.getModifiers()) return false;
         const bool scalar = type == dxbc::RegisterType::eThreadIndexInGroup;
         const auto components = operand.getComponentCount();
-        if (components == dxbc::ComponentCount::e1Component) {
+        // FXC declares the dedicated scalar GroupIndex register with zero
+        // components; it still supplies one x value to shader instructions.
+        if (components == dxbc::ComponentCount::e0Component
+            || components == dxbc::ComponentCount::e1Component) {
           if (!scalar) return false;
+          util::ByteWriter encoded;
+          if (!operand.write(encoded, instruction)) return false;
+          const auto raw = std::move(encoded).extract();
+          const uint32_t expected = (uint32_t(type) << 12) | uint32_t(components);
+          if (raw.size() != sizeof(expected) || std::memcmp(raw.data(), &expected, sizeof(expected))) return false;
         } else if (components != dxbc::ComponentCount::e4Component
             || operand.getSelectionMode() != dxbc::SelectionMode::eMask
             || !entry.mask || (entry.mask & ~(scalar ? 1u : 7u))) return false;
         const uint32_t index = scalar ? 3u : uint32_t(type) - uint32_t(dxbc::RegisterType::eThreadId);
-        if (computeInputs[index] & entry.mask) return false;
-        computeInputs[index] |= entry.mask;
+        const uint8_t mask = scalar ? 1 : entry.mask;
+        if (computeInputs[index] & mask) return false;
+        computeInputs[index] |= mask;
         continue;
       }
       case dxbc::RegisterType::eDepth: entry.systemValue = 65; dedicated = true; break;

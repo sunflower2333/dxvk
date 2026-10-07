@@ -59,7 +59,7 @@ static void computeSystemInputs() {
     reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInputSiv, {operand,0}));
     reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInputPs, {operand}));
     reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {operand | (1u << 20),0}));
-    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {uint32_t(type) << 12}));
+    if (!scalar) reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {uint32_t(type) << 12}));
     reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {2 | (uint32_t(type) << 12)}));
     reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {2 | (8u << 4) | (uint32_t(type) << 12)}));
     reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {operand | 8}));
@@ -71,19 +71,60 @@ static void computeSystemInputs() {
     if (!scalar) reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {1 | (uint32_t(type) << 12)}));
     else reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {2 | (2u << 4) | (uint32_t(type) << 12)}));
   }
-  // FXC uses a scalar operand for SV_GroupIndex and vector operands for the
-  // other three values. Preserve all four together without creating ISGN.
+  // FXC declares SV_GroupIndex with zero components and vector operands for
+  // the other three values. Preserve all four together without creating ISGN.
   std::vector<uint32_t> all{0x50050,0};
   instruction(all,OpCode::eDclThreadGroup,{2,3,2});
   for (auto type : registers) instruction(all,OpCode::eDclInput,
-    {type == RegisterType::eThreadIndexInGroup ? 1 | (uint32_t(type) << 12)
+    {type == RegisterType::eThreadIndexInGroup ? uint32_t(type) << 12
       : 2 | (7u << 4) | (uint32_t(type) << 12)});
   instruction(all,OpCode::eRet,{});
   ShaderCode11 shader; auto bytes = build(ShaderStage::Compute,all,shader);
   CHECK(shader.inputs.empty() && shader.outputs.empty() && shader.patch.empty());
+  auto scalar = program(ShaderStage::Compute,OpCode::eDclInput,
+    {1 | (uint32_t(RegisterType::eThreadIndexInGroup) << 12)});
+  build(ShaderStage::Compute,scalar,shader);
+  for (uint32_t bits : {4u,8u,16u,256u,1u<<22}) {
+    auto invalidScalar = program(ShaderStage::Compute,OpCode::eDclInput,
+      {(uint32_t(RegisterType::eThreadIndexInGroup) << 12) | bits});
+    reject(ShaderStage::Compute,invalidScalar);
+  }
+  auto modifiedScalar = program(ShaderStage::Compute,OpCode::eDclInput,
+    {(uint32_t(RegisterType::eThreadIndexInGroup) << 12) | 0x80000000u,0x41});
+  reject(ShaderStage::Compute,modifiedScalar);
+  auto duplicateScalar = all;
+  duplicateScalar.pop_back(); instruction(duplicateScalar,OpCode::eDclInput,
+    {1 | (uint32_t(RegisterType::eThreadIndexInGroup) << 12)});
+  instruction(duplicateScalar,OpCode::eRet,{}); duplicateScalar[1] = uint32_t(duplicateScalar.size());
+  reject(ShaderStage::Compute,duplicateScalar);
   all.pop_back(); instruction(all,OpCode::eDclInput,{2 | (8u << 4) | (uint32_t(RegisterType::eThreadId) << 12)});
   instruction(all,OpCode::eRet,{}); all[1] = uint32_t(all.size());
   reject(ShaderStage::Compute,all);
+  // Actual ARM64 FXC SHEX from the eight-group ID oracle; public WARP
+  // accepts its original and legacy containers. GroupIndex is 0x00024000.
+  std::vector<uint32_t> actualFxc{
+    0x00050050u,0x00000072u,0x0100086au,0x0400009eu,0x0011e000u,0x00000000u,
+    0x00000010u,0x0200005fu,0x00024000u,0x0200005fu,0x00021072u,0x0200005fu,
+    0x00022072u,0x0200005fu,0x00020072u,0x02000068u,0x00000002u,0x0400009bu,
+    0x00000002u,0x00000003u,0x00000002u,0x07000023u,0x00100012u,0x00000000u,
+    0x0002002au,0x00004001u,0x00000006u,0x0002001au,0x07000029u,0x00100012u,
+    0x00000000u,0x0010000au,0x00000000u,0x00004001u,0x00000002u,0x0600001eu,
+    0x00100012u,0x00000000u,0x0010000au,0x00000000u,0x0002000au,0x09000029u,
+    0x00100062u,0x00000000u,0x00020656u,0x00004002u,0x00000000u,0x00000008u,
+    0x00000010u,0x00000000u,0x0600001eu,0x00100022u,0x00000000u,0x0010001au,
+    0x00000000u,0x0002000au,0x0700001eu,0x00100012u,0x00000001u,0x0010002au,
+    0x00000000u,0x0010001au,0x00000000u,0x09000029u,0x00100062u,0x00000000u,
+    0x00021656u,0x00004002u,0x00000000u,0x00000008u,0x00000010u,0x00000000u,
+    0x0600001eu,0x00100022u,0x00000000u,0x0010001au,0x00000000u,0x0002100au,
+    0x0700001eu,0x00100022u,0x00000001u,0x0010002au,0x00000000u,0x0010001au,
+    0x00000000u,0x07000023u,0x00100022u,0x00000000u,0x0002201au,0x00004001u,
+    0x00000100u,0x0002200au,0x08000023u,0x00100042u,0x00000001u,0x0002202au,
+    0x00004001u,0x00010000u,0x0010001au,0x00000000u,0x04000036u,0x00100082u,
+    0x00000001u,0x0002400au,0x090000a8u,0x0011e0f2u,0x00000000u,0x0010000au,
+    0x00000000u,0x00004001u,0x00000000u,0x00100e46u,0x00000001u,0x0100003eu,
+  };
+  build(ShaderStage::Compute,actualFxc,shader);
+  CHECK(shader.inputs.empty() && shader.outputs.empty() && shader.patch.empty());
   // Nonoverlapping masks on the same system register retain both tokens.
   auto split = program(ShaderStage::Compute,OpCode::eDclInput,{2 | (1u << 4) | (uint32_t(RegisterType::eThreadId) << 12)});
   split.pop_back(); instruction(split,OpCode::eDclInput,{2 | (2u << 4) | (uint32_t(RegisterType::eThreadId) << 12)});

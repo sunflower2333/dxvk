@@ -21,11 +21,11 @@ xyz or scalar x component shapes, and no overlapping declarations. Disjoint
 vector masks can be declared separately. Rejection preserves empty decoded
 output; no backend operation or production capability is fabricated.
 
-The portable SM5 fixture retains its existing351 checks and adds295 checks
-for all xyz masks, scalar/vector GroupIndex, all four inputs together, exact
+The portable SM5 fixture retains its existing351 checks and adds318 checks
+for all xyz masks, zero-component/scalar/vector GroupIndex, all four inputs together, exact
 reconstructed tokens/hash, empty graphics signatures and malformed
 stage/opcode/index/mask/modifier/overlap declarations. GCC and Clang each pass
-all646 checks under ASan and UBSan. All six affected x64/x86 COFF units also
+all669 checks under ASan and UBSan. All six affected x64/x86 COFF units also
 pass strict official SDK compilation. The local Clang18 check uses the
 existing MSVC44 version-guard compatibility option and canonical Windows
 header prelude; actual MSVC /W4 /WX verification remains separate.
@@ -34,10 +34,28 @@ The native typed fixture retains the full graphics/query/IA/SO/tessellation/
 class controls. Every ordinary Compute creation compares the original FXC,
 legacy reconstruction and SM5 reconstruction through actual public WARP.
 A new eight-group96-thread dispatch checks every component of all four IDs
-against a scalar CPU oracle and the original FXC WARP result. Thirty-two
+against a scalar CPU oracle and the original FXC WARP result. Thirty-nine
 malformed typed shader creations must report one live caller-thread callback,
 leave private storage and canaries untouched, and preserve a usable existing
 shader binding. The native repaired run is pending at source freeze.
+
+The first correction attempt3f64065 compiled strictly but the all-four-ID
+control exposed FXC's dedicated GroupIndex encoding: dcl_input 0x00024000
+uses zero components, zero selection bits and zero indices. A fresh
+diagnostic preserved and dumped the original accepted shader. The decoder
+now admits that exact scalar form only for flattened GroupIndex and compares
+its raw operand with the canonical token, rejecting selection bits, unused
+index bits or extended modifiers. Its effective x bit is used solely to
+reject overlapping scalar declarations. Vector zero-component forms remain
+invalid. The portable fixture replays the captured114-word SHEX exactly,
+including all four declarations and instructions.
+
+The original FXC DXBC SHA256 is
+f0520fada658f48ab64429fae886da393d6106aeee60a0543a9fcd32786beb95;
+the SHEX payload SHA256 is
+c508baceef58b65ad0e53910eaa01d1b2e156333fee9363c7d0eeecb3c9e7328.
+The failed3f attempt and diagnostic originals remain in separate evidence
+folders; their source and all11 retention checks independently join.
 
 Original evidence is retained separately under
 artifacts/dxvk-native-dx10-dx11-20261007/guest-warp-f4bf37f-02 and

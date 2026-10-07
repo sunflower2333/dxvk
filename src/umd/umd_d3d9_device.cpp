@@ -66,6 +66,8 @@ struct Query {
   std::unique_ptr<dxvk::umd::D3D9QueryResource> backend;
 };
 struct Device {
+  explicit Device(dxvk::umd::LegacyD3DApi api) : legacyApi(api) { }
+  const dxvk::umd::LegacyD3DApi legacyApi;
   std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>(true);
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
   dxvk::umd::RuntimeMemory memory;
@@ -662,6 +664,7 @@ HRESULT APIENTRY setTexture(HANDLE handle, UINT stage, HANDLE token) {
   UINT slot = 0;
   if (!textureSlot(stage, slot)) return E_INVALIDARG;
   return operation(handle, [&](Device& device) {
+    if (device.legacyApi == dxvk::umd::LegacyD3DApi::D3D8 && stage >= 8) return E_INVALIDARG;
     const auto entry = device.resources.find(token);
     if (token) {
       if (entry == device.resources.end() || !entry->second->texture
@@ -714,6 +717,9 @@ HRESULT APIENTRY setTextureStageState(HANDLE handle, const D3DDDIARG_TEXTURESTAG
   // Native colorkey and TEXTUREMAP are not public API state enums. They need
   // dedicated semantics; never cast them to D3DTSS or D3DSAMP.
   return operation(handle, [&](Device& device) {
+    if (device.legacyApi == dxvk::umd::LegacyD3DApi::D3D8 && (input.Stage >= 8
+        || input.State == D3DDDITSS_SRGBTEXTURE || input.State == D3DDDITSS_ELEMENTINDEX
+        || input.State == D3DDDITSS_DMAPOFFSET || input.State == D3DDDITSS_CONSTANT)) return E_INVALIDARG;
     return sample ? device.backend->setSamplerState(input.Stage, sampleState, input.Value)
                   : device.backend->setTextureStageState(input.Stage, textureState, input.Value);
   });
@@ -814,6 +820,9 @@ HRESULT APIENTRY createVertexDeclaration(HANDLE handle, D3DDDIARG_CREATEVERTEXSH
     }
     elements.push_back(D3DDECL_END());
     return operation(handle, [&](Device& device) {
+      if (device.legacyApi == dxvk::umd::LegacyD3DApi::D3D8
+          && std::any_of(elements.begin(), elements.end() - 1,
+            [](const D3DVERTEXELEMENT9& item) { return item.Type > D3DDECLTYPE_SHORT4; })) return E_INVALIDARG;
       auto declaration = std::make_unique<Declaration>();
       declaration->streams = streams; declaration->streamZeroSize = extent;
       declaration->streamSizes = streamSizes;
@@ -972,10 +981,11 @@ HRESULT createShader(HANDLE handle, ShaderStage stage, UINT bytes,
   if (bytes > std::numeric_limits<uintptr_t>::max() - reinterpret_cast<uintptr_t>(input))
     return E_INVALIDARG;
   std::vector<DWORD> code;
-  return preparedOperation(handle, [&](Device&) {
+  return preparedOperation(handle, [&](Device& device) {
     code.resize(bytes / sizeof(DWORD));
     std::memcpy(code.data(), input, bytes);
-    return dxvk::validateD3D9ShaderCode(code.data(), bytes, stage == ShaderStage::Vertex)
+    return dxvk::umd::legacyShaderModelAllowed(device.legacyApi, code.front(), stage == ShaderStage::Vertex)
+      && dxvk::validateD3D9ShaderCode(code.data(), bytes, stage == ShaderStage::Vertex)
       ? S_OK : E_INVALIDARG;
   }, [&](Device& device) {
     auto shader = std::make_unique<Shader>();
@@ -1048,7 +1058,12 @@ HRESULT shaderConstants(HANDLE handle, const Args* args, const T* input) {
   if (bytes > std::numeric_limits<uintptr_t>::max() - reinterpret_cast<uintptr_t>(input))
     return E_INVALIDARG;
   std::vector<T> values;
-  return preparedOperation(handle, [&](Device&) {
+  return preparedOperation(handle, [&](Device& device) {
+    if (device.legacyApi == dxvk::umd::LegacyD3DApi::D3D8) {
+      if constexpr (Type != ConstantType::Float) return E_INVALIDARG;
+      const UINT apiLimit = dxvk::umd::legacyFloatConstantLimit(device.legacyApi, Stage == ShaderStage::Vertex, limit);
+      if (data.Register > apiLimit || data.Count > apiLimit - data.Register) return E_INVALIDARG;
+    }
     if (data.Count) {
       values.resize(size_t(data.Count) * components);
       std::memcpy(values.data(), input, bytes);
@@ -1485,13 +1500,22 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
     return E_INVALIDARG;
   // AllowMultithreading/AllowFlipBatching permit extra concurrency; callers
   // can grant either permission while this device keeps its serialized worker.
-  if (args->Interface != 9 || (args->Flags.Value & ~UINT(3))) return D3DERR_NOTAVAILABLE;
-  const auto& cb = *args->pCallbacks;
+  const auto input = *args;
+  if (!legacyD3DApiMatches(identity->legacyApi, input.Interface)
+      || (input.Flags.Value & ~UINT(3))) return D3DERR_NOTAVAILABLE;
+  D3DDDI_DEVICECALLBACKS cb = {};
+  cb.pfnAllocateCb = input.pCallbacks->pfnAllocateCb;
+  cb.pfnDeallocateCb = input.pCallbacks->pfnDeallocateCb;
+  cb.pfnLockCb = input.pCallbacks->pfnLockCb; cb.pfnUnlockCb = input.pCallbacks->pfnUnlockCb;
+  cb.pfnCreateContextCb = input.pCallbacks->pfnCreateContextCb;
+  cb.pfnDestroyContextCb = input.pCallbacks->pfnDestroyContextCb;
+  cb.pfnEscapeCb = input.pCallbacks->pfnEscapeCb; cb.pfnRenderCb = input.pCallbacks->pfnRenderCb;
+  cb.pfnPresentCb = input.pCallbacks->pfnPresentCb;
   if (!cb.pfnAllocateCb || !cb.pfnDeallocateCb || !cb.pfnLockCb || !cb.pfnUnlockCb
       || !cb.pfnCreateContextCb || !cb.pfnDestroyContextCb || !cb.pfnEscapeCb || !cb.pfnRenderCb)
     return E_INVALIDARG;
-  auto owner = std::make_shared<Device>();
-  owner->runtime = args->hDevice;
+  auto owner = std::make_shared<Device>(identity->legacyApi);
+  owner->runtime = input.hDevice;
   {
     std::lock_guard<std::mutex> lock(devicesMutex);
     if (!runtimeDevices.emplace(owner->runtime, owner).second) return E_INVALIDARG;
@@ -1507,7 +1531,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   AdapterLuid luid;
   std::memcpy(luid.data(), &identity->luid, luid.size());
   const HRESULT hr = result(owner->service->run([&] {
-    return D3D9Backend::create(luid, &runtime, owner->backend);
+    return D3D9Backend::create(luid, &runtime, owner->backend, owner->legacyApi);
   }));
   if (FAILED(hr)) return hr;
   if (!owner->backend) return E_FAIL;
@@ -1567,7 +1591,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
     if (!nextHandle) return E_OUTOFMEMORY;
     const HANDLE handle = reinterpret_cast<HANDLE>(nextHandle++);
     devices.emplace(handle, owner);
-    std::memcpy(args->pDeviceFuncs, &table, d3d9DeviceFunctionBytes);
+    std::memcpy(input.pDeviceFuncs, &table, d3d9DeviceFunctionBytes);
     args->hDevice = handle;
   }
   guard.published = true;

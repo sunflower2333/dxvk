@@ -26,7 +26,8 @@ namespace dxvk {
 
     // Private renderer parent: one already selected adapter, no singleton,
     // display enumeration, DPI mutation or public device factory.
-    D3D9InterfaceEx(Rc<DxvkInstance> instance, Rc<DxvkAdapter> adapter);
+    D3D9InterfaceEx(Rc<DxvkInstance> instance, Rc<DxvkAdapter> adapter,
+                   bool extended = true);
 
     ~D3D9InterfaceEx();
 

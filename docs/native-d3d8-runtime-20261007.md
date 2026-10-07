@@ -1,8 +1,9 @@
 # Genuine Windows D3D8 compatibility preparation
 
-This slice adds a bounded DX8 caps projection and a genuine system-runtime
-probe. It does not open ordinary production `OpenAdapter`, accept Interface8,
-install an app-local D3D8 DLL, or claim hardware acceptance. The existing
+This branch adds a bounded DX8 caps projection, an immutable typed Interface8/9
+development bridge and a genuine system-runtime probe. Ordinary production
+`OpenAdapter` remains absent and all admission gates stay unchanged. It does
+not install an app-local D3D8 DLL or claim hardware acceptance. The existing
 private DXVK D3D8 COM wrapper delegates to D3D9; it is not used by this probe.
 
 ## Original runtime and ABI evidence
@@ -80,25 +81,74 @@ counts and x86 system-path/VirtIO identity; checksum `a9dc9545`. Its synthetic
 selfcheck is verifier testing, not runtime evidence. SM1.1 execution does
 not establish every SM1.4 instruction or a broad DX8 game compatibility claim.
 
-## Reserved integration proposal and remaining gate
+## Immutable typed Interface8/9 bridge
+
+The second slice, based on frozen b61f8a3, makes `AdapterIdentity::legacyApi`
+const, defaults existing direct-core callers to9 and snapshots Open/Create
+metadata before runtime callbacks. An8 adapter creates only an8 device; a9
+adapter creates only a9 device. Reserved Create flags remain rejected and
+selected callback functions/output destinations are copied before caller
+storage can change. Both adapters publish only the99-pointer Vista table.
+
+GETD3D8CAPS12 is available only on8, with the exact212-byte projection above;
+GETD3D9CAPS13 remains9-only. Sizes, query result, LUID/generation and close
+state are checked before publishing output. Unsupported/mismatched cap types
+and malformed sizes do not enter identity callbacks. Existing9 capability
+values and every pre-existing Interface9 fixture remain in place.
+
+The API identity is also passed into real `D3D9Backend::create`. API8
+constructs its private renderer parent with D3D9Ex disabled and applies
+DXVK's D3D8 compatibility flag before `D3D9DeviceEx` copies that flag set.
+The private constructor's default remains extended=true for9. This follows
+the existing DXVK8 wrapper's non-Ex parent, without entering that public
+wrapper. D3D8-specific defaults/resource behavior therefore reach the actual
+renderer. Its SM1-3 compiler already handles SM1.1 TEX and SM1.4 TEXLD,
+including their different operand layouts. No shader bytecode translation to
+a capability-only placeholder is needed.
+
+The typed8 bridge additionally bounds VS/PS models to1.1/1.4, VS/PS float
+constants to96/8, legacy declaration types and8 texture stages. It rejects
+integer/bool constants and9-only texture-state/sampler/declaration requests.
+The real Microsoft runtime is responsible for converting its public FVF and
+declaration tokens into the common typed DDI; the new controlled fixture
+exercises the resulting POSITIONT/COLOR declaration and exact vertex bytes.
+It cannot establish that the genuine runtime issued those calls. That stays
+an actual x86 runtime gate.
+
+New tests cover caller metadata and callback storage mutation,8↔9 mismatches,
+invalid identity-query replies, callback failures, all reserved flag bits,
+CAPS12 canaries/boundaries, reentry/close/nonpublication, SM1.x bytecode
+forwarding and legacy state limits. Guard-page table tests now run for both
+API identities through adapter and direct-core creation. They have locally
+compiled and linked; native Windows execution is still pending.
+
+`tests/umd-d3d8-sm1.cpp` actually converts five valid VS1.1/PS1.1/PS1.4
+programs using the pinned DXVK compiler. It checks stage, output stores and
+real sampling IR. The converter assumes a validated header; malformed
+versions are rejected by ShaderInfo and the typed DDI before conversion.
+An initial direct malformed-header converter experiment asserted during
+finalization; its originals are retained rather than being counted as a
+production failure. GCC and Clang ASan/UBSan pass47 converter checks and2800
+API-bound checks; four exact reverted-bound/mismatch controls compile then
+exit1 at the intended assertion. These are CPU compiler/contract checks,
+not shader hardware execution.
+
+Meson provides `dxvk-umd-legacy-api-test` and `dxvk-umd-d3d8-sm1-test`; future
+CI integration must explicitly build/run/retain them. Ordinary OpenAdapter
+and production gate/export sources have not changed. The exact implemented
+caps projection does not add the legacy FOGANDSPECULARALPHA bit when it was
+absent from the9 source profile; genuine8 runtime admission needs its own
+trace, rather than assuming the Microsoft9 capability gate is identical.
+
+## Earlier proposal and remaining runtime gate
 
 The separate
 `.planning/dx8-native-port-20261007/dx8-caps-contract-proposal.patch`
-is based on c0ea296 and proposes only GETD3D8CAPS sizing/projection plus
-meaningful adapter canary/size/snapshot tests and link inputs. Reserved files
-were not edited. It leaves Interface8 and ordinary admission closed. Root
-should rebase that proposal onto its current adapter after the actual DX9
-lifecycle fix, then freeze a new typed fixture packet.
-
-A later Interface8 step needs an immutable API-version field in adapter
-identity, exact adapter/core CreateDevice version agreement, reserved-bit
-checks and both99-pointer Vista table guard tests. Snapshot caller Interface
-before identity callbacks can mutate it. Thread that API into backend
-construction and set the private `D3D9InterfaceEx` D3D8 compatibility flag
-before device construction, following the existing private DXVK wrapper's
-compatibility semantics. Test stale handles, mismatched8↔9 adapter/device,
-failure nonpublication and8-specific declarations/texture-stage state.
-Do not merely replace `Interface != 9` with an unconditional8-or9 check.
+is the preserved first-slice c0ea296 caps-only proposal. At frozen b61f8a3,
+reserved adapter/device files had not been edited and Interface8 was closed.
+The second slice above supersedes that proposal with root-authorized isolated
+implementation. Root owns merging it onto newer9 fixes, preserving those
+fixes and freezing native verification inputs before any runtime action.
 
 Real system8 execution on this ARM64 Windows requires the x86 ABI throughout:
 frontend, embedded UMD/core, Vulkan loader and Mesa ICD, plus the actual WoW
@@ -124,7 +174,7 @@ fatal. Proof: `artifacts/dxvk-native-d3d8-port-20261007/local-verification-02/ve
 `prepare-native-d3d8-packet.py` freezes10 exact Git inputs plus3 verbatim
 Wine/MinGW legacy D3D8 headers, retaining their original license/provenance.
 Modern Microsoft SDKs do not include those legacy API headers. The prepared
-`build-native-d3d8-cpu.ps1` requires an explicit native EWDK compiler root,
+`build-native-d3d8-cpu.ps1` in the immutable b61 packet requires an explicit EWDK compiler root,
 checks HostARM64/x86 component readability (including clui), builds5 original
 COFFs/3 x86 PEs under `/W4 /WX /MT`, and executes only CPU fixtures and7
 malformed CLI guards. It records SDK/CRT/library hashes and original
@@ -132,3 +182,21 @@ SYS/service/registration/System32/SysWOW64/candidate/desktop continuity.
 It does not execute enumeration, selector or offscreen mode. Its native
 PowerShell parse and MSVC execution are pending target ownership release;
 no native EWDK success is claimed by the local cross builds.
+
+The second-slice actual private parent/backend and SM1 regression also
+cross-compile on all three architectures using the existing Meson warning
+policy; typed adapter/device units retain unsuppressed source Werror.
+Native typed fixture execution, private-core linking and real8 compatibility
+flags on hardware remain pending. For a later x86 EWDK build, an official
+Hostx64/x86 compiler running under ARM64 emulation is valid when native
+Hostarm64/x86 is unavailable; record the actual host/toolchain identity.
+The previously frozen b61 packet and its original helper are preserved.
+
+Final second-slice proof is
+`artifacts/dxvk-native-d3d8-port-20261007/bridge-local-verification-05/verified.json`:
+33 original COFFs,6 fixture PEs,50 primary before/after source hashes and242
+compiler dependency hashes. The typed fixtures use Werror/Wshadow; actual
+private renderer units use the existing Meson warning policy. Original GCC
+and Clang sanitizer converter runs retain15 objects each and47 checks; API
+bounds run2800 checks each, with four exact compile-success/assertion-failure
+negative controls. These are local CPU/cross proofs, not Windows execution.

@@ -479,16 +479,20 @@ static HRESULT d3d9Error(HRESULT hr) {
 }
 
 HRESULT D3D9Backend::create(const AdapterLuid& luid, const RuntimeBackend* runtime,
-                          std::unique_ptr<D3D9Backend>& result) noexcept {
+                          std::unique_ptr<D3D9Backend>& result, LegacyD3DApi api) noexcept {
   result.reset();
-  if (luid == AdapterLuid{} || !runtime || !validRuntimeBackend(*runtime))
+  if (!validLegacyD3DApi(uint32_t(api)) || luid == AdapterLuid{} || !runtime || !validRuntimeBackend(*runtime))
     return E_INVALIDARG;
   try {
     auto backend = std::make_unique<D3D9Backend>();
     auto& state = *backend->m_state;
     HRESULT hr = state.initialize(luid, DxvkInstanceFlag::ClientApiIsD3D9, runtime);
     if (FAILED(hr)) return d3d9Error(hr);
-    state.parent = new D3D9InterfaceEx(state.instance, state.adapter);
+    state.parent = new D3D9InterfaceEx(state.instance, state.adapter, api == LegacyD3DApi::D3D9);
+    // The genuine D3D8 runtime translates declarations/FVF to the common
+    // legacy DDI. Its renderer still needs DXVK's8-specific shader/default
+    // and texture semantics; set compatibility before constructing the device.
+    if (api == LegacyD3DApi::D3D8) state.parent->SetD3DCompatibility(D3DCompatibility::D3D8);
     state.d3d = new D3D9DeviceEx(state.parent.ptr(), state.parent->GetAdapter(0),
       D3DDEVTYPE_HAL, nullptr, D3DCREATE_HARDWARE_VERTEXPROCESSING
       | D3DCREATE_MULTITHREADED | D3DCREATE_FPU_PRESERVE, state.device);

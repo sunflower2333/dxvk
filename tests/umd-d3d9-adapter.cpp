@@ -1,4 +1,5 @@
 #include "../src/umd/umd_d3d9_adapter.h"
+#include "../src/umd/umd_d3d8_compat.h"
 #include <dxgi.h>
 #include <array>
 #include <atomic>
@@ -11,14 +12,17 @@
 #include <mutex>
 #include <new>
 #include <thread>
+#include <type_traits>
 
 // The adapter fixture isolates the handshake from backend construction.
 static std::atomic<unsigned> backendCreateCalls{0};
 static std::atomic<UINT> backendCreateFlags{UINT_MAX};
-HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdentity>&,
+static std::atomic<UINT> backendLegacyApi{UINT_MAX}, backendInterface{UINT_MAX};
+HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdentity>& identity,
                                       D3DDDIARG_CREATEDEVICE* args) {
   ++backendCreateCalls;
   backendCreateFlags = args->Flags.Value;
+  backendLegacyApi = UINT(identity->legacyApi); backendInterface = args->Interface;
   return D3DERR_NOTAVAILABLE;
 }
 
@@ -45,8 +49,9 @@ template<typename T> std::array<uint8_t, sizeof(T)> snapshot(const T& value) {
 }
 
 enum class Action { None, NestedCaps, NestedCreate, NestedOpen, Close, CloseReopen,
-  Block, ReplaceCapsOutput, ThrowAllocation, ThrowOther };
+  Block, ReplaceCapsOutput, ReplaceOpen, ReplaceCreate, ThrowAllocation, ThrowOther };
 struct Runtime {
+  UINT api = 9;
   std::array<uint8_t, 160> reply;
   HRESULT result = S_OK;
   unsigned calls = 0;
@@ -67,6 +72,10 @@ struct Runtime {
 static Runtime first, second;
 static unsigned wrongCalls;
 static D3DDDIARG_GETCAPS* changingCaps = nullptr;
+static D3DDDIARG_OPENADAPTER* changingOpen = nullptr;
+static D3DDDIARG_CREATEDEVICE* changingCreate = nullptr;
+static D3DDDI_ADAPTERFUNCS alternateAdapterTable = {};
+static D3DDDI_DEVICEFUNCS alternateDeviceTable = {};
 static UINT replacedOutput = 0x11223344;
 static std::mutex callbackMutex;
 static std::condition_variable callbackChanged;
@@ -80,7 +89,7 @@ static HRESULT APIENTRY wrongQuery(HANDLE, const D3DDDICB_QUERYADAPTERINFO*) {
 static D3DDDIARG_OPENADAPTER request(Runtime& owner, D3DDDI_ADAPTERFUNCS& functions,
     const D3DDDI_ADAPTERCALLBACKS& callbacks, UINT version = 0) {
   D3DDDIARG_OPENADAPTER args = {};
-  args.hAdapter = &owner; args.Interface = 9; args.Version = version;
+  args.hAdapter = &owner; args.Interface = owner.api; args.Version = version;
   args.pAdapterCallbacks = &callbacks; args.pAdapterFuncs = &functions;
   args.DriverVersion = 0xbadc0ffe;
   return args;
@@ -92,7 +101,7 @@ static void open(Runtime& owner, UINT version = 0) {
   auto args = request(owner, table.value, callbacks, version);
   CHECK(VioGpuDxvkOpenAdapter9ForTest(&args) == S_OK);
   CHECK(args.hAdapter && args.hAdapter != &owner);
-  CHECK(args.Interface == 9 && args.Version == version);
+  CHECK(args.Interface == owner.api && args.Version == version);
   CHECK(args.DriverVersion == D3D_UMD_INTERFACE_VERSION_VISTA);
   CHECK(table.value.pfnGetCaps && table.value.pfnCreateDevice && table.value.pfnCloseAdapter);
   table.intact();
@@ -143,7 +152,7 @@ static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* a
       D3DDDI_DEVICECALLBACKS callbacks = {};
       Guarded<D3DDDI_DEVICEFUNCS> table;
       D3DDDIARG_CREATEDEVICE create = {};
-      create.hDevice = &owner; create.Interface = 9;
+      create.hDevice = &owner; create.Interface = owner.api;
       create.pCallbacks = &callbacks; create.pDeviceFuncs = &table.value;
       const auto input = snapshot(create); const auto output = snapshot(table);
       const auto calls = owner.calls;
@@ -179,6 +188,20 @@ static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* a
       changingCaps->DataSize = UINT_MAX;
       changingCaps->pInfo = &owner;
       break;
+    case Action::ReplaceOpen:
+      CHECK(changingOpen);
+      changingOpen->Interface = 9; changingOpen->Version = UINT_MAX;
+      changingOpen->hAdapter = &second;
+      changingOpen->pAdapterFuncs = &alternateAdapterTable;
+      changingOpen->pAdapterCallbacks = reinterpret_cast<D3DDDI_ADAPTERCALLBACKS*>(UINT_PTR(1));
+      break;
+    case Action::ReplaceCreate:
+      CHECK(changingCreate);
+      changingCreate->Interface = 9; changingCreate->Version = UINT_MAX;
+      changingCreate->Flags.Value = UINT_MAX;
+      changingCreate->pCallbacks = reinterpret_cast<D3DDDI_DEVICECALLBACKS*>(UINT_PTR(1));
+      changingCreate->pDeviceFuncs = &alternateDeviceTable;
+      break;
     case Action::ThrowAllocation: throw std::bad_alloc();
     case Action::ThrowOther: throw 1;
     case Action::None: break;
@@ -187,14 +210,94 @@ static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* a
   return owner.result;
 }
 
+static void legacyAdapterContracts() {
+  static_assert(std::is_const_v<decltype(dxvk::umd::AdapterIdentity::legacyApi)>);
+  first.valid(0x12345678); first.api = 8;
+  D3DDDI_ADAPTERCALLBACKS callbacks = {}; callbacks.pfnQueryAdapterInfoCb = query;
+  Guarded<D3DDDI_ADAPTERFUNCS> table;
+  for (const HRESULT failure : {S_FALSE,E_FAIL,DXGI_ERROR_DEVICE_REMOVED}) {
+    first.result = failure;
+    unchangedOpen(request(first,table.value,callbacks),
+      failure == S_FALSE ? E_FAIL : failure == DXGI_ERROR_DEVICE_REMOVED ? D3DERR_DEVICELOST : failure);
+  }
+  first.valid(0x12345678); first.reply[0] ^= 1;
+  unchangedOpen(request(first,table.value,callbacks),D3DERR_NOTAVAILABLE);
+  first.valid(0x12345678);
+  auto args = request(first, table.value, callbacks, 0x11000);
+  std::memset(&alternateAdapterTable, 0xa5, sizeof(alternateAdapterTable));
+  const auto alternateBefore = snapshot(alternateAdapterTable);
+  changingOpen = &args; first.action = Action::ReplaceOpen;
+  CHECK(VioGpuDxvkOpenAdapter9ForTest(&args) == S_OK); changingOpen = nullptr;
+  CHECK(args.Interface == 9 && args.Version == UINT_MAX && args.DriverVersion == D3D_UMD_INTERFACE_VERSION_VISTA);
+  CHECK(snapshot(alternateAdapterTable) == alternateBefore);
+  first.driver = args.hAdapter; first.functions = table.value; table.intact();
+  // Caller metadata now says9 and the callback storage can expire. Identity
+  // remains8 with the original callback/runtime handle and output destination.
+  callbacks.pfnQueryAdapterInfoCb = wrongQuery;
+  Guarded<dxvk::umd::D3D8CapsPrefix> caps;
+  D3DDDIARG_GETCAPS get = {D3DDDICAPS_GETD3D8CAPS, nullptr, caps.value.data(), sizeof(caps.value)};
+  const auto capsRequest = snapshot(get);
+  CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK && snapshot(get) == capsRequest);
+  CHECK(caps.value[0] == D3DDEVTYPE_HAL && caps.value[49] == D3DVS_VERSION(1,1));
+  CHECK(caps.value[50] == 96 && caps.value[51] == D3DPS_VERSION(1,4) && !wrongCalls);
+  CHECK(!caps.value[17] && !caps.value[18] && !caps.value[24]); caps.intact();
+  get.pData = nullptr; const auto nullCalls = first.calls;
+  CHECK(first.functions.pfnGetCaps(first.driver,&get) == E_INVALIDARG && first.calls == nullCalls);
+  get.pData = caps.value.data();
+  for (UINT bytes = 0; bytes <= sizeof(caps.value) + 1; ++bytes) {
+    if (bytes == sizeof(caps.value)) continue;
+    get.DataSize = bytes; const auto output = snapshot(caps); const auto request = snapshot(get); const auto calls = first.calls;
+    CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG);
+    CHECK(snapshot(caps) == output && snapshot(get) == request && first.calls == calls);
+  }
+  for (const auto type : {D3DDDICAPS_GETD3D9CAPS, D3DDDICAPS_GETD3D7CAPS, D3DDDICAPS_TYPE(999)}) {
+    get = {type,nullptr,caps.value.data(),sizeof(caps.value)}; const auto output = snapshot(caps); const auto calls = first.calls;
+    CHECK(first.functions.pfnGetCaps(first.driver, &get) == D3DERR_NOTAVAILABLE);
+    CHECK(snapshot(caps) == output && first.calls == calls);
+  }
+  get = {D3DDDICAPS_GETD3D8CAPS,nullptr,caps.value.data(),sizeof(caps.value)};
+  changingCaps = &get; first.action = Action::ReplaceCapsOutput;
+  CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK && replacedOutput == 0x11223344);
+  changingCaps = nullptr; caps.intact();
+  D3DDDI_DEVICECALLBACKS cb = {}; Guarded<D3DDDI_DEVICEFUNCS> deviceTable;
+  D3DDDIARG_CREATEDEVICE create = {}; create.hDevice = &second; create.Interface = 9;
+  create.pCallbacks = &cb; create.pDeviceFuncs = &deviceTable.value;
+  const auto calls = first.calls; const auto backend = backendCreateCalls.load(); const auto output = snapshot(deviceTable);
+  CHECK(first.functions.pfnCreateDevice(first.driver, &create) == D3DERR_NOTAVAILABLE);
+  CHECK(first.calls == calls && backendCreateCalls == backend && snapshot(deviceTable) == output);
+  create.Interface = 8;
+  for (unsigned bit = 2; bit < 32; ++bit) {
+    create.Flags.Value = UINT(1) << bit; const auto input = snapshot(create);
+    CHECK(first.functions.pfnCreateDevice(first.driver,&create) == D3DERR_NOTAVAILABLE);
+    CHECK(snapshot(create) == input && first.calls == calls && backendCreateCalls == backend && snapshot(deviceTable) == output);
+  }
+  create.Interface = 8; create.Flags.Value = 3;
+  std::memset(&alternateDeviceTable,0xa5,sizeof(alternateDeviceTable)); const auto alternative = snapshot(alternateDeviceTable);
+  changingCreate = &create; first.action = Action::ReplaceCreate;
+  CHECK(first.functions.pfnCreateDevice(first.driver, &create) == D3DERR_NOTAVAILABLE); changingCreate = nullptr;
+  CHECK(backendLegacyApi == 8 && backendInterface == 8 && backendCreateFlags == 3);
+  CHECK(snapshot(deviceTable) == output && snapshot(alternateDeviceTable) == alternative);
+  get = {D3DDDICAPS_GETD3D8CAPS,nullptr,caps.value.data(),sizeof(caps.value)};
+  for (const auto action : {Action::NestedCaps,Action::NestedCreate,Action::ThrowAllocation,Action::ThrowOther,Action::Close}) {
+    first.action = action; const auto prior = snapshot(caps);
+    const HRESULT expected = action == Action::Close ? D3DERR_DEVICELOST : action == Action::ThrowAllocation ? E_OUTOFMEMORY
+      : action == Action::ThrowOther ? E_FAIL : S_OK;
+    CHECK(first.functions.pfnGetCaps(first.driver, &get) == expected);
+    if (expected != S_OK) CHECK(snapshot(caps) == prior);
+  }
+  CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG);
+  first.api = 9; first.valid(0x12345678); first.calls = 0;
+}
+
 int main() {
+  legacyAdapterContracts();
   first.valid(0x12345678); second.valid(0x99887766);
   CHECK(VioGpuDxvkOpenAdapter9ForTest(nullptr) == E_INVALIDARG);
   Guarded<D3DDDI_ADAPTERFUNCS> table;
   D3DDDI_ADAPTERCALLBACKS callbacks = {};
   callbacks.pfnQueryAdapterInfoCb = query;
   const auto valid = request(first, table.value, callbacks);
-  for (const UINT interfaceVersion : {0u, 7u, 8u, 10u, 11u, 12u, 0x000a0000u, 0xffffffffu}) {
+  for (const UINT interfaceVersion : {0u, 7u, 10u, 11u, 12u, 0x000a0000u, 0xffffffffu}) {
     auto args = valid; args.Interface = interfaceVersion;
     unchangedOpen(args, D3DERR_NOTAVAILABLE);
   }

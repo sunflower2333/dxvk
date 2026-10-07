@@ -83,14 +83,16 @@ namespace dxvk {
   }
 
 
-  D3D9InterfaceEx::D3D9InterfaceEx(Rc<DxvkInstance> instance, Rc<DxvkAdapter> adapter)
+  D3D9InterfaceEx::D3D9InterfaceEx(Rc<DxvkInstance> instance, Rc<DxvkAdapter> adapter,
+                                 bool extended)
     : m_instance           ( std::move(instance) )
     , m_nativeRenderer     ( true )
     , m_legacyD3DBridge    ( this )
     , m_d3d9Options        ( nullptr, m_instance->config() )
     , m_d3d9Interop        ( this )
     , m_d3d9VkExtInterface ( this ) {
-    m_d3dCompatibility.set(D3DCompatibility::D3D9Ex);
+    if (extended)
+      m_d3dCompatibility.set(D3DCompatibility::D3D9Ex);
     m_adapters.emplace_back(new D3D9Adapter(this, nullptr, m_instance, adapter, 0, 0));
   }
 

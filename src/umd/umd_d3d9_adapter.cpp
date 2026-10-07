@@ -1,4 +1,5 @@
 #include "umd_d3d9_adapter.h"
+#include "umd_d3d8_compat.h"
 #include "umd_runtime_query.h"
 #include "../d3d9/d3d9_caps.h"
 #include <dxgi.h>
@@ -167,7 +168,12 @@ HRESULT APIENTRY getCaps(HANDLE handle, const D3DDDIARG_GETCAPS* args) {
   switch (input.Type) {
     case D3DDDICAPS_GETFORMATCOUNT:
     case D3DDDICAPS_GETD3DQUERYCOUNT: size = sizeof(UINT); break;
-    case D3DDDICAPS_GETD3D9CAPS: size = sizeof(D3DCAPS9); break;
+    case D3DDDICAPS_GETD3D9CAPS:
+      if (adapter->identity->legacyApi != dxvk::umd::LegacyD3DApi::D3D9) return D3DERR_NOTAVAILABLE;
+      size = sizeof(D3DCAPS9); break;
+    case D3DDDICAPS_GETD3D8CAPS:
+      if (adapter->identity->legacyApi != dxvk::umd::LegacyD3DApi::D3D8) return D3DERR_NOTAVAILABLE;
+      size = dxvk::umd::d3d8CapsBytes; break;
     case D3DDDICAPS_GETFORMATDATA: size = sizeof(formats); break;
     case D3DDDICAPS_GETD3DQUERYDATA: size = sizeof(queries); break;
     case D3DDDICAPS_GETGAMMARAMPCAPS: size = sizeof(DDIGAMMACAPS); break;
@@ -183,6 +189,12 @@ HRESULT APIENTRY getCaps(HANDLE handle, const D3DDDIARG_GETCAPS* args) {
   hr = state(adapter);
   if (FAILED(hr)) return hr;
   switch (input.Type) {
+    case D3DDDICAPS_GETD3D8CAPS: {
+      const auto caps = nativeCaps();
+      if (dxvk::umd::projectD3D8Caps9(caps, input.pData, size)
+          != dxvk::umd::D3D8CapsResult::Success) return E_INVALIDARG;
+      break;
+    }
     case D3DDDICAPS_GETFORMATCOUNT: {
       const UINT count = _countof(formats); std::memcpy(input.pData, &count, size); break;
     }
@@ -209,13 +221,15 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
   // identifier, with no D3D10-style packed build requirement.
   // Multithreading and flip batching are permissions, not requirements.
   // The device still serializes its backend and presents synchronously.
-  if (args->Interface != 9 || (args->Flags.Value & ~UINT(3))) return D3DERR_NOTAVAILABLE;
-  if (!args->hDevice || !args->pCallbacks || !args->pDeviceFuncs) return E_INVALIDARG;
+  const auto input = *args;
+  if (!dxvk::umd::legacyD3DApiMatches(adapter->identity->legacyApi, input.Interface)
+      || (input.Flags.Value & ~UINT(3))) return D3DERR_NOTAVAILABLE;
+  if (!input.hDevice || !input.pCallbacks || !input.pDeviceFuncs) return E_INVALIDARG;
   try {
     // Snapshot inputs before the first callback can reenter or replace them.
     // Legacy command/allocation/patch buffers are obsolete and never read.
     D3DDDI_DEVICECALLBACKS callbacks = {};
-    const auto& source = *args->pCallbacks;
+    const auto& source = *input.pCallbacks;
     callbacks.pfnAllocateCb = source.pfnAllocateCb;
     callbacks.pfnDeallocateCb = source.pfnDeallocateCb;
     callbacks.pfnLockCb = source.pfnLockCb; callbacks.pfnUnlockCb = source.pfnUnlockCb;
@@ -224,10 +238,10 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
     callbacks.pfnEscapeCb = source.pfnEscapeCb; callbacks.pfnRenderCb = source.pfnRenderCb;
     callbacks.pfnPresentCb = source.pfnPresentCb;
     D3DDDI_DEVICEFUNCS table = {};
-    auto output = args->pDeviceFuncs;
+    auto output = input.pDeviceFuncs;
     D3DDDIARG_CREATEDEVICE local = {};
-    local.hDevice = args->hDevice; local.Interface = args->Interface;
-    local.Version = args->Version; local.Flags = args->Flags;
+    local.hDevice = input.hDevice; local.Interface = input.Interface;
+    local.Version = input.Version; local.Flags = input.Flags;
     local.pCallbacks = &callbacks; local.pDeviceFuncs = &table;
     hr = current(adapter);
     if (FAILED(hr)) return hr;
@@ -266,17 +280,20 @@ HRESULT APIENTRY closeAdapter(HANDLE handle) {
 }
 
 extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter9ForTest(D3DDDIARG_OPENADAPTER* args) {
-  if (!args || !args->hAdapter || !args->pAdapterFuncs || !args->pAdapterCallbacks
-      || !args->pAdapterCallbacks->pfnQueryAdapterInfoCb) return E_INVALIDARG;
-  if (args->Interface != 9) return D3DERR_NOTAVAILABLE;
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  if (!input.hAdapter || !input.pAdapterFuncs || !input.pAdapterCallbacks) return E_INVALIDARG;
+  if (!dxvk::umd::validLegacyD3DApi(input.Interface)) return D3DERR_NOTAVAILABLE;
+  const auto query = input.pAdapterCallbacks->pfnQueryAdapterInfoCb;
+  if (!query) return E_INVALIDARG;
   if (opening) return D3DERR_WASSTILLDRAWING;
   opening = true;
   struct Guard { ~Guard() { opening = false; } } guard;
   try {
     auto adapter = std::make_shared<Adapter>();
-    auto identity = std::make_shared<dxvk::umd::AdapterIdentity>();
-    identity->runtime = args->hAdapter;
-    identity->query = args->pAdapterCallbacks->pfnQueryAdapterInfoCb;
+    auto identity = std::make_shared<dxvk::umd::AdapterIdentity>(dxvk::umd::LegacyD3DApi(input.Interface));
+    identity->runtime = input.hAdapter;
+    identity->query = query;
     dxvk::umd::RuntimeIdentity observed;
     const HRESULT hr = queryError(dxvk::umd::queryRuntimeIdentity(
       identity->runtime, identity->query, observed));
@@ -293,7 +310,7 @@ extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter9ForTest(D3DDDIARG_OPENADAPTER*
     if (!nextHandle) return E_OUTOFMEMORY;
     const HANDLE handle = reinterpret_cast<HANDLE>(nextHandle++);
     adapters.emplace(handle, std::move(adapter));
-    *args->pAdapterFuncs = functions;
+    *input.pAdapterFuncs = functions;
     args->DriverVersion = dxvk::umd::d3d9DriverVersion;
     args->hAdapter = handle;
     return S_OK;

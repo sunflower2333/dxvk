@@ -4,6 +4,7 @@
 #include "../src/umd/umd_runtime_service.h"
 #include "../src/d3d9/d3d9_shader_code.h"
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <cstdio>
@@ -38,6 +39,8 @@ static uint64_t read(const void* ptr, unsigned offset, unsigned length) {
 }
 
 struct Fixture {
+  dxvk::umd::LegacyD3DApi api = dxvk::umd::LegacyD3DApi::D3D9;
+  dxvk::umd::LegacyD3DApi backendApi = dxvk::umd::LegacyD3DApi::D3D9;
   char adapterCookie = 0, deviceCookie = 0, contextCookie = 0;
   DWORD caller = GetCurrentThreadId();
   LUID luid{0x13579024, -11};
@@ -544,10 +547,11 @@ dxvk::umd::D3D9Backend::~D3D9Backend() {
 }
 IDirect3DDevice9Ex* dxvk::umd::D3D9Backend::device() const noexcept { return nullptr; }
 HRESULT dxvk::umd::D3D9Backend::create(const AdapterLuid& luid, const RuntimeBackend* runtime,
-                                    std::unique_ptr<D3D9Backend>& output) noexcept {
+                                    std::unique_ptr<D3D9Backend>& output, LegacyD3DApi api) noexcept {
   output.reset();
   CHECK(GetCurrentThreadId() != f->caller && runtime && runtime->owner);
   CHECK(!std::memcmp(luid.data(), &f->luid, luid.size()));
+  CHECK(api == f->api); f->backendApi = api;
   ++f->backends;
   try {
     if (f->throwAllocation) throw std::bad_alloc();
@@ -912,11 +916,12 @@ HRESULT dxvk::umd::D3D9Backend::readSurface(D3D9SurfaceResource& resource,
   return S_OK;
 }
 
-static void initialize(Fixture& fixture) {
+static void initialize(Fixture& fixture, dxvk::umd::LegacyD3DApi api = dxvk::umd::LegacyD3DApi::D3D9) {
   f = &fixture;
+  f->api = api;
   D3DDDI_ADAPTERCALLBACKS callbacks = {}; callbacks.pfnQueryAdapterInfoCb = query;
   D3DDDIARG_OPENADAPTER args = {};
-  args.hAdapter = &f->adapterCookie; args.Interface = 9;
+  args.hAdapter = &f->adapterCookie; args.Interface = UINT(api);
   args.pAdapterCallbacks = &callbacks; args.pAdapterFuncs = &f->adapterFuncs;
   CHECK(VioGpuDxvkOpenAdapter9ForTest(&args) == S_OK); f->adapter = args.hAdapter;
   CHECK(args.DriverVersion == D3D_UMD_INTERFACE_VERSION_VISTA);
@@ -927,7 +932,7 @@ static void initialize(Fixture& fixture) {
   cb.pfnEscapeCb = escape; cb.pfnRenderCb = render;
   std::memset(&f->table, 0xa5, sizeof(f->table));
   auto& create = f->create;
-  create.hDevice = &f->deviceCookie; create.Interface = 9; create.Version = 0xffffffff;
+  create.hDevice = &f->deviceCookie; create.Interface = UINT(api); create.Version = 0xffffffff;
   create.pCallbacks = &cb; create.pDeviceFuncs = &f->table;
   // Obsolete fields are deliberate invalid addresses, never used as backing.
   create.pCommandBuffer = reinterpret_cast<void*>(UINT_PTR(1)); create.CommandBufferSize = 7;
@@ -1024,8 +1029,9 @@ static void deviceFunctionBounds() {
   GetSystemInfo(&info);
   const size_t bytes = 99 * sizeof(void*);
   CHECK(info.dwPageSize > bytes + 16);
+  for (const auto api : {dxvk::umd::LegacyD3DApi::D3D8, dxvk::umd::LegacyD3DApi::D3D9})
   for (const bool direct : {false, true}) {
-    Fixture fixture; initialize(fixture);
+    Fixture fixture; initialize(fixture, api);
     auto memory = static_cast<uint8_t*>(VirtualAlloc(nullptr, 2 * size_t(info.dwPageSize),
       MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
     CHECK(memory);
@@ -1037,7 +1043,7 @@ static void deviceFunctionBounds() {
     auto args = f->create;
     args.pDeviceFuncs = output;
     if (direct) {
-      auto identity = std::make_shared<dxvk::umd::AdapterIdentity>();
+      auto identity = std::make_shared<dxvk::umd::AdapterIdentity>(api);
       identity->runtime = &f->adapterCookie; identity->query = query;
       identity->luid = f->luid; identity->generation = f->generation;
       identity->capabilities = f->capabilities;
@@ -1056,6 +1062,7 @@ static void deviceFunctionBounds() {
     CHECK(VirtualFree(memory, 0, MEM_RELEASE));
   }
   std::puts("D3D9 Vista ABI verified pointers=99 adapter=1 core=1");
+  std::puts("D3D8 Vista ABI verified pointers=99 adapter=1 core=1");
 }
 
 static void creationFlagContracts() {
@@ -3354,7 +3361,114 @@ static void presentationContracts() {
   }
 }
 
+static void legacyDeviceContracts() {
+  using Api = dxvk::umd::LegacyD3DApi;
+  for (const auto api : {Api::D3D8,Api::D3D9}) {
+    Fixture fixture; initialize(fixture,api);
+    f->create.Interface = api == Api::D3D8 ? 9 : 8;
+    const auto queries = f->queries;
+    unchangedCreate(D3DERR_NOTAVAILABLE);
+    CHECK(f->queries == queries && !f->contexts && !f->backends);
+    auto identity = std::make_shared<dxvk::umd::AdapterIdentity>(api);
+    const auto input = snapshot(f->create); const auto output = snapshot(f->table);
+    CHECK(dxvk::umd::createAdapterDevice9(identity,&f->create) == D3DERR_NOTAVAILABLE);
+    CHECK(snapshot(f->create) == input && snapshot(f->table) == output && !f->contexts);
+    closeAdapter();
+  }
+  for (const bool direct : {false,true}) {
+    Fixture fixture; initialize(fixture,Api::D3D8);
+    auto identity = std::make_shared<dxvk::umd::AdapterIdentity>(Api::D3D8);
+    identity->runtime = &f->adapterCookie; identity->query = query;
+    identity->luid = f->luid; identity->generation = f->generation; identity->capabilities = f->capabilities;
+    std::memset(&f->alternateTable,0xa5,sizeof(f->alternateTable)); const auto alternative = snapshot(f->alternateTable);
+    f->queryHook = [] {
+      f->create.Interface = 9; f->create.Flags.Value = UINT_MAX;
+      f->create.pCallbacks = reinterpret_cast<D3DDDI_DEVICECALLBACKS*>(UINT_PTR(1));
+      f->create.pDeviceFuncs = &f->alternateTable;
+      // The source callback table itself also expires after the snapshot.
+      f->input.pfnAllocateCb = nullptr; f->input.pfnEscapeCb = nullptr;
+    };
+    CHECK((direct ? dxvk::umd::createAdapterDevice9(identity,&f->create)
+                  : f->adapterFuncs.pfnCreateDevice(f->adapter,&f->create)) == S_OK);
+    f->device = f->create.hDevice;
+    CHECK(f->backendApi == Api::D3D8 && f->create.Interface == 9 && f->create.Flags.Value == UINT_MAX);
+    CHECK(snapshot(f->alternateTable) == alternative && f->table.pfnFlush(f->device) == S_OK);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture,Api::D3D8); createDevice();
+    CHECK(f->backendApi == Api::D3D8);
+    for (const UINT version : {0xfffe0101u,0xffff0101u,0xffff0104u}) {
+      const bool vertex = (version >> 16) == 0xfffe;
+      const std::array<UINT,5> code{{version,1u,vertex ? 0xc00f0000u : 0x800f0000u,0x90e40000u,0xffffu}};
+      HANDLE token = nullptr;
+      if (vertex) {
+        D3DDDIARG_CREATEVERTEXSHADERFUNC args{sizeof(code),nullptr};
+        CHECK(f->table.pfnCreateVertexShaderFunc(f->device,&args,code.data()) == S_OK); token = args.ShaderHandle;
+        CHECK(f->table.pfnSetVertexShaderFunc(f->device,token) == S_OK);
+        CHECK(f->table.pfnDeleteVertexShaderFunc(f->device,token) == S_OK);
+      } else {
+        D3DDDIARG_CREATEPIXELSHADER args{sizeof(code),nullptr};
+        CHECK(f->table.pfnCreatePixelShader(f->device,&args,code.data()) == S_OK); token = args.ShaderHandle;
+        CHECK(f->table.pfnSetPixelShader(f->device,token) == S_OK);
+        CHECK(f->table.pfnDeletePixelShader(f->device,token) == S_OK);
+      }
+      CHECK(token && f->shaderCode == std::vector<DWORD>(code.begin(),code.end()));
+    }
+    for (const bool vertex : {false,true}) {
+      const std::array<UINT,5> code{{vertex ? 0xfffe0200u : 0xffff0200u,0x02000001u,
+                                    vertex ? 0xc00f0000u : 0x800f0000u,0x90e40000u,0xffffu}};
+      const auto creates = f->shaderCreates;
+      if (vertex) {
+        D3DDDIARG_CREATEVERTEXSHADERFUNC args{sizeof(code),reinterpret_cast<HANDLE>(UINT_PTR(123))}; const auto before = snapshot(args);
+        CHECK(f->table.pfnCreateVertexShaderFunc(f->device,&args,code.data()) == E_INVALIDARG && snapshot(args) == before);
+      } else {
+        D3DDDIARG_CREATEPIXELSHADER args{sizeof(code),reinterpret_cast<HANDLE>(UINT_PTR(123))}; const auto before = snapshot(args);
+        CHECK(f->table.pfnCreatePixelShader(f->device,&args,code.data()) == E_INVALIDARG && snapshot(args) == before);
+      }
+      CHECK(f->shaderCreates == creates);
+    }
+    const float value[4] = {1,2,3,4};
+    D3DDDIARG_SETVERTEXSHADERCONST vs{95,1}; D3DDDIARG_SETPIXELSHADERCONST ps{7,1};
+    CHECK(f->table.pfnSetVertexShaderConst(f->device,&vs,value) == S_OK && f->constantFirst == 95);
+    CHECK(f->table.pfnSetPixelShaderConst(f->device,&ps,value) == S_OK && f->constantFirst == 7);
+    const auto sets = f->constantSets; vs.Count = ps.Count = 2;
+    CHECK(f->table.pfnSetVertexShaderConst(f->device,&vs,value) == E_INVALIDARG);
+    CHECK(f->table.pfnSetPixelShaderConst(f->device,&ps,value) == E_INVALIDARG && f->constantSets == sets);
+    D3DDDIVERTEXELEMENT elements[] = {{0,0,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITIONT,0},
+                                     {0,16,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+    D3DDDIARG_CREATEVERTEXSHADERDECL declaration{2,nullptr};
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,elements) == S_OK);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device,declaration.ShaderHandle) == S_OK);
+    struct LegacyFvfVertex { float x,y,z,rhw; DWORD color; };
+    static_assert(sizeof(LegacyFvfVertex) == 20);
+    const std::array<LegacyFvfVertex,3> vertices{{
+      {0.f,0.f,.5f,1.f,0xff739a4c},{8.f,0.f,.5f,1.f,0xffc0568e},{0.f,8.f,.5f,1.f,0xff288cb0}}};
+    const auto originalVertices = snapshot(vertices); f->expectedDrawBytes = sizeof(vertices);
+    D3DDDIARG_SETSTREAMSOURCEUM stream{0,20}; D3DDDIARG_DRAWPRIMITIVE draw{D3DPT_TRIANGLELIST,0,1};
+    CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,vertices.data()) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == S_OK
+      && f->drawVertices == std::vector<uint8_t>(originalVertices.begin(),originalVertices.end()));
+    CHECK(snapshot(vertices) == originalVertices);
+    CHECK(f->table.pfnDeleteVertexShaderDecl(f->device,declaration.ShaderHandle) == S_OK);
+    const auto creates = f->declarationCreates; elements[0].Type = D3DDECLTYPE_FLOAT16_4; declaration.ShaderHandle = nullptr;
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device,&declaration,elements) == E_INVALIDARG && !declaration.ShaderHandle);
+    CHECK(f->declarationCreates == creates);
+    CHECK(f->table.pfnSetTexture(f->device,7,nullptr) == S_OK);
+    CHECK(f->table.pfnSetTexture(f->device,8,nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnSetTexture(f->device,D3DVERTEXTEXTURESAMPLER0,nullptr) == E_INVALIDARG);
+    D3DDDIARG_TEXTURESTAGESTATE state{0,D3DDDITSS_MINFILTER,D3DTEXF_POINT};
+    CHECK(f->table.pfnSetTextureStageState(f->device,&state) == S_OK && f->lastSampler && f->samplerState == D3DSAMP_MINFILTER);
+    state.State = D3DDDITSS_SRGBTEXTURE;
+    CHECK(f->table.pfnSetTextureStageState(f->device,&state) == E_INVALIDARG);
+    closeAdapter();
+    CHECK(f->table.pfnFlush(f->device) == D3DERR_DEVICELOST); closeDevice();
+  }
+  std::puts("D3D8 typed bridge verified immutable API, SM1.1/1.4 and FVF; controlled backend only");
+}
+
 int main() {
+  legacyDeviceContracts();
   deviceFunctionBounds();
   creationFlagContracts();
   discardTargetContracts();

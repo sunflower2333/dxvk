@@ -1,6 +1,7 @@
 #pragma once
 
 #include "umd_identity.h"
+#include "umd_legacy_api.h"
 #include "umd_runtime_bridge.h"
 #include <d3d9.h>
 #include <vector>
@@ -174,7 +175,8 @@ public:
   // The caller pumps the original runtime's callbacks during construction,
   // rendering and synchronous destruction. Runtime ownership is mandatory.
   static HRESULT create(const AdapterLuid& luid, const RuntimeBackend* runtime,
-                        std::unique_ptr<D3D9Backend>& result) noexcept;
+                        std::unique_ptr<D3D9Backend>& result,
+                        LegacyD3DApi api = LegacyD3DApi::D3D9) noexcept;
 
 private:
   struct State;

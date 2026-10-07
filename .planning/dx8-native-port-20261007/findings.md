@@ -23,3 +23,24 @@ payloads and genuine interface8/caps/device/presentation gates remain pending.
 Separate caps-only proposal patch adds typedcaps12 adapter/fixture/link inputs
 without changing reserved files or widening Interface8. It applies to c0ea
 with git apply --check; root owns actual integration onto newer production.
+
+Second slice: const LegacyD3DApi now threads through adapter/core/backend;
+Open/Create copy metadata and selected callbacks before identity queries.
+CAPS12 is8-only, CAPS13 is9-only, unchanged production gates/export list.
+API8 private parent is non-Ex then D3D8-compatible before device construction;
+the old native parent always enabledEx, unlike DXVK8's public private-core
+wrapper. API9 defaults remain unchanged.
+
+Real pinned sm3 Converter successfully emits output IR for VS1.1/PS1.1/1.4
+and sampling IR for distinct1.1 TEX/1.4 TEXLD. GCC/Clang sanitizer47PASS.
+Converter expects validated input: direct malformed-header experiment caused
+an assertion because its Parser bool indicates iteration, not ShaderInfo
+validity. Originals retained; tests now verify the real header guard before
+conversion. The production typed DDI already validates framing/version.
+
+Typed legacy limits96VS/8PS constants,8stages, legacy declarations and
+no integer/bool state are enforced. Full9 behavior/fixtures remain. CPU-only
+tests and cross compilation cannot establish genuine System8 FVF/DDI calls
+or actual private-parent flags on hardware. Exact x86 core/loader/Mesa and
+genuine Interface8 negotiation remain prerequisites. Legacy fog bit is not
+invented by the CAPS12 projection. Root owns newer9 resource/ABI integration.

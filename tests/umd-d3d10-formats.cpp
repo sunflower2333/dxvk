@@ -101,16 +101,27 @@ static void queryTransactions() {
   CHECK(output.value == D3D10_DDI_FORMAT_SUPPORT_NOT_SUPPORTED && calls == 0); output.check();
   CHECK(queryNativeMultisampleLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 1, nullptr,
     [&](DXGI_FORMAT, UINT, UINT*) { ++calls; return S_OK; }) == E_INVALIDARG && calls == 0);
+  // Keep code after the callback reachable under optimized MSVC builds while
+  // still requiring the exception and cleared output in these assertions.
+  volatile bool injectException = true;
   output = {}; bool caught = false;
   try {
     queryNativeFormatCaps(DXGI_FORMAT_R8G8B8A8_UNORM, &output.value,
-      [](DXGI_FORMAT, UINT* staged) -> HRESULT { *staged = UINT(-1); throw std::bad_alloc(); });
+      [&injectException](DXGI_FORMAT, UINT* staged) -> HRESULT {
+        *staged = UINT(-1);
+        if (injectException) throw std::bad_alloc();
+        return E_FAIL;
+      });
   } catch (const std::bad_alloc&) { caught = true; }
   CHECK(caught && output.value == 0); output.check();
   output = {}; caught = false;
   try {
     queryNativeMultisampleLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 1, &output.value,
-      [](DXGI_FORMAT, UINT, UINT* staged) -> HRESULT { *staged = UINT(-1); throw std::bad_alloc(); });
+      [&injectException](DXGI_FORMAT, UINT, UINT* staged) -> HRESULT {
+        *staged = UINT(-1);
+        if (injectException) throw std::bad_alloc();
+        return E_FAIL;
+      });
   } catch (const std::bad_alloc&) { caught = true; }
   CHECK(caught && output.value == 0); output.check();
 

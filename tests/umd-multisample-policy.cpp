@@ -34,6 +34,9 @@ int main() {
   // runtime output. This includes the mandatory single-sample special case.
   const uint32_t counts[] = {1, 2, 3, 4, 16, 32};
   const uint32_t mutations[] = {0, 1, 7, 0xffffffff};
+  // The runtime switch preserves reachable post-callback code under /O1;
+  // every injected exception must still leave the output cleared below.
+  volatile bool injectException = true;
   for (uint32_t count : counts) {
     for (uint32_t mutation : mutations) {
       output = 0xdeadbeef; calls = 0;
@@ -45,7 +48,9 @@ int main() {
       bool caught = false;
       try {
         multisampleQualityLevels(count, output, [&](uint32_t& staged) -> bool {
-          ++calls; staged = mutation; throw std::runtime_error("injected backend error");
+          ++calls; staged = mutation;
+          if (injectException) throw std::runtime_error("injected backend error");
+          return false;
         });
       } catch (const std::runtime_error&) { caught = true; }
       CHECK(caught && output == 0 && calls == 1);

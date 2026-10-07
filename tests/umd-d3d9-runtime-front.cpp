@@ -13,6 +13,7 @@
 #include <cwchar>
 #include <mutex>
 #include <unordered_map>
+#include "umd-d3d9-runtime-callbacks.h"
 
 namespace {
 constexpr WCHAR permission[] = L"read-only-legacy-fog-478eca2";
@@ -24,23 +25,29 @@ constexpr WCHAR lifecycleCandidate[] =
 constexpr size_t lifecycleFunctionBytes =
   offsetof(D3DDDI_DEVICEFUNCS, pfnRename) + sizeof(PFND3DDDI_RENAME);
 static_assert(lifecycleFunctionBytes == 99 * sizeof(void*));
-struct Adapter { D3DDDI_ADAPTERFUNCS functions; bool lifecycle; };
+struct Adapter { D3DDDI_ADAPTERFUNCS functions; bool lifecycle; HANDLE runtime; };
+struct Device {
+  D3DDDI_DEVICEFUNCS functions;
+  dxvk::test::RuntimeCallbacks9::Pin callbacks;
+};
 std::mutex adaptersMutex;
 std::unordered_map<HANDLE, Adapter> adapters;
-std::unordered_map<HANDLE, D3DDDI_DEVICEFUNCS> devices;
+std::unordered_map<HANDLE, Device> devices;
 
 void trace(const char* format, ...) {
   // This DLL and the probe each link a static CRT. Its buffered stdout can
   // otherwise split a callback record around the probe's API-result line.
   // Emit the complete record in one synchronous write before returning.
   char line[2048];
+  const DWORD lastError = GetLastError();
   va_list arguments;
   va_start(arguments, format);
   const int length = std::vsnprintf(line, sizeof(line), format, arguments);
   va_end(arguments);
-  if (length <= 0 || size_t(length) >= sizeof(line)) return;
+  if (length <= 0 || size_t(length) >= sizeof(line)) { SetLastError(lastError); return; }
   DWORD written = 0;
   WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), line, DWORD(length), &written, nullptr);
+  SetLastError(lastError);
 }
 
 bool permitted(bool& lifecycle) {
@@ -51,12 +58,14 @@ bool permitted(bool& lifecycle) {
   return lifecycle || (size && size < _countof(value) && !std::wcscmp(value, permission));
 }
 
-bool retain(HANDLE handle, D3DDDI_ADAPTERFUNCS& functions, bool* lifecycle = nullptr) {
+bool retain(HANDLE handle, D3DDDI_ADAPTERFUNCS& functions, bool* lifecycle = nullptr,
+            HANDLE* runtime = nullptr) {
   std::lock_guard<std::mutex> lock(adaptersMutex);
   const auto entry = adapters.find(handle);
   if (entry == adapters.end()) return false;
   functions = entry->second.functions;
   if (lifecycle) *lifecycle = entry->second.lifecycle;
+  if (runtime) *runtime = entry->second.runtime;
   return true;
 }
 
@@ -64,7 +73,7 @@ bool retainDevice(HANDLE handle, D3DDDI_DEVICEFUNCS& functions) {
   std::lock_guard<std::mutex> lock(adaptersMutex);
   const auto entry = devices.find(handle);
   if (entry == devices.end()) return false;
-  functions = entry->second;
+  functions = entry->second.functions;
   return true;
 }
 
@@ -113,11 +122,17 @@ HRESULT APIENTRY lifecycleDestroyDevice(HANDLE handle) {
   if (!retainDevice(handle, original)) return E_INVALIDARG;
   const HRESULT hr = original.pfnDestroyDevice(handle);
   size_t remaining;
+  dxvk::test::RuntimeCallbacks9::Pin callbacks;
   {
     std::lock_guard<std::mutex> lock(adaptersMutex);
+    const auto entry = devices.find(handle);
+    if (entry != devices.end()) callbacks = entry->second.callbacks;
     devices.erase(handle);
     remaining = devices.size();
   }
+  // Cleanup callbacks have completed. In-flight callback wrappers hold their
+  // own owner pins and never hold the registry mutex while calling runtime.
+  dxvk::test::RuntimeCallbacks9::remove(callbacks);
   trace("SYSTEM_D3D9_DEVICE_DESTROY driver=%p hr=%08lx remaining=%zu\n",
     handle, static_cast<unsigned long>(hr), remaining);
   return hr;
@@ -171,7 +186,8 @@ HRESULT APIENTRY getCaps(HANDLE handle, const D3DDDIARG_GETCAPS* args) {
 HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
   D3DDDI_ADAPTERFUNCS original = {};
   bool lifecycle = false;
-  if (!retain(handle, original, &lifecycle)) return E_INVALIDARG;
+  HANDLE runtimeAdapter = nullptr;
+  if (!retain(handle, original, &lifecycle, &runtimeAdapter)) return E_INVALIDARG;
   // Record the runtime's inputs before either blocking or forwarding creation.
   if (args) {
     const auto input = *args;
@@ -193,11 +209,34 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
     }
   }
   if (lifecycle) {
-    if (!args || !args->pDeviceFuncs) return E_INVALIDARG;
+    if (!args || !args->pDeviceFuncs || !args->pCallbacks) return E_INVALIDARG;
     const HANDLE runtime = args->hDevice;
+    dxvk::test::RuntimeCallbacks9::Pin callbacks;
+    try {
+      callbacks = dxvk::test::RuntimeCallbacks9::install(runtime, runtimeAdapter, args->pCallbacks, trace);
+    } catch (...) { return E_OUTOFMEMORY; }
+    if (!callbacks) return E_INVALIDARG;
+    struct CallbackGuard {
+      dxvk::test::RuntimeCallbacks9::Pin owner;
+      bool published = false;
+      ~CallbackGuard() { if (!published) dxvk::test::RuntimeCallbacks9::remove(owner); }
+    } callbackGuard{callbacks};
+    const auto originalCallbacks = args->pCallbacks;
     trace("SYSTEM_D3D9_CREATE_FORWARD adapter=%p runtime=%p interface=%u version=%u flags=%08x\n",
       handle, runtime, args->Interface, args->Version, args->Flags.Value);
-    const HRESULT hr = original.pfnCreateDevice(handle, args);
+    trace("SYSTEM_D3D9_CALLBACK_TABLE runtime=%p adapter_runtime=%p original=%p wrapped=%p bytes=%zu live_delegate=1\n",
+      runtime, runtimeAdapter, originalCallbacks, &callbacks->wrapped, dxvk::test::RuntimeCallbacks9::callbackBytes);
+    // Keep all original CreateDevice arguments/output addresses; substitute
+    // only the callback table for this call and restore its input identity.
+    const HRESULT hr = [&] {
+      struct Restore {
+        D3DDDIARG_CREATEDEVICE* args;
+        const D3DDDI_DEVICECALLBACKS* callbacks;
+        ~Restore() { args->pCallbacks = callbacks; }
+      } restore{args, originalCallbacks};
+      args->pCallbacks = &callbacks->wrapped;
+      return original.pfnCreateDevice(handle, args);
+    }();
     trace("SYSTEM_D3D9_CREATE_RETURN runtime=%p driver=%p hr=%08lx\n",
       runtime, args->hDevice, static_cast<unsigned long>(hr));
     if (hr != S_OK) return hr;
@@ -217,7 +256,7 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
     bool inserted = false;
     try {
       std::lock_guard<std::mutex> lock(adaptersMutex);
-      inserted = devices.emplace(args->hDevice, functions).second;
+      inserted = devices.emplace(args->hDevice, Device{functions, callbacks}).second;
     } catch (...) {
       functions.pfnDestroyDevice(args->hDevice);
       return E_OUTOFMEMORY;
@@ -230,6 +269,7 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
     args->pDeviceFuncs->pfnDestroyResource = lifecycleDestroyResource;
     args->pDeviceFuncs->pfnSetRenderState = lifecycleRenderState;
     args->pDeviceFuncs->pfnDestroyDevice = lifecycleDestroyDevice;
+    callbackGuard.published = true;
     return S_OK;
   }
   trace("SYSTEM_D3D9_CREATE_BLOCKED adapter=%p hr=%08lx\n",
@@ -305,7 +345,7 @@ extern "C" HRESULT APIENTRY OpenAdapter(D3DDDIARG_OPENADAPTER* args) {
     bool inserted;
     {
       std::lock_guard<std::mutex> lock(adaptersMutex);
-      inserted = adapters.emplace(local.hAdapter, Adapter{original, lifecycle}).second;
+      inserted = adapters.emplace(local.hAdapter, Adapter{original, lifecycle, args->hAdapter}).second;
     }
     if (!inserted) {
       original.pfnCloseAdapter(local.hAdapter);

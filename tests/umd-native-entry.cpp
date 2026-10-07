@@ -8,7 +8,7 @@
 #include <vector>
 #include <type_traits>
 
-static unsigned checks, queries, backends, errors;
+static unsigned checks, queries, backends, errors, liveErrors;
 #define CHECK(value) do { ++checks; if (!(value)) { \
   std::fprintf(stderr, "native entry check failed line %d: %s\n", __LINE__, #value); std::abort(); } } while (0)
 static DWORD runtimeThread;
@@ -165,6 +165,11 @@ static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
   }
 }
 
+static void APIENTRY updatedError(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
+  ++liveErrors;
+  error(runtime, hr);
+}
+
 HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
     ID3D11Device** device, ID3D11DeviceContext** context,
     const dxvk::umd::RuntimeBackend* runtime) noexcept {
@@ -308,11 +313,11 @@ int main() {
     CHECK(functions.pfnCreateDevice(active, &create) == E_INVALIDARG);
     CHECK(functions.pfnCloseAdapter(active) == S_OK);
     CHECK(functions.pfnCloseAdapter(active) == E_INVALIDARG);
-    // Device survives adapter close; copied core/kernel callbacks remain valid
-    // after the runtime overwrites those source tables. DXGI keeps its
-    // runtime-owned callback table alive for the device and may update entries
-    // in place between calls, so keep that table populated here.
-    core.pfnSetErrorCb = nullptr; kernel = {};
+    // Device survives adapter close. The runtime keeps core and DXGI tables
+    // alive and can update their entries in place; kernel callbacks snapshot.
+    // Every subsequent failure must observe this new core error callback,
+    // including nested resource and device destruction from inside it.
+    core.pfnSetErrorCb = updatedError; kernel = {};
     D3D10DDI_COUNTER_INFO counters = {};
     table.pfnCheckCounterInfo(create.hDrvDevice, &counters);
     CHECK(dxgiFunctions.pfnPresent);
@@ -340,7 +345,7 @@ int main() {
     CHECK(dxgiFunctions.pfnPresent(&presentation) == S_OK && presents == 1);
     CHECK(!std::memcmp(pixels, publishedPixels, sizeof(pixels)));
     table.pfnCreateResource(create.hDrvDevice, &desc, resource, {&resourceCookie});
-    CHECK(errors == 1 && allocations == 1); // Duplicate storage stays intact.
+    CHECK(errors == 1 && liveErrors == 1 && allocations == 1); // Duplicate storage stays intact.
     deallocationResult = D3DDDIERR_DEVICEREMOVED;
     destroyResourceOnDeallocate = true; destroyResourceOnError = true;
     table.pfnDestroyResource(create.hDrvDevice, resource);
@@ -410,7 +415,7 @@ int main() {
     CHECK(deallocations == 6);
     destroyOnError = true;
     table.pfnDestroyDevice(create.hDrvDevice);
-    CHECK(errors == 6 && contextDestroys == 1);
+    CHECK(errors == 6 && liveErrors == 6 && contextDestroys == 1);
     table.pfnDestroyDevice(create.hDrvDevice); // Reentry already destroyed it.
     core.pfnSetErrorCb = error; kernel = savedKernel; dxgi = savedDxgi;
     openAdapter();

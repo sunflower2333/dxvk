@@ -1733,3 +1733,40 @@ d3dukmdt.h defines Vista000c and original d3dumddi.h DEVICEFUNCS has99 pointers
 through Rename. New local fix negotiates000c and bounds both outer/inner table
 publication to that prefix; native guard-page/canary fixtures remain required.
 No production OpenAdapter export, registration change or GPU acceptance.
+
+
+2026-10-07 continuation: Root originalc7 CPU review02 now PASS43067/538869,
+35raw members/88 source inputs/9COFF/2PE/zero warnings and exact guard marker.
+Review01 rejected a stale stdout assertion; original error and review01 are
+preserved, unchanged native archive re-reviewed correctly in02. Supplemental
+rawc8 candidate continuity proof01 passes all four original files.
+Standalonec0ea native Vista runtime build rootPASS60 Git/53raw members/2COFF/
+2PE/10CLI/3nullguards/zero warnings; candidate absent during guards, GPUfalse.
+Six-script Vista lifecycle family01 stages and natively parses five executable
+scripts, root proof SHA5b514339a3b4687de9d282549707714dde0f95c0fff5686baac321664d1ec0f1.
+Prepared stage/run helpers retain independent512-pixel oracle and deadlines;
+actual device-lifecycle-02 awaits full c7 CI37573265151 success and verification.
+DX8 read-only original target inventory proof01 verifies System32 d3d8 absent,
+SysWOW64 d3d8/d3d9 I386 and d3d8 imports d3d8thk. No runtime load or installation.
+DX8 agent receives raw imports/exports/CodeView inventory; DX10 and DX11 remain
+isolated, coordinate typed ABI and shared declarations, with no target overlap.
+
+
+2026-10-07: Exactc7 consolidated37573265151 rootPASS6jobs/5rawZIPs/3PEarch/
+15actualnativeARM64. CI proof SHA29352289cf1eece8060c73c760c0a13523330d96319a672f729d2166c821bdfc.
+Exact CI ARM64 core SHA141ee74feb1d1b51e44bb0673769b848a695efe45136f5fc0ff1b1c05f66aae8
+is process-local staged, no installation/registration. Actualc0ea/c7 Vista
+lifecycle02 moves past ValidateUMDeviceFuncs and requests two16x16 X8 back buffers,
+flags1081 (RT/NotLockable/DiscardRenderTarget), pool3,mips0; CreateResource mask
+rejects1000/E_INVALIDARG. Both API calls80070057/object0. All58critical/34registry/
+SYS/desktop/names/selector restored and both created devices destroyed. Original
+42member5c8740b37566a32c5ff30c4533b8dd1a2b918cc37539aa72874bf65e88ac2ed2
+reviewPASS20d7a2349b9eba40e2ee50a29711aabce9258745a5644b3d0c4127c6465a83e5,
+evidence/restoration only, no rendering. Independent512-pixel oracle unchanged.
+DX10b490ed1 and DX11bdc963c integrate as85ca8eb/0d4ff1d with typed10.0/10.1/11
+selection, live runtime callbacks and resource/UAV/compute paths. Higher production
+feature gates stay closed. Root fixes four ctor callback lifetimes, exact direct
+factory interface/builds and native-entry six-failure live callback mutation;
+MSVC native execution remains pending. GeneralSM5graphics/SO/tessellation/class
+linkage and runtime activation are still incomplete. DX8 originalI386 runtime
+calls OpenAdapter Interface8 and CAPS12; its isolated bounded projection is pending.

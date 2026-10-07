@@ -76,11 +76,12 @@ struct Fixture {
   Storage storage{VioGpuDxvkPrivateDeviceSize()};
   D3D10DDI_HDEVICE device = storage.handle<D3D10DDI_HDEVICE>();
   D3D10DDI_DEVICEFUNCS f{};
+  D3D10DDI_CORELAYER_DEVICECALLBACKS core{};
   ComPtr<ID3D11DeviceContext> context;
   // Enter through the real published DDI test entry; production admission stays closed.
   Fixture() {
     LUID luid{};
-    D3D10DDI_CORELAYER_DEVICECALLBACKS core{}; core.pfnSetErrorCb = reportError;
+    core.pfnSetErrorCb = reportError;
     CHECK(VioGpuDxvkCreateDdiTestDevice(&luid, device, {}, &core, &f) == S_OK);
     context = createdContext; createdContext.Reset();
     CHECK(context);

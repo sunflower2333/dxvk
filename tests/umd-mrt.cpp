@@ -62,11 +62,12 @@ struct Fixture {
   Storage storage{VioGpuDxvkPrivateDeviceSize()};
   D3D10DDI_HDEVICE device = storage.handle<D3D10DDI_HDEVICE>();
   D3D10DDI_DEVICEFUNCS f{};
+  D3D10DDI_CORELAYER_DEVICECALLBACKS core{};
   ComPtr<ID3D11DeviceContext> context;
   // Exercise the existing explicit harness; do not alter native admission.
   Fixture() {
     LUID luid{};
-    D3D10DDI_CORELAYER_DEVICECALLBACKS core{}; core.pfnSetErrorCb = reportError;
+    core.pfnSetErrorCb = reportError;
     CHECK(VioGpuDxvkCreateDdiTestDevice(&luid, device, {}, &core, &f) == S_OK);
     context = createdContext; createdContext.Reset();
     CHECK(context && f.pfnSetRenderTargets && f.pfnCreatePixelShader);

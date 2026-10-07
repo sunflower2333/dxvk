@@ -374,6 +374,8 @@ static void runtimeTeardown() {
     void* storage = VirtualAlloc(nullptr, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     CHECK(storage);
     D3D10DDIARG_CREATEDEVICE args{};
+    args.Interface = D3D10_0_DDI_INTERFACE_VERSION;
+    args.Version = D3D10_0_DDI_BUILD_VERSION << 16;
     args.hDrvDevice.pDrvPrivate = storage; args.hRTDevice.handle = &f->device;
     args.pUMCallbacks = &callbacks; args.pKTCallbacks = &kernel; args.pDeviceFuncs = &table;
     DXGI_DDI_BASE_CALLBACKS dxgi{};
@@ -620,6 +622,8 @@ int main() {
     D3D10DDI_DEVICEFUNCS table{}; D3D10DDI_CORELAYER_DEVICECALLBACKS callbacks{}; callbacks.pfnSetErrorCb = setError;
     std::vector<std::max_align_t> storage((VioGpuDxvkPrivateDeviceSize() + sizeof(std::max_align_t) - 1) / sizeof(std::max_align_t));
     D3D10DDIARG_CREATEDEVICE args{};
+    args.Interface = D3D10_0_DDI_INTERFACE_VERSION;
+    args.Version = D3D10_0_DDI_BUILD_VERSION << 16;
     args.hDrvDevice.pDrvPrivate = storage.data(); args.hRTDevice.handle = &f->device;
     args.pUMCallbacks = &callbacks; args.pKTCallbacks = &f->input; args.pDeviceFuncs = &table;
     const HRESULT hr = dxvk::umd::createAdapterDevice(f->identity, &args);

@@ -38,8 +38,31 @@ Native fixtures now put exactly that table at the end of a writable page and
 protect the next page. They exercise both adapter and direct-core creation,
 verify the leading canary, flush and destroy each real fixture device, and
 check that newer storage remains unchanged in ordinary current-SDK callers.
-Native build, consolidated CI and a new actual runtime lifecycle trace are
-required before accepting this change's target behavior.
+Strict native ARM64 fixtures for exact `c7e8953` now pass 43,067 adapter
+and 538,869 device checks with zero warnings. The exact first stdout record
+confirms both protected table publications executed. Root independently
+verifies the original 35-member archive, 88 Git/Vulkan inputs, nine ARM64
+objects, two executables and retained installed driver/desktop state in
+`artifacts/dxvk-native-d3d9-interface-20261007/root-native-device-interface-fixtures-verified-02.json`.
+A stale host stdout assertion failed in review01; that original error remains
+preserved and review02 checks the correct new guard record.
+
+The separate exact `c0ea296` runtime frontend/probe also passes native compile,
+ten malformed CLI controls, three null guards and read-only SSH enumeration
+with zero warnings. Its lifecycle path reads only the negotiated Vista prefix.
+The native script parser accepts the staged lifecycle family. Root independently verifies consolidated CI `37573265151`: all six jobs, five
+original ZIPs, three architectures and15 native ARM64 fixture executions pass.
+
+Actual `device-lifecycle-02` with that exact core now reaches back-buffer creation
+through Microsoft System32 HAL9 and HAL9Ex. Both16x16 X8 requests use documented
+DiscardRenderTarget (`0x1000`) with RenderTarget/NotLockable, pool3 and mip count0.
+The current creation mask rejects that hint, and both APIs return `80070057`.
+Both devices close; original signed SYS, desktop,34 registration/58 critical
+fields, raw KMT names and process-local selector restore. This advances the
+runtime gate but accepts no API device or pixels. The original42-member archive
+SHA256 is `5c8740b37566a32c5ff30c4533b8dd1a2b918cc37539aa72874bf65e88ac2ed2`;
+root restoration review is `root-system-runtime-device-lifecycle-02-verified-01.json`
+in the same evidence directory. Next implement and verify the target discard hint.
 
 The production OpenAdapter export and ordinary runtime DX8-DX11 rendering,
 visible presentation, reset, sharing and full Display+Render acceptance remain

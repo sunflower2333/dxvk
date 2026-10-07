@@ -59,10 +59,11 @@ struct Fixture {
   Storage storage{VioGpuDxvkPrivateDeviceSize()};
   D3D10DDI_HDEVICE device = storage.handle<D3D10DDI_HDEVICE>();
   D3D10DDI_DEVICEFUNCS f{};
+  D3D10DDI_CORELAYER_DEVICECALLBACKS core{};
   // Exercise the production test-admission path without driver registration.
   Fixture() {
     LUID luid{};
-    D3D10DDI_CORELAYER_DEVICECALLBACKS core{}; core.pfnSetErrorCb = reportError;
+    core.pfnSetErrorCb = reportError;
     CHECK(VioGpuDxvkCreateDdiTestDevice(&luid, device, {}, &core, &f) == S_OK);
   }
   // All child resources are destroyed before private device storage is freed.

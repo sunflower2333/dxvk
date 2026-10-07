@@ -8,26 +8,39 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Actual Microsoft System32 HAL caps and blocked CreateDevice contracts now verify.
-Continue runtime-managed device/resource lifecycle, then ordinary presentation.
-Typed harness rendering/query checkpoints pass, but ordinary runtime DX8-DX11
-hardware rendering and visible presentation remain unaccepted. Full goal active.
+Continue the actual Microsoft runtime device/resource lifecycle, then ordinary
+presentation. Native9 now reports the implemented Vista DDI000c and publishes
+only its99-pointer table. Strict nativec7 fixtures pass43067 adapter/538869
+device checks, including actual protected-page writes through both creation
+paths; root independently verifies original35-member evidence and all source,
+SDK/toolchain and retained driver/desktop joins. Sole consolidatedCI37573265151 passes all six jobs; root verifies five raw
+original ZIPs, three PE architectures and15 actual native ARM64 executions.
+Its exact c7 candidate is staged without installation or registration.
 
-Exact8d7 dynamic45/47 now pass5824pixels+1056bytes each with diagnostics1/0;
-root-native-dynamic-checkpoint-verified-01.json joins original native/CI/GPU
-evidence and retains failed65s dynamic46. Device permissionsc8f pass strict
-native43067/535562; sole consolidatedCI37569563644 passes all six jobs,
-five original ZIPs and15 native ARM64 executions. Standalone889acc3 native
-build/guards and exactc8f candidate staging verify. Actual LimitedUSER lifecycle01
-creates both private devices S_OK, then runtime destroys them and rejects both
-API calls8876086a before resource/state callbacks. Registry34/critical58/SYS/
-desktop/selector restoration pass; no rendering acceptance.
-Matching System32 ValidateUMDeviceFuncs rejects the advertisedWDDM3.2 table:
-old blit/resource callbacks violate the newer table rules and mandatory
-AcquireResource/ReleaseResource are NULL. Correct the reported native9 DDI to
-the implemented Vista ABI and publish only its99-pointer prefix in both creation
-paths. Verify native fixtures including actual protected table bounds, one
-consolidated CI and a separate genuine-runtime lifecycle rerun.
+Standalonec0ea frontend/probe passes native2CPP/2COFF/2PE,10 malformedCLI,
+3nullguards, read-only SSH baseline and zero warnings. It traces the exact
+Vista table and only permits the fixed c7 candidate path. New six-script family passes native parsing. Actual device-lifecycle-02 passes
+the earlier table validator and reaches two back-buffer CreateResource requests:
+flags1081/format22/pool3/16x16/mips0. Existing flag mask rejects documented
+DiscardRenderTarget1000. Both public APIs now return80070057; two devices close,
+registry34/critical58/SYS/desktop/raw KMT names/selector restore. Original42-member
+archive5c8740b3 and root review20d7a234 retain this failed runtime; no API/render
+acceptance. Implement the target-only discard hint and native controls next.
+
+Exact8d7 dynamic45/47 pass5824pixels+1056bytes each with diagnostics1/0;
+failed65s dynamic46 remains retained. Previous actual lifecycle01 returned two
+private S_OK devices but both genuine HAL9/9Ex calls8876086a before any resource
+or state callback. Matching original System32/public PDB proves the advertised
+newer table contradicted its implemented old callbacks. Lifecycle01 restoration
+and registry34/critical58/SYS/desktop evidence pass; rendering does not.
+
+DX10 and DX11 replacement commits b490ed1/bdc963c integrate as85ca8eb/0d4ff1d.
+Root fixture updates retain core callback tables and verify live mutations;
+coordinated native MSVC execution is pending. DX8 agent remains active.
+Root's read-only target inventory confirms no System32 D3D8; SysWOW64 D3D8 is
+I386 and imports D3D8THK. Native runtime/architecture acceptance remains required.
+Ordinary DX8-DX11 hardware rendering and visible presentation remain unaccepted;
+the full GPU program stays active.
 
 Production061ee8f has one consolidated automatic CI37549764498, all six jobs
 passing. Root independently verifies five raw ZIPs, three architecture builds,

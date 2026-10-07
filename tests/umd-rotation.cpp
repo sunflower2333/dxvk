@@ -126,14 +126,17 @@ struct Fixture {
   // The runtime owns this callback table for the device lifetime. Keep the
   // fixture's table alive instead of passing a constructor-local temporary.
   DXGI_DDI_BASE_CALLBACKS callbacks{};
+  D3D10DDI_CORELAYER_DEVICECALLBACKS core{};
   Fixture() {
-    D3D10DDI_CORELAYER_DEVICECALLBACKS core{}; core.pfnSetErrorCb = error;
+    core.pfnSetErrorCb = error;
     D3DDDI_DEVICECALLBACKS kernel{};
     kernel.pfnAllocateCb = allocate; kernel.pfnDeallocateCb = deallocate;
     kernel.pfnLockCb = lock; kernel.pfnUnlockCb = unlock;
     kernel.pfnCreateContextCb = createContext; kernel.pfnDestroyContextCb = destroyContext;
     callbacks.pfnPresentCb = present;
     D3D10DDIARG_CREATEDEVICE args{};
+    args.Interface = D3D10_0_DDI_INTERFACE_VERSION;
+    args.Version = D3D10_0_DDI_BUILD_VERSION << 16;
     args.hDrvDevice = device; args.hRTDevice.handle = &deviceCookie;
     args.pUMCallbacks = &core; args.pKTCallbacks = &kernel; args.pDeviceFuncs = &f;
     args.DXGIBaseDDI.pDXGIBaseCallbacks = &callbacks;

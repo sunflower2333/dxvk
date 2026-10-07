@@ -8,28 +8,45 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Latest delta: actual d7 real viogpu DX11 compute GPU08 PASS/root directreview:
-all384captured words; callback tuple[108,1,1,6,6,5,5,1,24,6,6], balanced teardown;
-126 originalfiles/47payload/19Git, exact limitedUSER/session1 and static34.
-Corrected SO/Texture3D2489 nativeARM64 PASS, now integrated into active trunk:
-SO1252, typed3733/callback280/nullGS72/domain1024, policy385547,
-volume12025/all27cases/9138voxels/945sampled; independent309production rawfiles
-PASS, separate108public observations retained. Root archive611/source93,
-all11retentionpairs equal, native13/host7 actual0 finalized. Failed terminal-mip
-native01 and missing-newline02 preflight remain unchanged; fresh03 LF correction
-only. ROOT released target1b1e4942 to EWDK agent for fresh corrected6ae2 DX8 CPU04;
-newauth0129b236, no repair replay. Actual CPU04 PASS/root directreview:
-181originalfiles/Git30+licensed3/tools575 unchanged/native49+host7 finalized,
-5I386COFF/4PE/policy329/callback62+forwarded11/30invalidCLI. Target released1547258b
-toROOT; DX8 nativephasehelper prefix preparation is local/readyfalse. DX10 USER05 local descriptor eb5e70/72roles
-readyfalse; native8-helper prefix/rootreview and real1792dualprofilepixels next.
-Tested SO/volume plus two new CI fixtures merged/pushed618ca58; exactly one push
-CI37681929181 now succeeds in all six jobs. ROOT collector06 is preserving five
-original ZIPs, source853/5gitlinks, PDB/config identity, ARM30 owners and
-three-architecture complete volume originals; candidate admission remains pending.
-Historical published d7/CI37648387721 allsixsuccess remains original evidence.
-Latest source hardware compute/render/ordinary Microsoft-runtime DX8-DX11,
-Present/DWM gates remain open; this goal is active.
+Latest source618ca58/sole automatic CI37681929181 PASS allsix jobs. ROOT original
+collector06 actual0 and independent direct review admit candidate preparation:
+five genuine ZIPs/1721 original files, source853 blobs+5gitlinks/four canonical
+receipts/three DLL-PDB/config/private-loader chains, ARM30+x64/x86 60 owned
+fixtures all0/drained. All3 architecture complete volume309 production originals
+(9138voxels/945sampled) plus108 public observations retained. Latest ARMcore
+6262784/a4053e44 remains hardware-unrun; never relabel d7 proof as source618.
+
+Actual d7 viogpu DX11 compute GPU08 and D3D9 locked-buffer draw are ROOT-accepted.
+D3D9 actual archive13801813 joins143 original files/199 TAR members,63 input
+roles/32 raw Git inputs;2624 native pixel checks include1152 independently
+replayed locked pixels/18 stages with word6d390bc5 and byte41e03dc5 checksums.
+Context1/1,allocation15/15,lock14/14,render42,escape328,wrong_thread0,residents0;
+static34/SYS/desktop retained,ten native+nine host children closed,taskremoved.
+Explicit releaseee3c23b6 independently accepted. Target now exclusively
+/root/verify_ewdk_build for frozen CPU05, authorizationc1c1c6f6; all peers local.
+DX10 USER05 native helper prefix remains accepted. ROOT directly joined71 roles,
+25 rawGit,39 genuine archive members,80 stagedfiles and9 unchangedhelpers;
+actual review2f406791 enables fresh72-role sealing. Concrete1792-pixel limited
+USER10_0/10_1 hardware gate is next after CPU05 final release, still unexecuted.
+
+DX8 CPU04 native EWDK PASS/root review: Git30+licensed3/575 tools unchanged,
+5I386COFF/4PE/policy329/callback62+forwarded11/30 invalidCLI. AST5/AddType then
+PASS. Actual I386 names01 FAILED at system-GDI32 path guard beforeKMT,
+child2404 exit1/raw196, limitedUSER1, taskremoved/native2/host7 closed. Original
+38-file archive61c4793c and failed release53355f1d remain unchanged. Official
+IsWow64Process ARM ambiguity requires explicit process-machine APIs. Topic
+repair5c420e4 changes onlyprobe/frontend paths+pre-guard diagnostics, retaining
+strict I386/path guards; local strict4COFF/2PE passes. Fresh native CPU05
+build/collection is running with frozen source5c420e4,33 raw inputs and unchanged
+four native helpers. Exact575 original compiler files before/after remain
+acceptance criteria; no repair replay. Six DX8 commits are prepared on isolated trunk integrationad8e71d;
+latest SO/volume/CI30 bytes remainexact. Genuine system HAL enumeration,
+448offscreen/64Present remainpending; no names/admission follows from failure.
+
+Corrected SO/Texture3D2489 actual native ARM64 and source618 CI allarchitectures
+PASS; source integrated, public terminal-mip mismatch observations retained.
+Ordinary Microsoft-runtime DX8-DX11 activation, production contract admission,
+registered driver replacement and Present/DWM remainopen. Goal staysactive.
 
 Published d7e5c7d46b8ce889e993bfab66a3b78b076c49d1 / automatic push
 CI37648387721 now PASS all six jobs. Root collector04 exits0 and retains five
@@ -1121,3 +1138,24 @@ prepareddd53595b independently joins63files/32Git/helperTAR9/inputTAR15 and
 acceptedGPU08shared47 exactly; unchanged probe/oracle gives native2624 total/
 1152raw lockedpixels and checksums6d390bc5(word)/41e03dc5(byte). ActualD3D9
 retry stillpending, readyfalse; target remainsEWDK names-only until release.
+
+
+2026-10-08 actual I386 names01 FAILED beforeKMT: limited USER/session1 probe
+2404/handle2256 exits1/drained0.0447392s, original196-byte stdout contains
+USER gate then system-GDI32 guard failure. No adapter/namequery/core/factory.
+TAR61c4793c/1961912bytes/38files preserved; ROOT direct failure/continuity joins
+all source/input/systemDLL hashes, static34 and desktop; task removed, native2
+closed/host7 finalized(result-command1)/outer1, explicitrelease53355f1d accepted.
+Microsoft IsWow64Process documents FALSE for32bit apps on64bit ARM; exact
+process-machine APIs are required. EWDK peer prepares freshprobe/frontend
+IsWow64Process2/GetSystemWow64Directory2 fix and diagnostics locally, without
+weakening system-path/I386 guards or changing oldfailure. No enumerate admission.
+ROOT integrates fiveexistingDX8 commits into isolated branch
+work/dx8-trunk-integration-20261008/head eeebfcf: source29/30 exactlyjoin native
+CPU04; onlymeson.build differs by alreadyaccepted newSO/volume registrations.
+Mainc903b4c recordsCI618/helperproof locally; no secondpush yet.
+D3D9 exclusivehandoff b89230b6/rootreadymanifest508b97c8 authorizes one frozen
+d7 typedlockedbuffer gate after release53355f1d. Nativeprefix parse7/config12/
+hash63 and Prepare bothactualPASS; current GPU run/collection stillpending.
+All ROOT/peer target calls suspended until DX11 explicitrelease. DX10 peer
+continues concrete1792 USERpacket71roles, root72 pending.

@@ -3657,3 +3657,44 @@ prepareddd53595b independently joins63files/32Git/helperTAR9/inputTAR15 and
 acceptedGPU08shared47 exactly; unchanged probe/oracle gives native2624 total/
 1152raw lockedpixels and checksums6d390bc5(word)/41e03dc5(byte). ActualD3D9
 retry stillpending, readyfalse; target remainsEWDK names-only until release.
+
+
+2026-10-08 actual I386 names01 FAILED beforeKMT: limited USER/session1 probe
+2404/handle2256 exits1/drained0.0447392s, original196-byte stdout contains
+USER gate then system-GDI32 guard failure. No adapter/namequery/core/factory.
+TAR61c4793c/1961912bytes/38files preserved; ROOT direct failure/continuity joins
+all source/input/systemDLL hashes, static34 and desktop; task removed, native2
+closed/host7 finalized(result-command1)/outer1, explicitrelease53355f1d accepted.
+Microsoft IsWow64Process documents FALSE for32bit apps on64bit ARM; exact
+process-machine APIs are required. EWDK peer prepares freshprobe/frontend
+IsWow64Process2/GetSystemWow64Directory2 fix and diagnostics locally, without
+weakening system-path/I386 guards or changing oldfailure. No enumerate admission.
+ROOT integrates fiveexistingDX8 commits into isolated branch
+work/dx8-trunk-integration-20261008/head eeebfcf: source29/30 exactlyjoin native
+CPU04; onlymeson.build differs by alreadyaccepted newSO/volume registrations.
+Mainc903b4c recordsCI618/helperproof locally; no secondpush yet.
+D3D9 exclusivehandoff b89230b6/rootreadymanifest508b97c8 authorizes one frozen
+d7 typedlockedbuffer gate after release53355f1d. Nativeprefix parse7/config12/
+hash63 and Prepare bothactualPASS; current GPU run/collection stillpending.
+All ROOT/peer target calls suspended until DX11 explicitrelease. DX10 peer
+continues concrete1792 USERpacket71roles, root72 pending.
+
+
+2026-10-08 ROOT accepted actual D3D9 locked-buffer gate and released target:
+raw archive13801813/85936635bytes/143files/199members,63roles/32Git,1152 independently
+replayed pixels plus1472 unchanged native asserted pixels; word6d390bc5 and
+byte41e03dc5,18stages; callback ownership/residency clean and static34 unchanged.
+Actual probe7012/handle2288 exited0/drained2.076s, USERsession1/elevation3/8192.
+Ten native and nine host receipts independently joined original streams and
+actual exits, task removed, pending0, releaseee3c23b6 accepted. Ordinary runtime
+and presentation remain untested; source618 does not inherit d7 GPU proof.
+ROOT reviewer source review-d3d9-locked-originals-root.py retains reproducibility.
+FrozenDX8CPU05 packet21898/manifest4c155/source5c420e4 directly rejoined33inputs
+(30Git+3licensed) and four unchanged acceptedCPU04 helpers. Exclusiveauthc1c1c6f6
+now runs one native EWDK build/collection; strict575tool before/after admission,
+no repair replay. Fresh names05 remains separate and unexecuted.
+ROOT DX10 USER05 review2f406791 independently joins71 original/stagedroles,
+25Git/39archive members/80TARfiles and9unchangedhelpers against acceptednative
+prefix4c42cd7e. New72-role sealer may prepare the actual1792pixel gate; no
+hardware authorization yet. Latest618 local runtime candidate64roles is ready
+for fresh CPU prerequisite preparation; newactualcorea405 proof is required.

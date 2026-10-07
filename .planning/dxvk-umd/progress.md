@@ -2503,3 +2503,27 @@ Native verifier owns new static_assert adapter retry and then target9 fixtures.
 Prepare separate frontend/probe permission device-lifecycle-4e91632 and fixed
 DxvkD3D9DiscardCandidate-4e91632 path; table99/512-pixel oracle/deadlines and
 blocked caps mode stay unchanged. No native build/run or CI push yet.
+
+
+2026-10-07 continuation: Root independent original native4e adapter reviewPASS
+93976/12Git/52members/4COFF/1PE. Root native9 discard reviewPASS43067/554085,
+89Git/Vulkan/141members/9COFF/2PE and both Vista99 protected writes, proof
+SHA82740dd5389fde3e6f040390ee1c84efd9ef6e86e143649d141eff300e26518c.
+Standalone68d original53-member review02PASS60Git/2COFF/2PE/10CLI/3guards/
+zero warnings; proofSHA8f71d2b8d2ea5a02aa55759df232ce2186e5acb4a07bd7cf2c65b8def86259f6.
+Review01 missing reused d3d9 SDK receipt is retained;02 rejoins originalpackage.
+DX8b61 integrates5cff890; root verifies13inputs/15COFF/9PE and integrated
+Linux543caps/4235imports. Earlier4237includes originalMicrosoftmappedimage.
+SM5metadata134 integrates550d336; root GCC ASan/UBSan actual71checksPASS.
+DX8identity/backend and DX11realshaderstages remain isolated active work.
+FreshGitHubquery confirms sole latestc7 run37573265151success; no newCIpushed.
+Prepared4e candidate/17fixture collector/runtime03 scripts remain unexecuted.
+
+WARP4e attempt01 stops on missingd3d11.lib;02 retains malformed helper/I and
+pinned dependency compilerdiagnostics. Fresh03 splits unchanged pinned dxbc
+at repositoryW3 policy from strictW4/WX UMD/fixtures, retaining all warnings.
+It reaches productionumd_ddi.cpp and exposes15C4127 constantStage comparisons
+in templated SRV/sampler/CBbinders. Root8db3d7a changes exactlythose15to
+if constexpr, no other implementation edits. Agent preserves03 and re-freezes
+exact8db for nativeWARP/related lifetime regressions. No4eCI/runtime dispatch;
+newcandidate/frontend pins and fresh native9 provenance remain required.

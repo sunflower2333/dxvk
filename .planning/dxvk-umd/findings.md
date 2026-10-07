@@ -1,5 +1,38 @@
 # Findings
 
+## 2026-10-07 exact4e native verification and parallel port integration
+
+Root independently verifies raw adapter archivefc45eb6b (52members/12Git,
+4ARM64COFF/1PE) and raw discard archiveecfb03cf (141members/74Git+15Vulkan,
+9ARM64COFF/2PE). Actual MSVC14.44.35207 /W4 /WX /MT runs pass adapter93976
+and native9 adapter43067/device554085, including actual99-pointer protected
+adapter/core table writes. OfficialSDK21/CRT5/toolchain/SYS58624/DWM1552/
+Explorer6464 and original System32d3d9 retain. Proofs are
+guest-adapter-4e91632-01/root-native-adapter-4e91632-verified-01.json and
+dxvk-native-d3d9-discard-20261007/root-native-discard-target-fixtures-verified-01.json.
+No hardware admission is inferred from controlled fixtures.
+
+DX8b61f8a3 cherry-picks as5cff890. Root verifies frozen13inputs,10exactGit+
+3verbatim Wine/MinGW legacy headers,8compiled-source hashes and all original
+15COFF/9PE outputs. Fresh integrated Linux sanitizer controls pass543caps /
+4235boundedimports; earlier agent4237 includes two original Microsoft mapped
+image checks. Independent384-pixel oracle selfcheck rejects four corruptions;
+all output is synthetic verifier testing. Actual matching x86 UMD/loader/Mesa
+and immutable8/9 backend compatibility remain required.
+
+SM5metadata134c061 cherry-picks as550d336, preserving firstslice4e native build
+inputs. Native GS/SO/HS/DS/class execution and production admission stay pending.
+WARP4e attempt01 fails before compilation on absent d3d11.lib in the narrow
+support kit; agent stages only byte-original official SDK libraries under owned
+paths for attempt02. Original failure is retained and not a source failure.
+
+Standalone68d0d4c root native review02 passes original53-member archive43b2e7e5,
+60Git inputs,2COFF/2PE,zero warnings,10malformedCLI and3nullguards. Review01
+stops at a reused original d3d9 import-library receipt omitted from prepared
+packet copies; original error is retained. Review02 references that original
+receipt and rejoins the raw official SDK member. Fixed4e lifecycle candidate
+is absent and not loaded during these CPU controls; SSH enum sees zero adapters.
+
 ## Native D3D9 resource contract audit
 
 Microsoft CreateResource requires separate saved runtime and published driver

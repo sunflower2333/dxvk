@@ -26,8 +26,13 @@ DiscardRenderTarget1000. Both public APIs now return80070057; two devices close,
 registry34/critical58/SYS/desktop/raw KMT names/selector restore. Original42-member
 archive5c8740b3 and root review20d7a234 retain this failed runtime; no API/render
 acceptance. Target-only discard hint and four exact-shape/readback controls are now local;
-strict x64/x86 source/fixture COFF checks pass. Native MSVC/CI/runtime rerun
-remain required. Port_dx10 owns target CPU verification exclusively.
+strict x64/x86 source/fixture COFF checks pass. Exact4e91632 actual ARM64 MSVC
+now passes43067 adapter/554085 device checks, zero warnings and both protected
+Vista99 table writes. Root independently joins original141-member archive,
+89Git/Vulkan inputs,9COFF/2PE,21official headers/5libraries and SYS/desktop.
+Integrated typed10/10.1/11 adapter also passes93976 native checks; root original
+52-member/12Git/4COFF/1PE review passes. Sole newCI/runtime rerun remain required.
+Port_dx10 owns target CPU verification exclusively.
 
 Exact8d7 dynamic45/47 pass5824pixels+1056bytes each with diagnostics1/0;
 failed65s dynamic46 remains retained. Previous actual lifecycle01 returned two
@@ -38,7 +43,18 @@ and registry34/critical58/SYS/desktop evidence pass; rendering does not.
 
 DX10 and DX11 replacement commits b490ed1/bdc963c integrate as85ca8eb/0d4ff1d.
 Root fixture updates retain core callback tables and verify live mutations;
-coordinated native MSVC execution is pending. DX8 agent remains active.
+coordinated native WARP and related regression execution is pending. First WARP
+attempt stops on absent SDK d3d11.lib; original evidence retained, official
+ARM64 SDK import libraries staged to owned paths for fresh retry only.
+DX8 b61f8a3 integrates as5cff890: bounded212-byte caps, genuine I386 system8
+probe/import parser,384-pixel oracle and frozen x86 CPU packet. Root original
+13inputs/15COFF/9PE review and Linux543/4235 controls pass; native x86 is pending.
+DX8 agent continues immutable8/9 identity/backend compatibility on its branch.
+SM5 graphics/interface metadata134c061 integrates as550d336; typed GS/SO,
+HS/DS/class execution remains the DX11 agent's next slice.
+Standalone68d0d4c native build root review02 passes60Git/53members/2COFF/2PE,
+10malformedCLI/3nullguards, zero warnings and read-only SSH enum. Review01
+missing reused d3d9 SDK receipt is retained; review02 joins original package.
 Root's read-only target inventory confirms no System32 D3D8; SysWOW64 D3D8 is
 I386 and imports D3D8THK. Native runtime/architecture acceptance remains required.
 Ordinary DX8-DX11 hardware rendering and visible presentation remain unaccepted;

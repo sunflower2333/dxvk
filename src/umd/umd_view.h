@@ -20,6 +20,8 @@ inline bool textureMiscFlags(const D3D10DDIARG_CREATERESOURCE& args, UINT& flags
   if (shared) *shared = false;
   constexpr UINT known = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP | D3D10_DDI_RESOURCE_MISC_SHARED;
   if (args.MiscFlags & ~known) return false;
+  if (args.ResourceDimension == D3D10DDIRESOURCE_TEXTURECUBE)
+    flags = D3D11_RESOURCE_MISC_TEXTURECUBE;
   if (args.MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) {
     // A shared surface is one linear image: AllocationInfo carries a single
     // width, height and pitch, so a generated mip chain has nowhere to live in
@@ -32,12 +34,53 @@ inline bool textureMiscFlags(const D3D10DDIARG_CREATERESOURCE& args, UINT& flags
   constexpr UINT required = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_SHADER_RESOURCE;
   if ((args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
        && args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE1D
-       && args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE3D)
+       && args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE3D
+       && args.ResourceDimension != D3D10DDIRESOURCE_TEXTURECUBE)
       || args.Usage != D3D10_DDI_USAGE_DEFAULT || args.MapFlags
       || args.SampleDesc.Count != 1 || args.SampleDesc.Quality
       || (args.BindFlags & required) != required) return false;
-  flags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+  flags |= D3D11_RESOURCE_MISC_GENERATE_MIPS;
   return true;
+}
+
+// The legacy D3D10 descriptor denotes one cube with six array faces. Cube
+// arrays use the newer view/resource contracts and are validated separately.
+inline bool textureCubeDesc(const D3D10DDIARG_CREATERESOURCE& args,
+    UINT miscFlags, D3D11_TEXTURE2D_DESC& out) {
+  out = {};
+  if (args.ResourceDimension != D3D10DDIRESOURCE_TEXTURECUBE || !args.pMipInfoList
+      || !args.MipLevels || args.MipLevels > D3D11_REQ_MIP_LEVELS || args.ArraySize != 6
+      || args.SampleDesc.Count != 1 || args.SampleDesc.Quality || args.pPrimaryDesc
+      || args.Usage > D3D10_DDI_USAGE_STAGING
+      || (args.BindFlags & ~(D3D10_DDI_BIND_SHADER_RESOURCE | D3D10_DDI_BIND_RENDER_TARGET
+                            | D3D10_DDI_BIND_DEPTH_STENCIL))
+      || (args.MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK)
+      || (args.MiscFlags & ~D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP)
+      || !(miscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE)) return false;
+  const UINT width = args.pMipInfoList[0].TexelWidth;
+  if (!width || width > D3D11_REQ_TEXTURECUBE_DIMENSION) return false;
+  UINT maximumMips = 1;
+  for (UINT extent = width; extent > 1; extent >>= 1) ++maximumMips;
+  if (args.MipLevels > maximumMips) return false;
+  for (UINT mip = 0; mip < args.MipLevels; ++mip) {
+    const auto& extent = args.pMipInfoList[mip];
+    const UINT edge = std::max(1u, width >> mip);
+    if (extent.TexelWidth != edge || extent.TexelHeight != edge) return false;
+  }
+  // Physical padding belongs to the renderer's layout, not the texel extent.
+  out.Width = out.Height = width; out.MipLevels = args.MipLevels; out.ArraySize = 6;
+  out.Format = args.Format; out.SampleDesc = args.SampleDesc;
+  out.Usage = static_cast<D3D11_USAGE>(args.Usage); out.BindFlags = args.BindFlags;
+  out.CPUAccessFlags = ((args.MapFlags & D3D10_DDI_CPU_ACCESS_READ) ? D3D11_CPU_ACCESS_READ : 0)
+    | ((args.MapFlags & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
+  out.MiscFlags = miscFlags;
+  return true;
+}
+
+inline bool textureCubeShape(const D3D11_TEXTURE2D_DESC& resource) {
+  return (resource.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE)
+    && resource.ArraySize == 6 && resource.Width && resource.Width == resource.Height
+    && resource.SampleDesc.Count == 1 && !resource.SampleDesc.Quality;
 }
 
 inline HRESULT mipGenerationStatus(const D3D11_TEXTURE2D_DESC& resource,
@@ -46,6 +89,10 @@ inline HRESULT mipGenerationStatus(const D3D11_TEXTURE2D_DESC& resource,
   if (!(resource.MiscFlags & D3D11_RESOURCE_MISC_GENERATE_MIPS)
       || (resource.BindFlags & required) != required) return E_FAIL;
   if (resource.SampleDesc.Count != 1) return E_INVALIDARG;
+  if (view.ViewDimension == D3D11_SRV_DIMENSION_TEXTURECUBE)
+    return textureCubeShape(resource)
+      && viewRange(view.TextureCube.MostDetailedMip, view.TextureCube.MipLevels,
+                   resource.MipLevels) ? S_OK : E_INVALIDARG;
   if (view.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D)
     return viewRange(view.Texture2D.MostDetailedMip, view.Texture2D.MipLevels,
       resource.MipLevels) ? S_OK : E_INVALIDARG;
@@ -59,6 +106,19 @@ inline HRESULT mipGenerationStatus(const D3D11_TEXTURE2D_DESC& resource,
 inline bool textureShaderView(const D3D10DDIARG_CREATESHADERRESOURCEVIEW& args,
     const D3D11_TEXTURE2D_DESC& resource, D3D11_SHADER_RESOURCE_VIEW_DESC& out) {
   out = {};
+  if (args.ResourceDimension == D3D10DDIRESOURCE_TEXTURECUBE) {
+    if (!(resource.BindFlags & D3D11_BIND_SHADER_RESOURCE)
+        || !textureCubeShape(resource)
+        || args.TexCube.MostDetailedMip >= resource.MipLevels || !args.TexCube.MipLevels)
+      return false;
+    const UINT remaining = resource.MipLevels - args.TexCube.MostDetailedMip;
+    const UINT mips = args.TexCube.MipLevels == ~0u ? remaining : args.TexCube.MipLevels;
+    if (mips > remaining) return false;
+    out.Format = args.Format; out.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBE;
+    out.TextureCube.MostDetailedMip = args.TexCube.MostDetailedMip;
+    out.TextureCube.MipLevels = mips;
+    return true;
+  }
   if (args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
       || !(resource.BindFlags & D3D11_BIND_SHADER_RESOURCE)
       || !viewRange(args.Tex2D.FirstArraySlice, args.Tex2D.ArraySize, resource.ArraySize)
@@ -91,6 +151,17 @@ inline bool textureShaderView(const D3D10DDIARG_CREATESHADERRESOURCEVIEW& args,
 inline bool textureTargetView(const D3D10DDIARG_CREATERENDERTARGETVIEW& args,
     const D3D11_TEXTURE2D_DESC& resource, D3D11_RENDER_TARGET_VIEW_DESC& out) {
   out = {};
+  if (args.ResourceDimension == D3D10DDIRESOURCE_TEXTURECUBE) {
+    if (!textureCubeShape(resource)
+        || !(resource.BindFlags & D3D11_BIND_RENDER_TARGET)
+        || args.TexCube.MipSlice >= resource.MipLevels
+        || !viewRange(args.TexCube.FirstArraySlice, args.TexCube.ArraySize, 6)) return false;
+    out.Format = args.Format; out.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
+    out.Texture2DArray.MipSlice = args.TexCube.MipSlice;
+    out.Texture2DArray.FirstArraySlice = args.TexCube.FirstArraySlice;
+    out.Texture2DArray.ArraySize = args.TexCube.ArraySize;
+    return true;
+  }
   if (args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
       || !(resource.BindFlags & D3D11_BIND_RENDER_TARGET)
       || !viewRange(args.Tex2D.FirstArraySlice, args.Tex2D.ArraySize, resource.ArraySize)
@@ -109,6 +180,20 @@ inline bool textureTargetView(const D3D10DDIARG_CREATERENDERTARGETVIEW& args,
     out.Texture2DArray.FirstArraySlice = args.Tex2D.FirstArraySlice;
     out.Texture2DArray.ArraySize = args.Tex2D.ArraySize;
   }
+  return true;
+}
+
+inline bool textureCubeDepthView(const D3D10DDIARG_CREATEDEPTHSTENCILVIEW& args,
+    const D3D11_TEXTURE2D_DESC& resource, D3D11_DEPTH_STENCIL_VIEW_DESC& out) {
+  out = {};
+  if (args.ResourceDimension != D3D10DDIRESOURCE_TEXTURECUBE || !textureCubeShape(resource)
+      || !(resource.BindFlags & D3D11_BIND_DEPTH_STENCIL)
+      || args.TexCube.MipSlice >= resource.MipLevels
+      || !viewRange(args.TexCube.FirstArraySlice, args.TexCube.ArraySize, 6)) return false;
+  out.Format = args.Format; out.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DARRAY;
+  out.Texture2DArray.MipSlice = args.TexCube.MipSlice;
+  out.Texture2DArray.FirstArraySlice = args.TexCube.FirstArraySlice;
+  out.Texture2DArray.ArraySize = args.TexCube.ArraySize;
   return true;
 }
 

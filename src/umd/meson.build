@@ -183,6 +183,11 @@ umd_texture1d_test = executable('dxvk-umd-texture1d-test',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
 
+umd_texturecube_test = executable('dxvk-umd-texturecube-test',
+  ['../../tests/umd-texturecube.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
 umd_d3d11_device_test = executable('dxvk-umd-d3d11-device-test',
   ['../../tests/umd-d3d11-device.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],

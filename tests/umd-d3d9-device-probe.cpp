@@ -12,6 +12,12 @@
 #include <vector>
 #include <map>
 
+static constexpr UINT lockedBufferFirstStage = 98;
+static constexpr std::array<UINT,18> lockedBufferColors = {
+  0xff4a83b9,0xffd17642,0xff67ad35,0xffa258c1,0xff3b97a6,0xffc34975,
+  0xffb28d43,0xff397bc8,0xff8fba56,0xffcd653a,0xff754ab6,0xff42ac91,
+  0xffcf7b32,0xff489eb5,0xff9673c9,0xff58b46d,0xffc45288,0xff718cad};
+
 class PresentWindow {
 public:
   ~PresentWindow() {
@@ -212,7 +218,7 @@ public:
   HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false,
                           bool buffers = false, bool depthStencil = false, bool fixedFunction = false,
                           bool bufferTransfer = false, bool clipPlanes = false, bool gpuQueries = false,
-                          bool presentation = false, bool dynamicTextures = false) {
+                          bool presentation = false, bool dynamicTextures = false, bool lockedBuffers = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -291,6 +297,14 @@ public:
           std::printf("D3D9_DYNAMIC_PIXEL stage=%u x=%u y=%u value=%08x\n",stage,x,y,actual);
         }
       }
+      if (stage >= lockedBufferFirstStage
+          && stage < lockedBufferFirstStage + lockedBufferColors.size() && SUCCEEDED(status)) {
+        for (UINT y = 0; y < 8; ++y) for (UINT x = 0; x < 8; ++x) {
+          UINT actual;
+          std::memcpy(&actual,backing.data() + 16 + size_t(y) * pitch + x * 4,4);
+          std::printf("D3D9_LOCKED_BUFFER_PIXEL stage=%u x=%u y=%u value=%08x\n",stage,x,y,actual);
+        }
+      }
       for (UINT y = 0; y < 8 && SUCCEEDED(status); ++y) {
         for (UINT x = 0; x < 8; ++x) {
           UINT actual;
@@ -357,6 +371,8 @@ public:
             expected = dynamicColors[(stage-86) % 6];
             if (stage >= 92) expected |= 0xff000000;
           }
+          if (stage >= lockedBufferFirstStage && stage < lockedBufferFirstStage + lockedBufferColors.size())
+            expected = lockedBufferColors[stage - lockedBufferFirstStage];
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
               stage, x, y, actual, expected);
@@ -854,6 +870,147 @@ public:
           if (FAILED(ended)) return ended;
           hr = readback(stage); if (FAILED(hr)) return hr;
         }
+        if (lockedBuffers) {
+          const UINT ordinaryChecked = checked, ordinaryChecksum = checksum;
+          checked = 0; checksum = 2166136261u;
+          // Release locks before their borrowed stack storage goes away,
+          // including when an intermediate draw or pixel check fails.
+          struct BorrowedBufferOwner {
+            const D3DDDI_DEVICEFUNCS& functions;
+            HANDLE device;
+            std::array<HANDLE,3> ownedResources = {};
+            std::array<bool,3> heldLocks = {};
+            BorrowedBufferOwner(const D3DDDI_DEVICEFUNCS& callbacks, HANDLE owner)
+              : functions(callbacks), device(owner) { }
+            HRESULT release() noexcept {
+              HRESULT status = S_OK;
+              for (UINT slot = 0; slot < ownedResources.size(); ++slot) {
+                if (heldLocks[slot]) {
+                  D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = ownedResources[slot]; unmap.Flags.NotifyOnly = 1;
+                  const HRESULT unlocked = functions.pfnUnlock(device,&unmap);
+                  std::printf("D3D9_LOCKED_BUFFER_UNLOCK slot=%u hr=%08lx\n",slot,static_cast<unsigned long>(unlocked));
+                  if (FAILED(unlocked)) { if (SUCCEEDED(status)) status = unlocked; }
+                  else heldLocks[slot] = false;
+                }
+                if (ownedResources[slot] && !heldLocks[slot]) {
+                  const HRESULT destroyed = functions.pfnDestroyResource(device,ownedResources[slot]);
+                  std::printf("D3D9_LOCKED_BUFFER_DESTROY slot=%u hr=%08lx\n",slot,static_cast<unsigned long>(destroyed));
+                  if (FAILED(destroyed)) { if (SUCCEEDED(status)) status = destroyed; }
+                  else ownedResources[slot] = nullptr;
+                }
+              }
+              return status;
+            }
+            ~BorrowedBufferOwner() { release(); }
+          };
+          for (UINT profile = 0; profile < 3; ++profile) {
+            const char* profileName = profile == 0 ? "mixed" : profile == 1 ? "unused" : "perdraw";
+            char lockedOwners[3];
+            std::array<uint8_t,156> borrowedPosition;
+            std::array<uint8_t,76> borrowedColor;
+            std::array<uint8_t,96> borrowedUnused;
+            borrowedPosition.fill(0xcd); borrowedColor.fill(0xcd); borrowedUnused.fill(0xcd);
+            std::memcpy(borrowedPosition.data()+16,positionBytes.data(),positionBytes.size());
+            std::memcpy(borrowedColor.data()+16,colorBytes.data(),colorBytes.size());
+            auto* colorData = borrowedColor.data()+16;
+            const std::array<uint8_t*,3> borrowed = {borrowedPosition.data()+16,colorData,borrowedUnused.data()+16};
+            const std::array<UINT,3> borrowedSizes = {UINT(positionBytes.size()),UINT(colorBytes.size()),64};
+            BorrowedBufferOwner held(api,m_driverDevice);
+            // Mixed: one normal GPU VB and one flagged SYSTEMMEM VB without
+            // the native Dynamic hint. Unused: both used VBs plus stream 15
+            // are flagged; stream 15 is deliberately absent from the decl.
+            // Perdraw: both used VBs are flagged, with stream 15 unbound;
+            // the 124-byte VB lacks final stride padding and tests clipping.
+            for (UINT slot = profile ? 0u : 1u; slot < (profile == 1 ? 3u : 2u); ++slot) {
+              D3DDDI_SURFACEINFO info = {borrowedSizes[slot],1,0,borrowed[slot],borrowedSizes[slot],0};
+              D3DDDIARG_CREATERESOURCE resource = {};
+              resource.hResource = &lockedOwners[slot]; resource.pSurfList = &info; resource.SurfCount = 1;
+              resource.Pool = D3DDDIPOOL_SYSTEMMEM; resource.Format = static_cast<D3DDDIFORMAT>(D3DFMT_VERTEXDATA);
+              resource.Flags.VertexBuffer = resource.Flags.MightDrawFromLocked = 1;
+              resource.Flags.Dynamic = profile != 0;
+              hr = api.pfnCreateResource(m_driverDevice,&resource);
+              std::printf("D3D9_LOCKED_BUFFER_CREATE profile=%s slot=%u bytes=%u dynamic=%u hr=%08lx\n",
+                profileName,slot,borrowedSizes[slot],UINT(profile != 0),static_cast<unsigned long>(hr));
+              if (FAILED(hr)) return hr;
+              held.ownedResources[slot] = resource.hResource;
+              D3DDDIARG_LOCK mapping = {}; mapping.hResource = resource.hResource;
+              mapping.Flags.NotifyOnly = mapping.Flags.MightDrawFromLocked = mapping.Flags.RangeValid = 1;
+              mapping.Range = {slot == 1 ? 16u : 0u,slot == 1 ? 28u : borrowedSizes[slot]};
+              hr = api.pfnLock(m_driverDevice,&mapping);
+              std::printf("D3D9_LOCKED_BUFFER_LOCK profile=%s slot=%u flags=%08x offset=%u bytes=%u hr=%08lx\n",
+                profileName,slot,mapping.Flags.Value,mapping.Range.Offset,mapping.Range.Size,static_cast<unsigned long>(hr));
+              if (FAILED(hr)) return hr;
+              held.heldLocks[slot] = true;
+              if (mapping.pSurfData != borrowed[slot]+mapping.Range.Offset || mapping.Pitch || mapping.SlicePitch) return E_FAIL;
+            }
+            bufferStream = {3,profile ? held.ownedResources[0] : resources[0],8,24};
+            hr = api.pfnSetStreamSource(m_driverDevice,&bufferStream); if (FAILED(hr)) return hr;
+            bufferStream = {7,held.ownedResources[1],4,8};
+            hr = api.pfnSetStreamSource(m_driverDevice,&bufferStream); if (FAILED(hr)) return hr;
+            bufferStream = {15,held.ownedResources[2],0,held.ownedResources[2] ? 16u : 0u};
+            hr = api.pfnSetStreamSource(m_driverDevice,&bufferStream); if (FAILED(hr)) return hr;
+            for (UINT mode = 0; mode < 3; ++mode) {
+              if (mode) {
+                const D3DDDIARG_SETINDICES indices = {resources[mode == 1 ? 2 : 3],mode == 1 ? 2u : 4u};
+                hr = api.pfnSetIndices(m_driverDevice,&indices); if (FAILED(hr)) return hr;
+              }
+              // Bind and lock only above this loop. Rebinding/relocking
+              // between A/B would hide a stale regular-buffer upload bit.
+              for (UINT repetition = 0; repetition < 2; ++repetition) {
+                const UINT colorIndex = profile * 6 + mode * 2 + repetition;
+                const UINT stage = lockedBufferFirstStage + colorIndex;
+                const UINT color = lockedBufferColors[colorIndex];
+                for (UINT vertex = 1; vertex < 5; ++vertex)
+                  std::memcpy(colorData+8+vertex*8,&color,4);
+                const auto expectedPosition = borrowedPosition;
+                const auto expectedColor = borrowedColor;
+                const auto expectedUnused = borrowedUnused;
+                fill.FillColor = 0xff0a152d;
+                hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
+                hr = state(D3DDDIRS_SCENECAPTURE,1); if (FAILED(hr)) return hr;
+                if (!mode) {
+                  const D3DDDIARG_DRAWPRIMITIVE bufferPrimitive = {D3DPT_TRIANGLESTRIP,1,2};
+                  hr = api.pfnDrawPrimitive(m_driverDevice,&bufferPrimitive,nullptr);
+                } else {
+                  // Stage 23 replaced the 16-bit indices with 0..3; its
+                  // positive base and the original 32-bit negative base
+                  // both select vertices 1..4 without changing either IB.
+                  const D3DDDIARG_DRAWINDEXEDPRIMITIVE bufferIndexed = {D3DPT_TRIANGLELIST,
+                    mode == 1 ? 1 : -2,mode == 1 ? 0u : 3u,4,mode == 1 ? 2u : 3u,2};
+                  hr = api.pfnDrawIndexedPrimitive(m_driverDevice,&bufferIndexed);
+                }
+                std::printf("D3D9_LOCKED_BUFFER_DRAW stage=%u profile=%s mode=%s repeat=%u color=%08x hr=%08lx\n",
+                  stage,profileName,!mode ? "vertex" : mode == 1 ? "index16" : "index32",
+                  repetition,color,static_cast<unsigned long>(hr));
+                const HRESULT ended = state(D3DDDIRS_SCENECAPTURE,0);
+                if (FAILED(hr)) return hr;
+                if (FAILED(ended)) return ended;
+                hr = readback(stage); if (FAILED(hr)) return hr;
+                if (borrowedPosition != expectedPosition || borrowedColor != expectedColor || borrowedUnused != expectedUnused)
+                  return E_FAIL;
+                for (UINT slot = 0; slot < held.ownedResources.size(); ++slot) {
+                  if (!held.ownedResources[slot]) continue;
+                  D3DDDIARG_LOCK duplicate = {}; duplicate.hResource = held.ownedResources[slot];
+                  duplicate.Flags.NotifyOnly = duplicate.Flags.MightDrawFromLocked = 1;
+                  duplicate.pSurfData = reinterpret_cast<void*>(UINT_PTR(1)); duplicate.Pitch = duplicate.SlicePitch = UINT_MAX;
+                  const auto original = duplicate;
+                  if (api.pfnLock(m_driverDevice,&duplicate) != E_INVALIDARG
+                      || std::memcmp(&duplicate,&original,sizeof(duplicate))
+                      || api.pfnDestroyResource(m_driverDevice,held.ownedResources[slot]) != E_INVALIDARG) return E_FAIL;
+                }
+                std::printf("D3D9_LOCKED_BUFFER_RETAINED stage=%u duplicate_lock=invalid destroy_locked=invalid borrowed=retained\n",stage);
+              }
+            }
+            for (UINT guard = 0; guard < 16; ++guard) for (UINT slot = 0; slot < borrowed.size(); ++slot)
+              if (borrowed[slot][int(guard)-16] != 0xcd || borrowed[slot][borrowedSizes[slot]+guard] != 0xcd) return E_FAIL;
+            const auto retired = held.ownedResources;
+            hr = held.release(); if (FAILED(hr)) return hr;
+            for (HANDLE resource : retired)
+              if (resource && api.pfnDestroyResource(m_driverDevice,resource) != E_INVALIDARG) return E_FAIL;
+          }
+          std::printf("D3D9_LOCKED_BUFFER_READBACK PASS pixels=%u checksum=%08x stages=18 profiles=mixed/unused/perdraw streams=3/7/15 indices=16/32 lock=retained padding=retained\n",checked,checksum);
+          checked = ordinaryChecked; checksum = ordinaryChecksum;
+        }
         D3DDDIARG_LOCK mapping = {}; mapping.hResource = resources[0]; mapping.Flags.ReadOnly = 1;
         hr = api.pfnLock(m_driverDevice,&mapping); if (FAILED(hr)) return hr;
         const bool retained = mapping.pSurfData && !std::memcmp(mapping.pSurfData,positionBytes.data(),positionBytes.size());
@@ -932,7 +1089,7 @@ public:
           if (FAILED(depthStatus)) return depthStatus;
           depthStatus = api.pfnDrawPrimitive(m_driverDevice,&primitive,nullptr);
           std::printf("D3D9_DEPTH_DRAW stage=%u depth=%.3f color=%08x hr=%08lx\n",
-            depthStage,depthValue,depthColor,static_cast<unsigned long>(depthStatus));
+            depthStage,depthValue,UINT(depthColor),static_cast<unsigned long>(depthStatus));
           const HRESULT depthEnded = state(D3DDDIRS_SCENECAPTURE,0);
           return FAILED(depthStatus) ? depthStatus : depthEnded;
         };
@@ -1836,7 +1993,7 @@ private:
     const DWORD completed = status == 0 ? WaitForSingleObject(event, 5000) : WAIT_FAILED;
     CloseHandle(event);
     std::printf("KMT_PAGING_WAIT status=%08lx fence=%llu completed=%u\n",
-      static_cast<unsigned long>(status), m_pendingPaging, completed);
+      static_cast<unsigned long>(status), m_pendingPaging, UINT(completed));
     if (status != 0) return status < 0 ? result(status) : E_FAIL;
     if (completed != WAIT_OBJECT_0) return E_FAIL;
     m_pendingPaging = 0;
@@ -2086,23 +2243,24 @@ int wmain(int argc, WCHAR** argv) {
   const bool bufferTransfer = clipPlanes || (argc == 3 && !wcscmp(argv[2], L"--buffer-transfer"));
   const bool fixedFunction = bufferTransfer || (argc == 3 && !wcscmp(argv[2], L"--fixed-function"));
   const bool depthStencil = fixedFunction || (argc == 3 && !wcscmp(argv[2], L"--depth"));
-  const bool buffers = depthStencil || (argc == 3 && !wcscmp(argv[2], L"--buffer"));
+  const bool lockedBuffers = argc == 3 && !wcscmp(argv[2], L"--locked-buffer");
+  const bool buffers = depthStencil || lockedBuffers || (argc == 3 && !wcscmp(argv[2], L"--buffer"));
   const bool textures = buffers || (argc == 3 && !wcscmp(argv[2], L"--texture"));
   const bool shaders = textures || (argc == 3 && !wcscmp(argv[2], L"--shader"));
   const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer|--clip-planes|--queries|--dynamic-textures|--present]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--locked-buffer|--depth|--fixed-function|--buffer-transfer|--clip-planes|--queries|--dynamic-textures|--present]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer,clipPlanes,gpuQueries,presentation,dynamicTextures) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer,clipPlanes,gpuQueries,presentation,dynamicTextures,lockedBuffers) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    presentation ? "PRESENT" : dynamicTextures ? "DYNAMIC" : gpuQueries ? "QUERY" : clipPlanes ? "CLIP" : bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    presentation ? "typed kernel blit and actual screen pixels" : dynamicTextures ? "typed dynamic texture discard/update/mip draw/readback pixels" : gpuQueries ? "typed GPU query completion/occlusion/timestamp/readback" : clipPlanes ? "typed homogeneous clip-plane draw/readback pixels" : bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    presentation ? "PRESENT" : dynamicTextures ? "DYNAMIC" : gpuQueries ? "QUERY" : clipPlanes ? "CLIP" : bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : lockedBuffers ? "LOCKED_BUFFER" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    presentation ? "typed kernel blit and actual screen pixels" : dynamicTextures ? "typed dynamic texture discard/update/mip draw/readback pixels" : gpuQueries ? "typed GPU query completion/occlusion/timestamp/readback" : clipPlanes ? "typed homogeneous clip-plane draw/readback pixels" : bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : lockedBuffers ? "typed locked SYSTEMMEM/mixed/unused-stream draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

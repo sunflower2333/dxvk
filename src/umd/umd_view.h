@@ -1,6 +1,7 @@
 #pragma once
 #include "umd_ddi.h"
 #include "umd_format.h"
+#include "umd_cube_array_policy.h"
 #include <d3d11.h>
 #include <algorithm>
 
@@ -74,6 +75,27 @@ inline bool textureCubeDesc(const D3D10DDIARG_CREATERESOURCE& args,
   out.CPUAccessFlags = ((args.MapFlags & D3D10_DDI_CPU_ACCESS_READ) ? D3D11_CPU_ACCESS_READ : 0)
     | ((args.MapFlags & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
   out.MiscFlags = miscFlags;
+  return true;
+}
+
+// The D3D10.1 table reuses the D3D10 CreateResource ABI, but its cube SRV
+// contract exposes First2DArrayFace and NumCubes. Keep the base10 validator
+// strict and opt into complete cube arrays only from that typed table.
+inline bool textureCubeArrayDesc10_1(const D3D10DDIARG_CREATERESOURCE& args,
+    UINT miscFlags, D3D11_TEXTURE2D_DESC& out) {
+  static_assert(cubeArray10_1MaxFaces == D3D10_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION);
+  static_assert(cubeArray10_1MaxEdge == D3D10_REQ_TEXTURECUBE_DIMENSION);
+  out = {};
+  if (!args.pMipInfoList || !args.ArraySize
+      || args.ArraySize > cubeArray10_1MaxFaces || args.ArraySize % 6) return false;
+  if (!cubeArray10_1Shape(args.pMipInfoList[0].TexelWidth, args.MipLevels,
+      args.ArraySize)) return false;
+  auto singleCube = args;
+  singleCube.ArraySize = 6;
+  D3D11_TEXTURE2D_DESC staged = {};
+  if (!textureCubeDesc(singleCube, miscFlags, staged)) return false;
+  staged.ArraySize = args.ArraySize;
+  out = staged;
   return true;
 }
 

@@ -23,7 +23,7 @@ replayed locked pixels/18 stages with word6d390bc5 and byte41e03dc5 checksums.
 Context1/1,allocation15/15,lock14/14,render42,escape328,wrong_thread0,residents0;
 static34/SYS/desktop retained,ten native+nine host children closed,taskremoved.
 Explicit releaseee3c23b6 independently accepted. Target now exclusively
-/root/verify_ewdk_build for frozen CPU05, authorizationc1c1c6f6; all peers local.
+ROOT-idle after CPU05 release100c118d; DX10 dual-profile handoff next.
 DX10 USER05 native helper prefix remains accepted. ROOT directly joined71 roles,
 25 rawGit,39 genuine archive members,80 stagedfiles and9 unchangedhelpers;
 actual review2f406791 enables fresh72-role sealing. Concrete1792-pixel limited
@@ -37,9 +37,11 @@ child2404 exit1/raw196, limitedUSER1, taskremoved/native2/host7 closed. Original
 IsWow64Process ARM ambiguity requires explicit process-machine APIs. Topic
 repair5c420e4 changes onlyprobe/frontend paths+pre-guard diagnostics, retaining
 strict I386/path guards; local strict4COFF/2PE passes. Fresh native CPU05
-build/collection is running with frozen source5c420e4,33 raw inputs and unchanged
-four native helpers. Exact575 original compiler files before/after remain
-acceptance criteria; no repair replay. Six DX8 commits are prepared on isolated trunk integrationad8e71d;
+build/collection passed:181 originalfiles/c48fbc5d,33source,575tools/10SDK/9libs
+unchanged,5COFF4PE/W4WXzero warnings/policy329/callback62+11/CLI30,
+native49+host7 allclosed. ROOT proof042786e0/release100c118daccepted. Source5c
+probe631808/2cef9cfa andfront440832/7b4e6b26 are actual native outputs. Fresh
+names05 pending; no repair replay. Seven DX8 commits are prepared on isolated trunk integration68f83e6;
 latest SO/volume/CI30 bytes remainexact. Genuine system HAL enumeration,
 448offscreen/64Present remainpending; no names/admission follows from failure.
 

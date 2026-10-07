@@ -3698,3 +3698,17 @@ ROOT DX10 USER05 review2f406791 independently joins71 original/stagedroles,
 prefix4c42cd7e. New72-role sealer may prepare the actual1792pixel gate; no
 hardware authorization yet. Latest618 local runtime candidate64roles is ready
 for fresh CPU prerequisite preparation; newactualcorea405 proof is required.
+
+
+2026-10-08 native CPU05 process-machine repair verified by ROOT: original181-file
+TARc48fbc5d/31169398bytes,source5c420e4/33inputs/30rawGit,exactreadyc633 and575
+compiler before/after,10SDK/9libs,5I386COFF/4PE strict W4WX zero warnings,
+policy329/callback62+11forwarded/30CLI expected64. Actual48build children plus
+collector4412/handle2560 exit0/drained2.071s; sevenhosts/outer exit0/rawfinalized.
+ROOT proof042786e0 and separate release review accept release100c118d/pending0.
+Newnativeprobe631808/2cef9cfa andfrontend440832/7b4e6b26 are current5c originals;
+no validKMT/systemfactory/GPU executed. Isolatedtrunk68f83e6 additionallyintegrates
+helper166f identity/trace validation; eight oldphasehelper bytes unchanged,
+newnames05 admission stillpending. Target ROOT-idle before DX10 dualhardware
+handoff. Live GitHub recheck confirmsCI618 stillsuccess and four redundant
+workflowsdisabled; solematching automaticbuild remainsactive.

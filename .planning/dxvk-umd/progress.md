@@ -2181,3 +2181,14 @@ probe uses genuine System32 d3d9.dll for Direct3DCreate9/Ex and enumeration,
 plus two null-input frontend guard checks. Native build/guard/baseline come
 before any temporary legacy-driver binding. No production export/caps, D3D10
 registration or renderer changes; no ordinary rendering acceptance claimed.
+
+## 2026-10-07 explicit read-only HAL negotiation
+The system D3D9 diagnostic now queries GetDeviceCaps(HAL) for every enumerated
+D3D9/Ex adapter. This ensures an actual caps request is measured instead of
+assuming adapter enumeration alone loads the registered UMD. No CreateDevice,
+drawing or presentation call was added. The original 78e66f6 60-input packet
+is retained as source-audit evidence; a fresh exact committed packet will be
+used for the first native build. Microsoft local INF documentation maps the
+three UserModeDriverName entries to DX9, DX10 and DX11 in order; the SDK exposes
+separate KMTUMDVERSION queries. Root is preparing a read-only active-name check
+before any temporary legacy-only binding. No registry write has occurred.

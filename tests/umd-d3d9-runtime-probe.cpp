@@ -52,6 +52,10 @@ int enumerate() {
       i, static_cast<unsigned long>(hr), identifier.VendorId, identifier.DeviceId,
       int(sizeof(identifier.Driver)), identifier.Driver,
       int(sizeof(identifier.Description)), identifier.Description);
+    D3DCAPS9 caps = {};
+    const HRESULT capsHr = api->GetDeviceCaps(i, D3DDEVTYPE_HAL, &caps);
+    std::printf("SYSTEM_D3D9_HAL_CAPS ordinal=%u hr=%08lx vertex_shader=%08x pixel_shader=%08x\n",
+      i, static_cast<unsigned long>(capsHr), caps.VertexShaderVersion, caps.PixelShaderVersion);
   }
   api->Release();
   IDirect3D9Ex* extended = nullptr;
@@ -68,6 +72,10 @@ int enumerate() {
       for (const BYTE value : reinterpret_cast<const BYTE(&)[sizeof(LUID)]>(luid))
         std::printf("%02x", unsigned(value));
       std::printf("\n");
+      D3DCAPS9 caps = {};
+      const HRESULT capsHr = extended->GetDeviceCaps(i, D3DDEVTYPE_HAL, &caps);
+      std::printf("SYSTEM_D3D9_EX_HAL_CAPS ordinal=%u hr=%08lx vertex_shader=%08x pixel_shader=%08x\n",
+        i, static_cast<unsigned long>(capsHr), caps.VertexShaderVersion, caps.PixelShaderVersion);
     }
     extended->Release();
   }

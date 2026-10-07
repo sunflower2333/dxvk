@@ -12,7 +12,7 @@
 #include <unordered_map>
 
 namespace {
-constexpr WCHAR permission[] = L"read-only-dynamic-478eca2";
+constexpr WCHAR permission[] = L"read-only-legacy-fog-478eca2";
 constexpr WCHAR candidate[] =
   L"C:\\Users\\Public\\DxvkD3D9CapsCandidate-478eca2\\viogpudxvk.dll";
 std::mutex adaptersMutex;
@@ -40,7 +40,11 @@ HRESULT APIENTRY getCaps(HANDLE handle, const D3DDDIARG_GETCAPS* args) {
   std::printf("SYSTEM_D3D9_CAPS_BEGIN type=%u bytes=%u info=%u adapter=%p\n",
     unsigned(input.Type), input.DataSize, unsigned(input.pInfo != nullptr), handle);
   const HRESULT hr = original.pfnGetCaps(handle, args);
-  // Single-field causal diagnostic for the actual runtime's HAL validator.
+  // Preserve the prior dynamic-texture diagnostic and isolate the next
+  // validator requirement: the legacy DDI fog/specular-alpha bit (0x2000).
+  // The actual runtime maps it to public FOGANDSPECULARALPHA (0x10000),
+  // retains the legacy bit for HAL validation, then removes it from public
+  // GetDeviceCaps. Do not add an undocumented bit to production caps here.
   // This is not a production capability: CreateDevice always rejects below.
   // Restrict it to the exact old profile so an unrelated candidate cannot
   // silently gain this declaration. No device/backend callback is invoked.
@@ -48,13 +52,17 @@ HRESULT APIENTRY getCaps(HANDLE handle, const D3DDDIARG_GETCAPS* args) {
     if (!input.pData || input.DataSize != sizeof(D3DCAPS9)) return E_FAIL;
     D3DCAPS9 caps = {};
     std::memcpy(&caps, input.pData, sizeof(caps));
-    if (caps.Caps2 || caps.DevCaps2 != D3DDEVCAPS2_STREAMOFFSET
+    if (caps.Caps2 || caps.PrimitiveMiscCaps != 0x00028ef0u
+        || caps.DevCaps2 != D3DDEVCAPS2_STREAMOFFSET
         || caps.VertexShaderVersion != D3DVS_VERSION(2, 0)
         || caps.PixelShaderVersion != D3DPS_VERSION(2, 0)) return E_FAIL;
     caps.Caps2 = D3DCAPS2_DYNAMICTEXTURES;
+    caps.PrimitiveMiscCaps |= 0x00002000u;
     std::memcpy(input.pData, &caps, sizeof(caps));
     std::printf("SYSTEM_D3D9_CAPS_DIAGNOSTIC field=Caps2 before=00000000 after=%08x devcaps2=%08x create_device_blocked=1 production_caps_changed=0\n",
       caps.Caps2, caps.DevCaps2);
+    std::printf("SYSTEM_D3D9_CAPS_DIAGNOSTIC field=PrimitiveMiscCaps_DDI before=00028ef0 after=%08x legacy_fog_specular_alpha=00002000 public_fog_specular_alpha=00010000 create_device_blocked=1 production_caps_changed=0\n",
+      caps.PrimitiveMiscCaps);
   }
   UINT count = UINT_MAX;
   if (hr == S_OK && input.pData && input.DataSize == sizeof(count)

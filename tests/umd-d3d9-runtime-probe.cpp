@@ -130,7 +130,7 @@ int frontGuard(const WCHAR* path) {
   std::memcpy(&open, &symbol, sizeof(open));
   if (!open) return 1;
   const HRESULT denied = open(nullptr);
-  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"read-only-dynamic-478eca2")) return 1;
+  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"read-only-legacy-fog-478eca2")) return 1;
   const HRESULT invalid = open(nullptr);
   SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", nullptr);
   FreeLibrary(module);
@@ -196,7 +196,7 @@ int enumerate() {
 int frontEnumerate(const WCHAR* front) {
   ReadOnlyNameSelector selector;
   if (!selector.install(front)) return 1;
-  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"read-only-dynamic-478eca2")) return 1;
+  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"read-only-legacy-fog-478eca2")) return 1;
   const int result = enumerate();
   SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", nullptr);
   const bool restored = selector.restore();
@@ -279,7 +279,7 @@ int deviceContract() {
 int frontDeviceContract(const WCHAR* front) {
   ReadOnlyNameSelector selector;
   if (!selector.install(front)) return 1;
-  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"read-only-dynamic-478eca2")) return 1;
+  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"read-only-legacy-fog-478eca2")) return 1;
   const int result = deviceContract();
   SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", nullptr);
   const bool restored = selector.restore();

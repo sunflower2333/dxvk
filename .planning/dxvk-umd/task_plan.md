@@ -39,36 +39,30 @@ zero caps/empty formats. Implemented limited typed caps/list/gamma responses and
 adversarial metadata/output tests now require native fixtures, one consolidated
 CI and another read-only system runtime trace. No GPU admission claim.
 
-Exact478eca2 native target fixtures now pass42308 adapter and466831 device
-checks with zero warnings. Root review02 independently verifies88Git/Vulkan
-inputs,33original archive members,9ARM64COFFs/2PEs and SDK/CRT/toolchain/SYS/
-desktop continuity. Production478eca2 is pushed once; the sole automatic
-consolidated run37561240247 is queued. Diagnostic frontend/probe are pinned to
-the fresh uninstalled CapsCandidate-478eca2 for the next real runtime trace.
-Full consolidatedCI37561240247 now passes all six jobs. Root independently
-verifies five raw ZIPs/every member, three architecture builds and15 actual
-native ARM64 executions. Original native765 and c065 standalone builds,
-guards and SSH baselines also pass independent root review.
+Exact478eca2 native target fixtures pass42308 adapter and466831 device checks,
+zero warnings. Root independently verifies88Git/Vulkan inputs,33original members,
+9ARM64COFFs/2PEs and SDK/CRT/toolchain/SYS/desktop continuity. The sole automatic
+consolidatedCI37561240247 passes all six jobs, five original ZIPs, three
+architecture builds and15 actual native ARM64 executions. Original native765,
+c065 and777 standalone diagnostic builds, guards and SSH baselines also verify.
 
-Diagnostic765a7e0 native build/guards/SSH baseline pass, original collection
-and root review pending. Prepare the next separate blocked device-contract
-mode: genuine HAL CreateDevice/Ex under an owned hidden window only after
-exact VirtIO identity and successful SM2 caps; frontend logs input flags and
-callback presence and always rejects before core creation/callbacks. Compile
-and review this extension with original USER32 import library provenance, then
-run it only after accepted caps. Actual selector-caps-01 observes two adapter
-opens and20 successful GetCaps callbacks, four formats/six queries/gamma0,
-but HAL caps still8876086a in both9/Ex. Exact candidates, signedSYS, DWM1552,
-Explorer6464,34registration/58critical fields retain; owned tasks are removed.
-Device-contract mode remains unexecuted because its HAL preflight fails.
+Actual selector-caps-01 observes two adapter opens and20 successful GetCaps
+callbacks, four formats/six queries/gamma0, but HAL caps8876086a in9/Ex.
+Exact candidates, signedSYS, DWM1552/Explorer6464,34registration/58critical fields
+retain. New device-contract-dynamic-01 preserves Caps2.DYNAMICTEXTURES only;
+root evidence review02 verifies32original members, four runtime adapter opens,
+40caps callbacks and eight exact caps deltas, but both HAL caps still8876086a.
+Its VirtIO HAL preflight fails: zero API/core device calls and no rendering.
+The successful-device reviewer failure is retained; evidence verification does
+not accept HAL or a device-create contract. All restoration/cleanup gates pass.
 
-Matching System32 d3d9 public GUID and section layout locate native
-IsD3DHALSupported atRVA1226f0. Its nonzeroDevCaps2 path requires
-Caps2.DYNAMICTEXTURES; native478 advertisesSTREAMOFFSET but rejects dynamic
-textures. Implement real dynamic2D creation/locking before production declares
-the bit. A separate blocked frontend changes only this bit on the exact478
-profile to causally verify rejection and capture genuine device inputs while
-core CreateDevice remains unconditionally blocked. No GPU admission claim.
+Matching System32 d3d9 public GUID/section layout locate native HAL validation
+atRVA1226f0. NonzeroDevCaps2 requires dynamic textures and SM2 requires legacy
+PrimitiveMisc bit0x2000. Actual FetchDirectDrawData RVA19b7cc maps this bit into
+public FOGANDSPECULARALPHA0x10000; FillInCaps RVA16571c removes the legacy bit
+from public caps. The next separate blocked frontend adds only this legacy bit
+to the prior dynamic diagnostic. Verify native build and genuine runtime result
+before changing production declarations. Core CreateDevice remains blocked.
 
 Dynamic2D native implementation is ready for verification: usage reaches the
 private renderer, default-pool mip surfaces are lockable, top-level whole-chain

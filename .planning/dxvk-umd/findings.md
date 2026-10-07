@@ -1671,3 +1671,18 @@ Dynamic2D/default-pool locks and top-mip whole-resourceDiscard are documented
 in local Microsoft LockFlags/ResourceFlags and official LockRect/performance
 docs. NoOverwrite is a buffer contract, not a texture lock flag. Native feature
 implementation and targeted CPU/GPU verification precede production Caps2 bit.
+
+2026-10-07 03:14 UTC: Independent review02 of actual single-bit runtime
+trace device-contract-dynamic-01 verifies original32member archive536bf095,
+40successful GetCaps callbacks/eight exact Caps2 deltas/four genuine adapter
+opens, but HAL9/Ex remain8876086a. VirtIO preflight accepted0; API/core device
+calls0. Registry34/critical58/SYS/desktop/candidates/task cleanup retain.
+This disproves sufficiency of the dynamic bit; full goal remains active.
+Read-only matching-PDB disassembly identifies legacy PrimitiveMisc0x2000:
+FetchDirectDrawData RVA19b7cc maps it into public fog/specular-alpha0x10000,
+IsD3DHALSupported RVA122854 requires it forSM2, and FillInCaps RVA16571c clears
+it from public output. New isolated frontend retains dynamic diagnostic and
+adds only legacy0x2000 to exact478 profile (28ef0 ->2aef0). No production caps
+change/device callback/GPU admission. Fixedb21 native fixtures compile warning
+free; device test fails at379107 because SYSTEMMEM binding wrongly expectsS_OK.
+Keep originals; correct fixture to verify rejected binding makes no backend call.

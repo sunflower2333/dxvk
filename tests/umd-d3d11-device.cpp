@@ -307,12 +307,15 @@ uint pack(uint3 value){return value.x+(value.y<<8)+(value.z<<16);}
   auto reject = [&](std::vector<uint32_t> malformed) {
     malformed[1] = UINT(malformed.size());
     Storage untouched(table.pfnCalcPrivateShaderSize(f.device, nullptr, nullptr));
+    ComPtr<ID3D11ComputeShader> beforeShader;
+    f.context->CSGetShader(&beforeShader, nullptr, nullptr); CHECK(beforeShader);
     const UINT before = errors, alternateBefore = alternateErrors;
     table.pfnCreateComputeShader(f.device, malformed.data(), {untouched.data()}, {});
     failure(E_INVALIDARG);
     CHECK(errors == before + 1 && alternateErrors == alternateBefore + 1);
     CHECK(untouched.empty()); untouched.check();
-    ComPtr<ID3D11ComputeShader> bound; f.context->CSGetShader(&bound, nullptr, nullptr); CHECK(bound);
+    ComPtr<ID3D11ComputeShader> bound; f.context->CSGetShader(&bound, nullptr, nullptr);
+    CHECK(bound.Get() == beforeShader.Get());
   };
   for (size_t i = 0; i < declarations.size(); ++i) {
     const size_t offset = declarations[i]; CHECK(offset && ((code[offset] >> 24) & 0x7f) == 2);

@@ -271,6 +271,7 @@ bool decodeShader11(ShaderStage stage, const uint32_t* code, size_t words, Shade
   if (!parser.getShaderInfo()) return false;
   uint32_t stream = 0;
   bool patchPhase = false, computeGroup = false;
+  std::array<uint8_t, 4> computeInputs{};
   std::vector<uint32_t> tables;
   while (parser) {
     const auto instruction = parser.parseInstruction(); if (!instruction) return false;
@@ -324,6 +325,27 @@ bool decodeShader11(ShaderStage stage, const uint32_t* code, size_t words, Shade
     if (entry.systemValue > 22) return false;
     bool dedicated = false;
     switch (type) {
+      case dxbc::RegisterType::eThreadId:
+      case dxbc::RegisterType::eThreadGroupId:
+      case dxbc::RegisterType::eThreadIdInGroup:
+      case dxbc::RegisterType::eThreadIndexInGroup: {
+        // Compute system registers have no register-file indices or ISGN
+        // entries. Keep their declarations in SHEX after validating them.
+        if (stage != ShaderStage::Compute || op != dxbc::OpCode::eDclInput
+            || instruction.getImmCount() || instruction.getExtraCount()
+            || operand.getIndexDimensions() || operand.getModifiers()) return false;
+        const bool scalar = type == dxbc::RegisterType::eThreadIndexInGroup;
+        const auto components = operand.getComponentCount();
+        if (components == dxbc::ComponentCount::e1Component) {
+          if (!scalar) return false;
+        } else if (components != dxbc::ComponentCount::e4Component
+            || operand.getSelectionMode() != dxbc::SelectionMode::eMask
+            || !entry.mask || (entry.mask & ~(scalar ? 1u : 7u))) return false;
+        const uint32_t index = scalar ? 3u : uint32_t(type) - uint32_t(dxbc::RegisterType::eThreadId);
+        if (computeInputs[index] & entry.mask) return false;
+        computeInputs[index] |= entry.mask;
+        continue;
+      }
       case dxbc::RegisterType::eDepth: entry.systemValue = 65; dedicated = true; break;
       case dxbc::RegisterType::eDepthGe: entry.systemValue = 67; dedicated = true; break;
       case dxbc::RegisterType::eDepthLe: entry.systemValue = 68; dedicated = true; break;

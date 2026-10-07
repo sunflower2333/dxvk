@@ -25,8 +25,73 @@ static std::vector<unsigned char> build(ShaderStage stage, std::vector<uint32_t>
   CHECK(!std::memcmp(container.getCodeChunk().getData(8), code.data(), code.size() * 4));
   return bytes;
 }
+static void computeSystemInputs() {
+  using dxbc::OpCode;
+  using dxbc::RegisterType;
+  const RegisterType registers[] = {RegisterType::eThreadId, RegisterType::eThreadGroupId,
+    RegisterType::eThreadIdInGroup, RegisterType::eThreadIndexInGroup};
+  auto program = [](ShaderStage stage, OpCode opcode, std::initializer_list<uint32_t> operands) {
+    std::vector<uint32_t> code{(uint32_t(stage) << 16) | 0x50, 0};
+    if (stage == ShaderStage::Compute) instruction(code, OpCode::eDclThreadGroup, {2,3,2});
+    instruction(code, opcode, operands); instruction(code, OpCode::eRet, {});
+    code[1] = uint32_t(code.size()); return code;
+  };
+  auto reject = [](ShaderStage stage, std::vector<uint32_t> code) {
+    ShaderCode11 shader; shader.tokens = {0xcdcdcdcd}; shader.inputs.push_back({});
+    CHECK(!decodeShader11(stage, code.data(), code.size(), shader));
+    CHECK(shader.tokens.empty() && shader.inputs.empty() && shader.outputs.empty() && shader.patch.empty());
+  };
+  for (auto type : registers) {
+    const bool scalar = type == RegisterType::eThreadIndexInGroup;
+    for (uint32_t mask = 1; mask <= (scalar ? 1u : 7u); ++mask) {
+      auto code = program(ShaderStage::Compute, OpCode::eDclInput,
+        {2 | (mask << 4) | (uint32_t(type) << 12)});
+      ShaderCode11 shader; auto bytes = build(ShaderStage::Compute, code, shader);
+      CHECK(shader.inputs.empty() && shader.outputs.empty() && shader.patch.empty());
+      dxbc::Container container(bytes.data(), bytes.size());
+      dxbc::Signature inputs(container.getInputSignatureChunk()), outputs(container.getOutputSignatureChunk());
+      CHECK(inputs && outputs && inputs.begin() == inputs.end() && outputs.begin() == outputs.end());
+    }
+    const uint32_t operand = 2 | (1u << 4) | (uint32_t(type) << 12);
+    for (uint32_t stage = 0; stage < uint32_t(ShaderStage::Compute); ++stage)
+      reject(ShaderStage(stage), program(ShaderStage(stage), OpCode::eDclInput, {operand}));
+    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclOutput, {operand}));
+    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInputSiv, {operand,0}));
+    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInputPs, {operand}));
+    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {operand | (1u << 20),0}));
+    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {uint32_t(type) << 12}));
+    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {2 | (uint32_t(type) << 12)}));
+    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {2 | (8u << 4) | (uint32_t(type) << 12)}));
+    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {operand | 8}));
+    reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {operand | 0x80000000u,0x41}));
+    auto duplicate = program(ShaderStage::Compute, OpCode::eDclInput, {operand});
+    duplicate.pop_back(); instruction(duplicate, OpCode::eDclInput, {operand});
+    instruction(duplicate, OpCode::eRet, {}); duplicate[1] = uint32_t(duplicate.size());
+    reject(ShaderStage::Compute, duplicate);
+    if (!scalar) reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {1 | (uint32_t(type) << 12)}));
+    else reject(ShaderStage::Compute, program(ShaderStage::Compute, OpCode::eDclInput, {2 | (2u << 4) | (uint32_t(type) << 12)}));
+  }
+  // FXC uses a scalar operand for SV_GroupIndex and vector operands for the
+  // other three values. Preserve all four together without creating ISGN.
+  std::vector<uint32_t> all{0x50050,0};
+  instruction(all,OpCode::eDclThreadGroup,{2,3,2});
+  for (auto type : registers) instruction(all,OpCode::eDclInput,
+    {type == RegisterType::eThreadIndexInGroup ? 1 | (uint32_t(type) << 12)
+      : 2 | (7u << 4) | (uint32_t(type) << 12)});
+  instruction(all,OpCode::eRet,{});
+  ShaderCode11 shader; auto bytes = build(ShaderStage::Compute,all,shader);
+  CHECK(shader.inputs.empty() && shader.outputs.empty() && shader.patch.empty());
+  all.pop_back(); instruction(all,OpCode::eDclInput,{2 | (8u << 4) | (uint32_t(RegisterType::eThreadId) << 12)});
+  instruction(all,OpCode::eRet,{}); all[1] = uint32_t(all.size());
+  reject(ShaderStage::Compute,all);
+  // Nonoverlapping masks on the same system register retain both tokens.
+  auto split = program(ShaderStage::Compute,OpCode::eDclInput,{2 | (1u << 4) | (uint32_t(RegisterType::eThreadId) << 12)});
+  split.pop_back(); instruction(split,OpCode::eDclInput,{2 | (2u << 4) | (uint32_t(RegisterType::eThreadId) << 12)});
+  instruction(split,OpCode::eRet,{}); build(ShaderStage::Compute,split,shader);
+}
 int main() {
   ShaderCode11 shader;
+  computeSystemInputs();
   // Input layouts require only a signature; preserve the logical shader
   // version and every scalar/register, including the higher10.1 input31.
   for (uint32_t version : {0x40u, 0x41u, 0x50u}) {

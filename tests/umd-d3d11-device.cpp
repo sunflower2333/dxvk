@@ -5,6 +5,7 @@
 #include "../src/umd/umd_shader11.h"
 #include <dxbc/dxbc_container.h>
 #include <dxbc/dxbc_interface.h>
+#include <dxbc/dxbc_parser.h>
 #include <dxbc/dxbc_signature.h>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
@@ -50,8 +51,13 @@ static HRESULT lastError = S_OK, backendResult = S_OK;
 static const LUID expectedLuid = {0x23457891, -54};
 static ComPtr<ID3D11DeviceContext> createdContext;
 static void (*onError)() = nullptr;
-#define CHECK(value) do { ++checks; if (!(value)) { std::fprintf(stderr, "D3D11 DDI failure line %d: %s\n", __LINE__, #value); std::abort(); } } while (0)
-static void ok() { CHECK(lastError == S_OK); }
+#define CHECK(value) do { ++checks; if (!(value)) { std::fprintf(stderr, "D3D11 DDI failure line %d: %s checks=%u callbacks=%u last_hresult=0x%08lx\n", __LINE__, #value, checks, errors, static_cast<unsigned long>(lastError)); std::abort(); } } while (0)
+static void checkOk(unsigned line) {
+  if (lastError != S_OK) std::fprintf(stderr, "DDI caller line=%u checks=%u callbacks=%u HRESULT=0x%08lx\n",
+    line, checks, errors, static_cast<unsigned long>(lastError));
+  CHECK(lastError == S_OK);
+}
+#define ok() checkOk(__LINE__)
 static void failure(HRESULT expected) { CHECK(lastError == dxvk::umd::ddiResult(expected)); lastError = S_OK; }
 static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
   CHECK(runtime.handle && GetCurrentThreadId() == callerThread && FAILED(hr)); ++errors; lastError = hr;
@@ -219,9 +225,27 @@ struct Compute {
   Fixture& fixture;
   Storage storage;
   D3D10DDI_HSHADER handle;
+  ComPtr<ID3D11ComputeShader> reference;
   Compute(Fixture& f, const char* source)
   : fixture(f), storage(f.output.table.pfnCalcPrivateShaderSize(f.device, nullptr, nullptr)), handle{storage.data()} {
-    auto code = compile(source);
+    ComPtr<ID3DBlob> original;
+    auto code = compile(source, "cs_5_0", &original);
+    // Compare both reconstruction paths with the original FXC shader through
+    // public WARP before using the typed DDI. This isolates decoder failures
+    // from backend validation failures without weakening DDI assertions.
+    ComPtr<ID3D11Device> backend; f.context->GetDevice(&backend); CHECK(backend);
+    ComPtr<ID3D11ComputeShader> originalShader, legacyShader, rebuiltShader;
+    CHECK(backend->CreateComputeShader(original->GetBufferPointer(), original->GetBufferSize(),
+      nullptr, &originalShader) == S_OK);
+    reference = originalShader;
+    std::vector<unsigned char> legacy;
+    CHECK(dxvk::umd::buildComputeContainer(code.data(), code.size(), legacy));
+    CHECK(backend->CreateComputeShader(legacy.data(), legacy.size(), nullptr, &legacyShader) == S_OK);
+    dxvk::umd::ShaderCode11 metadata;
+    CHECK(dxvk::umd::decodeShader11(dxvk::umd::ShaderStage::Compute, code.data(), code.size(), metadata));
+    CHECK(metadata.inputs.empty() && metadata.outputs.empty() && metadata.patch.empty());
+    std::vector<unsigned char> rebuilt; CHECK(dxvk::umd::buildShader11Container(metadata, rebuilt));
+    CHECK(backend->CreateComputeShader(rebuilt.data(), rebuilt.size(), nullptr, &rebuiltShader) == S_OK);
     f.output.table.pfnCreateComputeShader(f.device, code.data(), handle, {}); ok(); storage.check();
     // The compiled blob/raw token storage may disappear immediately.
     std::fill(code.begin(), code.end(), 0xcccccccc);
@@ -231,6 +255,90 @@ struct Compute {
 static void inspectUav(Fixture& f, ID3D11UnorderedAccessView* expected) {
   ComPtr<ID3D11UnorderedAccessView> bound;
   f.context->CSGetUnorderedAccessViews(0, 1, &bound); CHECK(bound.Get() == expected);
+}
+static void computeSystemInputs(Fixture& f) {
+  using dxbc_spv::dxbc::OpCode;
+  using dxbc_spv::dxbc::RegisterType;
+  const char* source = R"(
+RWStructuredBuffer<uint4> dst:register(u0);
+uint pack(uint3 value){return value.x+(value.y<<8)+(value.z<<16);}
+[numthreads(2,3,2)]void main(uint3 dispatch:SV_DispatchThreadID,uint3 group:SV_GroupID,
+    uint3 thread:SV_GroupThreadID,uint flat:SV_GroupIndex){
+  dst[(dispatch.z*6+dispatch.y)*4+dispatch.x]=uint4(pack(dispatch),pack(group),pack(thread),flat);
+})";
+  Compute shader(f, source);
+  Buffer destination(f, 96 * 16, D3D11_DDI_BIND_UNORDERED_ACCESS,
+    D3D11_DDI_RESOURCE_MISC_BUFFER_STRUCTURED, 16);
+  Uav view(f, destination, 96, DXGI_FORMAT_UNKNOWN);
+  auto& table = f.output.table;
+  table.pfnCsSetShader(f.device, shader.handle);
+  table.pfnCsSetUnorderedAccessViews(f.device, 0, 1, &view.handle, nullptr); ok();
+  table.pfnDispatch(f.device, 2, 2, 2); ok();
+  const auto native = destination.read(96 * 4);
+  for (UINT z = 0; z < 4; ++z) for (UINT y = 0; y < 6; ++y) for (UINT x = 0; x < 4; ++x) {
+    const UINT offset = ((z * 6 + y) * 4 + x) * 4;
+    CHECK(native[offset] == x + (y << 8) + (z << 16));
+    CHECK(native[offset + 1] == x / 2 + ((y / 3) << 8) + ((z / 2) << 16));
+    CHECK(native[offset + 2] == x % 2 + ((y % 3) << 8) + ((z % 2) << 16));
+    CHECK(native[offset + 3] == (z % 2) * 6 + (y % 3) * 2 + x % 2);
+  }
+  const UINT clear[4] = {0xcdcdcdcd,0xcdcdcdcd,0xcdcdcdcd,0xcdcdcdcd};
+  table.pfnClearUnorderedAccessViewUint(f.device, view.handle, clear); ok();
+  f.context->CSSetShader(shader.reference.Get(), nullptr, 0);
+  f.context->Dispatch(2,2,2);
+  CHECK(destination.read(96 * 4) == native);
+  table.pfnCsSetShader(f.device, shader.handle); ok();
+
+  auto code = compile(source);
+  std::array<size_t,4> declarations{};
+  for (size_t offset = 2; offset < code.size();) {
+    const UINT opcode = code[offset] & 0x7ff;
+    UINT length = (code[offset] >> 24) & 0x7f;
+    if (opcode == UINT(OpCode::eCustomData)) length = code[offset + 1];
+    CHECK(length && length <= code.size() - offset);
+    if (opcode == UINT(OpCode::eDclInput)) {
+      const UINT type = (code[offset + 1] >> 12) & 0xff;
+      if (type >= UINT(RegisterType::eThreadId) && type <= UINT(RegisterType::eThreadIdInGroup))
+        declarations[type - UINT(RegisterType::eThreadId)] = offset;
+      else if (type == UINT(RegisterType::eThreadIndexInGroup)) declarations[3] = offset;
+    }
+    offset += length;
+  }
+  auto reject = [&](std::vector<uint32_t> malformed) {
+    malformed[1] = UINT(malformed.size());
+    Storage untouched(table.pfnCalcPrivateShaderSize(f.device, nullptr, nullptr));
+    const UINT before = errors, alternateBefore = alternateErrors;
+    table.pfnCreateComputeShader(f.device, malformed.data(), {untouched.data()}, {});
+    failure(E_INVALIDARG);
+    CHECK(errors == before + 1 && alternateErrors == alternateBefore + 1);
+    CHECK(untouched.empty()); untouched.check();
+    ComPtr<ID3D11ComputeShader> bound; f.context->CSGetShader(&bound, nullptr, nullptr); CHECK(bound);
+  };
+  for (size_t i = 0; i < declarations.size(); ++i) {
+    const size_t offset = declarations[i]; CHECK(offset && ((code[offset] >> 24) & 0x7f) == 2);
+    auto malformed = code;
+    malformed[offset] = (2u << 24) | UINT(OpCode::eDclOutput); reject(malformed);
+    malformed = code;
+    malformed[offset] = (3u << 24) | UINT(OpCode::eDclInputSiv);
+    malformed.insert(malformed.begin() + offset + 2, 0); reject(malformed);
+    malformed = code;
+    malformed[offset] = (3u << 24) | UINT(OpCode::eDclInput);
+    malformed[offset + 1] |= 1u << 20;
+    malformed.insert(malformed.begin() + offset + 2, 0); reject(malformed);
+    const UINT type = code[offset + 1] & 0xff000;
+    malformed = code;
+    malformed[offset + 1] = type | 2u | (8u << 4); reject(malformed);
+    malformed[offset + 1] = type | 2u; reject(malformed);
+    malformed[offset + 1] = type | 2u | (1u << 4) | 8u; reject(malformed);
+    malformed = code;
+    malformed.insert(malformed.begin() + offset + 2, {code[offset],code[offset + 1]}); reject(malformed);
+    malformed = code;
+    malformed[offset + 1] = type | (i == 3 ? 2u | (2u << 4) : 1u); reject(malformed);
+  }
+  table.pfnDispatch(f.device, 2,2,2); ok(); CHECK(destination.read(96 * 4) == native);
+  const D3D11DDI_HUNORDEREDACCESSVIEW empty{};
+  table.pfnCsSetUnorderedAccessViews(f.device, 0, 1, &empty, nullptr);
+  table.pfnCsSetShader(f.device, {}); ok();
 }
 static void textureMinLod(Fixture& f) {
   auto& table = f.output.table;
@@ -971,6 +1079,7 @@ int main() {
     table.pfnRelocateDeviceFuncs(f.device, &table); ok();
     inputLayoutCapacity(table, f.device, f.context.Get(), D3D11_VS_INPUT_REGISTER_COUNT);
     textureMinLod(f);
+    computeSystemInputs(f);
     computeAndCounters(f);
     table.pfnCsSetShader(f.device, {}); ok();
     inputAssembler11(f);

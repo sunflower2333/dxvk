@@ -49,6 +49,41 @@ int main() {
   }
   CHECK(count == 3);
 
+  ShaderStreamOutput11 stream;
+  ShaderStreamDeclaration11 declarations[] = {{0,0,1,5},{0,0,UINT32_MAX,3},{2,2,0,3}};
+  const uint32_t strides[] = {32,0,16};
+  CHECK(shader11StreamOutput(shader,declarations,3,strides,3,2,stream));
+  CHECK(stream.entries.size() == 4 && stream.strideCount == 3 && stream.rasterizedStream == 2);
+  CHECK(stream.entries[0].semantic == varyingRegisterSemantic && stream.entries[0].semanticIndex == 1);
+  CHECK(stream.entries[0].start == 0 && stream.entries[0].count == 1);
+  CHECK(stream.entries[1].start == 2 && stream.entries[1].count == 1);
+  CHECK(stream.entries[2].semantic.empty() && stream.entries[2].count == 2);
+  CHECK(stream.entries[3].stream == 2 && stream.entries[3].slot == 2 && stream.strides[2] == 16);
+  declarations[2].slot = 0;
+  CHECK(!shader11StreamOutput(shader,declarations,3,strides,3,2,stream));
+  CHECK(stream.entries.empty()); declarations[2].slot = 2;
+  declarations[2].mask = 4;
+  CHECK(!shader11StreamOutput(shader,declarations,3,strides,3,2,stream)); declarations[2].mask = 3;
+  const uint32_t shortStrides[] = {12,0,16};
+  CHECK(!shader11StreamOutput(shader,declarations,3,shortStrides,3,2,stream));
+  CHECK(!shader11StreamOutput(shader,declarations,3,strides,3,4,stream));
+  CHECK(!shader11StreamOutput(shader,declarations,3,nullptr,3,0,stream));
+  CHECK(shader11StreamOutput(shader,declarations,3,nullptr,0,UINT32_MAX,stream));
+  CHECK(stream.strides[0] == 16 && stream.strides[2] == 8);
+  std::vector<ShaderStreamDeclaration11> excessive(129, {0,0,UINT32_MAX,1});
+  CHECK(!shader11StreamOutput(shader,excessive.data(),excessive.size(),nullptr,0,0,stream));
+
+  std::vector<ShaderIo11> produced = {{0,1,15,ShaderScalar::Uint32},{0,1,15,ShaderScalar::Uint32,2}};
+  std::vector<ShaderIo11> consumed = {{0,1,3,ShaderScalar::Float32},{0,1,12,ShaderScalar::Sint32}};
+  std::vector<ShaderIo11> linked;
+  CHECK(linkShader11Outputs(produced,consumed,0,linked));
+  CHECK(linked.size() == 3 && linked[0].mask == 12 && linked[0].scalar == ShaderScalar::Sint32);
+  CHECK(linked[1].stream == 2 && linked[1].scalar == ShaderScalar::Uint32);
+  CHECK(linked[2].mask == 3 && linked[2].scalar == ShaderScalar::Float32);
+  consumed[1].registerIndex = 2;
+  CHECK(!linkShader11Outputs(produced,consumed,0,linked) && linked.empty());
+  CHECK(linkShader11Outputs({},{{7,UINT32_MAX,1,ShaderScalar::Uint32}},0,linked));
+
   // Token sysvals for individual tess factors differ from signature sysvals.
   std::vector<uint32_t> hs{0x30050,0};
   instruction(hs,dxbc::OpCode::eHsDecls,{});

@@ -26,7 +26,7 @@ umd_build_config = configure_file(
   output        : 'umd_build_config.h',
 )
 
-umd_development = shared_library(umd_library_name, 'umd_ddi.cpp', 'umd_adapter.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d9_device.cpp', 'umd_contract.cpp', 'umd_shader.cpp', 'umd_runtime_query.cpp', 'umd_log.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_vulkan_loader.cpp',
+umd_development = shared_library(umd_library_name, 'umd_ddi.cpp', 'umd_adapter.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d9_device.cpp', 'umd_contract.cpp', 'umd_shader.cpp', 'umd_shader11.cpp', 'umd_runtime_query.cpp', 'umd_log.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_vulkan_loader.cpp',
   link_with : [umd_backend],
   dependencies : [dxvk_dep, dxbc_spirv_dep, lib_gdi32, lib_dxgi],
   include_directories : dxvk_include_path,
@@ -91,19 +91,19 @@ umd_d3d9_device_probe = executable('dxvk-umd-d3d9-device-probe',
 )
 
 native_entry_sources = ['../../tests/umd-native-entry.cpp', 'umd_adapter.cpp',
-  'umd_runtime_query.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp']
+  'umd_runtime_query.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp']
 native_entry_dependencies = [dxbc_spirv_dep, cpp.find_library('d3d11')]
 umd_rotation_test = executable('dxvk-umd-rotation-test',
-  ['../../tests/umd-rotation.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+  ['../../tests/umd-rotation.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies)
 umd_predication_test = executable('dxvk-umd-predication-test',
-  ['../../tests/umd-predication.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+  ['../../tests/umd-predication.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')],
   cpp_args : ['-DVIOGPU_PREDICATION_WARP'])
 umd_stream_output_test = executable('dxvk-umd-stream-output-test',
-  ['../../tests/umd-stream-output.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+  ['../../tests/umd-stream-output.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')],
   cpp_args : ['-DVIOGPU_STREAM_OUTPUT_WARP'])
@@ -114,7 +114,7 @@ umd_native_lifetime_test = executable('dxvk-umd-native-lifetime-test',
   cpp_args : ['-DVIOGPU_TEST_COMPLETE_CONTRACT'])
 
 umd_mrt_test = executable('dxvk-umd-mrt-test',
-  ['../../tests/umd-mrt.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+  ['../../tests/umd-mrt.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
 umd_mrt_signature_test = executable('dxvk-umd-mrt-signature-test',
@@ -130,7 +130,7 @@ umd_allocation_test = executable('dxvk-umd-allocation-test',
 
 umd_runtime_gpu_test = executable('dxvk-umd-runtime-gpu-test',
   '../../tests/umd-runtime-gpu.cpp', 'umd_runtime_gpu.cpp', 'umd_runtime_query.cpp',
-  'umd_ddi.cpp', 'umd_allocation.cpp', 'umd_shader.cpp',
+  'umd_ddi.cpp', 'umd_allocation.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
   dependencies : native_entry_dependencies)
 
 umd_view_test = executable('dxvk-umd-view-test', '../../tests/umd-view.cpp',
@@ -141,12 +141,12 @@ umd_system_runtime_test = executable('dxvk-umd-system-runtime-test',
   dependencies : [cpp.find_library('d3d11'), cpp.find_library('d3dcompiler'), cpp.find_library('user32')])
 
 umd_texture1d_test = executable('dxvk-umd-texture1d-test',
-  ['../../tests/umd-texture1d.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+  ['../../tests/umd-texture1d.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
 
 umd_d3d11_device_test = executable('dxvk-umd-d3d11-device-test',
-  ['../../tests/umd-d3d11-device.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+  ['../../tests/umd-d3d11-device.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
 

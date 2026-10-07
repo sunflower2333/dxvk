@@ -2,6 +2,7 @@
 #include "umd_api.h"
 #include "umd_adapter.h"
 #include "umd_shader.h"
+#include "umd_shader11.h"
 #include "umd_query.h"
 #include "umd_allocation.h"
 #include "umd_runtime_gpu.h"
@@ -35,6 +36,10 @@ namespace {
 using Microsoft::WRL::ComPtr;
 struct Shader;
 struct InputLayout;
+struct NativeClassBindings11 {
+  std::vector<ComPtr<ID3D11ClassInstance>> owners;
+  std::vector<ID3D11ClassInstance*> pointers;
+};
 struct Device {
   std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>();
   std::shared_ptr<const dxvk::umd::AdapterIdentity> adapter;
@@ -53,6 +58,8 @@ struct Device {
   const D3D10DDI_CORELAYER_DEVICECALLBACKS* callbacks10 = nullptr;
   const D3D11DDI_CORELAYER_DEVICECALLBACKS* callbacks11 = nullptr;
   D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_10_0;
+  bool nativeTable11 = false;
+  D3D11_PRIMITIVE_TOPOLOGY topology = D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
   dxvk::umd::RuntimeMemory memory;
   bool vertexBound = false;
   bool pixelBound = false;
@@ -64,6 +71,10 @@ struct Device {
   Shader* geometryShader = nullptr;
   Shader* pixelShader = nullptr;
   Shader* computeShader = nullptr;
+  Shader* hullShader = nullptr;
+  Shader* domainShader = nullptr;
+  std::array<NativeClassBindings11, 6> classBindings;
+  std::array<dxvk::umd::ShaderScalar, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> targetTypes{};
   InputLayout* inputLayout = nullptr;
   // Shared surfaces bound to the pipeline right now, by stage and slot. A draw
   // reads only these, so it refreshes only what it samples and dirties only
@@ -94,7 +105,10 @@ struct Device {
     try {
       // Backend release can join workers that need runtime callbacks. Pump
       // those requests on this DDI caller while release runs separately.
-      service->drain([&] { rotationScratch.Reset(); predicate.Reset(); context.Reset(); backend.Reset(); });
+      service->drain([&] {
+        for (auto& bindings : classBindings) { bindings.pointers.clear(); bindings.owners.clear(); }
+        rotationScratch.Reset(); predicate.Reset(); context.Reset(); backend.Reset();
+      });
     } catch (...) { result = E_FAIL; }
     try {
       const HRESULT gpuResult = gpu ? gpu->close() : S_OK;
@@ -266,7 +280,7 @@ struct ResourceRecord {
 std::mutex resourceStorageMutex;
 std::unordered_map<void*, ResourceRecord> resourceStorage;
 struct ComRetirement final : dxvk::umd::RuntimeService::Retirement {
-  std::array<ComPtr<IUnknown>, 4> references;
+  std::array<ComPtr<IUnknown>, 7> references;
   void release() noexcept override {
     for (auto& reference : references) reference.Reset();
   }
@@ -318,6 +332,12 @@ struct Shader : Child {
   ComPtr<ID3D11GeometryShader> geometry;
   ComPtr<ID3D11PixelShader> pixel;
   ComPtr<ID3D11ComputeShader> compute;
+  ComPtr<ID3D11HullShader> hull;
+  ComPtr<ID3D11DomainShader> domain;
+  ComPtr<ID3D11ClassLinkage> linkage;
+  std::optional<dxvk::umd::ShaderCode11> native11;
+  dxvk::umd::ShaderStreamOutput11 nativeStream;
+  std::vector<unsigned char> compiledNative11;
   std::vector<UINT> code;
   std::vector<dxvk::umd::ShaderSignatureEntry> inputs;
   std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
@@ -1489,23 +1509,38 @@ void APIENTRY createGeometryStream(D3D10DDI_HDEVICE h,
 void APIENTRY destroyShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto object = get(shader);
   if (!object || object->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
+  bool bound = false;
   if (get(h)->vertexShader == object) {
+    bound = true;
     get(h)->context->VSSetShader(nullptr, nullptr, 0);
     get(h)->vertexShader = nullptr; get(h)->vertexBound = false;
   }
   if (get(h)->pixelShader == object) {
+    bound = true;
     get(h)->context->PSSetShader(nullptr, nullptr, 0);
     get(h)->pixelShader = nullptr; get(h)->pixelBound = false;
   }
   if (get(h)->geometryShader == object) {
+    bound = true;
     get(h)->context->GSSetShader(nullptr, nullptr, 0);
     get(h)->geometryShader = nullptr;
   }
   if (get(h)->computeShader == object) {
+    bound = true;
     get(h)->context->CSSetShader(nullptr, nullptr, 0);
     get(h)->computeShader = nullptr;
   }
-  retireChild(get(h), object, object->vertex, object->geometry, object->pixel, object->compute);
+  if (get(h)->hullShader == object) {
+    bound = true;
+    get(h)->context->HSSetShader(nullptr, nullptr, 0); get(h)->hullShader = nullptr;
+  }
+  if (get(h)->domainShader == object) {
+    bound = true;
+    get(h)->context->DSSetShader(nullptr, nullptr, 0); get(h)->domainShader = nullptr;
+  }
+  if (bound && object->native11) get(h)->classBindings[uint32_t(object->stage)] = {};
+  retireChild(get(h), object, object->vertex, object->geometry, object->pixel, object->compute,
+    object->hull, object->domain, object->linkage);
 }
 void APIENTRY setVertexShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto device = get(h);
@@ -1571,7 +1606,23 @@ struct RenderTargetBindings {
   std::array<std::shared_ptr<dxvk::umd::SharedSurface>, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> shared;
   ID3D11DepthStencilView* depth = nullptr;
   bool anyColor = false;
+  std::array<dxvk::umd::ShaderScalar, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> types{};
 };
+dxvk::umd::ShaderScalar colorScalar11(DXGI_FORMAT format) {
+  using Scalar = dxvk::umd::ShaderScalar;
+  switch (format) {
+    case DXGI_FORMAT_R32G32B32A32_UINT: case DXGI_FORMAT_R32G32B32_UINT:
+    case DXGI_FORMAT_R32G32_UINT: case DXGI_FORMAT_R32_UINT:
+    case DXGI_FORMAT_R16G16B16A16_UINT: case DXGI_FORMAT_R16G16_UINT: case DXGI_FORMAT_R16_UINT:
+    case DXGI_FORMAT_R8G8B8A8_UINT: case DXGI_FORMAT_R8G8_UINT: case DXGI_FORMAT_R8_UINT:
+    case DXGI_FORMAT_R10G10B10A2_UINT: return Scalar::Uint32;
+    case DXGI_FORMAT_R32G32B32A32_SINT: case DXGI_FORMAT_R32G32B32_SINT:
+    case DXGI_FORMAT_R32G32_SINT: case DXGI_FORMAT_R32_SINT:
+    case DXGI_FORMAT_R16G16B16A16_SINT: case DXGI_FORMAT_R16G16_SINT: case DXGI_FORMAT_R16_SINT:
+    case DXGI_FORMAT_R8G8B8A8_SINT: case DXGI_FORMAT_R8G8_SINT: case DXGI_FORMAT_R8_SINT: return Scalar::Sint32;
+    default: return Scalar::Float32;
+  }
+}
 HRESULT renderTargetBindings(Device* device, const D3D10DDI_HRENDERTARGETVIEW* targets,
     UINT count, UINT clear, D3D10DDI_HDEPTHSTENCILVIEW depth, RenderTargetBindings& output) {
   constexpr UINT slots = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
@@ -1594,8 +1645,8 @@ HRESULT renderTargetBindings(Device* device, const D3D10DDI_HRENDERTARGETVIEW* t
     if (!targets[i].pDrvPrivate) continue;
     auto object = get(targets[i]);
     if (!object || object->owner != device || !object->backend) return E_INVALIDARG;
-    // The shader bridge currently reconstructs float outputs only.
-    if (object->format != DXGI_FORMAT_R8G8B8A8_UNORM &&
+    // The legacy bridge reconstructs the original float-only output slice.
+    if (!device->nativeTable11 && object->format != DXGI_FORMAT_R8G8B8A8_UNORM &&
         object->format != DXGI_FORMAT_B8G8R8A8_UNORM) {
       return E_INVALIDARG;
     }
@@ -1609,6 +1660,7 @@ HRESULT renderTargetBindings(Device* device, const D3D10DDI_HRENDERTARGETVIEW* t
       }
     }
     translated[i] = object->backend.Get();
+    output.types[i] = colorScalar11(object->format);
     staged[i] = object->shared;
     anyColor = true;
   }
@@ -2019,7 +2071,14 @@ bool prepareSharedDraw(Device* device) {
   return true;
 }
 
+bool prepareNativeGraphics11(Device* device);
 bool drawReady(Device* device, bool indexed = false) {
+  if (device->nativeTable11) {
+    if (!device->vertexBound || !device->topologyBound || (indexed && !device->indexBound)) {
+      device->error(E_INVALIDARG); return false;
+    }
+    return prepareNativeGraphics11(device) && prepareSharedDraw(device);
+  }
   const bool streamOnly = device->geometryShader && device->geometryShader->withStreamOutput;
   if (!device->vertexBound || (!streamOnly && (!device->pixelBound || !device->targetBound || !device->viewportBound))
       || !device->topologyBound || (indexed && !device->indexBound)) {
@@ -2386,6 +2445,7 @@ extern "C" SIZE_T APIENTRY VioGpuDxvkPrivateDeviceSize() { return sizeof(DeviceP
 
 namespace {
 #include "umd_d3d11_ddi.inl"
+#include "umd_d3d11_shader.inl"
 
 template<typename Table>
 void populateDeviceFunctions(Table* table) {
@@ -2513,6 +2573,13 @@ void populateDeviceFunctions(Table* table) {
     } else {
       static_assert(std::is_same_v<Table, D3D11DDI_DEVICEFUNCS>);
       table->pfnCalcPrivateResourceSize = deviceEntry<resourceSize11>;
+      table->pfnCreateVertexShader = deviceEntry<createVertexShader11>;
+      table->pfnCreatePixelShader = deviceEntry<createPixelShader11>;
+      table->pfnCreateGeometryShader = deviceEntry<createGeometryShader11>;
+      table->pfnVsSetShader = deviceEntry<setShader11<dxvk::umd::ShaderStage::Vertex>>;
+      table->pfnPsSetShader = deviceEntry<setShader11<dxvk::umd::ShaderStage::Pixel>>;
+      table->pfnGsSetShader = deviceEntry<setShader11<dxvk::umd::ShaderStage::Geometry>>;
+      table->pfnIaSetTopology = deviceEntry<setTopology11>;
       table->pfnCreateResource = deviceEntry<createResource11>;
       table->pfnCalcPrivateShaderResourceViewSize = deviceEntry<shaderViewSize11>;
       table->pfnCreateShaderResourceView = deviceEntry<createShaderView11>;
@@ -2533,19 +2600,19 @@ void populateDeviceFunctions(Table* table) {
       table->pfnHsSetConstantBuffers = deviceEntry<setConstantBuffers<dxvk::umd::ShaderStage::Hull>>;
       table->pfnDsSetConstantBuffers = deviceEntry<setConstantBuffers<dxvk::umd::ShaderStage::Domain>>;
       table->pfnCsSetConstantBuffers = deviceEntry<setConstantBuffers<dxvk::umd::ShaderStage::Compute>>;
-      table->pfnHsSetShader = deviceEntry<setTessellation<dxvk::umd::ShaderStage::Hull>>;
-      table->pfnDsSetShader = deviceEntry<setTessellation<dxvk::umd::ShaderStage::Domain>>;
-      table->pfnCsSetShader = deviceEntry<setComputeShader>;
-      table->pfnCreateHullShader = deviceEntry<createTessellation>;
-      table->pfnCreateDomainShader = deviceEntry<createTessellation>;
+      table->pfnHsSetShader = deviceEntry<setShader11<dxvk::umd::ShaderStage::Hull>>;
+      table->pfnDsSetShader = deviceEntry<setShader11<dxvk::umd::ShaderStage::Domain>>;
+      table->pfnCsSetShader = deviceEntry<setShader11<dxvk::umd::ShaderStage::Compute>>;
+      table->pfnCreateHullShader = deviceEntry<createHullShader11>;
+      table->pfnCreateDomainShader = deviceEntry<createDomainShader11>;
       table->pfnCalcPrivateTessellationShaderSize = deviceEntry<tessellationSize>;
-      table->pfnPsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces<setPixelShader>>;
-      table->pfnVsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces<setVertexShader>>;
-      table->pfnGsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces<setGeometryShader>>;
-      table->pfnHsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces<setTessellation<dxvk::umd::ShaderStage::Hull>>>;
-      table->pfnDsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces<setTessellation<dxvk::umd::ShaderStage::Domain>>>;
-      table->pfnCsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces<setComputeShader>>;
-      table->pfnCreateComputeShader = deviceEntry<createComputeShader>;
+      table->pfnPsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces11<dxvk::umd::ShaderStage::Pixel>>;
+      table->pfnVsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces11<dxvk::umd::ShaderStage::Vertex>>;
+      table->pfnGsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces11<dxvk::umd::ShaderStage::Geometry>>;
+      table->pfnHsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces11<dxvk::umd::ShaderStage::Hull>>;
+      table->pfnDsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces11<dxvk::umd::ShaderStage::Domain>>;
+      table->pfnCsSetShaderWithIfaces = deviceEntry<setShaderWithInterfaces11<dxvk::umd::ShaderStage::Compute>>;
+      table->pfnCreateComputeShader = deviceEntry<createComputeShader11>;
       table->pfnCalcPrivateUnorderedAccessViewSize = deviceEntry<unorderedViewSize>;
       table->pfnCreateUnorderedAccessView = deviceEntry<createUnorderedView>;
       table->pfnDestroyUnorderedAccessView = deviceEntry<destroyUnorderedView>;
@@ -2595,6 +2662,7 @@ HRESULT createDdiDevice(
   if (callbacks11) device->callbacks11 = callbacks11;
   else device->callbacks10 = callbacks;
   device->featureLevel = featureLevel;
+  device->nativeTable11 = std::is_same_v<Table, D3D11DDI_DEVICEFUNCS>;
   DXGI_DDI_BASE_FUNCTIONS* dxgiTable = nullptr;
   DXGI1_1_DDI_BASE_FUNCTIONS* dxgiTable11 = nullptr;
   if (native) {

@@ -24,9 +24,11 @@ New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $out = (Resolve-Path -LiteralPath $OutputDirectory).Path
 $shader = @(
     'src/umd/umd_shader.cpp',
+    'src/umd/umd_shader11.cpp',
     'subprojects/dxbc-spirv/dxbc/dxbc_container.cpp',
     'subprojects/dxbc-spirv/dxbc/dxbc_parser.cpp',
     'subprojects/dxbc-spirv/dxbc/dxbc_signature.cpp',
+    'subprojects/dxbc-spirv/dxbc/dxbc_interface.cpp',
     'subprojects/dxbc-spirv/dxbc/dxbc_types.cpp',
     'subprojects/dxbc-spirv/ir/ir.cpp',
     'subprojects/dxbc-spirv/util/util_swizzle.cpp',

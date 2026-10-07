@@ -57,8 +57,8 @@ bool writeSignature(const std::vector<ShaderIo11>& entries, util::FourCC tag,
     switch (entry.systemValue) {
       case 0: break;
       case 1: name = "SV_Position"; index = 0; system = dxbc::SignatureSysval::ePosition; break;
-      case 2: name = "SV_ClipDistance"; index = clip[entry.stream]++; system = dxbc::SignatureSysval::eClipDistance; break;
-      case 3: name = "SV_CullDistance"; index = cull[entry.stream]++; system = dxbc::SignatureSysval::eCullDistance; break;
+      case 2: name = "SV_ClipDistance"; index = entry.semanticIndex == UINT32_MAX ? clip[entry.stream]++ : entry.semanticIndex; system = dxbc::SignatureSysval::eClipDistance; break;
+      case 3: name = "SV_CullDistance"; index = entry.semanticIndex == UINT32_MAX ? cull[entry.stream]++ : entry.semanticIndex; system = dxbc::SignatureSysval::eCullDistance; break;
       case 4: name = "SV_RenderTargetArrayIndex"; index = 0; system = dxbc::SignatureSysval::eRenderTargetArrayIndex; break;
       case 5: name = "SV_ViewportArrayIndex"; index = 0; system = dxbc::SignatureSysval::eViewportIndex; break;
       case 6: name = "SV_VertexID"; index = 0; system = dxbc::SignatureSysval::eVertexId; break;
@@ -152,6 +152,95 @@ bool shader11InterfaceTable(const ShaderCode11& shader, uint32_t slot, uint32_t 
     if (slot >= iface.first && slot - iface.first < iface.count)
       return std::find(iface.tables.begin(), iface.tables.end(), table) != iface.tables.end();
   return false;
+}
+
+bool linkShader11Outputs(const std::vector<ShaderIo11>& original,
+    const std::vector<ShaderIo11>& inputs, uint32_t stream, std::vector<ShaderIo11>& output) {
+  output.clear();
+  if (stream >= 4 || original.size() > 128 || inputs.size() > 128) return false;
+  auto staged = original;
+  for (const auto& input : inputs) {
+    if (!input.mask || (input.mask & ~15u) || input.scalar == ShaderScalar::Unknown) return false;
+    // These values are supplied by fixed pipeline stages when a previous
+    // shader does not explicitly output them. Position uses clip-space on
+    // output and screen-space on PS input, so its masks need not match.
+    if (input.systemValue == 1 || (input.systemValue >= 6 && input.systemValue <= 10)) continue;
+    uint8_t remaining = input.mask;
+    for (size_t i = 0, count = staged.size(); i < count; ++i) {
+      auto& entry = staged[i];
+      if (entry.stream != stream || entry.systemValue != input.systemValue) continue;
+      if (!input.systemValue && entry.registerIndex != input.registerIndex) continue;
+      if (input.systemValue && entry.semanticIndex != input.semanticIndex) continue;
+      const auto mask = uint8_t(entry.mask & remaining);
+      if (!mask) continue;
+      remaining &= ~mask;
+      if (entry.scalar == input.scalar) continue;
+      if (entry.systemValue) return false;
+      auto part = entry; part.mask = mask; part.scalar = input.scalar;
+      if (mask == entry.mask) entry.scalar = input.scalar;
+      else { entry.mask &= ~mask; staged.push_back(part); }
+    }
+    if (remaining) return false;
+  }
+  output = std::move(staged); return true;
+}
+
+bool shader11StreamOutput(const ShaderCode11& shader,
+    const ShaderStreamDeclaration11* entries, size_t count,
+    const uint32_t* strides, size_t strideCount, uint32_t rasterizedStream,
+    ShaderStreamOutput11& output) {
+  using namespace dxbc_spv;
+  output = {};
+  if (count > 512 || (count && !entries) || strideCount > 4 || (strideCount && !strides)
+      || (rasterizedStream >= 4 && rasterizedStream != UINT32_MAX)) return false;
+  std::vector<unsigned char> binary;
+  if (!buildShader11Container(shader, binary)) return false;
+  dxbc::Container container(binary.data(), binary.size());
+  dxbc::Signature signature(container.getOutputSignatureChunk());
+  if (!signature) return false;
+  ShaderStreamOutput11 staged; staged.rasterizedStream = rasterizedStream;
+  std::array<uint32_t, 4> slotStreams; slotStreams.fill(UINT32_MAX);
+  std::array<uint32_t, 4> streamComponents{};
+  for (size_t i = 0; i < count; ++i) {
+    const auto& native = entries[i];
+    if (native.stream >= 4 || native.slot >= 4 || !native.mask || (native.mask & ~15u)
+        || (slotStreams[native.slot] != UINT32_MAX && slotStreams[native.slot] != native.stream)) return false;
+    slotStreams[native.slot] = native.stream;
+    const bool gap = native.registerIndex == UINT32_MAX;
+    if (!gap && native.registerIndex >= 32) return false;
+    for (uint32_t component = 0; component < 4;) {
+      if (!(native.mask & (1u << component))) { ++component; continue; }
+      const dxbc::SignatureEntry* matched = nullptr;
+      if (!gap) {
+        for (const auto& entry : signature)
+          if (entry.getStreamIndex() == native.stream && uint32_t(entry.getRegisterIndex()) == native.registerIndex
+              && (uint8_t(entry.getComponentMask()) & (1u << component))) {
+            if (matched) return false;
+            matched = &entry;
+          }
+        if (!matched) return false;
+      }
+      uint32_t end = component + 1;
+      while (end < 4 && (native.mask & (1u << end))
+          && (!matched || (uint8_t(matched->getComponentMask()) & (1u << end)))) ++end;
+      ShaderStreamEntry11 entry;
+      entry.stream = native.stream; entry.slot = uint8_t(native.slot);
+      entry.start = gap ? 0 : uint8_t(component); entry.count = uint8_t(end - component);
+      if (matched) { entry.semantic = matched->getSemanticName(); entry.semanticIndex = matched->getSemanticIndex(); }
+      staged.entries.push_back(std::move(entry));
+      streamComponents[native.stream] += end - component;
+      staged.strides[native.slot] += (end - component) * 4;
+      if (streamComponents[native.stream] > 128 || staged.strides[native.slot] > 512) return false;
+      staged.strideCount = std::max(staged.strideCount, native.slot + 1);
+      component = end;
+    }
+  }
+  for (size_t i = 0; i < strideCount; ++i) {
+    if (strides[i] % 4 || strides[i] > 2048 || strides[i] < staged.strides[i]) return false;
+    staged.strides[i] = strides[i];
+  }
+  staged.strideCount = std::max(staged.strideCount, uint32_t(strideCount));
+  output = std::move(staged); return true;
 }
 
 bool decodeShader11(ShaderStage stage, const uint32_t* code, size_t words, ShaderCode11& output) {

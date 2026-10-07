@@ -348,41 +348,14 @@ void APIENTRY setRenderTargets11(D3D10DDI_HDEVICE h, const D3D10DDI_HRENDERTARGE
   device->context->OMSetRenderTargetsAndUnorderedAccessViews(count, count ? bindings.targets.data() : nullptr,
     bindings.depth, count, slots - count, views.data() + count, counters.data() + count);
   device->targetShared = std::move(bindings.shared); device->targetBound = bindings.anyColor;
-}
-
-void APIENTRY createComputeShader(D3D10DDI_HDEVICE h, const UINT* code,
-    D3D10DDI_HSHADER out, D3D10DDI_HRTSHADER) {
-  auto device = get(h);
-  if (!out.pDrvPrivate || uintptr_t(out.pDrvPrivate) % alignof(Shader) || !code) { device->error(E_INVALIDARG); return; }
-  if (device->featureLevel < D3D_FEATURE_LEVEL_11_0) { device->error(DXGI_ERROR_UNSUPPORTED); return; }
-  HRESULT hr = E_INVALIDARG;
-  try {
-    Shader staged; staged.owner = device; staged.stage = dxvk::umd::ShaderStage::Compute;
-    staged.retirement = std::make_unique<ComRetirement>();
-    std::vector<unsigned char> bytecode;
-    if (dxvk::umd::buildComputeContainer(code, code[1], bytecode)) {
-      hr = device->backend->CreateComputeShader(bytecode.data(), bytecode.size(), nullptr, &staged.compute);
-      if (hr == S_OK && !staged.compute) hr = E_FAIL;
-      if (hr == S_OK && device->retired) hr = DXGI_ERROR_DEVICE_REMOVED;
-      if (hr == S_OK) new (out.pDrvPrivate) Shader(std::move(staged));
-      else if (!FAILED(hr)) hr = E_FAIL;
-    }
-  } catch (const std::bad_alloc&) { hr = E_OUTOFMEMORY; }
-    catch (...) { hr = E_FAIL; }
-  device->error(hr);
-}
-void APIENTRY setComputeShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER object) {
-  auto device = get(h); auto shader = get(object);
-  if (shader && (shader->owner != device || shader->stage != dxvk::umd::ShaderStage::Compute || !shader->compute)) {
-    device->error(E_INVALIDARG); return;
-  }
-  device->context->CSSetShader(shader ? shader->compute.Get() : nullptr, nullptr, 0);
-  device->computeShader = shader;
+  device->targetTypes = bindings.types;
 }
 bool computeReady(Device* device) {
   if (device->featureLevel < D3D_FEATURE_LEVEL_11_0 || !device->computeShader) {
     device->error(E_INVALIDARG); return false;
   }
+  if (device->computeShader->native11 && device->classBindings[unsigned(dxvk::umd::ShaderStage::Compute)].pointers.size()
+      != device->computeShader->native11->interfaceSlots) { device->error(E_INVALIDARG); return false; }
   const auto stage = unsigned(dxvk::umd::ShaderStage::Compute);
   for (UINT slot = 0; slot < device->boundSharedHigh[stage]; ++slot)
     if (!readSharedSurface(device, device->boundShared[stage][slot])) return false;
@@ -449,47 +422,9 @@ void APIENTRY setResourceMinLod(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE object, F
   device->context->SetResourceMinLOD(resource, lod);
 }
 
-// Tessellation and class linkage need additional native signatures and shader
-// semantics. Controlled creation can inspect this table; ordinary admission
-// remains gated. These entries report failure without publishing child bytes.
 SIZE_T APIENTRY tessellationSize(D3D10DDI_HDEVICE, const UINT*, const D3D11DDIARG_TESSELLATION_IO_SIGNATURES*) { return sizeof(Shader); }
-void APIENTRY createTessellation(D3D10DDI_HDEVICE h, const UINT*, D3D10DDI_HSHADER,
-    D3D10DDI_HRTSHADER, const D3D11DDIARG_TESSELLATION_IO_SIGNATURES*) { get(h)->error(DXGI_ERROR_UNSUPPORTED); }
-template<dxvk::umd::ShaderStage Stage>
-void APIENTRY setTessellation(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER object) {
-  auto device = get(h);
-  if (object.pDrvPrivate) { device->error(DXGI_ERROR_UNSUPPORTED); return; }
-  if constexpr (Stage == dxvk::umd::ShaderStage::Hull) device->context->HSSetShader(nullptr, nullptr, 0);
-  else device->context->DSSetShader(nullptr, nullptr, 0);
-}
-template<auto setShader>
-void APIENTRY setShaderWithInterfaces(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader,
-    UINT count, const UINT*, const D3D11DDIARG_POINTERDATA*) {
-  if (count) { get(h)->error(DXGI_ERROR_UNSUPPORTED); return; }
-  setShader(h, shader);
-}
 SIZE_T APIENTRY geometryStreamSize11(D3D10DDI_HDEVICE,
     const D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT*, const D3D10DDIARG_STAGE_IO_SIGNATURES*) { return sizeof(Shader); }
-void APIENTRY createGeometryStream11(D3D10DDI_HDEVICE h,
-    const D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT* args,
-    D3D10DDI_HSHADER out, D3D10DDI_HRTSHADER runtime, const D3D10DDIARG_STAGE_IO_SIGNATURES* signature) {
-  // Translate the supported stream0/tightly packed legacy slice explicitly.
-  // General streams/strides/rasterization remain a D3D11 admission gap.
-  if (!args || !args->pShaderCode || args->NumEntries > 64 || (args->NumEntries && !args->pOutputStreamDecl)
-      || args->NumStrides > 1 || (args->NumStrides && !args->BufferStridesInBytes)
-      || args->RasterizedStream != D3D11_SO_NO_RASTERIZED_STREAM) { get(h)->error(DXGI_ERROR_UNSUPPORTED); return; }
-  std::array<D3D10DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY, 64> entries{};
-  for (UINT i = 0; i < args->NumEntries; ++i) {
-    const auto& entry = args->pOutputStreamDecl[i];
-    if (entry.Stream || entry.OutputSlot) { get(h)->error(DXGI_ERROR_UNSUPPORTED); return; }
-    entries[i] = {entry.OutputSlot, entry.RegisterIndex, entry.RegisterMask};
-  }
-  D3D10DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT translated = {};
-  translated.pShaderCode = args->pShaderCode; translated.NumEntries = args->NumEntries;
-  translated.pOutputStreamDecl = entries.data();
-  translated.StreamOutputStrideInBytes = args->NumStrides ? args->BufferStridesInBytes[0] : 0;
-  createGeometryStream(h, &translated, out, runtime, signature);
-}
 void APIENTRY relocateDeviceFunctions10_1(D3D10DDI_HDEVICE h, D3D10_1DDI_DEVICEFUNCS* functions) {
   if (!functions) get(h)->error(E_INVALIDARG);
 }

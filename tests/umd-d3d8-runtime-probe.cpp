@@ -55,10 +55,36 @@ std::wstring path(HMODULE module) {
   return {value, length};
 }
 std::wstring systemDirectory() {
-  wchar_t directory[MAX_PATH]; BOOL wow = FALSE;
-  require(IsWow64Process(GetCurrentProcess(), &wow) != FALSE, "IsWow64Process");
-  const UINT length = wow ? GetSystemWow64DirectoryW(directory, MAX_PATH) : GetSystemDirectoryW(directory, MAX_PATH);
+  // The legacy boolean is FALSE for an I386 process emulated on ARM64.
+  // Resolve the documented signatures without raising the fixture's Vista
+  // header target; these diagnostics run on the existing Windows 11 guest.
+  using Machines = BOOL (WINAPI*)(HANDLE, USHORT*, USHORT*);
+  using Directory = UINT (WINAPI*)(LPWSTR, UINT, WORD);
+  const HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
+  require(kernel != nullptr, "system-kernel32");
+  const FARPROC machineAddress = GetProcAddress(kernel, "IsWow64Process2");
+  const FARPROC directoryAddress = GetProcAddress(kernel, "GetSystemWow64Directory2W");
+  Machines machines = nullptr; Directory wowDirectory = nullptr;
+  static_assert(sizeof(machines) == sizeof(machineAddress) && sizeof(wowDirectory) == sizeof(directoryAddress));
+  std::memcpy(&machines, &machineAddress, sizeof(machines));
+  std::memcpy(&wowDirectory, &directoryAddress, sizeof(wowDirectory));
+  require(machines && wowDirectory, "explicit-process-machine-APIs");
+  USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN, nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
+  require(machines(GetCurrentProcess(), &processMachine, &nativeMachine) != FALSE, "IsWow64Process2");
+  const USHORT effectiveMachine = processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? nativeMachine : processMachine;
+  BOOL legacyWow = FALSE;
+  const BOOL legacyStatus = IsWow64Process(GetCurrentProcess(), &legacyWow);
+  trace("D3D8_PROCESS_MACHINE process=%04x native=%04x effective=%04x pointer_bytes=%zu legacy_status=%u legacy_wow=%u",
+    unsigned(processMachine), unsigned(nativeMachine), unsigned(effectiveMachine), sizeof(void*),
+    unsigned(legacyStatus != FALSE), unsigned(legacyWow != FALSE));
+  require(sizeof(void*) == 4 && effectiveMachine == IMAGE_FILE_MACHINE_I386, "actual-I386-process-machine");
+  wchar_t directory[MAX_PATH]{};
+  const UINT length = processMachine == IMAGE_FILE_MACHINE_UNKNOWN
+    ? GetSystemDirectoryW(directory, MAX_PATH)
+    : wowDirectory(directory, MAX_PATH, IMAGE_FILE_MACHINE_I386);
   require(length && length < MAX_PATH, "system-directory");
+  trace("D3D8_SYSTEM_DIRECTORY machine=%04x api=%s path=%ls", unsigned(effectiveMachine),
+    processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? "GetSystemDirectoryW" : "GetSystemWow64Directory2W", directory);
   return {directory, length};
 }
 dxvk::umd::diagnostic::RuntimeImage image(HMODULE module) {
@@ -292,7 +318,13 @@ HMONITOR matchAdapter(IDirect3D8* api, UINT index, const LUID& expected, UINT ex
   dc.value = CreateDCW(L"DISPLAY", info.szDevice, nullptr, nullptr);
   require(dc.value != nullptr, "selected-monitor-DC");
   const HMODULE gdi = GetModuleHandleW(L"gdi32.dll");
-  require(gdi && !_wcsicmp(path(gdi).c_str(), (systemDirectory() + L"\\gdi32.dll").c_str()), "system-GDI32");
+  const auto expectedGdi = systemDirectory() + L"\\gdi32.dll";
+  const auto actualGdi = gdi ? path(gdi) : std::wstring(L"<absent>");
+  const uint16_t gdiMachine = gdi ? moduleMachine(gdi) : 0;
+  trace("D3D8_SYSTEM_GDI32 actual=%ls expected=%ls machine=%04x pointer_bytes=%zu",
+    actualGdi.c_str(), expectedGdi.c_str(), unsigned(gdiMachine), sizeof(void*));
+  require(gdi && !_wcsicmp(actualGdi.c_str(), expectedGdi.c_str())
+    && gdiMachine == IMAGE_FILE_MACHINE_I386, "system-GDI32");
   const auto function = [gdi](const char* name, auto& output) {
     const FARPROC pointer = GetProcAddress(gdi, name);
     static_assert(sizeof(output) == sizeof(pointer)); std::memcpy(&output, &pointer, sizeof(output));

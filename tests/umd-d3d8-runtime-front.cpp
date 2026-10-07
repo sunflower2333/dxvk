@@ -69,30 +69,56 @@ std::wstring modulePath(HMODULE module) {
   const DWORD count = GetModuleFileNameW(module, path, DWORD(std::size(path)));
   return count && count < std::size(path) ? std::wstring(path, count) : std::wstring();
 }
-bool i386(HMODULE module) {
+uint16_t moduleMachine(HMODULE module) {
   MODULEINFO info{};
-  if (!K32GetModuleInformation(GetCurrentProcess(), module, &info, sizeof(info))) return false;
+  if (!K32GetModuleInformation(GetCurrentProcess(), module, &info, sizeof(info))) return 0;
   const dxvk::umd::diagnostic::RuntimeImage image{
     static_cast<const uint8_t*>(info.lpBaseOfDll), info.SizeOfImage};
   uint32_t signature = 0, offset = 0; uint16_t machine = 0;
-  return dxvk::umd::diagnostic::runtimeImageRead(image, 0x3c, offset)
+  const bool valid = dxvk::umd::diagnostic::runtimeImageRead(image, 0x3c, offset)
     && dxvk::umd::diagnostic::runtimeImageRead(image, offset, signature) && signature == 0x4550
-    && dxvk::umd::diagnostic::runtimeImageRead(image, size_t(offset) + 4, machine)
-    && machine == IMAGE_FILE_MACHINE_I386;
+    && dxvk::umd::diagnostic::runtimeImageRead(image, size_t(offset) + 4, machine);
+  return valid ? machine : 0;
 }
+bool i386(HMODULE module) { return moduleMachine(module) == IMAGE_FILE_MACHINE_I386; }
 bool system8Caller(const void* returnAddress, std::wstring& actual) {
   HMODULE caller = nullptr;
   if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
       | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
       reinterpret_cast<LPCWSTR>(returnAddress), &caller)) return false;
   actual = modulePath(caller);
-  WCHAR directory[MAX_PATH]; BOOL wow = FALSE;
-  if (!IsWow64Process(GetCurrentProcess(), &wow)) return false;
-  const UINT count = wow ? GetSystemWow64DirectoryW(directory, MAX_PATH)
-                         : GetSystemDirectoryW(directory, MAX_PATH);
+  // IsWow64Process alone does not identify I386 emulation on ARM64.
+  using Machines = BOOL (WINAPI*)(HANDLE, USHORT*, USHORT*);
+  using Directory = UINT (WINAPI*)(LPWSTR, UINT, WORD);
+  const HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
+  if (!kernel) return false;
+  const FARPROC machineAddress = GetProcAddress(kernel, "IsWow64Process2");
+  const FARPROC directoryAddress = GetProcAddress(kernel, "GetSystemWow64Directory2W");
+  Machines machines = nullptr; Directory wowDirectory = nullptr;
+  static_assert(sizeof(machines) == sizeof(machineAddress) && sizeof(wowDirectory) == sizeof(directoryAddress));
+  std::memcpy(&machines, &machineAddress, sizeof(machines));
+  std::memcpy(&wowDirectory, &directoryAddress, sizeof(wowDirectory));
+  if (!machines || !wowDirectory) return false;
+  USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN, nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
+  if (!machines(GetCurrentProcess(), &processMachine, &nativeMachine)) return false;
+  const USHORT effectiveMachine = processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? nativeMachine : processMachine;
+  BOOL legacyWow = FALSE;
+  const BOOL legacyStatus = IsWow64Process(GetCurrentProcess(), &legacyWow);
+  trace("SYSTEM_D3D8_CALLER_MACHINE process=%04x native=%04x effective=%04x pointer_bytes=%zu legacy_status=%u legacy_wow=%u",
+    unsigned(processMachine), unsigned(nativeMachine), unsigned(effectiveMachine), sizeof(void*),
+    unsigned(legacyStatus != FALSE), unsigned(legacyWow != FALSE));
+  if (effectiveMachine != IMAGE_FILE_MACHINE_I386) return false;
+  WCHAR directory[MAX_PATH]{};
+  const UINT count = processMachine == IMAGE_FILE_MACHINE_UNKNOWN
+    ? GetSystemDirectoryW(directory, MAX_PATH)
+    : wowDirectory(directory, MAX_PATH, IMAGE_FILE_MACHINE_I386);
   if (!count || count >= MAX_PATH) return false;
   const auto expected = std::wstring(directory, count) + L"\\d3d8.dll";
-  return !actual.empty() && !_wcsicmp(actual.c_str(), expected.c_str()) && i386(caller);
+  const uint16_t callerMachine = moduleMachine(caller);
+  trace("SYSTEM_D3D8_CALLER_PATH actual=%ls expected=%ls machine=%04x pointer_bytes=%zu directory_api=%s",
+    actual.c_str(), expected.c_str(), unsigned(callerMachine), sizeof(void*),
+    processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? "GetSystemDirectoryW" : "GetSystemWow64Directory2W");
+  return !actual.empty() && !_wcsicmp(actual.c_str(), expected.c_str()) && callerMachine == IMAGE_FILE_MACHINE_I386;
 }
 
 std::wstring environment(const wchar_t* name, size_t limit) {

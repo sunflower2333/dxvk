@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <utility>
 
 using Microsoft::WRL::ComPtr;
 
@@ -48,11 +49,13 @@ static DWORD callerThread;
 static HRESULT lastError = S_OK, backendResult = S_OK;
 static const LUID expectedLuid = {0x23457891, -54};
 static ComPtr<ID3D11DeviceContext> createdContext;
+static void (*onError)() = nullptr;
 #define CHECK(value) do { ++checks; if (!(value)) { std::fprintf(stderr, "D3D11 DDI failure line %d: %s\n", __LINE__, #value); std::abort(); } } while (0)
 static void ok() { CHECK(lastError == S_OK); }
 static void failure(HRESULT expected) { CHECK(lastError == dxvk::umd::ddiResult(expected)); lastError = S_OK; }
 static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
   CHECK(runtime.handle && GetCurrentThreadId() == callerThread && FAILED(hr)); ++errors; lastError = hr;
+  if (auto hook = std::exchange(onError, nullptr)) hook();
 }
 static void APIENTRY alternateError(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
   ++alternateErrors; error(runtime, hr);
@@ -102,6 +105,37 @@ struct Fixture {
   ~Fixture() {
     context.Reset(); output.table.pfnDestroyDevice(device); storage.check();
     CHECK(output.canary == Storage::canary);
+  }
+};
+struct NativeQuery {
+  Fixture& fixture;
+  Storage storage;
+  D3D10DDI_HQUERY handle;
+  bool alive = true;
+  NativeQuery(Fixture& f, D3D10DDI_QUERY type, void* external = nullptr)
+  : fixture(f), storage(f.output.table.pfnCalcPrivateQuerySize(f.device, nullptr)), handle{external ? external : storage.data()} {
+    const D3D10DDIARG_CREATEQUERY args{type,0};
+    f.output.table.pfnCreateQuery(f.device,&args,handle,{}); ok(); storage.check();
+  }
+  ~NativeQuery() { if (alive) fixture.output.table.pfnDestroyQuery(fixture.device,handle); storage.check(); }
+  void begin() { fixture.output.table.pfnQueryBegin(fixture.device,handle); ok(); }
+  void end() { fixture.output.table.pfnQueryEnd(fixture.device,handle); ok(); }
+  template<typename Data> Data result() {
+    fixture.output.table.pfnFlush(fixture.device); ok();
+    struct Guard { UINT64 before; Data data; UINT64 after; } guarded{};
+    guarded.before = guarded.after = Storage::canary;
+    std::memset(&guarded.data,0xcd,sizeof(guarded.data));
+    std::array<unsigned char,sizeof(Data)> untouched{};
+    std::memcpy(untouched.data(),&guarded.data,sizeof(Data));
+    const ULONGLONG start = GetTickCount64();
+    for (;;) {
+      fixture.output.table.pfnQueryGetData(fixture.device,handle,&guarded.data,sizeof(Data),D3D10_DDI_GET_DATA_DO_NOT_FLUSH);
+      CHECK(guarded.before == Storage::canary && guarded.after == Storage::canary);
+      if (lastError == S_OK) return guarded.data;
+      failure(DXGI_DDI_ERR_WASSTILLDRAWING);
+      CHECK(!std::memcmp(&guarded.data,untouched.data(),sizeof(Data)));
+      CHECK(GetTickCount64() - start < 10000); SwitchToThread();
+    }
   }
 };
 struct Buffer {
@@ -252,7 +286,11 @@ static void computeAndCounters(Fixture& f) {
   table.pfnCsSetShaderResources(f.device, 0, 1, &srv.handle);
   table.pfnCsSetConstantBuffers(f.device, 0, 1, &constant.handle);
   table.pfnCsSetUnorderedAccessViews(f.device, 0, 1, &uav.handle, nullptr); ok();
+  NativeQuery pipeline(f,D3D11DDI_QUERY_PIPELINESTATS); pipeline.begin();
   table.pfnDispatch(f.device, 4, 1, 1); ok();
+  pipeline.end();
+  const auto counters = pipeline.result<D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS>();
+  CHECK(counters.CSInvocations == 16 && !counters.HSInvocations && !counters.DSInvocations && !counters.IAVertices);
   auto result = destination.read(16);
   for (UINT i = 0; i < result.size(); ++i) CHECK(result[i] == input[i] * 3 + constants[0]);
   const UINT indirectData[3] = {4, 1, 1};
@@ -301,12 +339,45 @@ static void computeAndCounters(Fixture& f) {
   table.pfnCsSetUnorderedAccessViews(f.device, 0, 2, mixed.data(), nullptr); failure(E_INVALIDARG); inspectUav(f, bound.Get());
 }
 
+template<typename Table>
+static void inputLayoutCapacity(Table& table, D3D10DDI_HDEVICE device,
+    ID3D11DeviceContext* context, UINT capacity) {
+  std::vector<D3D10DDIARG_INPUT_ELEMENT_DESC> elements(capacity + 1);
+  for (UINT i = 0; i < elements.size(); ++i)
+    elements[i] = {i, 0, DXGI_FORMAT_R32_FLOAT, D3D10_DDI_INPUT_PER_VERTEX_DATA, 0, i};
+  Storage storage(table.pfnCalcPrivateElementLayoutSize(device, nullptr));
+  std::fill(storage.words.begin(), storage.words.end() - 1, 0xccccccccccccccccull);
+  const auto untouched = storage.words;
+  const D3D10DDI_HELEMENTLAYOUT layout{storage.data()};
+  D3D10DDIARG_CREATEELEMENTLAYOUT args{elements.data(), capacity + 1};
+  table.pfnCreateElementLayout(device, &args, layout, {}); failure(E_INVALIDARG);
+  args.NumElements = 1; elements[0].InputRegister = capacity;
+  table.pfnCreateElementLayout(device, &args, layout, {}); failure(E_INVALIDARG);
+  elements[0].InputRegister = 0; elements[0].InputSlot = capacity;
+  table.pfnCreateElementLayout(device, &args, layout, {}); failure(E_INVALIDARG);
+  CHECK(storage.words == untouched);
+  elements[0].InputSlot = 0; args.NumElements = capacity;
+  table.pfnCreateElementLayout(device, &args, layout, {}); ok();
+  table.pfnIaSetInputLayout(device, layout); ok();
+  ComPtr<ID3D11InputLayout> observed; context->IAGetInputLayout(&observed); CHECK(observed);
+  const D3D10DDI_HRESOURCE empty[2]{};
+  const UINT stride[2] = {4, 4}, offset[2]{};
+  table.pfnIaSetVertexBuffers(device, capacity - 1, 1, empty, stride, offset); ok();
+  table.pfnIaSetVertexBuffers(device, capacity, 1, empty, stride, offset); failure(E_INVALIDARG);
+  table.pfnIaSetVertexBuffers(device, capacity - 1, 2, empty, stride, offset); failure(E_INVALIDARG);
+  CHECK(storage.words == untouched);
+  table.pfnDestroyElementLayout(device, layout); ok();
+  observed.Reset(); context->IAGetInputLayout(&observed); CHECK(!observed);
+  storage.check();
+}
+
 static void independentBlend10_1() {
   Storage storage(VioGpuDxvkPrivateDeviceSize()); D3D10DDI_HDEVICE device{storage.data()};
   D3D10DDI_CORELAYER_DEVICECALLBACKS callbacks{}; callbacks.pfnSetErrorCb = error;
   TableOutput<D3D10_1DDI_DEVICEFUNCS> output{};
   CHECK(VioGpuDxvkCreateDdiTestDevice10_1(&expectedLuid, device, {&callbacks}, &callbacks, &output.table) == S_OK);
   auto context = createdContext; createdContext.Reset();
+  inputLayoutCapacity(output.table, device, context.Get(), D3D10_1_VS_INPUT_REGISTER_COUNT);
   D3D10_1_DDI_BLEND_DESC args{}; args.IndependentBlendEnable = TRUE;
   for (auto& target : args.RenderTarget) {
     target.SrcBlend = target.SrcBlendAlpha = D3D10_DDI_BLEND_ONE;
@@ -396,6 +467,256 @@ struct GraphicsShader {
     ok();
   }
 };
+static UINT semanticRegister(const GraphicsShader& shader, bool input, const char* name, UINT index = 0) {
+  dxbc_spv::dxbc::Container container(shader.original->GetBufferPointer(),shader.original->GetBufferSize()); CHECK(container);
+  dxbc_spv::dxbc::Signature signature(input ? container.getInputSignatureChunk() : container.getOutputSignatureChunk()); CHECK(signature);
+  for (const auto& entry : signature)
+    if (!std::strcmp(entry.getSemanticName(),name) && entry.getSemanticIndex() == index) {
+      CHECK(entry.getRegisterIndex() >= 0); return UINT(entry.getRegisterIndex());
+    }
+  CHECK(false); return 0;
+}
+struct NativeLayout {
+  Fixture& fixture;
+  Storage storage;
+  D3D10DDI_HELEMENTLAYOUT handle;
+  bool alive = true;
+  NativeLayout(Fixture& f, const std::vector<D3D10DDIARG_INPUT_ELEMENT_DESC>& elements, void* external = nullptr)
+  : fixture(f), storage(f.output.table.pfnCalcPrivateElementLayoutSize(f.device,nullptr)), handle{external ? external : storage.data()} {
+    const D3D10DDIARG_CREATEELEMENTLAYOUT args{elements.data(),UINT(elements.size())};
+    f.output.table.pfnCreateElementLayout(f.device,&args,handle,{}); ok(); storage.check();
+  }
+  ~NativeLayout() { if (alive) fixture.output.table.pfnDestroyElementLayout(fixture.device,handle); storage.check(); }
+  void bind() { fixture.output.table.pfnIaSetInputLayout(fixture.device,handle); ok(); }
+};
+
+static void inputAssembler11(Fixture& f) {
+  using dxvk::umd::ShaderStage;
+  auto& table = f.output.table;
+  const char* vertexSource = R"(
+struct I{float4 color:COLOR0;float2 uv:UV0;uint2 u:U0;int2 s:S0;uint4 packed:PACKED0;uint step:STEP0;uint fixedValue:FIXED0;};
+struct O{float4 p:SV_Position;uint4 value:DATA0;uint4 ids:DATA1;};
+O main(I i,uint vertex:SV_VertexID,uint instance:SV_InstanceID){O o;o.p=float4(0,0,0,1);
+o.value=uint4(uint(i.color.x*255+0.5),uint(i.uv.x*16),i.u.x+i.packed.x,uint(i.s.x+128));
+o.ids=uint4(i.step,i.fixedValue,vertex,instance);return o;})";
+  const char* geometrySource = R"(
+struct O{float4 p:SV_Position;uint4 value:DATA0;uint4 ids:DATA1;};
+[maxvertexcount(1)]void main(point O input[1],inout PointStream<O> output){output.Append(input[0]);})";
+  GraphicsShader vertex(f,ShaderStage::Vertex,vertexSource);
+  auto tokens = compile(geometrySource,"gs_5_0"); dxvk::umd::ShaderCode11 decoded;
+  CHECK(dxvk::umd::decodeShader11(ShaderStage::Geometry,tokens.data(),tokens.size(),decoded));
+  // Preserve semantic order in the independent public control below.
+  GraphicsShader geometrySignature(f,ShaderStage::Geometry,geometrySource);
+  const D3D11DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY declarations[] = {
+    {0,0,semanticRegister(geometrySignature,false,"DATA",0),15},
+    {0,0,semanticRegister(geometrySignature,false,"DATA",1),15}};
+  const UINT outputStride = 32;
+  D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT stream{};
+  stream.pOutputStreamDecl = declarations; stream.NumEntries = 2;
+  stream.BufferStridesInBytes = &outputStride; stream.NumStrides = 1; stream.RasterizedStream = D3D11_SO_NO_RASTERIZED_STREAM;
+  GraphicsShader geometry(f,ShaderStage::Geometry,geometrySource,&stream);
+  const char* names[] = {"COLOR","UV","U","S","PACKED","STEP","FIXED"};
+  const DXGI_FORMAT formats[] = {DXGI_FORMAT_R8G8B8A8_UNORM,DXGI_FORMAT_R16G16_FLOAT,
+    DXGI_FORMAT_R8G8_UINT,DXGI_FORMAT_R8G8_SINT,DXGI_FORMAT_R10G10B10A2_UINT,DXGI_FORMAT_R16_UINT,DXGI_FORMAT_R8_UINT};
+  std::vector<D3D10DDIARG_INPUT_ELEMENT_DESC> elements;
+  std::array<D3D11_INPUT_ELEMENT_DESC,7> publicElements{};
+  for (UINT i = 0; i < 7; ++i) {
+    const UINT slot = i < 5 ? 0 : i == 5 ? 1 : 31;
+    const UINT offset = i && i < 5 ? D3D11_APPEND_ALIGNED_ELEMENT : i == 6 ? 1 : 0;
+    const auto classification = i < 5 ? D3D10_DDI_INPUT_PER_VERTEX_DATA : D3D10_DDI_INPUT_PER_INSTANCE_DATA;
+    const UINT step = i == 5 ? 2 : 0;
+    elements.push_back({slot,offset,formats[i],classification,step,semanticRegister(vertex,true,names[i])});
+    publicElements[i] = {names[i],0,formats[i],slot,offset,D3D11_INPUT_CLASSIFICATION(classification),step};
+  }
+  NativeLayout layout(f,elements); layout.bind();
+  struct PackedVertex { BYTE color[4]; UINT16 uv[2]; BYTE u[2]; int8_t s[2]; UINT packed; };
+  static_assert(sizeof(PackedVertex) == 16);
+  const PackedVertex data[] = {{{31,0,0,255},{0x3c00,0},{7,0},{-4,0},0xc038142bu},
+    {{47,0,0,255},{0x4000,0},{11,0},{-8,0},0xc038145bu},{{99,0,0,255},{0x4200,0},{13,0},{-16,0},0xc03814f7u},
+    {{173,0,0,255},{0x4400,0},{17,0},{-32,0},0xc0381537u}};
+  const UINT16 instances[] = {0xffff,100,200,300,400,500,600,700,800};
+  const BYTE fixed[] = {0xee,0xbb,90};
+  const UINT16 indices[] = {0xffff,2,0,1,0xffff};
+  Buffer vertices(f,sizeof(data),D3D10_DDI_BIND_VERTEX_BUFFER,0,0,data);
+  Buffer rates(f,sizeof(instances),D3D10_DDI_BIND_VERTEX_BUFFER,0,0,instances);
+  Buffer constant(f,sizeof(fixed),D3D10_DDI_BIND_VERTEX_BUFFER,0,0,fixed);
+  Buffer index(f,sizeof(indices),D3D10_DDI_BIND_INDEX_BUFFER,0,0,indices);
+  const D3D10DDI_HRESOURCE buffers[] = {vertices.handle,rates.handle,constant.handle};
+  const UINT strides[] = {sizeof(PackedVertex),2,0}, offsets[] = {0,2,1};
+  table.pfnIaSetVertexBuffers(f.device,0,2,buffers,strides,offsets);
+  table.pfnIaSetVertexBuffers(f.device,31,1,&constant.handle,&strides[2],&offsets[2]);
+  table.pfnIaSetIndexBuffer(f.device,index.handle,DXGI_FORMAT_R16_UINT,2);
+  table.pfnIaSetTopology(f.device,D3D10_DDI_PRIMITIVE_TOPOLOGY_POINTLIST);
+  table.pfnPsSetShader(f.device,{}); table.pfnHsSetShader(f.device,{}); table.pfnDsSetShader(f.device,{});
+  vertex.bind(); geometry.bind(); ok();
+  std::array<UINT,128> poison; poison.fill(0xa5a55a5a);
+  Buffer captured(f,512,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  const UINT start = 0; table.pfnSoSetTargets(f.device,1,3,&captured.handle,&start); ok();
+  NativeQuery statistics(f,D3D11DDI_QUERY_PIPELINESTATS); statistics.begin();
+  table.pfnDrawIndexedInstanced(f.device,2,4,1,1,3); ok(); statistics.end();
+  const auto pipeline = statistics.result<D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS>();
+  CHECK(pipeline.IAVertices == 8 && pipeline.IAPrimitives == 8 && pipeline.GSInvocations == 8 && !pipeline.CSInvocations);
+  auto result = captured.read(128);
+  for (UINT instance = 0; instance < 4; ++instance) for (UINT point = 0; point < 2; ++point) {
+    const UINT location = (instance*2+point)*8;
+    const PackedVertex& value = data[point+1];
+    CHECK(result[location] == value.color[0] && result[location+1] == (point+2)*16);
+    CHECK(result[location+2] == value.u[0]+(value.packed & 1023) && result[location+3] == UINT(value.s[0]+128));
+    CHECK(result[location+5] == 90);
+  }
+  for (UINT i = 64; i < 128; ++i) CHECK(result[i] == poison[i]);
+
+  // Compare all IDs and divisor/start-instance fetches against the original
+  // app blobs and exact public API parameters, independently of native
+  // signature reconstruction and DDI argument forwarding.
+  ComPtr<ID3D11Device> backend; f.context->GetDevice(&backend);
+  ComPtr<ID3D11VertexShader> referenceVertex; ComPtr<ID3D11GeometryShader> referenceGeometry;
+  ComPtr<ID3D11InputLayout> referenceLayout;
+  CHECK(backend->CreateVertexShader(vertex.original->GetBufferPointer(),vertex.original->GetBufferSize(),nullptr,&referenceVertex) == S_OK);
+  CHECK(backend->CreateInputLayout(publicElements.data(),UINT(publicElements.size()),vertex.original->GetBufferPointer(),vertex.original->GetBufferSize(),&referenceLayout) == S_OK);
+  const D3D11_SO_DECLARATION_ENTRY publicStream[] = {{0,"DATA",0,0,4,0},{0,"DATA",1,0,4,0}};
+  CHECK(backend->CreateGeometryShaderWithStreamOutput(geometry.original->GetBufferPointer(),geometry.original->GetBufferSize(),
+    publicStream,2,&outputStride,1,D3D11_SO_NO_RASTERIZED_STREAM,nullptr,&referenceGeometry) == S_OK);
+  Buffer control(f,512,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  table.pfnSoSetTargets(f.device,1,0,&control.handle,&start); ok();
+  ComPtr<ID3D11Buffer> referenceBuffer; f.context->SOGetTargets(1,&referenceBuffer); CHECK(referenceBuffer);
+  f.context->VSSetShader(referenceVertex.Get(),nullptr,0); f.context->GSSetShader(referenceGeometry.Get(),nullptr,0);
+  f.context->IASetInputLayout(referenceLayout.Get());
+  f.context->DrawIndexedInstanced(2,4,1,1,3);
+  CHECK(control.read(128) == result);
+  layout.bind(); vertex.bind(); geometry.bind();
+  table.pfnSoSetTargets(f.device,1,0,&captured.handle,&start); ok();
+
+  // A failed foreign bind and a foreign resource tail leave the entire IA
+  // state intact; misaligned index offsets do not clear a valid index bind.
+  Fixture foreign; NativeLayout foreignLayout(foreign,elements);
+  ComPtr<ID3D11InputLayout> before, after; f.context->IAGetInputLayout(&before);
+  table.pfnIaSetInputLayout(f.device,foreignLayout.handle); failure(E_INVALIDARG);
+  f.context->IAGetInputLayout(&after); CHECK(after.Get() == before.Get());
+  Buffer foreignBuffer(foreign,4,D3D10_DDI_BIND_VERTEX_BUFFER);
+  const D3D10DDI_HRESOURCE mixed[] = {vertices.handle,foreignBuffer.handle};
+  const UINT mixedStrides[] = {sizeof(PackedVertex),4}, mixedOffsets[] = {0,0};
+  std::array<ComPtr<ID3D11Buffer>,3> oldBuffers, newBuffers;
+  std::array<ID3D11Buffer*,3> raw{}; std::array<UINT,3> oldStrides{},oldOffsets{},newStrides{},newOffsets{};
+  f.context->IAGetVertexBuffers(0,3,raw.data(),oldStrides.data(),oldOffsets.data());
+  for (UINT i = 0; i < 3; ++i) oldBuffers[i].Attach(raw[i]);
+  table.pfnIaSetVertexBuffers(f.device,0,2,mixed,mixedStrides,mixedOffsets); failure(E_INVALIDARG);
+  f.context->IAGetVertexBuffers(0,3,raw.data(),newStrides.data(),newOffsets.data());
+  for (UINT i = 0; i < 3; ++i) { newBuffers[i].Attach(raw[i]); CHECK(newBuffers[i].Get() == oldBuffers[i].Get()); }
+  CHECK(oldStrides == newStrides && oldOffsets == newOffsets);
+  table.pfnIaSetIndexBuffer(f.device,index.handle,DXGI_FORMAT_R16_UINT,1); failure(E_INVALIDARG);
+  table.pfnDrawIndexedInstanced(f.device,2,4,1,1,3); ok(); CHECK(captured.read(128) == result);
+  const UINT wideIndices[] = {0xffffffff,2,0,1,0xffffffff};
+  Buffer wideIndex(f,sizeof(wideIndices),D3D10_DDI_BIND_INDEX_BUFFER,0,0,wideIndices);
+  table.pfnIaSetIndexBuffer(f.device,wideIndex.handle,DXGI_FORMAT_R32_UINT,4); ok();
+  table.pfnSoSetTargets(f.device,1,0,&captured.handle,&start);
+  table.pfnDrawIndexedInstanced(f.device,2,4,1,1,3); ok(); CHECK(captured.read(128) == result);
+  table.pfnIaSetTopology(f.device,D3D10_DDI_PRIMITIVE_TOPOLOGY(32)); failure(E_INVALIDARG);
+  D3D11_PRIMITIVE_TOPOLOGY topology{}; f.context->IAGetPrimitiveTopology(&topology); CHECK(topology == D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+  table.pfnSoSetTargets(f.device,0,4,nullptr,nullptr); table.pfnIaSetInputLayout(f.device,{}); ok();
+}
+
+static Fixture* reentrantFixture;
+static D3D10DDI_HQUERY reentrantQuery{};
+static D3D10DDI_HELEMENTLAYOUT reentrantLayout{};
+static void* reentrantPage;
+static void retireChildInErrorCallback() {
+  CHECK(reentrantFixture && reentrantPage);
+  const auto before = errors;
+  if (reentrantQuery.pDrvPrivate)
+    reentrantFixture->output.table.pfnDestroyQuery(reentrantFixture->device,reentrantQuery);
+  else reentrantFixture->output.table.pfnDestroyElementLayout(reentrantFixture->device,reentrantLayout);
+  CHECK(errors == before);
+  DWORD protection = 0;
+  CHECK(VirtualProtect(reentrantPage,4096,PAGE_NOACCESS,&protection));
+  // Future errors must use this live, updated slot on the original caller.
+  reentrantFixture->callbacks.pfnSetErrorCb = error;
+}
+static void queryAndLayoutHandles(Fixture& f) {
+  auto& table = f.output.table;
+  D3D10DDIARG_CREATEQUERY args{D3D10DDI_QUERY(0x7fffffff),0};
+  Storage failedQuery(table.pfnCalcPrivateQuerySize(f.device,&args));
+  std::fill(failedQuery.words.begin(),failedQuery.words.end()-1,0xccccccccccccccccull);
+  const auto untouched = failedQuery.words;
+  D3D10DDI_HQUERY queryKey{failedQuery.data()};
+  table.pfnCreateQuery(f.device,&args,queryKey,{}); failure(E_INVALIDARG);
+  CHECK(failedQuery.words == untouched);
+  args.Query = D3D10DDI_QUERY_EVENT;
+  table.pfnCreateQuery(f.device,&args,queryKey,{}); ok();
+  table.pfnCreateQuery(f.device,&args,queryKey,{}); failure(E_INVALIDARG);
+  CHECK(failedQuery.words == untouched);
+  table.pfnQueryEnd(f.device,queryKey); ok();
+  table.pfnDestroyQuery(f.device,queryKey); ok(); failedQuery.check();
+
+  Fixture foreign;
+  NativeQuery foreignQuery(foreign,D3D10DDI_QUERY_EVENT);
+  UINT64 value = 0xabcdef1276543298ull;
+  table.pfnQueryBegin(f.device,foreignQuery.handle); failure(E_INVALIDARG);
+  table.pfnQueryEnd(f.device,foreignQuery.handle); failure(E_INVALIDARG);
+  table.pfnQueryGetData(f.device,foreignQuery.handle,&value,sizeof(value),0); failure(E_INVALIDARG);
+  CHECK(value == 0xabcdef1276543298ull);
+  table.pfnDestroyQuery(f.device,foreignQuery.handle); failure(E_INVALIDARG);
+  foreignQuery.end(); CHECK(foreignQuery.result<BOOL>() == TRUE);
+
+  void* page = VirtualAlloc(nullptr,4096,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE); CHECK(page);
+  NativeQuery event(f,D3D10DDI_QUERY_EVENT,page); event.end(); CHECK(event.result<BOOL>() == TRUE);
+  table.pfnQueryGetData(f.device,event.handle,nullptr,0,0); ok();
+  table.pfnQueryBegin(f.device,event.handle); failure(E_INVALIDARG);
+  table.pfnDestroyQuery(f.device,event.handle); event.alive = false; ok();
+  DWORD protection = 0; CHECK(VirtualProtect(page,4096,PAGE_NOACCESS,&protection));
+  table.pfnQueryBegin(f.device,event.handle); failure(E_INVALIDARG);
+  table.pfnQueryEnd(f.device,event.handle); failure(E_INVALIDARG);
+  table.pfnQueryGetData(f.device,event.handle,&value,sizeof(value),0); failure(E_INVALIDARG);
+  CHECK(value == 0xabcdef1276543298ull);
+  table.pfnSetPredication(f.device,event.handle,FALSE); failure(E_INVALIDARG);
+  table.pfnDestroyQuery(f.device,event.handle); failure(E_INVALIDARG);
+  CHECK(VirtualProtect(page,4096,PAGE_READWRITE,&protection));
+  NativeQuery reused(f,D3D10DDI_QUERY_OCCLUSION,page);
+  table.pfnQueryGetData(f.device,reused.handle,&value,sizeof(value),0); failure(E_INVALIDARG);
+  reused.end(); CHECK(reused.result<UINT64>() == 0); // Legal implicit empty interval.
+  reentrantFixture = &f; reentrantQuery = reused.handle; reentrantPage = page;
+  f.callbacks.pfnSetErrorCb = alternateError;
+  const auto alternateBefore = alternateErrors;
+  onError = retireChildInErrorCallback; reused.alive = false;
+  table.pfnQueryGetData(f.device,reused.handle,&value,4,0); failure(E_INVALIDARG);
+  CHECK(value == 0xabcdef1276543298ull && alternateErrors == alternateBefore+1 && !onError);
+  table.pfnQueryEnd(f.device,reused.handle); failure(E_INVALIDARG);
+  CHECK(alternateErrors == alternateBefore+1);
+  CHECK(VirtualProtect(page,4096,PAGE_READWRITE,&protection));
+
+  std::vector<D3D10DDIARG_INPUT_ELEMENT_DESC> elements{{0,0,DXGI_FORMAT_R16_FLOAT,D3D10_DDI_INPUT_PER_VERTEX_DATA,0,0}};
+  D3D10DDIARG_CREATEELEMENTLAYOUT layoutArgs{elements.data(),UINT(elements.size())};
+  Storage failedLayout(table.pfnCalcPrivateElementLayoutSize(f.device,&layoutArgs));
+  std::fill(failedLayout.words.begin(),failedLayout.words.end()-1,0xccccccccccccccccull);
+  const auto untouchedLayout = failedLayout.words;
+  elements[0].AlignedByteOffset = 1;
+  table.pfnCreateElementLayout(f.device,&layoutArgs,{failedLayout.data()},{}); failure(E_INVALIDARG);
+  CHECK(failedLayout.words == untouchedLayout);
+  elements[0].AlignedByteOffset = 0;
+  table.pfnCreateElementLayout(f.device,&layoutArgs,{failedLayout.data()},{}); ok();
+  table.pfnIaSetInputLayout(f.device,{failedLayout.data()}); ok();
+  table.pfnCreateElementLayout(f.device,&layoutArgs,{failedLayout.data()},{}); failure(E_INVALIDARG);
+  CHECK(failedLayout.words == untouchedLayout);
+  table.pfnDestroyElementLayout(f.device,{failedLayout.data()}); ok(); failedLayout.check();
+  NativeLayout layout(f,elements,page); layout.bind();
+  NativeLayout foreignLayout(foreign,elements);
+  ComPtr<ID3D11InputLayout> before, after; f.context->IAGetInputLayout(&before);
+  table.pfnDestroyElementLayout(f.device,foreignLayout.handle); failure(E_INVALIDARG);
+  table.pfnIaSetInputLayout(f.device,foreignLayout.handle); failure(E_INVALIDARG);
+  f.context->IAGetInputLayout(&after); CHECK(before.Get() == after.Get());
+  reentrantQuery = {}; reentrantLayout = layout.handle;
+  f.callbacks.pfnSetErrorCb = alternateError;
+  const auto beforeLayoutCallback = alternateErrors;
+  onError = retireChildInErrorCallback; layout.alive = false;
+  table.pfnCreateElementLayout(f.device,&layoutArgs,layout.handle,{}); failure(E_INVALIDARG);
+  CHECK(alternateErrors == beforeLayoutCallback+1 && !onError);
+  f.context->IAGetInputLayout(&after); CHECK(!after);
+  table.pfnIaSetInputLayout(f.device,layout.handle); failure(E_INVALIDARG);
+  table.pfnDestroyElementLayout(f.device,layout.handle); failure(E_INVALIDARG);
+  CHECK(alternateErrors == beforeLayoutCallback+1);
+  CHECK(VirtualFree(page,0,MEM_RELEASE));
+  reentrantFixture = nullptr; reentrantPage = nullptr; reentrantLayout = {};
+}
 struct Texture {
   Fixture& fixture;
   Storage storage;
@@ -480,57 +801,80 @@ static void graphicsSm5(Fixture& f) {
   f.output.table.pfnIaSetTopology(f.device,D3D10_DDI_PRIMITIVE_TOPOLOGY(65)); failure(E_INVALIDARG);
   f.output.table.pfnDraw(f.device,3,0); ok();
 }
-template<typename Data> static Data queryResult(Fixture& f, ID3D11Query* query) {
-  f.context->Flush(); Data data{}; HRESULT hr = S_FALSE;
-  const ULONGLONG start = GetTickCount64();
-  do { hr = f.context->GetData(query,&data,sizeof(data),0); if (hr == S_FALSE) SwitchToThread(); }
-  while (hr == S_FALSE && GetTickCount64() - start < 10000);
-  CHECK(hr == S_OK); return data;
-}
 static void geometryStreams(Fixture& f) {
   using dxvk::umd::ShaderStage;
   GraphicsShader vertex(f,ShaderStage::Vertex,"struct V{float4 p:SV_Position;uint id:DATA0;};V main(uint id:SV_VertexID){V v;v.p=float4(0,0,0,1);v.id=id;return v;}");
   const char* geometry = R"(
 struct V{float4 p:SV_Position;uint id:DATA0;};struct O{float4 p:SV_Position;uint2 value:DATA0;};
-[maxvertexcount(3)]void main(point V v[1],inout PointStream<O> s0,inout PointStream<O> s1,inout PointStream<O> s2){
-O o;o.p=v[0].p;o.value=uint2(v[0].id,900);s0.Append(o);o.value=uint2(v[0].id+100,901);s1.Append(o);
-o.value=uint2(v[0].id+200,902);s2.Append(o);})";
+[maxvertexcount(10)]void main(point V v[1],inout PointStream<O> s0,inout PointStream<O> s1,inout PointStream<O> s2,inout PointStream<O> s3){
+O o;o.p=v[0].p;o.value=uint2(v[0].id,900);s0.Append(o);
+for(uint j=0;j<2;++j){o.value=uint2(v[0].id+100,901+j);s1.Append(o);}
+for(uint k=0;k<3;++k){o.value=uint2(v[0].id+200,902+k);s2.Append(o);}
+for(uint l=0;l<4;++l){o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
   auto tokens = compile(geometry,"gs_5_0"); dxvk::umd::ShaderCode11 decoded;
   CHECK(dxvk::umd::decodeShader11(ShaderStage::Geometry,tokens.data(),tokens.size(),decoded));
-  std::array<D3D11DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY,4> entries{};
-  for (UINT stream = 0; stream < 3; ++stream) {
+  std::array<D3D11DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY,5> entries{};
+  for (UINT stream = 0; stream < 4; ++stream) {
     bool found = false;
     for (const auto& entry : decoded.outputs) if (entry.stream == stream && !entry.systemValue) {
       CHECK(!found && entry.mask == 3); found = true; entries[stream] = {stream,stream,entry.registerIndex,entry.mask};
     }
     CHECK(found);
   }
-  entries[3] = {0,0,D3D10_SO_DDI_REGISTER_INDEX_DENOTING_GAP,1};
-  const UINT strides[] = {32,16,24};
+  entries[4] = {0,0,D3D10_SO_DDI_REGISTER_INDEX_DENOTING_GAP,1};
+  const UINT strides[] = {32,16,24,16};
   D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT args{}; args.pOutputStreamDecl = entries.data(); args.NumEntries = UINT(entries.size());
-  args.BufferStridesInBytes = strides; args.NumStrides = 3; args.RasterizedStream = D3D11_SO_NO_RASTERIZED_STREAM;
+  args.BufferStridesInBytes = strides; args.NumStrides = 4; args.RasterizedStream = D3D11_SO_NO_RASTERIZED_STREAM;
   GraphicsShader shader(f,ShaderStage::Geometry,geometry,&args); vertex.bind(); shader.bind();
   std::array<UINT,64> poison; poison.fill(0xa5a55a5a);
   Buffer stream0(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
   Buffer stream1(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
   Buffer stream2(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
-  const D3D10DDI_HRESOURCE buffers[] = {stream0.handle,stream1.handle,stream2.handle};
-  const UINT offsets[] = {0,0,0}; f.output.table.pfnSoSetTargets(f.device,3,0,buffers,offsets);
+  Buffer stream3(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  const D3D10DDI_HRESOURCE buffers[] = {stream0.handle,stream1.handle,stream2.handle,stream3.handle};
+  const UINT offsets[] = {0,0,0,0}; f.output.table.pfnSoSetTargets(f.device,4,0,buffers,offsets);
   f.output.table.pfnPsSetShader(f.device,{}); f.output.table.pfnIaSetTopology(f.device,D3D10_DDI_PRIMITIVE_TOPOLOGY_POINTLIST); ok();
-  ComPtr<ID3D11Device> backend; f.context->GetDevice(&backend);
-  ComPtr<ID3D11Query> query; D3D11_QUERY_DESC queryDesc{D3D11_QUERY_SO_STATISTICS_STREAM1,0};
-  CHECK(backend->CreateQuery(&queryDesc,&query) == S_OK);
-  f.context->Begin(query.Get()); f.output.table.pfnDraw(f.device,3,0); ok(); f.context->End(query.Get());
-  const auto statistics = queryResult<D3D11_QUERY_DATA_SO_STATISTICS>(f,query.Get()); CHECK(statistics.NumPrimitivesWritten == 3);
-  std::array<std::vector<UINT>,3> results = {stream0.read(64),stream1.read(64),stream2.read(64)};
-  for (UINT stream = 0; stream < 3; ++stream) for (UINT vertexIndex = 0; vertexIndex < 3; ++vertexIndex) {
+  NativeQuery stats0(f,D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM0), stats1(f,D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM1);
+  NativeQuery stats2(f,D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM2), stats3(f,D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM3);
+  NativeQuery over0(f,D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM0), over1(f,D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM1);
+  NativeQuery over2(f,D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM2), over3(f,D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM3);
+  NativeQuery aggregate(f,D3D10DDI_QUERY_STREAMOVERFLOWPREDICATE);
+  const std::array<NativeQuery*,9> queries = {&stats0,&stats1,&stats2,&stats3,&over0,&over1,&over2,&over3,&aggregate};
+  for (auto query : queries) query->begin();
+  f.output.table.pfnDraw(f.device,3,0); ok();
+  for (auto query : queries) query->end();
+  for (UINT stream = 0; stream < 4; ++stream) {
+    const auto statistics = queries[stream]->result<D3D10_DDI_QUERY_DATA_SO_STATISTICS>();
+    CHECK(statistics.NumPrimitivesWritten == 3*(stream+1) && statistics.PrimitivesStorageNeeded == statistics.NumPrimitivesWritten);
+    CHECK(queries[4+stream]->result<BOOL>() == FALSE);
+  }
+  CHECK(aggregate.result<BOOL>() == FALSE);
+  std::array<std::vector<UINT>,4> results = {stream0.read(64),stream1.read(64),stream2.read(64),stream3.read(64)};
+  for (UINT stream = 0; stream < 4; ++stream) for (UINT vertexIndex = 0; vertexIndex < 3*(stream+1); ++vertexIndex) {
     const UINT index = vertexIndex * strides[stream]/4;
-    CHECK(results[stream][index] == vertexIndex + 100*stream && results[stream][index+1] == 900+stream);
+    CHECK(results[stream][index] == vertexIndex/(stream+1) + 100*stream && results[stream][index+1] == 900+stream+vertexIndex%(stream+1));
     // The explicit stride leaves bytes outside SO's write window untouched.
+    CHECK(results[stream][index+2] == poison[0]);
     CHECK(results[stream][index+3] == poison[0]);
   }
-  for (UINT stream = 0; stream < 3; ++stream) CHECK(results[stream].back() == poison[0]);
-  f.output.table.pfnSoSetTargets(f.device,0,3,nullptr,nullptr); ok();
+  for (UINT stream = 0; stream < 4; ++stream) CHECK(results[stream].back() == poison[0]);
+  Buffer tiny(f,24,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  const D3D10DDI_HRESOURCE overflowBuffers[] = {stream0.handle,stream1.handle,tiny.handle,stream3.handle};
+  f.output.table.pfnSoSetTargets(f.device,4,0,overflowBuffers,offsets); ok();
+  for (auto query : queries) query->begin();
+  f.output.table.pfnDraw(f.device,3,0); ok();
+  for (auto query : queries) query->end();
+  CHECK(over0.result<BOOL>() == FALSE && over1.result<BOOL>() == FALSE);
+  CHECK(over2.result<BOOL>() == TRUE && over3.result<BOOL>() == FALSE && aggregate.result<BOOL>() == TRUE);
+  const auto overflowStatistics = stats2.result<D3D10_DDI_QUERY_DATA_SO_STATISTICS>();
+  CHECK(overflowStatistics.NumPrimitivesWritten == 1 && overflowStatistics.PrimitivesStorageNeeded == 9);
+  // Predication consumes the aggregate just read, and a bound predicate
+  // cannot be ended or destroyed until it is unbound.
+  f.output.table.pfnSetPredication(f.device,aggregate.handle,TRUE); ok();
+  f.output.table.pfnQueryEnd(f.device,aggregate.handle); failure(E_INVALIDARG);
+  f.output.table.pfnDestroyQuery(f.device,aggregate.handle); failure(E_INVALIDARG);
+  f.output.table.pfnSetPredication(f.device,{},FALSE); ok();
+  f.output.table.pfnSoSetTargets(f.device,0,4,nullptr,nullptr); ok();
   // The same declarations may select a real rasterized stream.
   GraphicsState state(f); ColorTarget target(f,DXGI_FORMAT_R8G8B8A8_UNORM); target.bind();
   args.RasterizedStream = 0; GraphicsShader rasterized(f,ShaderStage::Geometry,geometry,&args);
@@ -554,10 +898,9 @@ return c[0].p*uv.x+c[1].p*uv.y+c[2].p*uv.z;})";
   GraphicsState state(f); ColorTarget target(f,DXGI_FORMAT_R8G8B8A8_UNORM); target.bind();
   vertex.bind(); hs.bind(); ds.bind(); pixel.bind(); f.output.table.pfnGsSetShader(f.device,{});
   f.output.table.pfnIaSetTopology(f.device,D3D11_DDI_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST); ok();
-  ComPtr<ID3D11Device> backend; f.context->GetDevice(&backend);
-  ComPtr<ID3D11Query> query; D3D11_QUERY_DESC args{D3D11_QUERY_PIPELINE_STATISTICS,0}; CHECK(backend->CreateQuery(&args,&query) == S_OK);
-  f.context->Begin(query.Get()); f.output.table.pfnDraw(f.device,3,0); ok(); f.context->End(query.Get());
-  const auto data = queryResult<D3D11_QUERY_DATA_PIPELINE_STATISTICS>(f,query.Get());
+  NativeQuery query(f,D3D11DDI_QUERY_PIPELINESTATS); query.begin();
+  f.output.table.pfnDraw(f.device,3,0); ok(); query.end();
+  const auto data = query.result<D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS>();
   CHECK(data.HSInvocations && data.DSInvocations >= 3 && data.PSInvocations);
   CHECK(target.texture.pixel()[0] == 0xffffff00);
   f.output.table.pfnDsSetShader(f.device,{}); ok();
@@ -626,9 +969,12 @@ int main() {
     Storage invalidShader(table.pfnCalcPrivateTessellationShaderSize(f.device, nullptr, nullptr));
     table.pfnCreateHullShader(f.device, nullptr, {invalidShader.data()}, {}, nullptr); failure(E_INVALIDARG); CHECK(invalidShader.empty()); invalidShader.check();
     table.pfnRelocateDeviceFuncs(f.device, &table); ok();
+    inputLayoutCapacity(table, f.device, f.context.Get(), D3D11_VS_INPUT_REGISTER_COUNT);
     textureMinLod(f);
     computeAndCounters(f);
     table.pfnCsSetShader(f.device, {}); ok();
+    inputAssembler11(f);
+    queryAndLayoutHandles(f);
     graphicsSm5(f);
     geometryStreams(f);
     tessellation(f);
@@ -636,6 +982,7 @@ int main() {
   }
   {
     Fixture low(D3D_FEATURE_LEVEL_10_0);
+    inputLayoutCapacity(low.output.table, low.device, low.context.Get(), D3D10_VS_INPUT_REGISTER_COUNT);
     Storage rejected(low.output.table.pfnCalcPrivateShaderSize(low.device, nullptr, nullptr));
     auto tokens = compile("[numthreads(1,1,1)]void main(){}");
     low.output.table.pfnCreateComputeShader(low.device, tokens.data(), {rejected.data()}, {}); failure(DXGI_ERROR_UNSUPPORTED);
@@ -649,5 +996,5 @@ int main() {
   CHECK(!std::memcmp(&snapshot, &output, sizeof(output))); failed.check(); backendResult = S_OK;
   CHECK(VioGpuDxvkCreateDdiTestDevice11(&expectedLuid, device, {&callbacks}, &callbacks, &output.table, D3D_FEATURE_LEVEL_11_0) == S_OK);
   createdContext.Reset(); output.table.pfnDestroyDevice(device); failed.check();
-  std::printf("typed D3D10.1/D3D11 fixture PASS checks=%u callbacks=%u SM5 graphics/streams/tessellation/classes WARP controls; native Turnip/runtime acceptance remains gated\n", checks, errors);
+  std::printf("typed D3D10.1/D3D11 fixture PASS checks=%u callbacks=%u SM5 graphics/queries/packed IA/streams/tessellation/classes WARP controls; native Turnip/runtime acceptance remains gated\n", checks, errors);
 }

@@ -30,6 +30,43 @@ int main() {
   CHECK(readQueryData(info, guarded.counters, sizeof(guarded.counters), 0, pipeline) == S_OK);
   for (unsigned i = 0; i < 8; ++i) CHECK(guarded.counters[i] == 101+i);
   CHECK(guarded.before == 0xcafebabefeedfaceull && guarded.after == guarded.before);
+  CHECK(!queryInfo(D3D11DDI_QUERY_PIPELINESTATS, 0, info));
+  CHECK(queryInfo11(D3D11DDI_QUERY_PIPELINESTATS, 0, info) && info.size == 11*sizeof(UINT64));
+  struct Guarded11 { UINT64 before; D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS data; UINT64 after; } full{};
+  full.before = full.after = guarded.before;
+  CHECK(readQueryData(info, &full.data, sizeof(full.data), 0, pipeline) == S_OK);
+  CHECK(full.data.IAVertices == 101 && full.data.PSInvocations == 108 && full.data.HSInvocations == 109
+    && full.data.DSInvocations == 110 && full.data.CSInvocations == 111);
+  CHECK(full.before == guarded.before && full.after == guarded.before);
+  const auto savedFull = full;
+  for (HRESULT result : {S_FALSE, DXGI_ERROR_DEVICE_REMOVED, E_OUTOFMEMORY}) {
+    CHECK(readQueryData(info, &full.data, sizeof(full.data), 0,
+      [&](void* output, UINT size, UINT flags) { pipeline(output,size,flags); std::memset(output,0,size); return result; })
+      == (result == S_FALSE ? DXGI_DDI_ERR_WASSTILLDRAWING : result == DXGI_ERROR_DEVICE_REMOVED ? D3DDDIERR_DEVICEREMOVED : result));
+    CHECK(!std::memcmp(&full, &savedFull, sizeof(full)));
+  }
+  CHECK(readQueryData(info, &full.data, sizeof(guarded.counters), 0,
+    [](void*, UINT, UINT) { std::abort(); return S_OK; }) == E_INVALIDARG);
+  CHECK(!std::memcmp(&full, &savedFull, sizeof(full)));
+  const D3D10DDI_QUERY nativeStats[] = {D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM0,
+    D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM1, D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM2, D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM3};
+  const D3D10DDI_QUERY nativeOverflow[] = {D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM0,
+    D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM1, D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM2, D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM3};
+  const D3D11_QUERY publicStats[] = {D3D11_QUERY_SO_STATISTICS_STREAM0, D3D11_QUERY_SO_STATISTICS_STREAM1,
+    D3D11_QUERY_SO_STATISTICS_STREAM2, D3D11_QUERY_SO_STATISTICS_STREAM3};
+  const D3D11_QUERY publicOverflow[] = {D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM0, D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM1,
+    D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM2, D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM3};
+  for (unsigned stream = 0; stream < 4; ++stream) {
+    CHECK(queryInfo11(nativeStats[stream], 0, info) && info.type == publicStats[stream]
+      && info.size == 16 && info.beginRequired && !info.predicate);
+    CHECK(queryInfo11(nativeOverflow[stream], 0, info) && info.type == publicOverflow[stream]
+      && info.size == sizeof(BOOL) && info.beginRequired && info.predicate);
+    CHECK(!queryInfo11(nativeStats[stream], D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info) && !info.size);
+    CHECK(!queryInfo11(nativeOverflow[stream], D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info) && !info.size);
+  }
+  CHECK(!queryInfo11(static_cast<D3D10DDI_QUERY>(17), 0, info) && !info.size);
+  CHECK(!queryInfo11(D3D10DDI_COUNTER_DEVICE_DEPENDENT_0, 0, info) && !info.size);
+  CHECK(queryInfo(D3D10DDI_QUERY_PIPELINESTATS, 0, info));
   for (HRESULT result : {S_FALSE, E_OUTOFMEMORY}) {
     CHECK(readQueryData(info, guarded.counters, sizeof(guarded.counters), 0,
       [&](void* out, UINT size, UINT flags) { pipeline(out,size,flags); std::memset(out,0,size); return result; })

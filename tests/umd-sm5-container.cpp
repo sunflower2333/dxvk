@@ -27,6 +27,33 @@ static std::vector<unsigned char> build(ShaderStage stage, std::vector<uint32_t>
 }
 int main() {
   ShaderCode11 shader;
+  // Input layouts require only a signature; preserve the logical shader
+  // version and every scalar/register, including the higher10.1 input31.
+  for (uint32_t version : {0x40u, 0x41u, 0x50u}) {
+    const uint32_t code[] = {0x10000 | version, 3, op(dxbc::OpCode::eRet, 1)};
+    CHECK(decodeShader11(ShaderStage::Vertex, code, 3, shader));
+    const uint32_t registers = version == 0x40 ? 16 : 32;
+    for (uint32_t i = 0; i < registers; ++i)
+      shader.inputs.push_back({0, i, 15, i % 3 == 0 ? ShaderScalar::Float32
+        : i % 3 == 1 ? ShaderScalar::Uint32 : ShaderScalar::Sint32});
+    shader.outputs.push_back({1, 0, 15, ShaderScalar::Float32});
+    std::vector<unsigned char> bytes;
+    CHECK(buildShader11Container(shader, bytes));
+    dxbc::Container layout(bytes.data(), bytes.size());
+    CHECK(layout && layout.validateHash());
+    CHECK(layout.getCodeChunk().getSize() == sizeof(code) + 8);
+    CHECK(!std::memcmp(layout.getCodeChunk().getData(8), code, sizeof(code)));
+    dxbc::Signature inputs(layout.getInputSignatureChunk());
+    uint32_t count = 0;
+    for (const auto& entry : inputs) {
+      CHECK(entry.getRegisterIndex() == int32_t(count) && entry.getSemanticIndex() == count);
+      CHECK(!std::strcmp(entry.getSemanticName(), inputRegisterSemantic));
+      CHECK(entry.getScalarType() == (count % 3 == 0 ? ir::ScalarType::eF32
+        : count % 3 == 1 ? ir::ScalarType::eU32 : ir::ScalarType::eI32));
+      ++count;
+    }
+    CHECK(count == registers);
+  }
   // Stream IDs come from code declarations, not from an interface table cast.
   std::vector<uint32_t> gs{0x20050,0};
   instruction(gs,dxbc::OpCode::eDclStream,{uint32_t(dxbc::RegisterType::eStream)<<12 | (1u<<20),0});

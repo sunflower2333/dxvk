@@ -133,6 +133,8 @@ umd_output_policy_test = executable('dxvk-umd-output-policy-test', '../../tests/
 umd_shared_policy_test = executable('dxvk-umd-shared-policy-test', '../../tests/umd-shared-policy.cpp')
 
 umd_query_test = executable('dxvk-umd-query-test', '../../tests/umd-query.cpp')
+umd_private_children_test = executable('dxvk-umd-private-children-test', '../../tests/umd-private-children.cpp')
+umd_input_formats_test = executable('dxvk-umd-input-formats-test', '../../tests/umd-input-formats.cpp')
 
 umd_allocation_test = executable('dxvk-umd-allocation-test',
   '../../tests/umd-allocation.cpp', 'umd_allocation.cpp', 'umd_runtime_query.cpp')

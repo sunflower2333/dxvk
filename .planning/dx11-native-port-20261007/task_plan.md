@@ -11,6 +11,10 @@ Implement a typed SDK D3D11 UMD device/DDI backed by the private DXVK core; coor
 - [complete] Reconstruct SM5 graphics/control-point/patch signatures and dynamic interface metadata from raw native tokens.
 - [complete] Connect typed graphics/GS stream output/tessellation/class-interface operations to the existing DXVK core and add meaningful fixtures.
 - [complete] Freeze next reviewable slice; target verification remains root/DX10-owned.
+- [complete] Implement exact D3D11 query payloads, four-stream overflow and packed typed IA inputs with pinned child handle lifetime.
+- [complete] Run portable registry/input sanitizer controls and official x64/x86 SDK compilation checks; add native callback/no-access/output fixtures.
+- [complete] Freeze query/IA source with exact local controls and native execution limitations.
+- [pending] Prepare an exact merged Git-object native packet when root supplies the selected source commit.
 
 ## Constraints
 No app-local runtime substitution, WARP hardware claims, fake S_OK, interface table casts, advertised blanket-unsupported versions, target commands without root coordination, CI pushes, image/VM changes. Ownership: umd_ddi.cpp/.h and dedicated D3D11 implementation/tests/docs.

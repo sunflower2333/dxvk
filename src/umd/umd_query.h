@@ -56,6 +56,42 @@ inline bool queryInfo(D3D10DDI_QUERY type, UINT miscFlags, QueryInfo& result) {
   }
 }
 
+inline bool queryInfo11(D3D10DDI_QUERY type, UINT miscFlags, QueryInfo& result) {
+  if (queryInfo(type, miscFlags, result)) return true;
+  if (miscFlags) return false;
+  switch (type) {
+    case D3D11DDI_QUERY_PIPELINESTATS:
+      static_assert(sizeof(D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS) == sizeof(D3D11_QUERY_DATA_PIPELINE_STATISTICS));
+      static_assert(offsetof(D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS, HSInvocations)
+        == offsetof(D3D11_QUERY_DATA_PIPELINE_STATISTICS, HSInvocations));
+      static_assert(offsetof(D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS, DSInvocations)
+        == offsetof(D3D11_QUERY_DATA_PIPELINE_STATISTICS, DSInvocations));
+      static_assert(offsetof(D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS, CSInvocations)
+        == offsetof(D3D11_QUERY_DATA_PIPELINE_STATISTICS, CSInvocations));
+      result = {D3D11_QUERY_PIPELINE_STATISTICS, sizeof(D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS), true};
+      return true;
+    // Native stats are contiguous, whereas public stats/predicates alternate.
+    // Use exact named values instead of a numeric cast between these enums.
+    case D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM0:
+      result = {D3D11_QUERY_SO_STATISTICS_STREAM0, sizeof(D3D11_QUERY_DATA_SO_STATISTICS), true}; return true;
+    case D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM0:
+      result = {D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM0, sizeof(BOOL), true, true}; return true;
+    case D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM1:
+      result = {D3D11_QUERY_SO_STATISTICS_STREAM1, sizeof(D3D11_QUERY_DATA_SO_STATISTICS), true}; return true;
+    case D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM2:
+      result = {D3D11_QUERY_SO_STATISTICS_STREAM2, sizeof(D3D11_QUERY_DATA_SO_STATISTICS), true}; return true;
+    case D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM3:
+      result = {D3D11_QUERY_SO_STATISTICS_STREAM3, sizeof(D3D11_QUERY_DATA_SO_STATISTICS), true}; return true;
+    case D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM1:
+      result = {D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM1, sizeof(BOOL), true, true}; return true;
+    case D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM2:
+      result = {D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM2, sizeof(BOOL), true, true}; return true;
+    case D3D11DDI_QUERY_STREAMOVERFLOWPREDICATE_STREAM3:
+      result = {D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM3, sizeof(BOOL), true, true}; return true;
+    default: return false;
+  }
+}
+
 template<typename GetData>
 HRESULT readQueryData(const QueryInfo& info, void* data, UINT size, UINT flags, GetData&& getData) {
   // A pending or failed GetData must leave caller memory untouched. Read

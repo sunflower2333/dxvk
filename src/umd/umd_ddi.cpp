@@ -18,6 +18,8 @@
 #include "umd_shared_surface.h"
 #include "umd_interface.h"
 #include "umd_d3d11_desc.h"
+#include "umd_input_format.h"
+#include "umd_private_children.h"
 
 #include <wrl/client.h>
 #include <cstring>
@@ -36,6 +38,8 @@ namespace {
 using Microsoft::WRL::ComPtr;
 struct Shader;
 struct InputLayout;
+struct Device;
+void clearRegisteredChildren(Device*) noexcept;
 struct NativeClassBindings11 {
   std::vector<ComPtr<ID3D11ClassInstance>> owners;
   std::vector<ID3D11ClassInstance*> pointers;
@@ -75,7 +79,7 @@ struct Device {
   Shader* domainShader = nullptr;
   std::array<NativeClassBindings11, 6> classBindings;
   std::array<dxvk::umd::ShaderScalar, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> targetTypes{};
-  InputLayout* inputLayout = nullptr;
+  std::shared_ptr<InputLayout> inputLayout;
   // Shared surfaces bound to the pipeline right now, by stage and slot. A draw
   // reads only these, so it refreshes only what it samples and dirties only
   // what it renders to -- never a sweep of every shared surface the device
@@ -103,10 +107,12 @@ struct Device {
     dxvk::umd::RuntimeService::Scope scope(service.get());
     HRESULT result = S_OK;
     try {
+      clearRegisteredChildren(this);
       // Backend release can join workers that need runtime callbacks. Pump
       // those requests on this DDI caller while release runs separately.
       service->drain([&] {
         for (auto& bindings : classBindings) { bindings.pointers.clear(); bindings.owners.clear(); }
+        inputLayout.reset();
         rotationScratch.Reset(); predicate.Reset(); context.Reset(); backend.Reset();
       });
     } catch (...) { result = E_FAIL; }
@@ -352,6 +358,7 @@ struct InputLayout : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11InputLayout> backend;
   std::array<dxvk::umd::ShaderScalar,32> inputTypes = {};
+  bool retired = false;
 };
 struct Rasterizer : Child {
   Device* owner = nullptr;
@@ -393,9 +400,82 @@ HRESULT createViewStorage(Device* device, void* storage, Create&& create) {
 struct Query : Child {
   Device* owner = nullptr;
   ComPtr<ID3D11Query> backend;
+  std::array<ComPtr<ID3D11Query>, 3> additionalStreams;
   dxvk::umd::QueryInfo info;
   bool begun = false;
   bool issued = false;
+  bool retired = false;
+};
+struct RegisteredChildPrivate { uintptr_t reserved; };
+dxvk::umd::PrivateChildren<Query, dxvk::umd::RuntimeService> queryStorage;
+dxvk::umd::PrivateChildren<InputLayout, dxvk::umd::RuntimeService> layoutStorage;
+
+template<typename Object, typename Registry, typename Create>
+HRESULT createRegisteredChild(Device* device, Registry& registry, void* storage, Create&& create) {
+  if (!storage || uintptr_t(storage) % alignof(RegisteredChildPrivate)) return E_INVALIDARG;
+  HRESULT hr = E_FAIL;
+  // Rollback and backend release finish before SetErrorCb can reuse the key.
+  {
+    try {
+      if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
+      auto reservation = registry.begin(storage, device->service);
+      if (!reservation) return E_INVALIDARG;
+      auto staged = std::make_shared<Object>();
+      staged->owner = device;
+      staged->retirement = std::make_unique<ComRetirement>();
+      hr = create(*staged);
+      if (hr == S_OK && !staged->backend) hr = E_FAIL;
+      if (hr == S_OK && device->retired) hr = DXGI_ERROR_DEVICE_REMOVED;
+      if (hr == S_OK && !reservation.publish(staged)) hr = DXGI_ERROR_DEVICE_REMOVED;
+      if (hr != S_OK && !FAILED(hr)) hr = E_FAIL;
+    } catch (const std::bad_alloc&) { hr = E_OUTOFMEMORY; }
+      catch (...) { hr = E_FAIL; }
+  }
+  return hr;
+}
+template<typename Registry>
+auto registeredChild(Device* device, Registry& registry, void* storage) {
+  auto object = registry.lookup(storage, device->service);
+  if (!object || object->retired || !object->backend) {
+    device->error(E_INVALIDARG);
+    return decltype(object){};
+  }
+  return object;
+}
+template<typename Object, typename... Interfaces>
+void retireRegisteredChild(Device* device, Object& object, ComPtr<Interfaces>&... references) noexcept {
+  object.retired = true;
+  auto retired = std::move(object.retirement);
+  if (retired) {
+    unsigned index = 0;
+    (retired->references[index++].Attach(references.Detach()), ...);
+    device->service->retire(retired.release());
+  }
+}
+void retireRegisteredQuery(Device* device, Query& query) noexcept {
+  retireRegisteredChild(device, query, query.backend,
+    query.additionalStreams[0], query.additionalStreams[1], query.additionalStreams[2]);
+}
+void clearRegisteredChildren(Device* device) noexcept {
+  queryStorage.clear(device->service, [&](auto query) { retireRegisteredQuery(device, *query); });
+  layoutStorage.clear(device->service, [&](auto layout) { retireRegisteredChild(device, *layout, layout->backend); });
+}
+struct QueryBackend {
+  std::array<ComPtr<ID3D11Query>, 4> streams;
+  explicit QueryBackend(const Query& query) : streams{query.backend,
+    query.additionalStreams[0], query.additionalStreams[1], query.additionalStreams[2]} { }
+  HRESULT getData(ID3D11DeviceContext* context, void* output, UINT size, UINT flags) const {
+    if (!streams[1]) return context->GetData(streams[0].Get(), output, size, flags);
+    BOOL overflow = FALSE;
+    for (const auto& stream : streams) {
+      BOOL value = FALSE;
+      const HRESULT hr = context->GetData(stream.Get(), output ? &value : nullptr, output ? sizeof(value) : 0, flags);
+      if (hr != S_OK) return hr;
+      overflow |= value;
+    }
+    if (output) std::memcpy(output, &overflow, sizeof(overflow));
+    return S_OK;
+  }
 };
 Device* get(D3D10DDI_HDEVICE h) {
   for (auto operation = DeviceOperation::current; operation; operation = operation->previous)
@@ -407,79 +487,81 @@ RenderTarget* get(D3D10DDI_HRENDERTARGETVIEW h) { return static_cast<RenderTarge
 ShaderView* get(D3D10DDI_HSHADERRESOURCEVIEW h) { return static_cast<ShaderView*>(h.pDrvPrivate); }
 Sampler* get(D3D10DDI_HSAMPLER h) { return static_cast<Sampler*>(h.pDrvPrivate); }
 Shader* get(D3D10DDI_HSHADER h) { return static_cast<Shader*>(h.pDrvPrivate); }
-InputLayout* get(D3D10DDI_HELEMENTLAYOUT h) { return static_cast<InputLayout*>(h.pDrvPrivate); }
 Rasterizer* get(D3D10DDI_HRASTERIZERSTATE h) { return static_cast<Rasterizer*>(h.pDrvPrivate); }
 BlendState* get(D3D10DDI_HBLENDSTATE h) { return static_cast<BlendState*>(h.pDrvPrivate); }
 DepthView* get(D3D10DDI_HDEPTHSTENCILVIEW h) { return static_cast<DepthView*>(h.pDrvPrivate); }
 DepthState* get(D3D10DDI_HDEPTHSTENCILSTATE h) { return static_cast<DepthState*>(h.pDrvPrivate); }
-Query* get(D3D10DDI_HQUERY h) { return static_cast<Query*>(h.pDrvPrivate); }
-
-bool owned(Device* device, Query* query) {
-  if (!query || query->owner != device || !query->backend) {
-    device->error(E_INVALIDARG);
-    return false;
-  }
-  return true;
-}
-
-SIZE_T APIENTRY querySize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEQUERY*) { return sizeof(Query); }
+SIZE_T APIENTRY querySize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEQUERY*) { return sizeof(RegisteredChildPrivate); }
 void APIENTRY createQuery(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEQUERY* args,
     D3D10DDI_HQUERY out, D3D10DDI_HRTQUERY) {
   auto device = get(h);
-  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
-  auto query = new (out.pDrvPrivate) Query();
-  query->owner = device;
-  if (!args || !dxvk::umd::queryInfo(args->Query, args->MiscFlags, query->info)) {
-    query->~Query(); device->error(E_INVALIDARG); return;
-  }
-  // Failed CreateQuery handles receive no DestroyQuery from the runtime.
-  // Unwind all private state before reporting an error (which may reenter).
-  HRESULT result = S_OK;
-  try {
-    query->retirement = std::make_unique<ComRetirement>();
-    D3D11_QUERY_DESC desc = {query->info.type,
-      query->info.hint ? D3D11_QUERY_MISC_PREDICATEHINT : 0u};
-    if (query->info.predicate) {
+  const HRESULT result = createRegisteredChild<Query>(device, queryStorage, out.pDrvPrivate, [&](Query& query) {
+    if (!args || !(device->nativeTable11
+        ? dxvk::umd::queryInfo11(args->Query, args->MiscFlags, query.info)
+        : dxvk::umd::queryInfo(args->Query, args->MiscFlags, query.info))) return E_INVALIDARG;
+    D3D11_QUERY_DESC desc = {query.info.type,
+      query.info.hint ? D3D11_QUERY_MISC_PREDICATEHINT : 0u};
+    if (device->nativeTable11 && device->featureLevel >= D3D_FEATURE_LEVEL_11_0
+        && args->Query == D3D10DDI_QUERY_STREAMOVERFLOWPREDICATE) {
+      // DXVK's legacy overflow predicate observes only stream zero. Native
+      // D3D11 defines it over every stream; aggregate four real predicates.
+      constexpr D3D11_QUERY types[] = {D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM0,
+        D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM1, D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM2,
+        D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM3};
+      for (UINT i = 0; i < 4; ++i) {
+        desc.Query = types[i];
+        ComPtr<ID3D11Predicate> predicate;
+        const HRESULT hr = device->backend->CreatePredicate(&desc, &predicate);
+        if (hr != S_OK || !predicate) return hr == S_OK ? E_FAIL : hr;
+        (i ? query.additionalStreams[i-1] : query.backend) = predicate;
+      }
+      return S_OK;
+    }
+    if (query.info.predicate) {
       ComPtr<ID3D11Predicate> predicate;
-      result = device->backend->CreatePredicate(&desc, &predicate);
-      if (result == S_OK) query->backend = predicate;
-    } else result = device->backend->CreateQuery(&desc, &query->backend);
-  } catch (const std::bad_alloc&) { result = E_OUTOFMEMORY; }
-    catch (...) { result = E_FAIL; }
-  if (result != S_OK) {
-    query->~Query();
-    device->error(FAILED(result) ? result : E_FAIL);
-  }
+      const HRESULT hr = device->backend->CreatePredicate(&desc, &predicate);
+      if (hr == S_OK) query.backend = predicate;
+      return hr;
+    }
+    return device->backend->CreateQuery(&desc, &query.backend);
+  });
+  device->error(result);
 }
 void APIENTRY destroyQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
-  auto query = get(object);
-  if (!query || query->owner != get(h)) { get(h)->error(E_INVALIDARG); return; }
-  if (get(h)->predicate.Get() == query->backend.Get()) { get(h)->error(E_INVALIDARG); return; }
-  retireChild(get(h), query, query->backend);
+  auto device = get(h); auto query = registeredChild(device, queryStorage, object.pDrvPrivate);
+  if (!query) return;
+  if (device->predicate.Get() == query->backend.Get()) { device->error(E_INVALIDARG); return; }
+  if (!queryStorage.remove(object.pDrvPrivate, device->service, query)) { device->error(E_INVALIDARG); return; }
+  retireRegisteredQuery(device, *query);
 }
 void APIENTRY beginQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
-  auto device = get(h); auto query = get(object);
-  if (!owned(device, query)) return;
+  auto device = get(h); auto query = registeredChild(device, queryStorage, object.pDrvPrivate);
+  if (!query) return;
   if (!query->info.beginRequired || query->begun || device->predicate.Get() == query->backend.Get()) {
     device->error(E_INVALIDARG); return;
   }
   try {
-    device->context->Begin(query->backend.Get());
-    query->begun = true; query->issued = false;
+    const QueryBackend backend(*query);
+    const auto context = device->context;
+    for (const auto& stream : backend.streams) if (stream && !query->retired && !device->retired) context->Begin(stream.Get());
+    if (!query->retired && !device->retired) { query->begun = true; query->issued = false; }
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }
 void APIENTRY endQuery(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object) {
-  auto device = get(h); auto query = get(object);
-  if (!owned(device, query)) return;
+  auto device = get(h); auto query = registeredChild(device, queryStorage, object.pDrvPrivate);
+  if (!query) return;
   if (device->predicate.Get() == query->backend.Get()) { device->error(E_INVALIDARG); return; }
   try {
     // D3D10 QueryEnd without Begin is an empty query interval, including
     // reuse of an already issued query. This is explicitly legal in the DDI.
-    if (query->info.beginRequired && !query->begun)
-      device->context->Begin(query->backend.Get());
-    device->context->End(query->backend.Get());
-    query->begun = false; query->issued = true;
+    const QueryBackend backend(*query);
+    const auto context = device->context;
+    for (const auto& stream : backend.streams) if (stream && !query->retired && !device->retired) {
+      if (query->info.beginRequired && !query->begun) context->Begin(stream.Get());
+      context->End(stream.Get());
+    }
+    if (!query->retired && !device->retired) { query->begun = false; query->issued = true; }
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }
@@ -492,8 +574,8 @@ void APIENTRY setPredication(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object, BOOL va
     device->suppressCommands = false;
     return;
   }
-  auto query = get(object);
-  if (!owned(device, query)) return;
+  auto query = registeredChild(device, queryStorage, object.pDrvPrivate);
+  if (!query) return;
   if (!query->info.predicate || !query->issued) { device->error(E_INVALIDARG); return; }
   // DXVK's public SetPredication is still a stub. Until GPU conditional
   // rendering is implemented, resolve a guaranteed predicate once here and
@@ -501,15 +583,17 @@ void APIENTRY setPredication(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object, BOOL va
   // synchronizes CPU/GPU; it is not the efficient final implementation.
   // Hold independent owners across Flush/runtime callbacks: private query
   // bytes may be reclaimed from a nested runtime callback.
-  auto backend = query->backend;
+  const QueryBackend backend(*query);
+  const auto context = device->context;
   const auto info = query->info;
   BOOL result = FALSE;
   if (!info.hint) {
-    const HRESULT submitted = dxvk::umd::flushRuntimeSubmission(device->context.Get());
+    const HRESULT submitted = dxvk::umd::flushRuntimeSubmission(context.Get());
     if (FAILED(submitted)) { device->error(submitted); return; }
+    if (device->retired || query->retired) return;
     const ULONGLONG deadline = GetTickCount64() + 2000;
     for (;;) {
-      const HRESULT hr = device->context->GetData(backend.Get(), &result, sizeof(result),
+      const HRESULT hr = backend.getData(context.Get(), &result, sizeof(result),
         D3D11_ASYNC_GETDATA_DONOTFLUSH);
       if (hr == S_OK) break;
       if (hr != S_FALSE) { device->error(FAILED(hr) ? hr : E_FAIL); return; }
@@ -519,19 +603,23 @@ void APIENTRY setPredication(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object, BOOL va
       Sleep(1);
     }
   }
-  if (device->retired) return;
-  device->predicate = std::move(backend);
+  if (device->retired || query->retired) return;
+  device->predicate = backend.streams[0];
   device->predicateValue = value;
   device->suppressCommands = !info.hint && ((result != FALSE) == (value != FALSE));
 }
 void APIENTRY getQueryData(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object, void* data, UINT size, UINT flags) {
-  auto device = get(h); auto query = get(object);
-  if (!owned(device, query)) return;
+  auto device = get(h); auto query = registeredChild(device, queryStorage, object.pDrvPrivate);
+  if (!query) return;
   if (!query->issued) { device->error(E_INVALIDARG); return; }
   try {
-    device->error(dxvk::umd::readQueryData(query->info, data, size, flags,
+    const QueryBackend backend(*query);
+    const auto info = query->info;
+    const auto context = device->context;
+    device->error(dxvk::umd::readQueryData(info, data, size, flags,
       [&](void* output, UINT outputSize, UINT apiFlags) {
-        return device->context->GetData(query->backend.Get(), output, outputSize, apiFlags);
+        const HRESULT hr = backend.getData(context.Get(), output, outputSize, apiFlags);
+        return device->retired ? DXGI_ERROR_DEVICE_REMOVED : query->retired ? E_INVALIDARG : hr;
       }));
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
@@ -1828,86 +1916,78 @@ void APIENTRY setDepthState(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILSTATE obje
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
 }
-bool inputFormat(DXGI_FORMAT format, dxvk::umd::ShaderScalar& scalar, uint8_t& mask) {
-  using Scalar = dxvk::umd::ShaderScalar;
-  switch (format) {
-    case DXGI_FORMAT_R32_FLOAT: scalar = Scalar::Float32; mask = 1; return true;
-    case DXGI_FORMAT_R32G32_FLOAT: scalar = Scalar::Float32; mask = 3; return true;
-    case DXGI_FORMAT_R32G32B32_FLOAT: scalar = Scalar::Float32; mask = 7; return true;
-    case DXGI_FORMAT_R32G32B32A32_FLOAT: scalar = Scalar::Float32; mask = 15; return true;
-    case DXGI_FORMAT_R32_UINT: scalar = Scalar::Uint32; mask = 1; return true;
-    case DXGI_FORMAT_R32G32_UINT: scalar = Scalar::Uint32; mask = 3; return true;
-    case DXGI_FORMAT_R32G32B32_UINT: scalar = Scalar::Uint32; mask = 7; return true;
-    case DXGI_FORMAT_R32G32B32A32_UINT: scalar = Scalar::Uint32; mask = 15; return true;
-    case DXGI_FORMAT_R32_SINT: scalar = Scalar::Sint32; mask = 1; return true;
-    case DXGI_FORMAT_R32G32_SINT: scalar = Scalar::Sint32; mask = 3; return true;
-    case DXGI_FORMAT_R32G32B32_SINT: scalar = Scalar::Sint32; mask = 7; return true;
-    case DXGI_FORMAT_R32G32B32A32_SINT: scalar = Scalar::Sint32; mask = 15; return true;
-    default: return false;
-  }
+UINT inputCapacity(const Device* device) {
+  static_assert(D3D10_VS_INPUT_REGISTER_COUNT == D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
+    && D3D10_VS_INPUT_REGISTER_COUNT == D3D10_IA_VERTEX_INPUT_STRUCTURE_ELEMENT_COUNT);
+  static_assert(D3D10_1_VS_INPUT_REGISTER_COUNT == D3D10_1_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
+    && D3D10_1_VS_INPUT_REGISTER_COUNT == D3D10_1_IA_VERTEX_INPUT_STRUCTURE_ELEMENT_COUNT
+    && D3D10_1_VS_INPUT_REGISTER_COUNT == D3D11_VS_INPUT_REGISTER_COUNT);
+  return device->featureLevel >= D3D_FEATURE_LEVEL_10_1
+    ? D3D10_1_VS_INPUT_REGISTER_COUNT : D3D10_VS_INPUT_REGISTER_COUNT;
 }
-SIZE_T APIENTRY layoutSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEELEMENTLAYOUT*) { return sizeof(InputLayout); }
+SIZE_T APIENTRY layoutSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEELEMENTLAYOUT*) { return sizeof(RegisteredChildPrivate); }
 void APIENTRY createLayout(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEELEMENTLAYOUT* args,
     D3D10DDI_HELEMENTLAYOUT out, D3D10DDI_HRTELEMENTLAYOUT) {
   auto device = get(h);
-  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
-  auto layout = new (out.pDrvPrivate) InputLayout(); layout->owner = device;
-  if (!args || args->NumElements > 32 || (args->NumElements && !args->pVertexElements)) {
-    device->error(E_INVALIDARG); return;
-  }
-  try {
-    InputLayout candidate; candidate.owner = device;
-    candidate.retirement = std::make_unique<ComRetirement>();
+  const HRESULT result = createRegisteredChild<InputLayout>(device, layoutStorage, out.pDrvPrivate, [&](InputLayout& candidate) {
+    const UINT capacity = inputCapacity(device);
+    if (!args || args->NumElements > capacity || (args->NumElements && !args->pVertexElements)) return E_INVALIDARG;
     D3D11_INPUT_ELEMENT_DESC elements[32] = {};
-    dxvk::umd::ShaderSignatureEntry inputs[32] = {};
+    // CreateInputLayout only consumes this signature. Its minimal code is
+    // never executed, and uses the logical feature level's shader model.
+    const uint32_t version = device->featureLevel >= D3D_FEATURE_LEVEL_11_0 ? 0x50
+      : device->featureLevel >= D3D_FEATURE_LEVEL_10_1 ? 0x41 : 0x40;
+    const uint32_t code[] = {0x10000 | version, 3, 0x0100003e};
+    dxvk::umd::ShaderCode11 signature;
+    if (!dxvk::umd::decodeShader11(dxvk::umd::ShaderStage::Vertex, code, 3, signature)) return E_INVALIDARG;
+    signature.inputs.reserve(args->NumElements);
+    std::array<UINT, D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT> previousEnds{};
     for (UINT i = 0; i < args->NumElements; i++) {
       const auto& input = args->pVertexElements[i];
-      if (input.InputRegister >= 32 || input.InputSlot >= D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
-          || input.AlignedByteOffset > D3D11_REQ_MULTI_ELEMENT_STRUCTURE_SIZE_IN_BYTES
-          || input.AlignedByteOffset % 4
+      const auto format = dxvk::umd::inputFormat(input.Format);
+      UINT offset = 0;
+      if (input.InputRegister >= capacity || input.InputSlot >= capacity
           || (input.InputSlotClass != D3D10_DDI_INPUT_PER_VERTEX_DATA && input.InputSlotClass != D3D10_DDI_INPUT_PER_INSTANCE_DATA)
           || (input.InputSlotClass == D3D10_DDI_INPUT_PER_VERTEX_DATA && input.InstanceDataStepRate)
           || candidate.inputTypes[input.InputRegister] != dxvk::umd::ShaderScalar::Unknown
-          || !inputFormat(input.Format, inputs[i].scalar, inputs[i].mask)) {
-        device->error(E_INVALIDARG); return;
-      }
+          || !dxvk::umd::inputElementOffset(format, input.AlignedByteOffset, previousEnds[input.InputSlot], offset))
+        return E_INVALIDARG;
       for (UINT j = 0; j < i; j++)
         if (elements[j].InputSlot == input.InputSlot
             && (elements[j].InputSlotClass != static_cast<D3D11_INPUT_CLASSIFICATION>(input.InputSlotClass)
-                || elements[j].InstanceDataStepRate != input.InstanceDataStepRate)) {
-          device->error(E_INVALIDARG); return;
-        }
-      inputs[i].registerIndex = input.InputRegister;
-      candidate.inputTypes[input.InputRegister] = inputs[i].scalar;
+                || elements[j].InstanceDataStepRate != input.InstanceDataStepRate)) return E_INVALIDARG;
+      UINT support = 0;
+      const HRESULT supported = device->backend->CheckFormatSupport(input.Format, &support);
+      if (supported != S_OK) return supported;
+      if (!(support & D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER)) return E_INVALIDARG;
+      signature.inputs.push_back({0, input.InputRegister, format.mask, format.scalar});
+      candidate.inputTypes[input.InputRegister] = format.scalar;
       elements[i] = {dxvk::umd::inputRegisterSemantic, input.InputRegister, input.Format,
-        input.InputSlot, input.AlignedByteOffset, static_cast<D3D11_INPUT_CLASSIFICATION>(input.InputSlotClass),
+        input.InputSlot, offset, static_cast<D3D11_INPUT_CLASSIFICATION>(input.InputSlotClass),
         input.InstanceDataStepRate};
+      previousEnds[input.InputSlot] = offset + format.bytes;
     }
-    // CreateInputLayout only consumes the signature. The minimal code chunk
-    // is never executed; no synthetic shader is substituted for the app VS.
-    const uint32_t code[] = {0x10040,3,0x0100003e};
-    dxvk::umd::ShaderSignatureEntry output = {1,0,15};
+    signature.outputs.push_back({1, 0, 15, dxvk::umd::ShaderScalar::Float32});
     std::vector<unsigned char> binary;
-    if (!dxvk::umd::buildShaderContainer(dxvk::umd::ShaderStage::Vertex, code, 3,
-        inputs, args->NumElements, &output, 1, binary)) { device->error(E_INVALIDARG); return; }
-    const HRESULT hr = device->backend->CreateInputLayout(elements, args->NumElements,
+    if (!dxvk::umd::buildShader11Container(signature, binary)) return E_INVALIDARG;
+    return device->backend->CreateInputLayout(elements, args->NumElements,
       binary.data(), binary.size(), &candidate.backend);
-    if (FAILED(hr)) { device->error(hr); return; }
-    *layout = std::move(candidate);
-  } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
-    catch (...) { device->error(E_FAIL); }
+  });
+  device->error(result);
 }
 void APIENTRY destroyLayout(D3D10DDI_HDEVICE h, D3D10DDI_HELEMENTLAYOUT object) {
-  auto device = get(h); auto layout = get(object);
-  if (!layout || layout->owner != device) { device->error(E_INVALIDARG); return; }
-  if (device->inputLayout == layout) {
-    device->context->IASetInputLayout(nullptr); device->inputLayout = nullptr;
-  }
-  retireChild(device, layout, layout->backend);
+  auto device = get(h); auto layout = registeredChild(device, layoutStorage, object.pDrvPrivate);
+  if (!layout) return;
+  if (!layoutStorage.remove(object.pDrvPrivate, device->service, layout)) { device->error(E_INVALIDARG); return; }
+  const bool bound = device->inputLayout == layout;
+  if (bound) device->inputLayout.reset();
+  retireRegisteredChild(device, *layout, layout->backend);
+  if (bound) device->context->IASetInputLayout(nullptr);
 }
 void APIENTRY setLayout(D3D10DDI_HDEVICE h, D3D10DDI_HELEMENTLAYOUT object) {
-  auto device = get(h); auto layout = get(object);
-  if (layout && (layout->owner != device || !layout->backend)) { device->error(E_INVALIDARG); return; }
+  auto device = get(h);
+  auto layout = object.pDrvPrivate ? registeredChild(device, layoutStorage, object.pDrvPrivate) : nullptr;
+  if (object.pDrvPrivate && !layout) return;
   try {
     device->context->IASetInputLayout(layout ? layout->backend.Get() : nullptr);
     device->inputLayout = layout;
@@ -1918,7 +1998,8 @@ void APIENTRY setVertexBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
     const D3D10DDI_HRESOURCE* objects, const UINT* strides, const UINT* offsets) {
   auto device = get(h);
   constexpr UINT slots = D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT;
-  if (start > slots || count > slots - start || (count && (!objects || !strides || !offsets))) {
+  const UINT capacity = inputCapacity(device);
+  if (start > capacity || count > capacity - start || (count && (!objects || !strides || !offsets))) {
     device->error(E_INVALIDARG); return;
   }
   ID3D11Buffer* buffers[slots] = {};

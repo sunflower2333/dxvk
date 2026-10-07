@@ -15,6 +15,12 @@ namespace {
 
 using namespace dxvk::umd::probe;
 
+// DXGI table selection follows the runtime revision in the low Version word.
+// The minimum D3D11 build alone (revision zero) still selects DXGI 1.0.
+constexpr UINT RuntimeVersion = (D3D11_0_DDI_BUILD_VERSION << 16) | DXGI_RESOLVE_SHARED_RESOURCE;
+static_assert(IS_DXGI1_1_BASE_FUNCTIONS(D3D11_0_DDI_INTERFACE_VERSION, RuntimeVersion));
+static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D11_0_DDI_INTERFACE_VERSION, RuntimeVersion - 1));
+
 struct ProbeFailure { const char* stage; HRESULT result; };
 void require(bool value, const char* stage, HRESULT hr = E_FAIL) {
   if (!value) throw ProbeFailure{stage, hr};
@@ -167,7 +173,7 @@ public:
     require(m_adapterFunctions.intact() && m_adapterFunctions.value.pfnCalcPrivateDeviceSize
       && m_adapterFunctions.value.pfnCreateDevice && m_adapterFunctions.value.pfnCloseAdapter, "modern-adapter-table");
     D3D10DDIARG_CALCPRIVATEDEVICESIZE size{};
-    size.Interface = D3D11_0_DDI_INTERFACE_VERSION; size.Version = D3D11_0_DDI_BUILD_VERSION << 16;
+    size.Interface = D3D11_0_DDI_INTERFACE_VERSION; size.Version = RuntimeVersion;
     size.Flags = UINT(D3D11DDI_3DPIPELINELEVEL_11_0) << D3D11DDI_CREATEDEVICE_FLAG_3DPIPELINESUPPORT_SHIFT;
     require(IS_DXGI1_1_BASE_FUNCTIONS(size.Interface, size.Version), "dxgi-1-1-abi");
     m_deviceStorage.allocate(m_adapterFunctions.value.pfnCalcPrivateDeviceSize(m_adapter, &size));

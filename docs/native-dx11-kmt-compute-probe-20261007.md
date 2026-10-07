@@ -7,6 +7,11 @@ the source-linked `VioGpuDxvkCreateDdiTestDevice11` factory or a Microsoft
 Direct3D device factory. Public `OpenAdapter10_2`, capability admission and
 production device creation are unchanged.
 
+The probe supplies D3D11 build 2 and runtime revision 9 (`Version=0x00020009`).
+The WDK's `IS_DXGI1_1_BASE_FUNCTIONS` macro requires this low-word revision
+for the typed DXGI 1.1 table; revision 8 selects DXGI 1.0. Compile-time checks
+cover both sides of that boundary. The production selector is unchanged.
+
 The caller must provide exactly 16 hex LUID bytes and a new evidence directory.
 There is no default adapter or automatic fallback. The transport opens that
 LUID through `D3DKMTOpenAdapterFromLuid`, rejects `SoftwareDevice` and adapters

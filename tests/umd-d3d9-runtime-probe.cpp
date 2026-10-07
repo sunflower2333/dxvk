@@ -135,7 +135,7 @@ int frontGuard(const WCHAR* path) {
   const HRESULT denied = open(nullptr);
   if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"read-only-legacy-fog-478eca2")) return 1;
   const HRESULT invalid = open(nullptr);
-  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"device-lifecycle-8db3d7a")) return 1;
+  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"device-lifecycle-affe7d4")) return 1;
   const HRESULT lifecycleInvalid = open(nullptr);
   SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", nullptr);
   FreeLibrary(module);
@@ -409,7 +409,7 @@ int deviceLifecycle() {
 int frontDeviceLifecycle(const WCHAR* front) {
   ReadOnlyNameSelector selector;
   if (!selector.install(front, true)) return 1;
-  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"device-lifecycle-8db3d7a")) return 1;
+  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"device-lifecycle-affe7d4")) return 1;
   const int result = deviceLifecycle();
   SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", nullptr);
   const bool restored = selector.restore();

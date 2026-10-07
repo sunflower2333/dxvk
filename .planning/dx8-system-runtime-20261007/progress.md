@@ -24,3 +24,12 @@ helper before any target execution. e993 source/packet remain retained; fresh
 follow-up uses the byte-identical native-tested raw-process component d8cf5089
 with bounded5s reap, combined20s pipes and actual OS handle/ExitCodeAvailable.
 No frontend/policy/production bytes changed by this helper correction.
+
+Root executed frozen77bbe in the exclusive CPU slot: actual native parsing of
+both helpers/C# passes, then metadata collection stops before compilation at
+an incorrect um/bcrypt.h header path. Original48-member failure archive,575
+pre-build compiler hashes,29 source inputs and empty outputs are preserved in
+workspace guest-native-readonly-77bbe79-01. The separate follow-up changes only
+that inventory path to shared/bcrypt.h; INCLUDE already contains shared. No
+CPP, runner, core reference or production binary changes. Native retry remains
+root-owned; this agent does not issue target commands.

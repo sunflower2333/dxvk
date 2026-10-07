@@ -253,7 +253,7 @@ try {
   $env:PATH = $bin + ';' + $env:PATH
   $receipt.compiler_environment = [ordered]@{include=$env:INCLUDE;lib=$env:LIB;path_prefix=$bin;kit_root=$KitRoot;kit_version=$KitVersion}
   $headers = @('shared\d3d9.h','shared\d3d9caps.h','shared\d3d9types.h','shared\d3dukmdt.h',
-    'shared\d3dkmthk.h','um\d3dumddi.h','um\Windows.h','um\bcrypt.h')
+    'shared\d3dkmthk.h','um\d3dumddi.h','um\Windows.h','shared\bcrypt.h')
   New-Item -ItemType Directory (Join-Path $Root 'original-sdk-headers') | Out-Null
   $receipt.sdk = @($headers | ForEach-Object {
     $p = Join-Path $sdkInclude $_

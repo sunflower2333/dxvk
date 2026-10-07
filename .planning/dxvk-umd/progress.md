@@ -2340,3 +2340,17 @@ Separate hardware-probe strict native compile rejects two newly introduced
 C4456 shadowing warnings. Retain original25member archivebe9f9b42; rename only
 the two sampler loop variables and require a fresh native probe compile before
 a corrective production push. No GPU, registration or ordinary admission PASS.
+
+2026-10-07 03:36 UTC: Corrected8d7 hardware probe strict native ARM64 build
+passes with zero warnings and remains unexecuted. Root original27member
+review90e2c092 joins88 frozen Git/Vulkan inputs, derived DEF/import symbols,
+original478 CI ZIP exports, SDK/CRT and SYS/desktop continuity. Native fixtures
+actually compiled0dd; independent equivalence proves their87 relevant inputs
+unchanged in8d7. Push exact8d7 once; prior0dd CI is superseded by concurrency.
+Isolatede229 diagnostic actual HAL9/Ex caps both S_OK and preflight accepts
+VirtIO1af4/1050. Two blocked device callbacks report flags3 and1, core0. Static
+CRT buffering interleaves callback and API-result lines; worker anchors count
+only1 result despite2 attempts, so prepared strict reviewer rejects complete
+contract acceptance. Retain original runtime archive and fix only standalone
+frontend trace emission to one synchronous WriteFile per formatted record.
+Fresh native diagnostic build/guards and clean session1 trace are required.

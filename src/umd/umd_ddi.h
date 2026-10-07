@@ -23,3 +23,13 @@ extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(
   D3D10DDI_HRTCORELAYER runtime,
   const D3D10DDI_CORELAYER_DEVICECALLBACKS* callbacks,
   D3D10DDI_DEVICEFUNCS* functions);
+
+// Source-linked fixtures for the exact newer native device tables. They do
+// not register a runtime adapter or expose a public D3D11CreateDevice factory.
+extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice10_1(
+  const LUID* luid, D3D10DDI_HDEVICE device, D3D10DDI_HRTCORELAYER runtime,
+  const D3D10DDI_CORELAYER_DEVICECALLBACKS* callbacks, D3D10_1DDI_DEVICEFUNCS* functions);
+extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice11(
+  const LUID* luid, D3D10DDI_HDEVICE device, D3D10DDI_HRTCORELAYER runtime,
+  const D3D11DDI_CORELAYER_DEVICECALLBACKS* callbacks, D3D11DDI_DEVICEFUNCS* functions,
+  D3D_FEATURE_LEVEL level);

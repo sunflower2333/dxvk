@@ -362,4 +362,55 @@ bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   return true;
 }
 
+bool buildComputeContainer(const uint32_t* code, size_t words,
+    std::vector<unsigned char>& container) {
+  using namespace dxbc_spv;
+  container.clear();
+  if (!code || words < 3 || words > 1024 * 1024 || code[1] != words
+      || code[0] != ((uint32_t(ShaderStage::Compute) << 16) | 0x50)) return false;
+  bool group = false;
+  for (size_t offset = 2; offset < words;) {
+    const uint32_t opcode = code[offset] & 0x7ff;
+    uint32_t count = (code[offset] >> 24) & 0x7f;
+    if (opcode > uint32_t(dxbc::OpCode::eDclGsInstanceCount)) return false;
+    if (opcode == uint32_t(dxbc::OpCode::eCustomData)) {
+      if (words - offset < 2) return false;
+      count = code[offset + 1];
+      if (count < 2) return false;
+    }
+    if (!count || count > words - offset) return false;
+    if (opcode == uint32_t(dxbc::OpCode::eDclThreadGroup)) {
+      if (group || count != 4) return false;
+      const uint32_t x = code[offset + 1], y = code[offset + 2], z = code[offset + 3];
+      if (!x || !y || !z || x > 1024 || y > 1024 || z > 64 || uint64_t(x) * y * z > 1024) return false;
+      group = true;
+    }
+    offset += count;
+  }
+  if (!group) return false;
+  util::ByteWriter chunk;
+  chunk.write(util::FourCC("SHEX")); chunk.write(uint32_t(words * sizeof(uint32_t)));
+  for (size_t i = 0; i < words; ++i) chunk.write(code[i]);
+  auto bytes = std::move(chunk).extract();
+  dxbc::Parser parser(util::ByteReader(bytes.data(), bytes.size()));
+  if (!parser.getShaderInfo()) return false;
+  while (parser) if (!parser.parseInstruction()) return false;
+  util::ByteWriter writer;
+  writer.write(util::FourCC("DXBC"));
+  for (unsigned i = 0; i < 4; ++i) writer.write(uint32_t(0));
+  writer.write(uint32_t(1)); writer.write(uint32_t(36 + bytes.size()));
+  writer.write(uint32_t(1)); writer.write(uint32_t(36));
+  if (!writer.write(bytes.size(), bytes.data())) return false;
+  container = std::move(writer).extract();
+  const auto checksum = dxbc::hashDxbcBinary(container.data(), container.size());
+  std::memcpy(container.data() + offsetof(dxbc::FileHeader, hash), checksum.data.data(), checksum.data.size());
+  dxbc::Container rebuilt(container.data(), container.size());
+  const auto rebuiltCode = rebuilt.getCodeChunk();
+  if (!rebuilt.validateHash() || rebuiltCode.getSize() != bytes.size()
+      || std::memcmp(rebuiltCode.getData(8), code, words * sizeof(uint32_t))) {
+    container.clear(); return false;
+  }
+  return true;
+}
+
 }

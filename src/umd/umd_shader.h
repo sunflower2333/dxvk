@@ -6,7 +6,7 @@
 
 namespace dxvk::umd {
 
-enum class ShaderStage : uint32_t { Pixel = 0, Vertex = 1, Geometry = 2 };
+enum class ShaderStage : uint32_t { Pixel = 0, Vertex = 1, Geometry = 2, Hull = 3, Domain = 4, Compute = 5 };
 enum class ShaderScalar : uint8_t { Unknown, Float32, Uint32, Sint32 };
 struct ShaderSignatureEntry {
   uint32_t systemValue;
@@ -47,6 +47,11 @@ bool linkVertexOutputs(const ShaderSignatureEntry* outputs, size_t outputCount,
 bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   const ShaderSignatureEntry* inputs, size_t inputCount,
   const ShaderSignatureEntry* outputs, size_t outputCount,
+  std::vector<unsigned char>& container);
+
+// Compute has no IA/varying signatures. Validate bounded SM5.0 instructions
+// with the upstream parser and retain the original code in a SHEX container.
+bool buildComputeContainer(const uint32_t* code, size_t words,
   std::vector<unsigned char>& container);
 
 }

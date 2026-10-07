@@ -1,0 +1,11 @@
+# Progress
+
+- 2026-10-07: Audited worktree list and workspace safety instructions, created isolated worktree, read planning skill, started SDK/device audit.
+- Found canonical WDK d3d10umddi.h under /home/sunf/CrWDDK/Build/serial-kit; audited exact D3D10.1/D3D11 structs and current online Microsoft core callback/OM contracts.
+- Prepared local clang Windows ABI compiler with official MSVC headers and case-insensitive VFS overlay. ARM64 baseline blocked by clang18/MSVC44 prefetch builtin disagreement and missing km include path; use x64 ABI first and add km include.
+- Copied adapter agent's shared umd_interface.h and contract files for local factory compilation; these are excluded from my commit because the adapter agent owns them.
+- DDI/shader/new fixture compile cleanly with canonical SDK/WDK x64 and x86. Strict Wall/Wextra/Werror check suppresses only the upstream dxbc-spv private reserved-field warning with Wno-unused-private-field; no local UMD or fixture warnings remain.
+- Portable compute-container fixture built and executed locally: PASS checks=35, exact tokens/hash and malformed SM5 controls. Direct link needed function-section GC to discard unused pinned-library formatting functions.
+- Native WARP fixture now checks exact structured-buffer arithmetic for direct/indirect dispatch, raw/float UAV clear data, append counter reset/preserve and CopyStructureCount, callback mutation on the caller thread, foreign-tail binding rejection, table/storage canaries, failed creation retry and D3D10.1 independent blend. Native execution is pending coordinated target availability.
+- Final SDK descriptor audit caught and corrected native UAV bind 0x100 to public API bind 0x80; constexpr official-header fixture catches regression. Live core callbacks now cover both10.0/10.1 and11. Root updated existing fixture callback lifetimes independently.
+- Added actual clamp-enabled texture MinLOD backend readback and buffer/out-of-range rejection. Final x64/x86 official-header strict syntax checks and portable compute35 checks pass; source-linked native build manifest is docs/native-d3d11-ddi-20261007.md. Shared declarations were byte-identical to DX10 peer before freeze and excluded from this commit.

@@ -178,3 +178,12 @@ umd_compute_container_test = executable('dxvk-umd-compute-container-test',
 umd_sm5_container_test = executable('dxvk-umd-sm5-container-test',
   ['../../tests/umd-sm5-container.cpp', 'umd_shader11.cpp'],
   dependencies : [dxbc_spirv_dep])
+
+umd_sm41_container_test = executable('dxvk-umd-sm41-container-test',
+  ['../../tests/umd-sm41-container.cpp', 'umd_shader.cpp'],
+  dependencies : [dxbc_spirv_dep])
+
+umd_d3d10_shader_test = executable('dxvk-umd-d3d10-shader-test',
+  ['../../tests/umd-d3d10-shaders.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_contract.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])

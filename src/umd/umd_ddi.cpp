@@ -1503,7 +1503,9 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
   auto shader = new (out.pDrvPrivate) Shader();
   shader->owner = device;
   shader->stage = stage;
-  if (!code || !signature || signature->NumInputSignatureEntries > 32 ||
+  if (!code || !dxvk::umd::validLegacyShaderVersion(stage, code[0],
+        device->featureLevel >= D3D_FEATURE_LEVEL_10_1)
+      || !signature || signature->NumInputSignatureEntries > 32 ||
       !signature->NumOutputSignatureEntries || signature->NumOutputSignatureEntries > 32 || !signature->pOutputSignature ||
       (signature->NumInputSignatureEntries && !signature->pInputSignature)) {
     device->error(E_INVALIDARG); return;

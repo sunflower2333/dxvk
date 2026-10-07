@@ -18,6 +18,16 @@ struct ShaderSignatureEntry {
 inline constexpr const char* inputRegisterSemantic = "VIOGPU_INPUT";
 inline constexpr const char* varyingRegisterSemantic = "VIOGPU_VARYING";
 
+// Legacy typed VS/GS/PS callbacks carry SM4 tokens. The logical native
+// device, rather than a broader embedded backend, decides whether 4.1 is
+// permitted. Newer shader models use their separate typed shader path.
+inline constexpr bool validLegacyShaderVersion(ShaderStage stage,
+    uint32_t token, bool allow4_1) {
+  return uint32_t(stage) <= uint32_t(ShaderStage::Geometry)
+    && (token == ((uint32_t(stage) << 16) | 0x40)
+      || (allow4_1 && token == ((uint32_t(stage) << 16) | 0x41)));
+}
+
 // Native signatures lack scalar types. Pixel declarations supply enough
 // information for interpolated F32 or bit-preserving flat U32 interfaces.
 // A register with conflicting interpolation/types is rejected for now.
@@ -38,11 +48,13 @@ bool linkVertexOutputs(const ShaderSignatureEntry* outputs, size_t outputCount,
   const ShaderSignatureEntry* inputs, size_t inputCount,
   std::vector<ShaderSignatureEntry>& linked);
 
-// SM4.0 VS/GS/PS development profile. VS input types come from the bound
+// SM4.0/4.1 VS/GS/PS development profile. VS input types come from the bound
 // layout, GS inputs from resolveGeometryInputs, generic outputs from the
 // next active stage, and PS inputs from resolvePixelInputs. PS supports up to
 // eight float color outputs, preserving sparse target indices and masks.
-// Integer/depth outputs and additional system values remain unsupported.
+// SM4.1 PS sample-index inputs and sample interpolation retain their built-in
+// or interpolated semantics. Integer/depth outputs and other additional
+// system values remain unsupported.
 // Tokens remain unchanged; this does not advertise a native feature level.
 bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   const ShaderSignatureEntry* inputs, size_t inputCount,

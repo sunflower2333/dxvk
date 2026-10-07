@@ -317,6 +317,7 @@ int main() {
   uint32_t pixelCode[] = {0x40,6,0x03000062,0x00101032,3,0x0100003e};
   ShaderSignatureEntry varying = {0,3,15}, target = {0,0,15};
   for (uint32_t mode = 1; mode <= 7; mode++) {
+    pixelCode[0] = mode >= 6 ? 0x41 : 0x40;
     pixelCode[2] = 0x03000062 | (mode << 11);
     check(resolvePixelInputs(pixelCode,6,&varying,1,resolved) && resolved.size() == 1);
     check(resolved[0].mask == 3 && resolved[0].scalar ==
@@ -329,6 +330,7 @@ int main() {
       entry->getScalarType() == (mode == 1 ? dxbc_spv::ir::ScalarType::eU32 : dxbc_spv::ir::ScalarType::eF32));
     check(uint8_t(entry->getUsedComponentMask()) == 3);
   }
+  pixelCode[0] = 0x40;
   for (uint32_t mode : {0u,8u,15u}) {
     pixelCode[2] = 0x03000062 | (mode << 11);
     check(!resolvePixelInputs(pixelCode,6,&varying,1,resolved) && resolved.empty());

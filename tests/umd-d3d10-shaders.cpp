@@ -220,7 +220,7 @@ template<typename Table> struct NativeTarget {
   void bind() {
     checkpoint("SetRenderTargets"); owner.table.pfnSetRenderTargets(owner.device, &handle, 1, 0, {}); expect();
   }
-  void clear(const FLOAT* color) {
+  void clear(FLOAT* color) {
     checkpoint("ClearRenderTargetView"); owner.table.pfnClearRenderTargetView(owner.device, handle, color); expect();
   }
   ~NativeTarget() {
@@ -284,7 +284,7 @@ template<typename Table> void scene(Fixture<Table>& f, const char* pixelEntry, b
   NativeShader<Table> vertex(f, vs), pixel(f, ps), geom(f, gs);
   RenderInputs inputs(f.backend.Get());
   NativeTarget<Table> target(f, samples);
-  const FLOAT clear[]{0, 0, 0, 0};
+  FLOAT clear[]{0, 0, 0, 0};
   inputs.bind(f.context.Get()); target.bind(); target.clear(clear);
   const D3D10_DDI_VIEWPORT viewport{0, 0, 16, 16, 0, 1};
   checkpoint("SetViewports"); f.table.pfnSetViewports(f.device, 1, 0, &viewport); expect();

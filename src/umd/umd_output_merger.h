@@ -1,6 +1,7 @@
 #pragma once
 // SPDX-License-Identifier: MIT
 #include "umd_output_policy.h"
+#include "umd_volume_policy.h"
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <algorithm>
@@ -54,6 +55,26 @@ inline bool texture1DOutputView(ID3D11RenderTargetView* view, OutputView& result
   return outputShape(desc, result.mip, result.firstSlice, layers, result.shape);
 }
 
+inline bool outputShape(const D3D11_TEXTURE3D_DESC& texture, UINT mip,
+    UINT firstSlice, UINT layers, OutputShape& result) {
+  VolumeExtent extent;
+  if (mip >= texture.MipLevels || mip >= D3D11_REQ_MIP_LEVELS
+      || !volumeMipExtent({texture.Width, texture.Height, texture.Depth}, mip, extent)
+      || !layers || firstSlice >= extent.depth || layers > extent.depth - firstSlice) return false;
+  result = {extent.width, extent.height, layers, 1, 0, OutputKind::Texture3D};
+  return true;
+}
+
+inline bool texture3DOutputView(ID3D11RenderTargetView* view, OutputView& result) {
+  Microsoft::WRL::ComPtr<ID3D11Texture3D> texture;
+  if (FAILED(result.resource.As(&texture))) return false;
+  D3D11_TEXTURE3D_DESC desc = {}; texture->GetDesc(&desc);
+  D3D11_RENDER_TARGET_VIEW_DESC range = {}; view->GetDesc(&range);
+  if (range.ViewDimension != D3D11_RTV_DIMENSION_TEXTURE3D) return false;
+  result.mip = range.Texture3D.MipSlice; result.firstSlice = range.Texture3D.FirstWSlice;
+  return outputShape(desc, result.mip, result.firstSlice, range.Texture3D.WSize, result.shape);
+}
+
 // Extract actual resource/view metadata before the single OM state change.
 inline bool outputView(ID3D11RenderTargetView* view, OutputView& result) {
   if (!view) return false;
@@ -63,6 +84,7 @@ inline bool outputView(ID3D11RenderTargetView* view, OutputView& result) {
   D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
   result.resource->GetType(&dimension);
   if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D) return texture1DOutputView(view, result);
+  if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D) return texture3DOutputView(view, result);
   Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
   if (!result.resource || FAILED(result.resource.As(&texture))) return false;
   D3D11_TEXTURE2D_DESC desc = {}; texture->GetDesc(&desc);

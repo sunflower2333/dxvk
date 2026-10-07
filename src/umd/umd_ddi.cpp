@@ -9,6 +9,7 @@
 #include "umd_map.h"
 #include "umd_view.h"
 #include "umd_texture1d.h"
+#include "umd_texture3d.h"
 #include "umd_transfer_policy.h"
 #include "umd_transfer_format.h"
 #include "umd_generate_mips.h"
@@ -831,6 +832,10 @@ HRESULT createResourceData(Device* device,
   D3D11_TEXTURE1D_DESC oneDimensional = {};
   if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D &&
       !dxvk::umd::texture1DDesc(*args, miscFlags, oneDimensional)) return E_INVALIDARG;
+  D3D11_TEXTURE3D_DESC volume = {};
+  if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D
+      && (!dxvk::umd::texture3DDesc(*args, miscFlags, volume)
+          || !dxvk::umd::texture3DInitialData(*args))) return E_INVALIDARG;
   const bool presentable = (args->BindFlags & D3D10_DDI_BIND_PRESENT) != 0;
   if (presentable && (!device->memory.available() || !runtime.handle
       || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
@@ -878,6 +883,10 @@ HRESULT createResourceData(Device* device,
     } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D) {
       ComPtr<ID3D11Texture1D> texture;
       hr = device->backend->CreateTexture1D(&oneDimensional, data, &texture);
+      resource->backend = texture;
+    } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
+      ComPtr<ID3D11Texture3D> texture;
+      hr = device->backend->CreateTexture3D(&volume, data, &texture);
       resource->backend = texture;
     } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
       D3D11_TEXTURE2D_DESC desc = {};
@@ -1008,7 +1017,7 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
 SIZE_T APIENTRY shaderViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATESHADERRESOURCEVIEW*) {
   return sizeof(ShaderView);
 }
-// Translate an SRV for the actual 1D/2D resource, never reinterpret a DDI union.
+// Translate the actual resource dimension, never reinterpret a DDI union.
 void APIENTRY createShaderView(D3D10DDI_HDEVICE h,
     const D3D10DDIARG_CREATESHADERRESOURCEVIEW* args,
     D3D10DDI_HSHADERRESOURCEVIEW out, D3D10DDI_HRTSHADERRESOURCEVIEW) {
@@ -1033,6 +1042,11 @@ void APIENTRY createShaderView(D3D10DDI_HDEVICE h,
         ComPtr<ID3D11Texture2D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;
         D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
+        if (!dxvk::umd::textureShaderView(*args, info, desc)) return E_INVALIDARG;
+      } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
+        ComPtr<ID3D11Texture3D> texture;
+        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
+        D3D11_TEXTURE3D_DESC info = {}; texture->GetDesc(&info);
         if (!dxvk::umd::textureShaderView(*args, info, desc)) return E_INVALIDARG;
       } else return E_INVALIDARG;
       return device->backend->CreateShaderResourceView(resource.Get(), &desc, &view.backend);
@@ -1065,6 +1079,11 @@ void APIENTRY generateMips(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW obje
     ComPtr<ID3D11Texture2D> texture;
     if (FAILED(resource.As(&texture))) { device->error(E_INVALIDARG); return; }
     D3D11_TEXTURE2D_DESC desc = {}; texture->GetDesc(&desc);
+    hr = dxvk::umd::mipGenerationStatus(desc, viewDesc);
+  } else if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
+    ComPtr<ID3D11Texture3D> texture;
+    if (FAILED(resource.As(&texture))) { device->error(E_INVALIDARG); return; }
+    D3D11_TEXTURE3D_DESC desc = {}; texture->GetDesc(&desc);
     hr = dxvk::umd::mipGenerationStatus(desc, viewDesc);
   }
   if (FAILED(hr)) { device->error(hr); return; }
@@ -1161,7 +1180,7 @@ void APIENTRY setSamplers(D3D10DDI_HDEVICE h, UINT start, UINT count, const D3D1
 SIZE_T APIENTRY targetSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERENDERTARGETVIEW*) {
   return sizeof(RenderTarget);
 }
-// Stage the actual Texture1D/Texture2D target and its retirement owner together.
+// Stage the actual texture target and its retirement owner together.
 void APIENTRY createTarget(D3D10DDI_HDEVICE h,
     const D3D10DDIARG_CREATERENDERTARGETVIEW* args,
     D3D10DDI_HRENDERTARGETVIEW out, D3D10DDI_HRTRENDERTARGETVIEW) {
@@ -1184,6 +1203,11 @@ void APIENTRY createTarget(D3D10DDI_HDEVICE h,
         ComPtr<ID3D11Texture2D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;
         D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
+        if (!dxvk::umd::textureTargetView(*args, info, desc)) return E_INVALIDARG;
+      } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
+        ComPtr<ID3D11Texture3D> texture;
+        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
+        D3D11_TEXTURE3D_DESC info = {}; texture->GetDesc(&info);
         if (!dxvk::umd::textureTargetView(*args, info, desc)) return E_INVALIDARG;
       } else return E_INVALIDARG;
       target.format = desc.Format;
@@ -1271,6 +1295,18 @@ void APIENTRY clearDepthView(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILVIEW obje
 void APIENTRY copyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, D3D10DDI_HRESOURCE src) {
   auto device = get(h);
   if (!owned(device, get(dst)) || !owned(device, get(src))) return;
+  D3D11_RESOURCE_DIMENSION dstKind, srcKind;
+  get(dst)->backend->GetType(&dstKind); get(src)->backend->GetType(&srcKind);
+  if (dstKind == D3D11_RESOURCE_DIMENSION_TEXTURE3D || srcKind == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
+    ComPtr<ID3D11Texture3D> destination, source;
+    if (get(dst)->backend.Get() == get(src)->backend.Get()
+        || FAILED(get(dst)->backend.As(&destination)) || FAILED(get(src)->backend.As(&source))) {
+      device->error(E_INVALIDARG); return;
+    }
+    D3D11_TEXTURE3D_DESC dstDesc = {}, srcDesc = {};
+    destination->GetDesc(&dstDesc); source->GetDesc(&srcDesc);
+    if (!dxvk::umd::texture3DCopy(dstDesc, srcDesc)) { device->error(E_INVALIDARG); return; }
+  }
   if (!readSharedSurface(device, get(src)->shared)) return;
   device->context->CopyResource(get(dst)->backend.Get(), get(src)->backend.Get());
   // CopyResource replaces the destination entirely.
@@ -1326,7 +1362,7 @@ void APIENTRY checkMultisample(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT coun
 }
 
 struct SubresourceInfo {
-  UINT width = 0, height = 1, texelBytes = 1;
+  UINT width = 0, height = 1, depth = 1, texelBytes = 1;
   D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
   DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
   D3D11_USAGE usage = D3D11_USAGE_DEFAULT;
@@ -1368,6 +1404,18 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
     info.texelBytes = dxvk::umd::transferTexelBytes(info.format);
     return info.texelBytes != 0;
   }
+  if (info.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
+    ComPtr<ID3D11Texture3D> texture;
+    if (FAILED(resource->backend.As(&texture))) return false;
+    D3D11_TEXTURE3D_DESC desc = {}; texture->GetDesc(&desc);
+    dxvk::umd::VolumeExtent extent;
+    if (index >= desc.MipLevels || index >= D3D11_REQ_MIP_LEVELS
+        || !dxvk::umd::volumeMipExtent({desc.Width, desc.Height, desc.Depth}, index, extent)) return false;
+    info.width = extent.width; info.height = extent.height; info.depth = extent.depth;
+    info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
+    info.texelBytes = dxvk::umd::transferTexelBytes(info.format);
+    return info.texelBytes != 0;
+  }
   return false;
 }
 bool subresourceBox(const SubresourceInfo& info, const D3D10_DDI_BOX* input, D3D11_BOX& box) {
@@ -1375,9 +1423,9 @@ bool subresourceBox(const SubresourceInfo& info, const D3D10_DDI_BOX* input, D3D
       input->right < 0 || input->bottom < 0 || input->back < 0)) return false;
   box = input ? D3D11_BOX{UINT(input->left), UINT(input->top), UINT(input->front),
                          UINT(input->right), UINT(input->bottom), UINT(input->back)}
-              : D3D11_BOX{0, 0, 0, info.width, info.height, 1};
+              : D3D11_BOX{0, 0, 0, info.width, info.height, info.depth};
   return box.left <= box.right && box.top <= box.bottom && box.front <= box.back
-      && box.right <= info.width && box.bottom <= info.height && box.back <= 1;
+      && box.right <= info.width && box.bottom <= info.height && box.back <= info.depth;
 }
 void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstIndex,
     UINT x, UINT y, UINT z, D3D10DDI_HRESOURCE src, UINT srcIndex, const D3D10_DDI_BOX* input) {
@@ -1392,8 +1440,8 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
   }
   if (box.left == box.right || box.top == box.bottom || box.front == box.back) return;
   if ((get(src)->backend.Get() == get(dst)->backend.Get() && srcIndex == dstIndex)
-      || x > destination.width || box.right - box.left > destination.width - x
-      || y > destination.height || box.bottom - box.top > destination.height - y || z) {
+      || !dxvk::umd::volumeCopyFits({destination.width, destination.height, destination.depth}, x, y, z,
+          {box.right - box.left, box.bottom - box.top, box.back - box.front})) {
     device->error(E_INVALIDARG); return;
   }
   if (!readSharedSurface(device, get(src)->shared)) return;
@@ -1419,9 +1467,14 @@ void APIENTRY updateResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT in
   uint64_t requiredBytes = 0;
   // Do not assume RGBA8. Validate the last byte on both 32-bit and 64-bit
   // callers before the backend can read rows from runtime-owned source data.
-  if (!source || !dxvk::umd::uploadSpan(box.right - box.left, box.bottom - box.top,
-      destination.texelBytes, rowPitch, destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D,
-      uint64_t(UINTPTR_MAX) - reinterpret_cast<uintptr_t>(source) + 1, requiredBytes)) {
+  const uint64_t addressable = source
+    ? uint64_t(UINTPTR_MAX) - reinterpret_cast<uintptr_t>(source) + 1 : 0;
+  const bool validSpan = destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D
+    ? dxvk::umd::uploadVolumeSpan({box.right - box.left, box.bottom - box.top, box.back - box.front},
+        destination.texelBytes, rowPitch, depthPitch, addressable, requiredBytes)
+    : dxvk::umd::uploadSpan(box.right - box.left, box.bottom - box.top, destination.texelBytes,
+        rowPitch, destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D, addressable, requiredBytes);
+  if (!source || !validSpan) {
     device->error(E_INVALIDARG); return;
   }
   // Without a box the update replaces the whole subresource; with one it does
@@ -1443,6 +1496,11 @@ void APIENTRY mapResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource,
   if (!out) { device->error(E_INVALIDARG); return; }
   *out = {};
   if (!owned(device, get(resource))) return;
+  D3D11_RESOURCE_DIMENSION dimension;
+  get(resource)->backend->GetType(&dimension);
+  SubresourceInfo volume;
+  if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D
+      && !subresourceInfo(get(resource), subresource, volume)) { device->error(E_INVALIDARG); return; }
   try {
     device->error(dxvk::umd::mapSubresource(type, flags, out,
       [&](D3D11_MAP apiType, UINT apiFlags, D3D11_MAPPED_SUBRESOURCE* mapped) {
@@ -1491,6 +1549,11 @@ void APIENTRY shaderViewHazard(D3D10DDI_HDEVICE h, D3D10DDI_HSHADERRESOURCEVIEW 
 void APIENTRY unmapResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource, UINT subresource) {
   auto device = get(h);
   if (!owned(device, get(resource))) return;
+  D3D11_RESOURCE_DIMENSION dimension;
+  get(resource)->backend->GetType(&dimension);
+  SubresourceInfo volume;
+  if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D
+      && !subresourceInfo(get(resource), subresource, volume)) { device->error(E_INVALIDARG); return; }
   try { device->context->Unmap(get(resource)->backend.Get(), subresource); }
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }

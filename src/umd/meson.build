@@ -171,6 +171,13 @@ umd_system_runtime_test = executable('dxvk-umd-system-runtime-test',
   '../../tests/umd-system-runtime.cpp', umd_build_config,
   dependencies : [cpp.find_library('d3d11'), cpp.find_library('d3dcompiler'), cpp.find_library('user32')])
 
+umd_volume_policy_test = executable('dxvk-umd-volume-policy-test', '../../tests/umd-volume-policy.cpp')
+
+umd_texture3d_test = executable('dxvk-umd-texture3d-test',
+  ['../../tests/umd-texture3d.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
+
 umd_texture1d_test = executable('dxvk-umd-texture1d-test',
   ['../../tests/umd-texture1d.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],

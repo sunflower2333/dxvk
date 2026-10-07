@@ -22,6 +22,12 @@ HRESULT createResourceData11(Device* device, const D3D11DDIARG_CREATERESOURCE* a
     return createResourceData(device, &legacy, resource, runtime);
   }
   if (args->pPrimaryDesc) return DXGI_ERROR_UNSUPPORTED;
+  D3D11_TEXTURE3D_DESC volume = {};
+  if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
+    const auto legacy = dxvk::umd::resource10Fields(*args);
+    if (args->ByteStride || !dxvk::umd::texture3DDesc(legacy, misc, volume, true)
+        || !dxvk::umd::texture3DInitialData(legacy)) return E_INVALIDARG;
+  }
   resource->owner = device;
   resource->retirement = std::make_unique<ResourceRetirement>();
   std::vector<D3D11_SUBRESOURCE_DATA> initial;
@@ -65,11 +71,8 @@ HRESULT createResourceData11(Device* device, const D3D11DDIARG_CREATERESOURCE* a
       ComPtr<ID3D11Texture2D> texture;
       hr = device->backend->CreateTexture2D(&desc, data, &texture); resource->backend = texture;
     } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
-      if (args->ArraySize != 1 || args->SampleDesc.Count != 1 || args->SampleDesc.Quality) return E_INVALIDARG;
-      D3D11_TEXTURE3D_DESC desc = {shape.TexelWidth, shape.TexelHeight, shape.TexelDepth,
-        args->MipLevels, args->Format, usage, bindings, cpu, misc};
       ComPtr<ID3D11Texture3D> texture;
-      hr = device->backend->CreateTexture3D(&desc, data, &texture); resource->backend = texture;
+      hr = device->backend->CreateTexture3D(&volume, data, &texture); resource->backend = texture;
     }
   }
   if (hr == S_OK && !resource->backend) return E_FAIL;
@@ -111,7 +114,9 @@ void APIENTRY createShaderView11(D3D10DDI_HDEVICE h, const D3D11DDIARG_CREATESHA
     D3D10DDI_HSHADERRESOURCEVIEW out, D3D10DDI_HRTSHADERRESOURCEVIEW runtime) {
   auto device = get(h);
   if (!args) { device->error(E_INVALIDARG); return; }
-  if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D || args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
+  if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D
+      || args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D
+      || args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
     const auto legacy = shaderView10Fields(*args); createShaderView(h, &legacy, out, runtime); return;
   }
   if (!owned(device, get(args->hDrvResource))) return;
@@ -140,14 +145,6 @@ void APIENTRY createShaderView11(D3D10DDI_HDEVICE h, const D3D11DDIARG_CREATESHA
               || !dxvk::umd::viewRange(first, count, info.ByteWidth / info.StructureByteStride))) return E_INVALIDARG;
           desc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER; desc.Buffer.FirstElement = first; desc.Buffer.NumElements = count;
         }
-      } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
-        ComPtr<ID3D11Texture3D> texture;
-        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
-        D3D11_TEXTURE3D_DESC info = {}; texture->GetDesc(&info);
-        if (!(info.BindFlags & D3D11_BIND_SHADER_RESOURCE)
-            || !dxvk::umd::viewRange(args->Tex3D.MostDetailedMip, args->Tex3D.MipLevels, info.MipLevels)) return E_INVALIDARG;
-        desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE3D;
-        desc.Texture3D = {args->Tex3D.MostDetailedMip, args->Tex3D.MipLevels};
       } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURECUBE) {
         ComPtr<ID3D11Texture2D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;

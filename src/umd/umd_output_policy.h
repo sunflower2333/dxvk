@@ -29,7 +29,7 @@ inline bool validRenderTargetRange(uint32_t count, uint32_t clear) {
   return count <= colorOutputSlots && clear <= colorOutputSlots - count;
 }
 
-enum class OutputKind { Texture2D, Texture1D };
+enum class OutputKind { Texture2D, Texture1D, Texture3D };
 
 struct OutputShape {
   uint32_t width = 0, height = 0, layers = 0, samples = 0, quality = 0;

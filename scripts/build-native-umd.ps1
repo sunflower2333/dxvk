@@ -141,8 +141,7 @@ if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-runtime-gpu-test.exe runtime-gpu-test
     & build-umd/src/umd/dxvk-umd-identity-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-query-test.txt')
     if ($LASTEXITCODE) { throw 'Runtime identity callback consumer test failed' }
-    & build-umd/src/umd/dxvk-umd-adapter-test.exe | Tee-Object (Join-Path $OutputDirectory 'adapter-test.txt')
-    if ($LASTEXITCODE) { throw 'Adapter lifecycle test failed' }
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-adapter-test.exe adapter-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-adapter-test.exe d3d9-adapter-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-device-test.exe d3d9-device-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-native-entry-test.exe native-entry-test

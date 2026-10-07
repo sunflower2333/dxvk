@@ -3606,3 +3606,54 @@ volume fixtures to existing single matchingCI, allold28markers/deadlines/d8cf
 unchanged. Target release1b1e4942/EWDKauth0129b236; CPU04 actualbuild running,
 575 tool originals must remainexact/no repair replay. Ordinary runtime/Present
 notaccepted. Consolidated push next; no newcore/probe may inherit d7 acceptance.
+
+
+2026-10-08 source618ca58aae85c427eb63a4e79ac4a4d43b33043e pushed actual0;
+exactly one automaticNativeUMD run37681929181. Identity/shaderCPU currentlyPASS;
+threebackend jobs running, no newcandidate admission. Currentoldcore/d7KMT384
+remain scopedhistorical. NativeDX8CPU04 actualPASS/root directreview saved:
+archive988bdb3e/31,167,409/181files, source33/Git30/licensed3/575toolbeforeafter,
+SDK10/libs9,5I386COFF/4PE,329policy/62callbacks+11forwarded/30invalidCLI,
+48nativebuild+collector1/host7actual0 allfinalized. Original release1547258b
+returns targetROOT; no core/validKMT/factory/GPU. Phasedc2ab manifestcad2 remains
+readyfalse, actualprobe9009/front699b joined. FreshnativeAST5/AddType andeach
+limitedUSER names→HALenum→448offscreen→64Present runtime phase stillpending.
+DX10 USER05 frozeneb5e70/72roles/prefixqueued; DX11 peerpreparesD3D9locked2624
+with genuine currentd7 originals. No additionalpush/manualCI/driver/VMchanges.
+
+
+2026-10-08 continuation: user confirms passwordless Administrator available for
+management/builds; GPU checks remain limited USER/session1. All six jobs of
+sole automatic618/CI37681929181 now PASS. Fresh ROOT collector06 corrects only
+ARM member summary88→511, pins unchanged independent volume reader Git SHA
+b0c463995f012c5a9c5cf78cf52b233a8641a8170998fc65f2265f08cca5fb4d,
+and starts original collection under host PID2544062/deadline1200s. Frozen05
+not modified. DX8 parser-only handoff5319f9c0 is now exclusively owned by EWDK
+agent; AST5/Add-Type only, no modules/KMT/GPU, original collector then release.
+ROOT independently rejoins DX10 USER05 prepared descriptor dfd16e6a: 20files,
+15prefix originals/152frozen archive/151collection/70known72roles/9helpers/
+15probeGit+10coreGit; proof root-native-user05-prefix-prepared-direct-review-01
+PASS, readyfalse. Names/HAL/offscreen448/Present64, DX10 real1792 and D3D9
+real2624 remain pending; no driver or VM changes.
+
+
+2026-10-08 ROOT CI618 originals admission: actual collector06 PID2544062 exit0,
+five genuine originalZIPs/1721members, allsixjobsPASS/source853blobs+5gitlinks,
+four exact canonical receipts/three DLL-PDB/config/private-loader chains,
+ARM30/x64+x86 60 owned fixture children all0/drained. Independent complete
+309production volume files/9138voxels/945sampled +108public files per archPASS.
+New ARMcore6262784/a4053e44, x64 5918720/0f68ebcc, x86 5500928/d9536b79; these
+are candidate-only and do not inherit d7 hardware acceptance. ROOT direct
+review script review-ci618-originals-root.py and originalproofs retained.
+DX8 parser actualPASS archive4ae29d77/20files/AST5/AddType; native2/host5 all0,
+ROOT directreviewa594fc8c/release6340c17c accepted. DX10 USER05 nativeprefix
+actualPASS archive41fb6692/46files/AST8/AddType/ServiceAssembly Running4/
+pendingreadyfalse rejection; native7/host8 all0, protectedstatic34/rawSYS/
+desktop retained, ROOT directoriginalreview saved, release891d243c accepted.
+ROOT names-only admission23d6d374 changes onlyready/native_phase_parse/pending
+from frozenDX8cad2; EWDK exclusiveauth995b506a now executes one I386 names
+query and collection. No core/factory/GPU/installation permitted. D3D9 frozen
+prepareddd53595b independently joins63files/32Git/helperTAR9/inputTAR15 and
+acceptedGPU08shared47 exactly; unchanged probe/oracle gives native2624 total/
+1152raw lockedpixels and checksums6d390bc5(word)/41e03dc5(byte). ActualD3D9
+retry stillpending, readyfalse; target remainsEWDK names-only until release.

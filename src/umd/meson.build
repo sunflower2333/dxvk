@@ -59,6 +59,26 @@ umd_cube_probe_oracle_test = executable('dxvk-umd-cube-probe-oracle-test',
   '../../tests/umd-cube-probe-oracle.cpp',
 )
 
+umd_d3d11_so_probe = executable('dxvk-umd-d3d11-so-probe',
+  ['../../tests/umd-d3d11-so-probe.cpp', umd_build_config],
+  link_with : [umd_development],
+  dependencies : [cpp.find_library('d3dcompiler'), lib_gdi32],
+)
+
+umd_d3d11_volume_probe = executable('dxvk-umd-d3d11-volume-probe',
+  ['../../tests/umd-d3d11-volume-probe.cpp', umd_build_config],
+  link_with : [umd_development],
+  dependencies : [cpp.find_library('d3dcompiler'), lib_gdi32],
+)
+
+umd_so_oracle_test = executable('dxvk-umd-so-oracle-test',
+  '../../tests/umd-so-oracle.cpp',
+)
+
+umd_volume_probe_oracle_test = executable('dxvk-umd-volume-probe-oracle-test',
+  '../../tests/umd-volume-probe-oracle.cpp',
+)
+
 umd_predication_probe = executable('dxvk-umd-predication-probe', '../../tests/umd-predication.cpp',
   link_with : [umd_development],
   dependencies : [cpp.find_library('d3dcompiler')])

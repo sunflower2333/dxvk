@@ -28,6 +28,8 @@ Add-Type -TypeDefinition ([IO.File]::ReadAllText($retainedRunnerSource))
 $runnerReceipt.type_compiled = $true
 $runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'arm64-fixture-runner-source.json') -Encoding UTF8
 $cases = [ordered]@{
+    'dxvk-umd-so-oracle-test.exe' = 'SO capture oracle verified checks=21083 bit_flips=20480 streams=4 raw_bits=1 callback_controls=55'
+    'dxvk-umd-volume-probe-oracle-test.exe' = 'volume probe oracle verified checks=100632 voxels=3046 bit_flips=97472 sampled=551'
     'dxvk-umd-cube-probe-oracle-test.exe' = 'PASS cube probe arithmetic checks=159292 bit_flips=154752 texels=4830 hardware=0'
     'dxvk-umd-vertex-input-test.exe' = 'vertex input equality PASS checks=\d+; colliding layouts retained, no GPU runtime'
     'dxvk-umd-runtime-backend-test.exe' = 'runtime backend ownership PASS checks=\d+; CPU descriptor and lifetime contracts'

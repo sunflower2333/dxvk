@@ -90,6 +90,8 @@ ninja -C build-umd src/umd/dxvk-umd-d3d11-compute-probe.exe src/umd/dxvk-umd-com
 if ($LASTEXITCODE) { throw 'Typed D3D11 compute probe/oracle failed to build' }
 ninja -C build-umd src/umd/dxvk-umd-d3d11-cube-probe.exe src/umd/dxvk-umd-cube-probe-oracle-test.exe
 if ($LASTEXITCODE) { throw 'Typed D3D11 cube probe/oracle failed to build' }
+ninja -C build-umd src/umd/dxvk-umd-d3d11-so-probe.exe src/umd/dxvk-umd-d3d11-volume-probe.exe src/umd/dxvk-umd-so-oracle-test.exe src/umd/dxvk-umd-volume-probe-oracle-test.exe
+if ($LASTEXITCODE) { throw 'Typed D3D11 SO and volume probes/oracles failed to build' }
 ninja -C build-umd src/umd/dxvk-umd-private-children-test.exe src/umd/dxvk-umd-input-formats-test.exe src/umd/dxvk-umd-d3d10-formats-test.exe src/umd/dxvk-umd-multisample-policy-test.exe src/umd/dxvk-umd-d3d9-buffer-copy-test.exe
 if ($LASTEXITCODE) { throw 'Native child/input/format and D3D9 copy fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d9-runtime-callbacks-test.exe
@@ -166,6 +168,8 @@ if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-texture3d-test.exe texture3d-test $textureOriginals
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-cube-array-policy-test.exe cube-array-policy-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-cube-probe-oracle-test.exe cube-probe-oracle-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-so-oracle-test.exe so-oracle-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-volume-probe-oracle-test.exe volume-probe-oracle-test
     foreach ($fixture in @('texturecube', 'cube-array-resource', 'cube-srv-mips', 'cube-array-mips')) {
         $cubeOriginals = Join-Path $OutputDirectory "$fixture-originals"
         New-Item -ItemType Directory -Path $cubeOriginals -ErrorAction Stop | Out-Null
@@ -215,7 +219,7 @@ if ($LASTEXITCODE) { throw 'Typed D3D9 target lifecycle probe build failed' }
 if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-backend-test.exe d3d9-backend-test
 }
-foreach ($name in @("$LibraryName.dll", 'dxvk-umd-backend-probe.exe', 'dxvk-umd-ddi-probe.exe', 'dxvk-umd-predication-probe.exe', 'dxvk-umd-stream-output-probe.exe', 'dxvk-umd-d3d9-device-probe.exe', 'dxvk-umd-d3d11-compute-probe.exe', 'dxvk-umd-d3d11-cube-probe.exe')) {
+foreach ($name in @("$LibraryName.dll", 'dxvk-umd-backend-probe.exe', 'dxvk-umd-ddi-probe.exe', 'dxvk-umd-predication-probe.exe', 'dxvk-umd-stream-output-probe.exe', 'dxvk-umd-d3d9-device-probe.exe', 'dxvk-umd-d3d11-compute-probe.exe', 'dxvk-umd-d3d11-cube-probe.exe', 'dxvk-umd-d3d11-so-probe.exe', 'dxvk-umd-d3d11-volume-probe.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
     $imports = & dumpbin /imports $path | Out-String
     if ($LASTEXITCODE -or $imports -match 'D3D11CreateDevice|D3D11CoreCreateDevice|D3D11CreateDeviceAndSwapChain|Direct3DCreate9|Direct3DCreate9Ex|Direct3DCreate9On12') { throw "Forbidden D3D runtime import: $name" }
@@ -243,7 +247,7 @@ foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.ex
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }
     Copy-Item $path $OutputDirectory
 }
-foreach ($name in @('dxvk-umd-runtime-backend-test.exe', 'dxvk-umd-d3d9-backend-test.exe', 'dxvk-umd-d3d9-device-test.exe', 'dxvk-umd-vertex-input-test.exe', 'dxvk-umd-compute-oracle-test.exe', 'dxvk-umd-cube-probe-oracle-test.exe')) {
+foreach ($name in @('dxvk-umd-runtime-backend-test.exe', 'dxvk-umd-d3d9-backend-test.exe', 'dxvk-umd-d3d9-device-test.exe', 'dxvk-umd-vertex-input-test.exe', 'dxvk-umd-compute-oracle-test.exe', 'dxvk-umd-cube-probe-oracle-test.exe', 'dxvk-umd-so-oracle-test.exe', 'dxvk-umd-volume-probe-oracle-test.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
     $headers = & dumpbin /headers $path | Out-String
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }

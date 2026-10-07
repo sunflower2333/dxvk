@@ -994,11 +994,11 @@ void APIENTRY setShaderResources(D3D10DDI_HDEVICE h, UINT start, UINT count,
     if (bound[start + i] && start + i >= high) high = start + i + 1;
   }
   try {
-    if (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetShaderResources(start, count, views);
-    else if (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetShaderResources(start, count, views);
-    else if (Stage == dxvk::umd::ShaderStage::Hull) device->context->HSSetShaderResources(start, count, views);
-    else if (Stage == dxvk::umd::ShaderStage::Domain) device->context->DSSetShaderResources(start, count, views);
-    else if (Stage == dxvk::umd::ShaderStage::Compute) device->context->CSSetShaderResources(start, count, views);
+    if constexpr (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetShaderResources(start, count, views);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetShaderResources(start, count, views);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Hull) device->context->HSSetShaderResources(start, count, views);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Domain) device->context->DSSetShaderResources(start, count, views);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Compute) device->context->CSSetShaderResources(start, count, views);
     else device->context->PSSetShaderResources(start, count, views);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
@@ -1038,11 +1038,11 @@ void APIENTRY setSamplers(D3D10DDI_HDEVICE h, UINT start, UINT count, const D3D1
     samplers[i] = sampler ? sampler->backend.Get() : nullptr;
   }
   try {
-    if (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetSamplers(start, count, samplers);
-    else if (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetSamplers(start, count, samplers);
-    else if (Stage == dxvk::umd::ShaderStage::Hull) device->context->HSSetSamplers(start, count, samplers);
-    else if (Stage == dxvk::umd::ShaderStage::Domain) device->context->DSSetSamplers(start, count, samplers);
-    else if (Stage == dxvk::umd::ShaderStage::Compute) device->context->CSSetSamplers(start, count, samplers);
+    if constexpr (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetSamplers(start, count, samplers);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetSamplers(start, count, samplers);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Hull) device->context->HSSetSamplers(start, count, samplers);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Domain) device->context->DSSetSamplers(start, count, samplers);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Compute) device->context->CSSetSamplers(start, count, samplers);
     else device->context->PSSetSamplers(start, count, samplers);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
@@ -1556,11 +1556,11 @@ void APIENTRY setConstantBuffers(D3D10DDI_HDEVICE h, UINT start, UINT count,
   // Validate every resource before changing state, so an invalid tail cannot
   // leave a partially updated binding range. Null entries explicitly unbind.
   try {
-    if (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetConstantBuffers(start, count, buffers);
-    else if (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetConstantBuffers(start, count, buffers);
-    else if (Stage == dxvk::umd::ShaderStage::Hull) device->context->HSSetConstantBuffers(start, count, buffers);
-    else if (Stage == dxvk::umd::ShaderStage::Domain) device->context->DSSetConstantBuffers(start, count, buffers);
-    else if (Stage == dxvk::umd::ShaderStage::Compute) device->context->CSSetConstantBuffers(start, count, buffers);
+    if constexpr (Stage == dxvk::umd::ShaderStage::Vertex) device->context->VSSetConstantBuffers(start, count, buffers);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Geometry) device->context->GSSetConstantBuffers(start, count, buffers);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Hull) device->context->HSSetConstantBuffers(start, count, buffers);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Domain) device->context->DSSetConstantBuffers(start, count, buffers);
+    else if constexpr (Stage == dxvk::umd::ShaderStage::Compute) device->context->CSSetConstantBuffers(start, count, buffers);
     else device->context->PSSetConstantBuffers(start, count, buffers);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }

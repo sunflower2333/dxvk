@@ -39,6 +39,16 @@ umd_ddi_probe = executable('dxvk-umd-ddi-probe', '../../tests/umd-ddi-probe.cpp'
   dependencies : [cpp.find_library('d3dcompiler'), lib_gdi32],
 )
 
+umd_d3d11_compute_probe = executable('dxvk-umd-d3d11-compute-probe',
+  ['../../tests/umd-d3d11-compute-probe.cpp', umd_build_config],
+  link_with : [umd_development],
+  dependencies : [cpp.find_library('d3dcompiler'), lib_gdi32],
+)
+
+umd_compute_oracle_test = executable('dxvk-umd-compute-oracle-test',
+  '../../tests/umd-compute-oracle.cpp',
+)
+
 umd_predication_probe = executable('dxvk-umd-predication-probe', '../../tests/umd-predication.cpp',
   link_with : [umd_development],
   dependencies : [cpp.find_library('d3dcompiler')])

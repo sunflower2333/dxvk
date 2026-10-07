@@ -10,11 +10,11 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-SOURCE = '6ae2f61d40751cc85dd343822c0430d22a716789'
+SOURCE = '5c420e4daddc39effb2c8e8a28bd07ec7407c402'
 CORE = 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1'
 RUN = 37648387721
 FOLDER = r'C:\Users\Public\DxvkD3D8Candidate-d7e5c7d-37648387721'
-NATIVE = r'C:\Users\Public\DxvkD3D8Runtime-6ae2f61-04'
+NATIVE = r'C:\Users\Public\DxvkD3D8Runtime-5c420e4-05'
 ZIP_PINS = {
     'core': ('artifacts/dxvk-native-dx10-dx11-20261007/root-consolidated-arm-canonical-01/successful-original-ci-01/_archives/dxvk-umd-backend-x86-' + CORE + '.zip', 27246294, '2ebb7966a16417465b838b24b346f6cd4ee068e279b5e0c7f664abf28ff22b2d'),
     'mesa': ('artifacts/dxvk-native-d3d8-port-20261007/x86-runtime-artifact-audit-01/mesa-8443c71-x86-11408567654.zip', 29588250, 'a80bb994b1c7855f21b76f87e72a86add435e19719db41bd66fc55bba55a43dc')}
@@ -131,7 +131,7 @@ def prepare(workspace, output, native_originals=None, native_proof=None, native_
                 'core_source': CORE, 'core_ci_run': RUN, 'loader_source': '6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7', 'icd_source': '8443c71a5ab32b9d58b904fa51f4bf2f9089db8d',
                 'adapter_luid': 'ec6b000000000000', 'source_id': 0, 'user': {'account': r'DROIDVM\USER', 'sid': 'S-1-5-21-362894365-441372107-2852668596-1000'},
                 'native_cpu': native, 'files': files, 'helpers': rows, 'payload_originals': provenance,
-                'pending': ['native phase parser and independent root review before a separately authorized phase'] + ([] if native['accepted'] else ['native6ae2 strict CPU success and independent original proof', 'actual native I386 probe/frontend hashes']),
+                'pending': ['native phase parser and independent root review before a separately authorized phase'] + ([] if native['accepted'] else ['native5c420e4 strict CPU success and independent original proof', 'actual native I386 probe/frontend hashes']),
                 'native_phase_parse': 'pending', 'I386_KMT_names': 'pending', 'system_HAL_enumeration': 'pending', 'hardware_admission': False,
                 'registry_driver_writes': False, 'installation': False, 'payload_staged': False}
     (bundle / 'phase-inputs-original.json').write_text(json.dumps(manifest, indent=2) + '\n')

@@ -9,7 +9,7 @@ import tarfile
 import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 
-PROBE_SOURCE = '6ae2f61d40751cc85dd343822c0430d22a716789'
+PROBE_SOURCE = '5c420e4daddc39effb2c8e8a28bd07ec7407c402'
 CORE_SOURCE = 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1'
 RUN = 37648387721
 SID = 'S-1-5-21-362894365-441372107-2852668596-1000'
@@ -73,6 +73,19 @@ def match_identity(rows, luid, source):
 def verify_names(text, luid, source):
     rows = lines(text)
     match_identity(rows, luid, source)
+    machines = single(rows, 'D3D8_PROCESS_MACHINE ')
+    require(re.fullmatch(r'D3D8_PROCESS_MACHINE process=014c native=aa64 effective=014c pointer_bytes=4 legacy_status=[01] legacy_wow=[01]', machines),
+            'actual I386 process on ARM64 machine evidence required')
+    directory = single(rows, 'D3D8_SYSTEM_DIRECTORY ')
+    selected = re.fullmatch(r'D3D8_SYSTEM_DIRECTORY machine=014c api=GetSystemWow64Directory2W path=(.+)', directory)
+    require(selected and selected[1].casefold() == r'C:\Windows\SysWOW64'.casefold(),
+            'explicit I386 system directory selection required')
+    gdi = single(rows, 'D3D8_SYSTEM_GDI32 ')
+    paths = re.fullmatch(r'D3D8_SYSTEM_GDI32 actual=(.+) expected=(.+) machine=014c pointer_bytes=4', gdi)
+    require(paths and paths[1].casefold() == paths[2].casefold() == r'C:\Windows\SysWOW64\gdi32.dll'.casefold(),
+            'actual and expected genuine I386 GDI32 paths must match')
+    require(rows.index(machines) < rows.index(directory) < rows.index(gdi) < rows.index(single(rows, 'D3D8_KMT_MATCH ')),
+            'machine/path evidence must precede KMT matching')
     name = re.fullmatch(r'D3D8_KMT_NAME version=0 status=00000000 terminated=1 name=(.+) pointer_bytes=4 raw_bytes=524', single(rows, 'D3D8_KMT_NAME '))
     require(name, 'successful original I386 legacy name query required')
     words = []
@@ -89,9 +102,13 @@ def verify_names(text, luid, source):
     require(actual == name[1] and 3 < len(actual) < 260, 'printed name differs from original words')
     require(re.fullmatch(r'[A-Za-z]:\\[^\x00\r\n"]+\.dll', actual, re.I) and '..' not in actual.split('\\'), 'bounded actual absolute registered filename required')
     require(rows.count('D3D8_KMT_NAMES_COMPLETE system_runtime_calls=0 create_device=0 core_loads=0 registry_writes=0') == 1, 'names phase scope mismatch')
-    allowed = ('D3D8_USER_GATE ', 'D3D8_KMT_MATCH ', 'D3D8_KMT_NAME ', 'D3D8_KMT_NAME_WORD ', 'D3D8_KMT_CLOSED ', 'D3D8_KMT_NAMES_COMPLETE ')
+    allowed = ('D3D8_USER_GATE ', 'D3D8_PROCESS_MACHINE ', 'D3D8_SYSTEM_DIRECTORY ', 'D3D8_SYSTEM_GDI32 ',
+               'D3D8_KMT_MATCH ', 'D3D8_KMT_NAME ', 'D3D8_KMT_NAME_WORD ', 'D3D8_KMT_CLOSED ', 'D3D8_KMT_NAMES_COMPLETE ')
     require(all(row.startswith(allowed) for row in rows), 'names phase emitted factory/core/unexpected output')
-    return {'registered_I386_filename': actual, 'name_words': 260, 'query_bytes': 524, 'create_device': False, 'core_loaded': False}
+    return {'registered_I386_filename': actual, 'name_words': 260, 'query_bytes': 524,
+            'process_machine': '014c', 'native_machine': 'aa64', 'system_directory_api': 'GetSystemWow64Directory2W',
+            'actual_I386_GDI32_path': paths[1], 'expected_I386_GDI32_path': paths[2],
+            'create_device': False, 'core_loaded': False}
 
 
 def verify_enumeration(text):

@@ -13,6 +13,8 @@ static_assert(D3D10_SB_OPCODE_RESERVED0 == 107 && D3D10_1_SB_OPCODE_LOD == 108
   && D3D10_1_SB_OPCODE_GATHER4 == 109 && D3D10_1_SB_OPCODE_SAMPLE_POS == 110
   && D3D10_1_SB_OPCODE_SAMPLE_INFO == 111 && D3D10_SB_NUM_OPCODES == 112);
 static_assert(D3D10_SB_NAME_SAMPLE_INDEX == 10);
+static_assert(D3D10_SB_OPCODE_DCL_INPUT_PS_SGV == 99
+  && D3D10_SB_INTERPOLATION_UNDEFINED == 0 && D3D10_SB_INTERPOLATION_CONSTANT == 1);
 #endif
 using namespace dxvk::umd;
 using namespace dxbc_spv;
@@ -134,7 +136,67 @@ int main() {
   pixel[3] = dst(dxbc::RegisterType::eInput, 1);
   for (uint32_t reserved : {1u << 11, 1u << 15, 1u << 23}) {
     pixel[2] = (4u << 24) | uint32_t(dxbc::OpCode::eDclInputPsSgv) | reserved;
-    CHECK(!build(ShaderStage::Pixel, pixel, &sample, 1));
+    CHECK(build(ShaderStage::Pixel, pixel, &sample, 1) == (reserved == (1u << 11)));
+  }
+  // Exact original native FXC program30 (ps_4_1/ps_index): CONSTANT SGV,
+  // Uint SV_SampleIndex v0.x, and original uint-to-float/color operations.
+  // Its native ISGN shares register0 with VS SV_Position; linkage must still
+  // treat sample index as a generated value without an upstream producer.
+  std::vector<uint32_t> original{0x41, 0x21, 0x0100086a, 0x04000863,
+    0x00101012, 0, 10, 0x03000065, 0x001020f2, 0, 0x02000068, 1,
+    0x05000056, 0x00100012, 0, 0x0010100a, 0, 0x07000038, 0x00102012,
+    0, 0x0010000a, 0, 0x00004001, 0x3eaaaaab, 0x08000036, 0x001020e2,
+    0, 0x00004002, 0, 0x3e800000, 0, 0x3f800000, 0x0100003e};
+  const ShaderSignatureEntry originalSample{10, 0, 1};
+  CHECK(original.size() == 33 && original[1] == original.size());
+  CHECK(build(ShaderStage::Pixel, original, &originalSample, 1, &bytes));
+  CHECK(resolvePixelInputs(original.data(), original.size(), &originalSample, 1, resolved));
+  CHECK(resolved.size() == 1 && resolved[0].systemValue == 10 && resolved[0].registerIndex == 0
+    && resolved[0].mask == 1 && resolved[0].scalar == ShaderScalar::Uint32);
+  CHECK(linkVertexOutputs(&position, 1, resolved.data(), resolved.size(), linked)
+    && linked.size() == 1 && linked[0].systemValue == 1 && linked[0].scalar == ShaderScalar::Float32);
+  dxbc::Container originalContainer(bytes.data(), bytes.size());
+  dxbc::Signature originalSignature(originalContainer.getInputSignatureChunk());
+  CHECK(originalSignature.begin() != originalSignature.end()
+    && originalSignature.begin()->getSystemValue() == dxbc::SignatureSysval::eSampleIndex
+    && originalSignature.begin()->getRegisterIndex() == 0
+    && originalSignature.begin()->getScalarType() == ir::ScalarType::eU32);
+  for (uint32_t mode = 0; mode < 16; ++mode) {
+    auto mutated = original; mutated[3] = (4u << 24) | uint32_t(dxbc::OpCode::eDclInputPsSgv) | (mode << 11);
+    CHECK(build(ShaderStage::Pixel, mutated, &originalSample, 1) == (mode <= 1));
+  }
+  for (uint32_t reserved : {1u << 15, 1u << 23, 1u << 31}) {
+    auto mutated = original; mutated[3] |= reserved;
+    CHECK(!build(ShaderStage::Pixel, mutated, &originalSample, 1));
+  }
+  for (size_t words = 0; words < original.size(); ++words) {
+    std::vector<unsigned char> failed{0x5a};
+    const ShaderSignatureEntry output{0, 0, 15};
+    CHECK(!buildShaderContainer(ShaderStage::Pixel, original.data(), words, &originalSample,
+      1, &output, 1, failed) && failed.empty());
+  }
+  for (uint32_t count : {1u, 2u, 3u, 5u, 127u}) {
+    auto mutated = original; mutated[3] = (mutated[3] & 0xffffff) | (count << 24);
+    CHECK(!build(ShaderStage::Pixel, mutated, &originalSample, 1));
+  }
+  for (uint32_t mask : {0u, 3u, 15u}) {
+    auto mutated = original; mutated[4] = dst(dxbc::RegisterType::eInput, uint8_t(mask));
+    CHECK(!build(ShaderStage::Pixel, mutated, &originalSample, 1));
+  }
+  for (ShaderSignatureEntry invalid : {ShaderSignatureEntry{0, 0, 1}, ShaderSignatureEntry{1, 0, 1},
+      ShaderSignatureEntry{10, 1, 1}})
+    CHECK(!build(ShaderStage::Pixel, original, &invalid, 1));
+  CHECK(!build(ShaderStage::Pixel, original));
+  auto mutated = original; mutated[0] = 0x40;
+  CHECK(!build(ShaderStage::Pixel, mutated, &originalSample, 1));
+  mutated = original; mutated[6] = 1;
+  const ShaderSignatureEntry wrongSystem{1, 0, 1};
+  CHECK(!build(ShaderStage::Pixel, mutated, &wrongSystem, 1));
+  mutated = original; mutated[3] = (mutated[3] & ~0x7ffu) | uint32_t(dxbc::OpCode::eDclInputPsSiv);
+  CHECK(!build(ShaderStage::Pixel, mutated, &originalSample, 1));
+  for (auto stage : {ShaderStage::Vertex, ShaderStage::Geometry}) {
+    mutated = original; mutated[0] = (uint32_t(stage) << 16) | 0x41;
+    CHECK(!build(stage, mutated, &originalSample, 1));
   }
   // Sample interpolation belongs to 4.1; all other supported interpolations
   // retain the established 4.0 declaration behavior.

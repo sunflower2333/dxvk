@@ -41,8 +41,15 @@ bool makeCodeChunk(ShaderStage stage, const uint32_t* code, size_t words,
           || opcode == uint32_t(dxbc::OpCode::eSamplePos))
           && stage != ShaderStage::Pixel) return false;
     }
-    if (model4_1 && opcode == uint32_t(dxbc::OpCode::eDclInputPsSgv)
-        && (code[offset] & 0x00fff800)) return false;
+    if (model4_1 && opcode == uint32_t(dxbc::OpCode::eDclInputPsSgv)) {
+      const uint32_t flags = code[offset] & 0x80fff800;
+      // The original token header marks these bits ignored0, but the real
+      // System32 FXC engine emits CONSTANT for scalar SV_SampleIndex. Admit
+      // that exact four-word PS declaration; no other flag/semantic changes.
+      if (flags && (flags != (uint32_t(dxbc::InterpolationMode::eConstant) << 11)
+          || stage != ShaderStage::Pixel || count != 4 || count > words - offset
+          || code[offset + 3] != 10)) return false;
+    }
     if (opcode == uint32_t(dxbc::OpCode::eCustomData)) {
       if (words - offset < 2) return false;
       count = code[offset + 1];
@@ -128,9 +135,10 @@ bool resolvePixelInputs(const uint32_t* code, size_t words,
       : systemValue || interpolation != dxbc::InterpolationMode::eConstant
         ? ShaderScalar::Float32 : ShaderScalar::Uint32;
     const uint8_t mask = uint8_t(operand.getWriteMask());
-    // DCL_INPUT_PS_SGV has no interpolation field: bits23:11 are reserved0
-    // in the original token format. Sample index is an integer built-in.
-    if (systemValue == 10 && (mask != 1 || interpolation != dxbc::InterpolationMode::eUndefined))
+    // Sample index is an integer built-in. Preserve both the header's zero
+    // encoding and the CONSTANT form emitted by the actual FXC engine.
+    if (systemValue == 10 && (mask != 1 || (interpolation != dxbc::InterpolationMode::eUndefined
+        && interpolation != dxbc::InterpolationMode::eConstant)))
       return false;
     auto& declaration = declarations[operand.getIndex(0)];
     if (!mask || (declaration.mask & mask) || (declaration.mask &&

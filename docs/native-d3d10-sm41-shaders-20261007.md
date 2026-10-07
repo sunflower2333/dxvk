@@ -19,10 +19,13 @@ remain in force. The original WDK26100 d3d10TokenizedProgramFormat.hpp defines
 Pixel sample interpolation now requires4.1. SV_SampleIndex uses the original
 4.1 generated-value declaration, a scalar uint input and SV_SampleIndex
 signature. It is a rasterizer built-in and does not require a vertex/geometry
-producer. The original header marks bits23:11 of DCL_INPUT_PS_SGV as ignored0;
-the control and validator use that encoding rather than inventing interpolation
-flags for a generated value. Existing constant/linear/centroid/noperspective
-interfaces keep their established4.0 behavior.
+producer. The original header marks bits23:11 of DCL_INPUT_PS_SGV as ignored0,
+but the actual pinned System32 FXC engine emits CONSTANT1 for scalar sample
+index. The validator retains the zero encoding and admits only that observed
+CONSTANT form for a bounded four-word4.1 pixel declaration with semantic10.
+Other flags, extended declarations, interpolation modes, semantics and stages
+stay rejected. Original code tokens are preserved. Existing constant/linear/
+centroid/noperspective interfaces keep their established4.0 behavior.
 
 These are bounded compiler changes. Legacy depth/integer/coverage outputs,
 additional system values, all resource/MSAA features, runtime-loaded system
@@ -42,7 +45,7 @@ and [10.1 feature/profile requirements](https://learn.microsoft.com/en-us/window
 
 ## Verification and native packet
 
-`tests/umd-sm41-container.cpp` passes568 checks with GCC and Clang ASan/UBSan:
+The original `tests/umd-sm41-container.cpp` passed568 checks with GCC and Clang ASan/UBSan:
 exact stage/model selection, reserved bits/opcodes, malformed/truncated lengths,
 new-opcode stage limits, original token/hash preservation, sample-index scalar/
 built-in linkage and4.1-only interpolation. Existing portable shader-container
@@ -51,6 +54,17 @@ reached the old interpolation control expecting sample modes on a4.0 token;
 that failure is retained, and the existing control now uses4.1 for modes6/7.
 Final controls have no sanitizer findings; malformed parser cases retain their
 expected upstream diagnostic text.
+
+The native ps_index correction extends the controls to688. It replays the
+exact33-word native FXC program30 and its original scalar uint signature,
+preserves its original code/hash, and tests generated-value linkage even
+when the sample-index register0 overlaps the upstream position register.
+Mutations cover all16 interpolation modes, reserved/extended flags, every
+truncated length, declaration lengths/masks, mismatched/absent signatures,
+wrong semantics/stages and4.0 rejection. The exact old compiler replay rejects
+the original program before rebuilding a container; the corrected replay
+must accept the unchanged original words. Frozen sanitizer/native verification
+of this follow-on remains separate from the original568 results.
 
 `tests/umd-d3d10-shaders.cpp` is a source-linked CPU fixture with only the private
 factory replaced by WARP. It obtains actual typed10.0/10.1 tables and keeps
@@ -74,8 +88,8 @@ resources supply textures, samplers and rasterizer state; shader creation,
 binding and the draw go through the actual typed UMD callbacks. This does not
 activate a Microsoft hardware runtime adapter.
 
-Native MSVC ARM64 compilation/FXC-engine execution/WARP comparisons are
-pending root. The local original MSVC/SDK/WDK-header x64/x86 Clang COFF checks
+Complete native MSVC ARM64 compilation/FXC-engine execution/WARP comparisons
+of the current corrected source are pending root. The local original MSVC/SDK/WDK-header x64/x86 Clang COFF checks
 cover production DDI/compiler and both new fixtures; local code generation
 cannot establish native execution. All first-party native units require
 `/W4 /WX /MT /std:c++17 /EHsc /Zc:preprocessor`. The unchanged pinned213d2b8
@@ -94,7 +108,7 @@ parser units; its Windows static assertions use the original10 token header.
 
 Expected native markers (actual check counts must come from execution):
 
-- `^SM4.0/4.1 containers verified checks=568 typed_models=2 new_opcodes=4 hardware_admission=0$`
+- `^SM4.0/4.1 containers verified checks=688 typed_models=2 new_opcodes=4 hardware_admission=0$`
 - `^native D3D10/10.1 shaders verified checks=[0-9]+ callbacks=3 draws=18 pixels=4608 hardware_admission=0$`
 
 The native packet uses D3DCompile through the original system
@@ -145,5 +159,30 @@ topology/clear operations, with public COM inspection of the actual bound
 target. Cleanup unbinds the target, destroys its view and then destroys its
 resource while the device and live callback table remain alive. Production
 code, original HLSL/FXC compilation, three negative callbacks,57 programs,
-18draws and4608 exact-pixel comparisons remain unchanged. Native execution of
-this corrected setup remains pending an explicit root handoff.
+18draws and4608 exact-pixel comparisons remain unchanged. The corrected
+setup's subsequent native result is retained below.
+
+The frozen e1bc corrected-state native attempt compiled18 original ARM64
+bigobj COFFs and two PE executables with first-party warnings0 and pinned
+dependency warnings65. Native container568 passed, and eight draws completed
+2048 exact-pixel comparisons:4.0 on both interfaces with/without GS, then
+4.1 Gather4, LOD, SamplePos and SampleInfo without GS. Three logical10.0
+4.1 negative shader creates used the replaced live callback. The next
+CreatePixelShader for ps_index returned80070057 before its draw. Allseven
+owned children exited/drained, collection/transfer completed, all12 retention
+checks passed and target ownership was explicitly released. Original221-file
+archive SHA7b80fc375e4e873e229a98c41ea94e18ab980518df8e27a742fcfb57e0048418
+retains30 original DXBC/token pairs and HLSL; the full18/4608 oracle failed.
+
+The original FXC sample-index declaration is04000863, with CONSTANT bit11,
+v0.x and semantic10. Both the original code-chunk guard and pixel-input
+resolver rejected that form. Local exact-original replay reproduces that
+rejection before any backend API call. The narrow correction admits only
+the bounded observed declaration and keeps the reconstructed input scalar
+uint, mask1 and generated linkage. The original shader/HLSL bytes,57 program
+count,18draw/4608pixel comparisons and three negative callbacks are unchanged.
+The Microsoft [system-value input declaration](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dcl-input-sv)
+describes constant interpolation; acceptance of this particular SGV encoding
+is based on the retained original native FXC bytes, not an inference from
+the header's ignored0 comment. Native acceptance of the follow-on remains
+pending a new explicit root handoff.

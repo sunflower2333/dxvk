@@ -1870,3 +1870,23 @@ object pushed once; livequery confirms sole consolidatedCI37580729947inprogress.
 No frontend2851 or newer agent slices pushed. Root originalreview01/02 parse faults
 and unexecuted frontend anchor-preparation error retained separately. Source and
 execution archives unchanged; native9affe/frontend2851 CPU verifier owns target.
+
+
+Root integrates functional DX11 1f asbf4f779 and DX8 498 as7c2c8ef locally; only
+Meson shared_library conflict, retained both shader11 andd3d8_compat source units.
+Integrated root SM5 ASan/UBSan93 and legacy2800/actual pinned SM1 converter47PASS.
+No newer push. Prepared affe runtime family preserves512-pixel oracle/100000ms/
+115s deadlines; replaced historical hardcoded desktop IDs with frozen current
+PID+starttime checks, original c7 helper family retained byte-for-byte.
+
+
+Root fresh affe native9 original142-member review01PASS43067/554085, proofSHA
+1eab24277147ff0fb22f18de7571634aff755dcba45395f8eede1806c0526c86. Front2851
+original54-member review01PASS60Git/2COFF/2PE/10CLI/3guards, proofSHAcd941b7341ed159cd2c08226ff27984c0245cb2dbc0c0609eaf7d2aff5dc5d3e.
+Native-parsed fresh6scriptfamily staged with no API/registry calls; unchanged
+512oracle/100000ms/115s deadline. Soleaffe CI37580729947 all6jobs success; raw
+5ZIP/source/PE/17nativeexecution collection running. Target root-owned after
+CPU verifier release. New root7c2 portableSM5/legacy/SM1 passed93/2800/47;
+DX8 original302source/311validation root review passes202Git+92pinned+8SDK/
+33COFF+6PE. Future build/package/native control lists now include allthree new
+SM5/legacy/SM1 fixtures,20native cases; no additional CI push or dispatch.

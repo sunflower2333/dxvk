@@ -8,58 +8,56 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Continue genuine Microsoft D3D9/9Ex offscreen lifecycle, then ordinary
-presentation and DX8/DX10/DX11 runtime acceptance. Published exact production
-`affe7d43161a6a270e8779e9957de150e156617c` sole consolidated CI37580729947
-passes all six jobs. Root original verification joins five raw ZIPs, three
-architecture builds,17 actual ARM64 controls, fresh native9 fixtures43067/554085
-and frontend2851 CPU. Process-local affe candidate is staged from original CI;
-installed driver58624/oem17 remains unchanged. Four unused workflows disabled;
-offline/system controls manual.
+Published exact production b6cda5fde6534d3f86d4f6564902f8fd15b55af8 replaces
+historical affe7d4. Sole consolidated CI37593963656 fails the actual d3d11-device
+fixture in both x64 and x86; ARM64 production and identity/shader CPU pass, ARM64
+native runtime is skipped. Native frozen f4 WARP15 independently reproduces the
+same generic line54 assertion/c0000409. All original failed receipts remain.
+DX11 agent exclusively owns target CPU and narrows the failure with fresh
+caller/HRESULT diagnostics. Diagnostic02 passes the 32-slot 10.1/11 layouts and
+identifies first pfnCreateComputeShader, callback16/E_INVALIDARG after169 checks;
+actual original/rebuilt WARP compute comparison and production correction follow.
+Do not publish another candidate until this regression passes exact validation.
 
-Lifecycle03 stopped before any public device/API call: the wrapper retained
-historical adapter LUID6e6c while two successful Limited USER KMT queries return
-currentec6b/source0. Original20-member archivea48c940f and root reviewdc47a7b1
-preserve this failure, three raw UMD names, balanced query handles,34registration/
-58critical fields and independent after-run driver/desktop continuity. Its
-historical CI-result metadata is also explicitly incorrect and retained. Fresh
-helperfamily03 corrects only these guards/metadata from independent evidence;
-512pixel oracle and100000ms/115s deadlines unchanged. Family03 native parse
-passes. Actual lifecycle04 accepts both1081 backbuffers, then both public9/9Ex
-device creations fail80070057 on the runtime's SYSTEMMEM65536-byte vertex buffer
-flags02080004 (Dynamic|VertexBuffer|MightDrawFromLocked). Original42-member archive
-03bd6336 and independent root reviewb15d5cfc preserve this failure and successful
-registry/critical-field/task restoration. Cleanup first flush returns88760868;
-Mesa reports queue submit-4 before first fence, separate unresolved failure.
-Root implements the documented paired Create/Lock MightDrawFromLocked semantics,
-owned pre-callback snapshots and draw-ordered uploads without unlocking. Native
-execution and actual mixed/unused-stream repeated rendering controls follow.
-No accepted genuine API device/rendering yet.
+Root integrates locked-buffer admission, bounded snapshots/uploads/protected
+teardown, DX8 identity/private backend, DX11 stages/query/owned-child/packedIA,
+DX10 format/MSAA and SM4.1. Integrated portable ClangASan/UBSan passes SM4.1 568,
+shader147, boundedcopy4050444, privatechildren4029, MSAA269 and identity suites.
+Future sole workflow builds/packages28 ARM64 fixtures; four unused workflows
+remain disabled, remaining offline controls manual. No admission gate is opened.
 
-Root affe WARP original review03 passes71 exact Git/dependency inputs,
-202 original members,25 ARM64 COFFs/nine PEs and all22 execution stages. Native
-D3D11 device308/compute35/entry2637/lifetime10834/rotation1428/MRT6404/texture1D1629/
-transfer1144/runtime852 checks pass. UMD/fixtures strict compilerwarnings0;
-pinned unchanged dxbc W3 dependency retains61. Controlled backend/WARP evidence
-does not satisfy ordinary system-runtime hardware rendering.
+Root independent original review03 accepts exact b75 native x86 six fixtures:
+caps544/API2800/adapter45802/device584971/SM1compiler52/Microsoftmappedparser4237,
+34I386COFFs/nine PEs, two intended semantic negatives and seven CLI exits64.
+Twenty first-party /W4 /WX compiles retain zero warnings; fourteen pinned vendor
+units use documented /W3 /Zc:preprocessor and preserve their raw warnings.
+All399 original files,139 input before/after hashes and575 official EWDK inputs
+join. This is CPU/compiler evidence; genuine DX8 runtime acceptance is pending.
 
-Frozen fresh desktop DWM1864(start1791378029900)/Explorer4464(start1791352985381),
-SYSd48e/oem17/58624/service4/PnPStarted/USERconsole1 remains. Prior System41/6008
-unexpected restart cause unresolved; no shell restoration or VM restart.
+Root ARM64 CPU4 packet b6cda5f helper05 is frozen, unexecuted:329 exact Git/submodule
+inputs,13 expected COFFs/four PEs, including umd_d3d8_compat.cpp in adapter/device
+units. All eight helper inputs are pinned and failure finalization is bounded.
+After explicit DX11 target release, run this packet, then hand target to DX10 for
+frozen SM4.1 compiler568 and18 actual WARP draws/4608pixels. Root independently
+reviews SM4.1 original local archive before native acceptance.
 
-Local rootb75d6d5 integrates functional DX11 graphics stages/tessellation/SO/
-class instances, query/owned-child/packedIA, DX10 format/MSAA policy and immutable
-DX8 identity/private DXVK9 backend. Integrated portable legacyAPI2800 and actual
-pinned SM1 compiler47 pass; private-child4029/input41/SM5metadata351/MSAA269 all pass. Future sole workflow builds/packages28 native cases, including SM4.1; newer source not pushed.
-Root integrates18 locked-buffer rendering stages and bounded per-buffer/combined
-copy sizes. Actual x86 strict device584971 passes the locked/teardown/FVF cases.
-DX11 agent prepares native f4 WARP15 execution; root ARM64 CPU4 is frozen328inputs.
-Final probe-only diagnostics use owned original callback snapshots, with25-call
-CPU controls; DX10 agent resumes common SM4.1 compiler omissions. Build verifier completes original collection/review of passing exactb75 official EWDK
-x86 CPU fixtures, then releases the target for frozen f4 WARP15. Root ARM64
-CPU4 uses unchanged b75 source packet02 with bounded fresh helper03.
-Native execution of integrated future source and genuine runtime8/10/11 remain
-required. No production admission opened.
+Actual genuine Microsoft D3D9/9Ex lifecycle04 on old affe accepts both1081
+backbuffers, then rejects both SYSTEMMEM65536-byte VBs with flags02080004 and
+returns80070057. Original42-member archive03bd6336/root reviewb15d5cfc preserve
+this failure and registry/critical/task restoration. Cleanup first flush88760868
+and Mesa submit-4 remain a separate unresolved failure. The new locked-buffer
+implementation still requires exact successful CI artifact hardware checks and
+ordinary system-runtime rerun. New18-stage1152pixel oracle is6d390bc5; original probe already
+records all1152 raw D3D9_LOCKED_BUFFER_PIXEL values. Prepare
+fresh runner/verifier family locally while DX11 owns the target.
+
+Frozen installed driver oem17/58624/SYSd48e/serviceRunning/PnPStarted and fresh
+DWM1864/Explorer4464/KMTec6b/source0 baseline remain. No package/VM/shell settings
+change is authorized by a CPU checkpoint. Prior unexpected restart unresolved.
+DX8 agent works locally on dedicated genuine SysWOW64 I386-only enumeration
+frontend/CAPS12, separate permission, unchanged blocked CreateDevice; native and
+ordinary runtime proof follow. Ordinary DX8-DX11 hardware rendering, visible
+presentation and broader GPU program remain required; goal stays active.
 
 ## Parallel replacement work (user requested, 2026-10-07)
 

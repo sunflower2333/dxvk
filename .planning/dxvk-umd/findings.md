@@ -2062,3 +2062,85 @@ c9 eight x64/x86 COFFs zero diagnostic bytes; root original review follows.
 One combined production push starts the sole CI while native target execution
 and original review continue; production admission and installed package stay
 closed/unchanged. Later hardware testing requires successful exact CI artifacts.
+
+
+## 2026-10-07 current published regression and native original review
+
+Published b6cda5f sole CI37593963656 reproduces d3d11-device line54 failure in
+both x64 and x86; ARM64 production, identity/shader CPU pass, native runtime
+skipped. Raw failed-jobs log811269bytes SHAfca4eee4 preserved under
+artifacts/dxvk-native-d3d9-locked-draw-20261007/ci-b6cda5f-failure-01.
+Frozen f4 native WARP15 fails first fixture c0000409; original archive636bdf36
+joins88 sources and11 retention flags with no finalization error. Fresh agent
+diagnostic02 disproves the 32-slot layout hypothesis: 10.1/11 original/rebuilt
+public WARP layouts pass. First compute shader callback16 returns80070057 after
+169 checks; exact original/rebuilt comparison is next, no production fix yet.
+DX11 retains exclusive target CPU; root issues no remote commands.
+
+Root independent x86 original review03 accepts399 files/398 collection entries,
+139 sources/133 Git origins/six supplementals,575 official compiler/header/lib
+before/after joins,69 explicit commands,34I386COFF/nine I386PE, six positive
+markers, two semantic negatives and seven CLI exits64. Observed FVF unbound
+80070057/draw0/bytes0 then boundS_OK/draw1/60bytes/stride20. Original50,543,748-byte
+archive61c38914 and root-native-x86-original-verified-03.json are preserved.
+Root review01 guessed Name rather than actual lowercase desktop name/pid/start;
+02 incorrectly demanded vendor-only Zc preprocessing in all first-party response
+files. Both failed locally before writing acceptance;03 reads actual policy and
+passes. Exploratory receipt reads used absent build-result.json and dict rather
+than collection list; corrected to originals, no target changes.
+
+Fresh CPU4 source/helper05 pins b6cda5f329inputs/13units including missing
+umd_d3d8_compat.cpp in adapter/device. Original helper02/03 unexecuted; helper04
+preparation correctly failed locally because its seed328packet omitted compat.
+Failed04 metadata retained.05 prepared-input receipts pass, native parse/build/run
+remain pending explicit DX11 release. New raw locked pixel print compiles strict
+x64/x86 objects with machine8664/14c, zero stderr, resultPASS4.389s. No further
+production push until the compute regression correction is validated.
+
+
+Root follow-up source read corrects two resumed assumptions: existing605 probe
+already prints all1152 D3D9_LOCKED_BUFFER_PIXEL raw values and final LOCKED_BUFFER
+CLI marker. Redundant two-line D3D9_LOCKED_PIXEL trial is removed; its local strict
+COFF originals remain as an unneeded trial, final production source unchanged.
+SM4.1 root original review01 used an uninitialized worktree submodule (Git fell
+back to parent); use actual initialized pinned root dxbc Git repository.02 then
+used a guessed fixture filename;03 derives exact sm41 test names from original
+manifest. Failed empty01/02 directories remain unaccepted. A runner read used the
+checkout-relative workspace helper path; corrected to absolute workspace path.
+
+
+SM4.1 independent root original review03 passes384 files/383 collection joins,
+79 exact original Git/dependency inputs, raw GCC and ClangASan/UBSan568/147/35,
+eight strict x64/x86 COFFs/zero diagnostics,365 compiler read inputs and28
+original Microsoft SDK/header/library joins from four original packages. Root
+supplemental integrated-source-original-joins-01 independently joins all four
+actual COFF source paths (including tests/umd-d3d10-shaders.cpp) and shader header.
+Native ARM64 SM4.1/WARP rendering is pending target handoff. A follow-up rg used
+workspace rather than checkout tests; corrected through original COFF paths.
+
+Fresh locked-runner-scripts-01 derives only new mode admission from frozen dynamic
+runners, preserves ordinary1472 pixel gates and adds18stages/1152pixels/6d390bc5.
+Three scheduled scripts retain LimitedUSER checks and process-local payloads.
+Owned original raw-process componentd8cf replaces nullable Start-Process exit/
+unbounded waits. Locked process65s, kill5s, pipes20s, task120s/result122s bound
+failure cleanup; old frozen runners unchanged. Native parser/execution pending;
+no hardware acceptance or target command by root while DX11 owns CPU.
+
+
+Fresh locked verifier preserves prior1472 typed pixel/callback/readiness gates and
+independently requires all1152 original pixel values in exact18-stage row-major
+order, recomputesFNV6d390bc5, checks every locked resource/create/range/unlock/
+retirement and bound raw child exit/pipe bytes. It requires pinned fresh desktop
+baseline9eb3c586 and explicit actual LUID; no historical6e6c fallback. Python
+parses; native PS parser/GPU execution remain pending. New unexecuted orchestrator
+requires all six exact-source CI jobs PASS and local candidate bytes equal actual
+original ARM64 ZIP, and guards independent cleanup/readiness/archive finalization.
+
+DX11 diagnostic03 actual public WARP accepts both original compiled compute and
+legacy rebuilt computeS_OK; generic decodeShader11 rejects before modern backend.
+Original diagnostic archive023b5508 retained. Root source review of agent's fresh
+repair worktree sees a22-line stage/operand/mask/duplicate validation addition for
+four compute system input registers, excluded fromISGN; native/portable controls
+are in progress. Old dx11-port worktree is frozen; use actual dx11-warp-repair
+worktree from git worktree list. A reference artifact search guessed a worktree
+artifact directory; actual original evidence stays in workspaceartifacts.

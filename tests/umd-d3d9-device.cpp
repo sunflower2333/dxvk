@@ -919,6 +919,7 @@ static void initialize(Fixture& fixture) {
   args.hAdapter = &f->adapterCookie; args.Interface = 9;
   args.pAdapterCallbacks = &callbacks; args.pAdapterFuncs = &f->adapterFuncs;
   CHECK(VioGpuDxvkOpenAdapter9ForTest(&args) == S_OK); f->adapter = args.hAdapter;
+  CHECK(args.DriverVersion == D3D_UMD_INTERFACE_VERSION_VISTA);
   auto& cb = f->input;
   cb.pfnAllocateCb = allocate; cb.pfnDeallocateCb = deallocate;
   cb.pfnLockCb = lock; cb.pfnUnlockCb = unlock;
@@ -948,6 +949,10 @@ static void createDevice() {
   expected.hDevice = f->device; CHECK(snapshot(f->create) == snapshot(expected));
   CHECK(f->table.pfnFlush && f->table.pfnDestroyDevice);
   auto expectedTable = D3DDDI_DEVICEFUNCS{};
+  // The runtime owns only the negotiated Vista prefix. A current-SDK caller's
+  // extra storage is a canary, not an output for newer interface versions.
+  std::memset(reinterpret_cast<uint8_t*>(&expectedTable) + 99 * sizeof(void*),
+    0xa5, sizeof(expectedTable) - 99 * sizeof(void*));
   expectedTable.pfnFlush = f->table.pfnFlush; expectedTable.pfnDestroyDevice = f->table.pfnDestroyDevice;
   expectedTable.pfnPresent = f->table.pfnPresent;
   expectedTable.pfnCreateResource = f->table.pfnCreateResource;
@@ -1012,6 +1017,45 @@ static void closeDevice(HRESULT expected = S_OK) {
 static void closeAdapter() {
   CHECK(f->adapterFuncs.pfnCloseAdapter(f->adapter) == S_OK);
   f->adapterValid = false;
+}
+
+static void deviceFunctionBounds() {
+  SYSTEM_INFO info = {};
+  GetSystemInfo(&info);
+  const size_t bytes = 99 * sizeof(void*);
+  CHECK(info.dwPageSize > bytes + 16);
+  for (const bool direct : {false, true}) {
+    Fixture fixture; initialize(fixture);
+    auto memory = static_cast<uint8_t*>(VirtualAlloc(nullptr, 2 * size_t(info.dwPageSize),
+      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    CHECK(memory);
+    DWORD oldProtection = 0;
+    CHECK(VirtualProtect(memory + info.dwPageSize, info.dwPageSize,
+      PAGE_NOACCESS, &oldProtection));
+    auto output = reinterpret_cast<D3DDDI_DEVICEFUNCS*>(memory + info.dwPageSize - bytes);
+    std::memset(reinterpret_cast<uint8_t*>(output) - 16, 0xa5, bytes + 16);
+    auto args = f->create;
+    args.pDeviceFuncs = output;
+    if (direct) {
+      auto identity = std::make_shared<dxvk::umd::AdapterIdentity>();
+      identity->runtime = &f->adapterCookie; identity->query = query;
+      identity->luid = f->luid; identity->generation = f->generation;
+      identity->capabilities = f->capabilities;
+      CHECK(dxvk::umd::createAdapterDevice9(identity, &args) == S_OK);
+    } else {
+      CHECK(f->adapterFuncs.pfnCreateDevice(f->adapter, &args) == S_OK);
+    }
+    for (unsigned i = 0; i < 16; ++i)
+      CHECK(reinterpret_cast<uint8_t*>(output)[int(i) - 16] == 0xa5);
+    // Reading or writing one pointer past this copy faults on the guard page.
+    std::memcpy(&f->table, output, bytes);
+    f->device = args.hDevice;
+    CHECK(f->device && f->device != &f->deviceCookie);
+    CHECK(f->table.pfnFlush(f->device) == S_OK);
+    closeDevice(); closeAdapter();
+    CHECK(VirtualFree(memory, 0, MEM_RELEASE));
+  }
+  std::puts("D3D9 Vista ABI verified pointers=99 adapter=1 core=1");
 }
 
 static void creationFlagContracts() {
@@ -3242,6 +3286,7 @@ static void presentationContracts() {
 }
 
 int main() {
+  deviceFunctionBounds();
   creationFlagContracts();
   presentationContracts();
   queryContracts();

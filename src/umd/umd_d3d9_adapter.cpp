@@ -243,7 +243,7 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
       std::lock_guard<std::mutex> lock(adaptersMutex);
       if (SUCCEEDED(hr)) hr = state(adapter);
       if (SUCCEEDED(hr)) {
-        *output = table;
+        std::memcpy(output, &table, dxvk::umd::d3d9DeviceFunctionBytes);
         args->hDevice = local.hDevice;
         guard.handle = nullptr;
         return S_OK;
@@ -294,7 +294,7 @@ extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter9ForTest(D3DDDIARG_OPENADAPTER*
     const HANDLE handle = reinterpret_cast<HANDLE>(nextHandle++);
     adapters.emplace(handle, std::move(adapter));
     *args->pAdapterFuncs = functions;
-    args->DriverVersion = D3D_UMD_INTERFACE_VERSION;
+    args->DriverVersion = dxvk::umd::d3d9DriverVersion;
     args->hAdapter = handle;
     return S_OK;
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }

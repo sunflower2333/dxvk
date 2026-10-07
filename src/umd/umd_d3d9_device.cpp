@@ -1563,7 +1563,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
     if (!nextHandle) return E_OUTOFMEMORY;
     const HANDLE handle = reinterpret_cast<HANDLE>(nextHandle++);
     devices.emplace(handle, owner);
-    *args->pDeviceFuncs = table;
+    std::memcpy(args->pDeviceFuncs, &table, d3d9DeviceFunctionBytes);
     args->hDevice = handle;
   }
   guard.published = true;

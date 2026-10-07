@@ -93,7 +93,7 @@ static void open(Runtime& owner, UINT version = 0) {
   CHECK(VioGpuDxvkOpenAdapter9ForTest(&args) == S_OK);
   CHECK(args.hAdapter && args.hAdapter != &owner);
   CHECK(args.Interface == 9 && args.Version == version);
-  CHECK(args.DriverVersion == D3D_UMD_INTERFACE_VERSION);
+  CHECK(args.DriverVersion == D3D_UMD_INTERFACE_VERSION_VISTA);
   CHECK(table.value.pfnGetCaps && table.value.pfnCreateDevice && table.value.pfnCloseAdapter);
   table.intact();
   owner.driver = args.hAdapter; owner.functions = table.value;

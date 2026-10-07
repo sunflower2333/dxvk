@@ -2366,3 +2366,51 @@ still reject). Existing worker remains serialized and Present synchronous.
 New fixtures exercise0/1/2/3, every reserved bit, no callback/backend on invalid
 inputs and mutation of caller flags after snapshot. Fresh native CPU source
 and architecture/GPU validation are pending; do not claim ordinary admission.
+
+2026-10-07: Root independently verifies original8d CI37567440170: all6jobs,
+5rawZIPs/3PEarchitectures/15actualnativeARM64 executions. Exact8d candidate and
+isolated native-parsed GPU scripts are staged without installation. Dynamic45
+passes5824pixels+1056bytes in46.3889s. Its first host review omitted the earlier
+buffer-transfer oracle; new family02 adds only byte-identical preexisting oracle
+and preserves all original7 verifier files. Original45 evidence then passes.
+Dynamic46 times out65.9019s during progressing clip74 and remains failed; before/
+after driver58fields/desktop retain. Fresh native-parsed script family02 extends
+only dynamic process105s/task115s/poll117s. Original host native-schema review
+used path instead of name and is corrected using unchanged original parser rows.
+Dynamic47 diagnostics0 passes5824pixels+1056bytes in72.2869s. Both accepted runs
+verify768dynamicpixels/bfeeeac5, all prior gates, ctx1/1alloc19/19lock18/18,
+render108/residency19/19/wrong0, exact LimitedUSER and owned task removal.
+Root dynamic checkpoint01 joins all originals and explicitly rejects failed46.
+
+Clean blocked system-runtime legacy-fog02 now root PASS: 8genuine opens,
+60caps S_OK, two real API/device callbacks flags3/1 and zero core creations;
+registry34/driver58/SYS/System32/desktop/tasks restore. Exactc8f native CPU
+permission fixtures root PASS43067/535562, zero warnings/all88 inputs and
+original35members/9COFF/2PE. Push exactc8f starts only consolidated37569563644.
+Separate889acc3 diagnostic preserves blocked478 mode and allows an explicitly
+permitted exactc8f process-local lifecycle trace. Real HAL9/Ex offscreen creation/
+clear/readback/release must all pass for success; no presentation/production
+admission claim. Freeze60 exactGit inputs53bb0e7b; delegate native compile/CLI/
+dual-permission nullguards/ordinarySSH baseline only. Actual root GPU runtime
+run awaits native review and independently verified c8f CI candidate.
+
+
+## Genuine runtime lifecycle01 and DDI version mismatch
+
+Exact889 frontend/c8f CI37569563644 enters actual System32 CreateDevice for
+HAL9/9Ex, returns two private S_OK devices and immediately receives two
+DestroyDevice calls before any resource/state callback. Both public API calls
+return8876086a. Original42-member archive SHA2e40fa9f916456059a15d2c4f3b6a3ba5e09d3a69a4dfc7b03ac2ec99ffed485
+is retained; registry34/critical58/signedSYS/DWM1552/Explorer6464 and selector
+restoration pass. Frozen512-pixel lifecycle oracle has no positive GPU result.
+
+Matching public PDB locates ValidateUMDeviceFuncs at RVA0668d8 and
+IsDDIVersioningInvalid at RVA062378. The latter rejects a non-null old function
+or a null new function. For driver version>=4002 the runtime requires this
+old/new pairing for BufBlt/TexBlt/VolBlt/CreateResource, and for version>6000
+requires AcquireResource and ReleaseResource. Native9 currently reports the SDK
+default11000 while implementing the original entrypoints. Official local
+d3dukmdt.h defines Vista000c and original d3dumddi.h DEVICEFUNCS has99 pointers
+through Rename. New local fix negotiates000c and bounds both outer/inner table
+publication to that prefix; native guard-page/canary fixtures remain required.
+No production OpenAdapter export, registration change or GPU acceptance.

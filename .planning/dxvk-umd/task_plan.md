@@ -8,10 +8,26 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Obtain the actual Microsoft System32 D3D9 OpenAdapter/GetCaps contract, then
-implement ordinary runtime admission and runtime-managed resource/presentation.
+Actual Microsoft System32 HAL caps and blocked CreateDevice contracts now verify.
+Continue runtime-managed device/resource lifecycle, then ordinary presentation.
 Typed harness rendering/query checkpoints pass, but ordinary runtime DX8-DX11
 hardware rendering and visible presentation remain unaccepted. Full goal active.
+
+Exact8d7 dynamic45/47 now pass5824pixels+1056bytes each with diagnostics1/0;
+root-native-dynamic-checkpoint-verified-01.json joins original native/CI/GPU
+evidence and retains failed65s dynamic46. Device permissionsc8f pass strict
+native43067/535562; sole consolidatedCI37569563644 passes all six jobs,
+five original ZIPs and15 native ARM64 executions. Standalone889acc3 native
+build/guards and exactc8f candidate staging verify. Actual LimitedUSER lifecycle01
+creates both private devices S_OK, then runtime destroys them and rejects both
+API calls8876086a before resource/state callbacks. Registry34/critical58/SYS/
+desktop/selector restoration pass; no rendering acceptance.
+Matching System32 ValidateUMDeviceFuncs rejects the advertisedWDDM3.2 table:
+old blit/resource callbacks violate the newer table rules and mandatory
+AcquireResource/ReleaseResource are NULL. Correct the reported native9 DDI to
+the implemented Vista ABI and publish only its99-pointer prefix in both creation
+paths. Verify native fixtures including actual protected table bounds, one
+consolidated CI and a separate genuine-runtime lifecycle rerun.
 
 Production061ee8f has one consolidated automatic CI37549764498, all six jobs
 passing. Root independently verifies five raw ZIPs, three architecture builds,
@@ -804,9 +820,13 @@ gates and native fixture/semantic controls remain required.
 ## Dynamic textures and ordinary HAL admission, 2026-10-07
 - [complete] Implement typed dynamic2D mips/discard and retain SYSTEMMEM transfer semantics.
 - [complete] Independently verify exact0dd native42309/521942 fixtures and original toolchain/continuity.
-- [in_progress] Verify consolidated37566610477 and correct strict hardware-probe shadowing warnings.
+- [complete] Correct strict native hardware-probe shadowing warnings; root27member8d7 build review passes.
+- [complete] Verify all original artifacts/executions from replacement consolidated37567440170; obsolete37566610477 cancelled.
 - [complete] Freeze independent768pixel oracle and parse isolated dynamic GPU scripts on native ARM64.
-- [pending] Verify full5056+768pixels and1056bytes on hardware with diagnostics1/0.
+- [complete] Verify full5056+768pixels and1056bytes on hardware with diagnostics1/0 (dynamic45/47); failed46 retained.
 - [complete] Verify Caps2-only blocked runtime diagnostic fails before any device API attempts.
-- [in_progress] Build isolated legacy fog-bit diagnostic and measure genuine blocked Microsoft device contract.
+- [complete] Build isolated legacy fog-bit diagnostic and independently verify both genuine blocked Microsoft device contracts.
+- [complete] Implement documented device permissions and verify nativec8f43067/535562 fixtures with full original provenance.
+- [in_progress] Verify device-permission sourcec8f on all architectures in sole consolidated37569563644.
+- [in_progress] Verify exact889 lifecycle diagnostic native build/guards; then run actual Microsoft runtime resource/clear/readback contracts.
 - [pending] Complete ordinary DX8-DX11 hardware rendering and visible presentation; broader GPU program remains active.

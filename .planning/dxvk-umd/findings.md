@@ -1686,3 +1686,50 @@ adds only legacy0x2000 to exact478 profile (28ef0 ->2aef0). No production caps
 change/device callback/GPU admission. Fixedb21 native fixtures compile warning
 free; device test fails at379107 because SYSTEMMEM binding wrongly expectsS_OK.
 Keep originals; correct fixture to verify rejected binding makes no backend call.
+
+2026-10-07 ordinary runtime caps/device input checkpoint:
+The dynamic-only diagnostic777 still fails HAL caps with8876086a. Adding only
+legacy DDI PrimitiveMisc0x2000 to that diagnostic lets both genuine Microsoft
+9/Ex HAL caps and VirtIO1af4/1050 preflights succeed. Nativee229 frontend's
+separate static CRT initially split/reordered stdout records, so retain runtime
+archive93d8d0bd as caps/restoration evidence and reject complete contract trace.
+Synchronous one-WriteFile-per-record frontendeaa7 builds warning-free; fresh
+runtime02 archivebbf7e32c/root review01 verifies8actualOpenAdapter,60successful
+GetCaps,12exact dynamic deltas and12legacy fog deltas,19process-local name
+redirects/restoration, exactly2API attempts and2blocked CreateDevice callbacks.
+Actual Interface9/Version69632 has flags3 for9 and1 for9Ex; all11observed
+callback pointers are present, legacy command/allocation/patch buffers are
+null/zero. Device creation remains blocked; registry34/critical58, candidates,
+signedSYS/dwm/explorer and owned-task cleanup independently retain.
+
+Local and current Microsoft D3DDDI_CREATEDEVICEFLAGS documentation names bits
+0/1 AllowMultithreading/AllowFlipBatching; both are permissions, with remaining
+bits reserved. Native c8fbd55 accepts mask3 at both validation boundaries,
+retains serialized backend/synchronous Present, and tests all four valid
+combinations, every reserved bit with no query/backend side effects, and caller
+flag mutation after snapshot. Original35member archived58d76b1/root native
+review01 joins88 exact Git/Vulkan inputs,3+6strict CPP/9COFF/2ARM64 PE/raw official
+SDK/CRT and unchanged candidates/System32/SYS/desktop. Actual43067adapter and
+535562device checks pass warning-free. Exact architecture and hardware gates
+remain pending for this source; normal production OpenAdapter remains closed.
+
+
+## Genuine runtime lifecycle01 and DDI version mismatch
+
+Exact889 frontend/c8f CI37569563644 enters actual System32 CreateDevice for
+HAL9/9Ex, returns two private S_OK devices and immediately receives two
+DestroyDevice calls before any resource/state callback. Both public API calls
+return8876086a. Original42-member archive SHA2e40fa9f916456059a15d2c4f3b6a3ba5e09d3a69a4dfc7b03ac2ec99ffed485
+is retained; registry34/critical58/signedSYS/DWM1552/Explorer6464 and selector
+restoration pass. Frozen512-pixel lifecycle oracle has no positive GPU result.
+
+Matching public PDB locates ValidateUMDeviceFuncs at RVA0668d8 and
+IsDDIVersioningInvalid at RVA062378. The latter rejects a non-null old function
+or a null new function. For driver version>=4002 the runtime requires this
+old/new pairing for BufBlt/TexBlt/VolBlt/CreateResource, and for version>6000
+requires AcquireResource and ReleaseResource. Native9 currently reports the SDK
+default11000 while implementing the original entrypoints. Official local
+d3dukmdt.h defines Vista000c and original d3dumddi.h DEVICEFUNCS has99 pointers
+through Rename. New local fix negotiates000c and bounds both outer/inner table
+publication to that prefix; native guard-page/canary fixtures remain required.
+No production OpenAdapter export, registration change or GPU acceptance.

@@ -69,10 +69,10 @@ public:
   }
 
   template<typename Function> HRESULT invoke(Function&& function) {
-    const bool caller = isCaller();
+    const bool onCallerThread = isCaller();
     std::unique_lock<std::mutex> lock(m_mutex);
     if (m_closed) return DXGI_ERROR_DEVICE_REMOVED;
-    if (caller) { lock.unlock(); return function(); }
+    if (onCallerThread) { lock.unlock(); return function(); }
     // Outside a synchronous pump there is no legal runtime callback thread to
     // execute this request. Fail before reading runtime handles or backing.
     if (!m_pumps && !m_deferred) return DXGI_ERROR_UNSUPPORTED;

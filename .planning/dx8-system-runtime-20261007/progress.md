@@ -18,3 +18,9 @@ controls, with source before/after receipts. Older DX8 entrypoints were adapted
 to link the separate guard unit; their independent local cross gate passes18
 COFFs and9 PEs across all three architectures, plus original caps/PE-parser
 sanitizer checks and two caps controls. All target access remains deferred.
+
+Root review caught an unbounded kill/reap and sequential drain in the prepared
+helper before any target execution. e993 source/packet remain retained; fresh
+follow-up uses the byte-identical native-tested raw-process component d8cf5089
+with bounded5s reap, combined20s pipes and actual OS handle/ExitCodeAvailable.
+No frontend/policy/production bytes changed by this helper correction.

@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory)][string]$Root,
   [Parameter(Mandatory)][string]$CompilerRoot,
   [Parameter(Mandatory)][string]$CompilerProvenance,
+  [string]$RunnerSource = (Join-Path $PSScriptRoot 'owned-raw-process-f4bf37f-02.cs'),
   [ValidateSet('auto','arm64','x64')][string]$CompilerHost = 'auto',
   [string]$KitRoot = 'D:\Program Files\Windows Kits\10',
   [string]$KitVersion = '10.0.28000.0',
@@ -85,27 +86,21 @@ function Run([string]$Name, [string]$Exe, [string]$Arguments, [int]$Expected, [i
   $out=Join-Path $Root ($Name+'.stdout.txt');$err=Join-Path $Root ($Name+'.stderr.txt')
   $entry=[ordered]@{name=$Name;exe=$Exe;arguments=$Arguments;expected=$Expected;deadline_seconds=$Seconds;stdout=$out;stderr=$err;raw_pipe_bytes=$true}
   $receipt.commands += $entry;Save-Receipt
-  $process=New-Object Diagnostics.Process
-  $process.StartInfo.FileName=$Exe;$process.StartInfo.Arguments=$Arguments
-  $process.StartInfo.UseShellExecute=$false;$process.StartInfo.CreateNoWindow=$true
-  $process.StartInfo.RedirectStandardOutput=$true;$process.StartInfo.RedirectStandardError=$true
-  $outputStream=[IO.File]::Open($out,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
-  $errorStream=[IO.File]::Open($err,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
-  try {
-    if (!$process.Start()) { throw 'Owned child did not start' }
-    $entry.pid=$process.Id;$entry.start_utc=$process.StartTime.ToUniversalTime().ToString('o');Save-Receipt
-    $outputTask=$process.StandardOutput.BaseStream.CopyToAsync($outputStream)
-    $errorTask=$process.StandardError.BaseStream.CopyToAsync($errorStream)
-    if (!$process.WaitForExit($Seconds*1000)) {
-      $process.Kill();$process.WaitForExit();$entry.timeout=$true
-    }
-    # Keep the original Process handle; Refresh/Start-Process can lose its
-    # cached ExitCode on PS5.1 after a short-lived child has already exited.
-    $entry.exit=$process.ExitCode;$entry.exited=$process.HasExited
-    if (!$outputTask.Wait(20000) -or !$errorTask.Wait(20000)) { throw 'Owned raw pipe drain deadline' }
-    $outputStream.Flush();$errorStream.Flush();Save-Receipt
-  } finally { $outputStream.Dispose();$errorStream.Dispose();$process.Dispose() }
-  if ($entry.timeout) { throw ($Name+' owned child timed out') }
+  # Exact native-tested runner owns the original OS handle and bounds Kill
+  # reaping to5s, plus one combined20s deadline for both raw output streams.
+  $run=[DxvkRawProcessF4_02]::Run($Exe,$Arguments,$Root,$out,$err,$Seconds*1000)
+  $entry.pid=$run.Pid;$entry.start_utc=$run.StartUtc;$entry.retained_process_handle=$run.ProcessHandle
+  $entry.exited=$run.Exited;$entry.exit_code_available=$run.ExitCodeAvailable
+  $entry.exit=$null;if ($run.ExitCodeAvailable) { $entry.exit=[int]$run.ExitCode }
+  $entry.timeout=$run.TimedOut;$entry.child_still_running=$run.ChildStillRunning
+  $entry.pipes_drained=$run.PipesDrained;$entry.stdout_bytes=$run.StdoutBytes;$entry.stderr_bytes=$run.StderrBytes
+  $entry.seconds=$run.Seconds;$entry.capture_failure=$run.Failure
+  Save-Receipt
+  if ($run.Failure) { throw ($Name+' owned capture failed: '+$run.Failure) }
+  if ($run.TimedOut) { throw ($Name+' owned child timed out') }
+  if (!$run.Exited -or !$run.ExitCodeAvailable -or !$run.PipesDrained -or $run.ChildStillRunning -or $run.ProcessHandle -eq 0) {
+    throw ($Name+' missing actual owned process/exit/pipe evidence')
+  }
   if ($entry.exit -ne $Expected) { throw ($Name+' exit='+$entry.exit) }
   if ($Name -like '*compile*') {
     $entry.compiler_warnings=@([regex]::Matches(([IO.File]::ReadAllText($out)+[IO.File]::ReadAllText($err)), '(?im)\bwarning [CD]\d+') | ForEach-Object { $_.Value })
@@ -203,6 +198,14 @@ try {
       $cpuManifest.core_reference_commit -cne 'b75d6d583aa587da2f78b4e7183d3da14e5b373f' -or
       (Hash $Packet) -cne $cpuManifest.archive_sha256) { throw 'Packet/source/core identity mismatch' }
   if ((Hash $PSCommandPath) -cne $cpuManifest.build_helper_sha256) { throw 'Prepared helper identity mismatch' }
+  if ((Hash $RunnerSource) -cne $cpuManifest.raw_process_helper_sha256 -or
+      $cpuManifest.raw_process_helper_sha256 -cne 'd8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad') {
+    throw 'Original native-tested raw-process helper identity mismatch'
+  }
+  Copy-Item $RunnerSource (Join-Path $Root 'executed-raw-process-source.cs')
+  $receipt.raw_process_source = File-Row $RunnerSource
+  $receipt.raw_process_limits = [ordered]@{reap_after_kill_ms=5000;combined_pipe_drain_ms=20000;retains_os_process_handle=$true}
+  Add-Type -Path $RunnerSource
   $receipt.source_commit = $SourceCommit
   $receipt.core_reference_commit = $cpuManifest.core_reference_commit
   $receipt.production_core_built = $false
@@ -305,6 +308,8 @@ try {
   $receipt.compiler_full_after = @($toolManifest.files | ForEach-Object { File-Row $_.path })
   $receipt.sdk_after = @($receipt.sdk | ForEach-Object { File-Row $_.path })
   $receipt.libraries_after = @($receipt.libraries | ForEach-Object { File-Row $_.path })
+  $receipt.raw_process_source_after = File-Row $RunnerSource
+  if ($receipt.raw_process_source.sha256 -cne $receipt.raw_process_source_after.sha256) { throw 'Owned raw-process source changed' }
   if (($receipt.compiler_full_before | ConvertTo-Json -Depth 24 -Compress) -cne
       ($receipt.compiler_full_after | ConvertTo-Json -Depth 24 -Compress) -or
       ($receipt.sdk | ConvertTo-Json -Depth 24 -Compress) -cne ($receipt.sdk_after | ConvertTo-Json -Depth 24 -Compress) -or

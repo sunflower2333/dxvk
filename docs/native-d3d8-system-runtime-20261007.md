@@ -74,6 +74,13 @@ The collector includes failures rather than replacing their originals. The
 native CPU packet does not require any production core to be present and does
 not build one. The frontend uses the original official x86 `bcrypt.lib` for
 hashing; its header/library and all other compiler/SDK inputs are retained.
+The original native-tested `owned-raw-process-f4bf37f-02.cs` is preserved
+byte-identically at SHA256
+`d8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad`.
+It retains the original OS process handle/available exit code, bounds owned
+kill/reaping to5s and drains both raw streams under one combined20s deadline.
+The prepared helper rejects any missing exit/handle/pipe evidence. Native
+PowerShell integration parsing/execution remains a separate target gate.
 
 `scripts/test-native-d3d8-runtime-policy.py --output <fresh-directory>` runs
 GCC and Clang ASan/UBSan positives and eight exact semantic controls. Controls

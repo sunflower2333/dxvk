@@ -23,6 +23,7 @@ PRIMARY = [
     'scripts/collect-native-d3d8-runtime-readonly.ps1',
     'scripts/prepare-native-d3d8-runtime.py',
     'scripts/test-native-d3d8-runtime-policy.py',
+    'scripts/owned-raw-process-f4bf37f-02.cs',
     'docs/native-d3d8-system-runtime-20261007.md',
 ]
 # These files are provenance references, not additional compiled translation
@@ -128,6 +129,7 @@ def main():
         'licensed_legacy_inputs': 3, 'expected_original_coffs': 4, 'expected_original_pes': 3,
         'build_helper_sha256': sha(blobs['scripts/build-native-d3d8-runtime-readonly.ps1']),
         'collector_helper_sha256': sha(blobs['scripts/collect-native-d3d8-runtime-readonly.ps1']),
+        'raw_process_helper_sha256': sha(blobs['scripts/owned-raw-process-f4bf37f-02.cs']),
         'groups': [
             {'name': 'front', 'kind': 'dll', 'units': ['tests/umd-d3d8-runtime-front.cpp'],
              'def': 'tests/umd-d3d8-runtime-front.def', 'output': 'viogpu-d3d8-runtime-front.dll'},
@@ -144,7 +146,8 @@ def main():
     }
     (args.output / 'native-system-d3d8-readonly-x86-source-01.json').write_text(json.dumps(manifest, indent=2) + '\n')
     (args.output / 'matched-x86-payload-requirements-01.json').write_text(json.dumps(config, indent=2) + '\n')
-    for name in ['build-native-d3d8-runtime-readonly.ps1', 'collect-native-d3d8-runtime-readonly.ps1']:
+    for name in ['build-native-d3d8-runtime-readonly.ps1', 'collect-native-d3d8-runtime-readonly.ps1',
+                 'owned-raw-process-f4bf37f-02.cs']:
         (args.output / name).write_bytes(blobs['scripts/' + name])
     print(json.dumps({'source_commit': commit, 'archive': str(archive.resolve()),
                       'archive_sha256': manifest['archive_sha256'], 'inputs': len(rows),

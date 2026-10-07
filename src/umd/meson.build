@@ -153,3 +153,7 @@ umd_d3d11_device_test = executable('dxvk-umd-d3d11-device-test',
 umd_compute_container_test = executable('dxvk-umd-compute-container-test',
   ['../../tests/umd-compute-container.cpp', 'umd_shader.cpp'],
   dependencies : [dxbc_spirv_dep])
+
+umd_sm5_container_test = executable('dxvk-umd-sm5-container-test',
+  ['../../tests/umd-sm5-container.cpp', 'umd_shader11.cpp'],
+  dependencies : [dxbc_spirv_dep])

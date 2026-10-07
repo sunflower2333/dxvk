@@ -1,5 +1,5 @@
-// Read-only enumeration through the Microsoft DLL. No CreateDevice call,
-// app-local D3D runtime, drawing, presentation or registration is performed.
+// Genuine Microsoft runtime diagnostics. Enumeration creates no device; the
+// separate device-contract mode requires the frontend that blocks CreateDevice.
 #include <windows.h>
 #include <d3d9.h>
 #include <d3dumddi.h>
@@ -205,13 +205,97 @@ int frontEnumerate(const WCHAR* front) {
   return result || !restored || !nameRedirects ? 1 : 0;
 }
 
+int deviceContract() {
+  // Verify the genuine system module and record caps before any device attempt.
+  if (enumerate()) return 1;
+  struct Apis {
+    IDirect3D9* normal = nullptr;
+    IDirect3D9Ex* extended = nullptr;
+    ~Apis() {
+      if (extended) extended->Release();
+      if (normal) normal->Release();
+    }
+  } api;
+  api.normal = Direct3DCreate9(D3D_SDK_VERSION);
+  if (!api.normal || FAILED(Direct3DCreate9Ex(D3D_SDK_VERSION, &api.extended))
+      || !api.extended) return 1;
+  const auto supported = [](IDirect3D9* runtime, const char* name) {
+    D3DADAPTER_IDENTIFIER9 identifier = {};
+    D3DCAPS9 caps = {};
+    const UINT adapters = runtime->GetAdapterCount();
+    const HRESULT identity = adapters == 1
+      ? runtime->GetAdapterIdentifier(0, 0, &identifier) : E_FAIL;
+    const HRESULT capsHr = identity == S_OK
+      ? runtime->GetDeviceCaps(0, D3DDEVTYPE_HAL, &caps) : E_FAIL;
+    const bool accepted = adapters == 1 && identity == S_OK && capsHr == S_OK
+      && identifier.VendorId == 0x1af4 && identifier.DeviceId == 0x1050
+      && caps.VertexShaderVersion == D3DVS_VERSION(2, 0)
+      && caps.PixelShaderVersion == D3DPS_VERSION(2, 0);
+    std::printf("SYSTEM_D3D9_DEVICE_PREFLIGHT api=%s adapters=%u identity=%08lx caps=%08lx vendor=%08x device=%08x accepted=%u\n",
+      name, adapters, static_cast<unsigned long>(identity),
+      static_cast<unsigned long>(capsHr), identifier.VendorId, identifier.DeviceId,
+      unsigned(accepted));
+    return accepted;
+  };
+  if (!supported(api.normal, "9") || !supported(api.extended, "9Ex")) return 1;
+  struct Window {
+    HWND handle = nullptr;
+    ~Window() { if (handle) DestroyWindow(handle); }
+  } window;
+  window.handle = CreateWindowExW(0, L"STATIC", L"VioGpu runtime device contract",
+    WS_OVERLAPPEDWINDOW, 0, 0, 16, 16, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+  if (!window.handle || IsWindowVisible(window.handle)) return 1;
+  D3DPRESENT_PARAMETERS parameters = {};
+  parameters.BackBufferWidth = parameters.BackBufferHeight = 16;
+  parameters.BackBufferFormat = D3DFMT_X8R8G8B8;
+  parameters.BackBufferCount = 1;
+  parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+  parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+  parameters.hDeviceWindow = window.handle;
+  parameters.Windowed = TRUE;
+  parameters.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+  IDirect3DDevice9* normal = nullptr;
+  auto normalParameters = parameters;
+  std::printf("SYSTEM_D3D9_DEVICE_ATTEMPT api=9 ordinal=0 hal=1 hardware_vertex_processing=1 window_visible=0 core_creation=blocked\n");
+  const HRESULT normalHr = api.normal->CreateDevice(0, D3DDEVTYPE_HAL, window.handle,
+    D3DCREATE_HARDWARE_VERTEXPROCESSING, &normalParameters, &normal);
+  std::printf("SYSTEM_D3D9_DEVICE_RESULT api=9 hr=%08lx object=%u explicit_create_device_calls=1\n",
+    static_cast<unsigned long>(normalHr), unsigned(normal != nullptr));
+  if (normal) normal->Release();
+  if (SUCCEEDED(normalHr) || normal) return 1;
+  IDirect3DDevice9Ex* extended = nullptr;
+  auto extendedParameters = parameters;
+  std::printf("SYSTEM_D3D9_DEVICE_ATTEMPT api=9Ex ordinal=0 hal=1 hardware_vertex_processing=1 window_visible=0 core_creation=blocked\n");
+  const HRESULT extendedHr = api.extended->CreateDeviceEx(0, D3DDEVTYPE_HAL, window.handle,
+    D3DCREATE_HARDWARE_VERTEXPROCESSING, &extendedParameters, nullptr, &extended);
+  std::printf("SYSTEM_D3D9_DEVICE_RESULT api=9Ex hr=%08lx object=%u explicit_create_device_calls=2\n",
+    static_cast<unsigned long>(extendedHr), unsigned(extended != nullptr));
+  if (extended) extended->Release();
+  if (SUCCEEDED(extendedHr) || extended) return 1;
+  std::printf("SYSTEM_D3D9_DEVICE_CONTRACT DONE explicit_create_device_calls=2 core_create_device_calls=0 rendering=0 ordinary_runtime_admission=0\n");
+  return 0;
+}
+
+int frontDeviceContract(const WCHAR* front) {
+  ReadOnlyNameSelector selector;
+  if (!selector.install(front)) return 1;
+  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"read-only-478eca2")) return 1;
+  const int result = deviceContract();
+  SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", nullptr);
+  const bool restored = selector.restore();
+  std::printf("SYSTEM_D3D9_FRONT_DEVICE_CONTRACT result=%d redirects=%ld selector_restored=%u core_create_device_calls=0 rendering=0 ordinary_runtime_admission=0\n",
+    result, nameRedirects, unsigned(restored));
+  return result || !restored || !nameRedirects ? 1 : 0;
+}
+
 int wmain(int argc, WCHAR** argv) {
   std::setvbuf(stdout, nullptr, _IONBF, 0);
   try {
     if (argc == 2 && !std::wcscmp(argv[1], L"--enumerate")) return enumerate();
     if (argc == 3 && !std::wcscmp(argv[1], L"--front-guard")) return frontGuard(argv[2]);
     if (argc == 3 && !std::wcscmp(argv[1], L"--front-enumerate")) return frontEnumerate(argv[2]);
+    if (argc == 3 && !std::wcscmp(argv[1], L"--front-device-contract")) return frontDeviceContract(argv[2]);
   } catch (...) { return 1; }
-  std::fprintf(stderr, "Usage: --enumerate | --front-guard <owned-frontend-path> | --front-enumerate <owned-frontend-path>\n");
+  std::fprintf(stderr, "Usage: --enumerate | --front-guard <owned-frontend-path> | --front-enumerate <owned-frontend-path> | --front-device-contract <owned-frontend-path>\n");
   return 64;
 }

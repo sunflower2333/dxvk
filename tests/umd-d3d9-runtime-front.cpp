@@ -50,8 +50,27 @@ HRESULT APIENTRY getCaps(HANDLE handle, const D3DDDIARG_GETCAPS* args) {
   return hr;
 }
 
-HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE*) {
-  // Enumeration diagnostics must not construct even an empty GPU device.
+HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
+  // Capture the runtime's input contract without constructing a GPU device.
+  if (args) {
+    const auto input = *args;
+    std::printf("SYSTEM_D3D9_DEVICE_CONTRACT interface=%u version=%u flags=%08x runtime=%p callbacks=%u functions=%u command_buffer=%u command_bytes=%u allocation_list=%u allocation_count=%u patch_list=%u patch_count=%u core_create_device_calls=0\n",
+      input.Interface, input.Version, input.Flags.Value, input.hDevice,
+      unsigned(input.pCallbacks != nullptr), unsigned(input.pDeviceFuncs != nullptr),
+      unsigned(input.pCommandBuffer != nullptr), input.CommandBufferSize,
+      unsigned(input.pAllocationList != nullptr), input.AllocationListSize,
+      unsigned(input.pPatchLocationList != nullptr), input.PatchLocationListSize);
+    if (input.pCallbacks) {
+      const auto& cb = *input.pCallbacks;
+      std::printf("SYSTEM_D3D9_DEVICE_CALLBACKS allocate=%u deallocate=%u lock=%u unlock=%u create_context=%u destroy_context=%u escape=%u render=%u present=%u priority=%u residency=%u core_callback_calls=0\n",
+        unsigned(cb.pfnAllocateCb != nullptr), unsigned(cb.pfnDeallocateCb != nullptr),
+        unsigned(cb.pfnLockCb != nullptr), unsigned(cb.pfnUnlockCb != nullptr),
+        unsigned(cb.pfnCreateContextCb != nullptr), unsigned(cb.pfnDestroyContextCb != nullptr),
+        unsigned(cb.pfnEscapeCb != nullptr), unsigned(cb.pfnRenderCb != nullptr),
+        unsigned(cb.pfnPresentCb != nullptr), unsigned(cb.pfnSetPriorityCb != nullptr),
+        unsigned(cb.pfnQueryResidencyCb != nullptr));
+    }
+  }
   std::printf("SYSTEM_D3D9_CREATE_BLOCKED adapter=%p hr=%08lx\n",
     handle, static_cast<unsigned long>(D3DERR_NOTAVAILABLE));
   return D3DERR_NOTAVAILABLE;

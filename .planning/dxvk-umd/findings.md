@@ -1646,3 +1646,12 @@ contracts in the controlled fixtures; it does not establish runtime admission.
 Only one automatic CI37561240247 starts for the production push. The next
 diagnostic uses a separate fresh process-local candidate directory for478eca2
 and preserves the blocked CreateDevice path and original installed registration.
+
+Local Microsoft CreateDevice DDI documentation states that the runtime does
+not create a default GPU context; the driver explicitly creates contexts via
+CreateContextCb. The standalone frontend remains an unconditional rejection
+boundary and invokes no core device creation/callbacks. The prepared separate
+contract mode will use actual system HAL CreateDevice/Ex requests to capture
+Interface/Version/Flags and callback availability before implementing their
+missing native contracts. Two API requests are distinct from zero core device
+calls; no rendering or presentation claim follows from that diagnostic.

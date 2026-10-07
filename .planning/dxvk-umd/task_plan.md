@@ -47,6 +47,14 @@ consolidated run37561240247 is queued. Diagnostic frontend/probe are pinned to
 the fresh uninstalled CapsCandidate-478eca2 for the next real runtime trace.
 Verify original CI artifacts and the separate diagnostic build before execution.
 
+Diagnostic765a7e0 native build/guards/SSH baseline pass, original collection
+and root review pending. Prepare the next separate blocked device-contract
+mode: genuine HAL CreateDevice/Ex under an owned hidden window only after
+exact VirtIO identity and successful SM2 caps; frontend logs input flags and
+callback presence and always rejects before core creation/callbacks. Compile
+and review this extension with original USER32 import library provenance, then
+run it only after the fresh caps selector trace. No actual GPU admission yet.
+
 ## Presentation and query checkpoint details (historical)
 
 Owned typed D3D9 queries are accepted at exact source

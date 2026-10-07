@@ -2241,3 +2241,16 @@ Production478eca2 is pushed once, creating only consolidatedCI37561240247.
 Updated read-only frontend/probe permissions and path select an owned fresh
 CapsCandidate-478eca2. CreateDevice remains blocked. Native diagnostic build,
 all six CI jobs/raw artifacts and another actual Microsoft caps trace are next.
+
+## 2026-10-07 native caps diagnostic and device-contract preparation
+Exact765a7e0 standalone native frontend/probe builds without warnings; six
+invalid CLI cases, two null guards and env-absent SSH count0/Ex8876086a baseline
+pass. Source60, original evidence collection and root review remain separate
+from uninstalled production478 and its in-progress soleCI37561240247.
+The next diagnostic source adds a blocked CreateDevice/Ex contract mode after
+VirtIO1af4/1050, exactly one adapter and SM2 HAL caps preflight. It owns a hidden
+16x16 window, records actual runtime flags/legacy buffer metadata and callback
+presence, and never forwards device creation or any device callback to core.
+API attempts are explicitly counted (two on complete trace); no drawing or
+presentation is called. Native compile/guards and genuine caps trace must pass
+before this device-contract run; ordinary hardware acceptance remains open.

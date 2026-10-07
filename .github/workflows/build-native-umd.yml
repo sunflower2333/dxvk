@@ -150,3 +150,4 @@ jobs:
           path: |
             candidate/arm64-*.txt
             candidate/arm64-*.json
+            candidate/arm64-texture3d-originals/**

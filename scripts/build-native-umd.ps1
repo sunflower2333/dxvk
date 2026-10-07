@@ -80,6 +80,8 @@ ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-nativ
 if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-rotation-test.exe
 if ($LASTEXITCODE) { throw 'Production DXGI rotation fixture build failed' }
+ninja -C build-umd src/umd/dxvk-umd-volume-policy-test.exe src/umd/dxvk-umd-texture3d-test.exe
+if ($LASTEXITCODE) { throw 'Native volume policy and Texture3D fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d11-device-test.exe src/umd/dxvk-umd-compute-container-test.exe src/umd/dxvk-umd-sm5-container-test.exe src/umd/dxvk-umd-legacy-api-test.exe src/umd/dxvk-umd-d3d8-sm1-test.exe
 if ($LASTEXITCODE) { throw 'Typed DX10/DX11 and DX8/SM5 compiler fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d11-compute-probe.exe src/umd/dxvk-umd-compute-oracle-test.exe
@@ -110,14 +112,16 @@ $runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirecto
 Add-Type -TypeDefinition ([IO.File]::ReadAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($retainedRunnerSource)))
 $runnerReceipt.type_compiled = $true
 $runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory 'native-fixture-runner-source.json') -Encoding UTF8
-function Invoke-BoundedFixture([string]$Executable, [string]$Name) {
+function Invoke-BoundedFixture([string]$Executable, [string]$Name, [string]$WorkingDirectory='') {
     $out = Join-Path $OutputDirectory "$Name.txt"
     $err = Join-Path $OutputDirectory "$Name.stderr.txt"
     $executablePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Executable)
     $stdoutPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($out)
     $stderrPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($err)
-    $process = [DxvkRawProcessF4_02]::Run($executablePath, '', $PWD.ProviderPath, $stdoutPath, $stderrPath, 30000)
-    [ordered]@{name=$Name;executable=$executablePath;arguments='';working_directory=$PWD.ProviderPath;
+    $childDirectory = $PWD.ProviderPath
+    if ($WorkingDirectory) { $childDirectory = (Resolve-Path -LiteralPath $WorkingDirectory).Path }
+    $process = [DxvkRawProcessF4_02]::Run($executablePath, '', $childDirectory, $stdoutPath, $stderrPath, 30000)
+    [ordered]@{name=$Name;executable=$executablePath;arguments='';working_directory=$childDirectory;
         runner_sha256=$runnerHash;stdout_member="$Name.txt";stderr_member="$Name.stderr.txt";
         deadline_ms=30000;expected_exit=0;pid=$process.Pid;start_utc=$process.StartUtc;
         retained_process_handle=$process.ProcessHandle;exited=$process.Exited;
@@ -152,6 +156,10 @@ if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-predication-test.exe predication-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-stream-output-test.exe stream-output-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-texture1d-test.exe texture1d-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-volume-policy-test.exe volume-policy-test
+    $textureOriginals = Join-Path $OutputDirectory 'texture3d-originals'
+    New-Item -ItemType Directory -Path $textureOriginals -ErrorAction Stop | Out-Null
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-texture3d-test.exe texture3d-test $textureOriginals
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d11-device-test.exe d3d11-device-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-compute-container-test.exe compute-container-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-compute-oracle-test.exe compute-oracle-test
@@ -206,7 +214,7 @@ if ($exports -notmatch '\bVioGpuDxvkOpenAdapter10_2ForTest\b') { throw 'Missing 
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bVioGpuDxvkQueryVulkanLoader\b' -or $exports -notmatch '\bVioGpuDxvkOpenAdapter9ForTest\b' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 if ($exports -notmatch '\bVioGpuDxvkProbeD3D9BackendForTest\b' -or $exports -match '\bDirect3DCreate9(?:Ex|On12)?\b') { throw 'Unexpected embedded D3D9 exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
-foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe')) {
+foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-volume-policy-test.exe', 'dxvk-umd-texture3d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
     # Include ARM64 fixtures for execution by the target validation owner.
     $path = Join-Path 'build-umd/src/umd' $name

@@ -35,6 +35,8 @@ $cases = [ordered]@{
     'dxvk-umd-d3d9-device-test.exe' = 'native D3D9 device PASS checks=\d+; controlled backend, no GPU rendering or runtime admission'
     'dxvk-umd-rotation-test.exe' = 'PASS native DXGI rotation: .*WARP only, admission closed'
     'dxvk-umd-texture1d-test.exe' = 'PASS Texture1D'
+    'dxvk-umd-volume-policy-test.exe' = 'PASS volume policy: 385547 checks; independent padded volume and xyz bounds'
+    'dxvk-umd-texture3d-test.exe' = 'PASS Texture3D\r?\nprofiles=3\r?\ncases=27\r?\nchecks=\d+\r?\nvoxels=9138\r?\nsampled=945'
     'dxvk-umd-d3d11-device-test.exe' = '(?m)^typed D3D10\.1/D3D11 fixture PASS checks=\d+ callbacks=\d+ SM5 graphics/queries/packed IA/streams/tessellation/classes WARP controls; native Turnip/runtime acceptance remains gated\r?$'
     'dxvk-umd-compute-container-test.exe' = 'compute container PASS checks=\d+ exact tokens/hash and malformed SM5 controls'
     'dxvk-umd-sm5-container-test.exe' = 'SM5 signatures/interfaces PASS checks=\d+ exact tokens/hash, GS streams, patch factors, typed/depth outputs, native table IDs'
@@ -68,8 +70,13 @@ foreach ($name in $cases.Keys) {
     }
     $out = Join-Path $root "arm64-$name.stdout.txt"
     $err = Join-Path $root "arm64-$name.stderr.txt"
-    $process = [DxvkRawProcessF4_02]::Run($exe, '', $PWD.ProviderPath, $out, $err, 30000)
-    [ordered]@{name=$name;executable=$exe;arguments='';working_directory=$PWD.ProviderPath;
+    $childDirectory = $PWD.ProviderPath
+    if ($name -ceq 'dxvk-umd-texture3d-test.exe') {
+        $childDirectory = Join-Path $root 'arm64-texture3d-originals'
+        New-Item -ItemType Directory -Path $childDirectory -ErrorAction Stop | Out-Null
+    }
+    $process = [DxvkRawProcessF4_02]::Run($exe, '', $childDirectory, $out, $err, 30000)
+    [ordered]@{name=$name;executable=$exe;arguments='';working_directory=$childDirectory;
         runner_sha256=$runnerHash;stdout_member="arm64-$name.stdout.txt";stderr_member="arm64-$name.stderr.txt";
         deadline_ms=30000;expected_exit=0;pid=$process.Pid;start_utc=$process.StartUtc;
         retained_process_handle=$process.ProcessHandle;exited=$process.Exited;

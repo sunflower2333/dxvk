@@ -2254,3 +2254,26 @@ presence, and never forwards device creation or any device callback to core.
 API attempts are explicitly counted (two on complete trace); no drawing or
 presentation is called. Native compile/guards and genuine caps trace must pass
 before this device-contract run; ordinary hardware acceptance remains open.
+
+## 2026-10-07 completed caps CI and actual runtime rejection
+Full37561240247 all six jobs SUCCESS. Root raw ZIP/native provenance review01
+passes all three builds and15 actual executions,42308/466831. Native diagnostic
+765/c065 independent original build reviews pass. Fresh uninstalled478 candidate
+SHAee680cb0 is staged from the verified ARM64 CI original. Selector-caps-01
+archive481c992d/root review01 observes two actual OpenAdapter and20successful
+GetCaps; formatcount4/querycount6 and exact80/24byte lists now work, but both
+Microsoft9/Ex HAL caps still return8876086a. ZeroCreateDevice. Before/after
+registry34/critical58, original SYS/desktop/two candidate hashes and task cleanup
+verify. Device-contractc065 remains unexecuted due to its failing caps preflight.
+
+## 2026-10-07 matched Microsoft HAL validator and dynamic texture gap
+Microsoft symbol-server d3d9.pdb at image GUID312958D5-15B1-B907-952F-1B73B103FDD1
+maps exact section headers/ARM64 public addresses; public stripped PDB age3
+differs from image CodeView age1 and is recorded, not asserted equal. Native
+IsD3DHALSupported RVA1226f0 takes nonzeroDevCaps2 to122808 and rejects missing
+Caps2 bit29 at12280c. Production478 hasSTREAMOFFSET1/Caps2zero; native dynamic
+texture creation/lockDiscard is absent. Implement the actual feature and retain
+unsupported cube/volume/MSAA/autogen limits. Separate diagnostic frontend adds
+only Caps2.DYNAMICTEXTURES to the exact478 profile, logs before/after, uses a
+distinct permission and always blocks core device creation. This measures the
+single-bit cause and genuine blocked runtime contract, not GPU acceptance.

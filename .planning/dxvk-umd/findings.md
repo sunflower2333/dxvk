@@ -1655,3 +1655,19 @@ contract mode will use actual system HAL CreateDevice/Ex requests to capture
 Interface/Version/Flags and callback availability before implementing their
 missing native contracts. Two API requests are distinct from zero core device
 calls; no rendering or presentation claim follows from that diagnostic.
+
+Actual caps-selector01 fixes the old zero/list/gamma protocol responses but
+does not yet admit HAL. Both9/Ex return8876086a after20successful callbacks.
+All original32archive members and continuity checks independently pass.
+Matching actual System32 d3d9.dll public-symbol GUID/section mapping resolves
+GetDeviceCaps RVA166a00 and IsD3DHALSupported RVA1226f0. The latter returns
+false when DevCaps2 is nonzero and Caps2 bit29 is absent. STREAMOFFSET is set
+and DYNAMICTEXTURES is absent in478. Unlike the reference's broad WARP profile,
+the actual SM2 validator does not require cubemaps; its Npatch minimum applies
+only when DevCaps.NPATCHES is set. Do not add unimplemented features or guess
+MaxNpatch limits. Public stripped PDB age3/image CodeView age1 are distinct;
+exact GUID and section/address joins support this scoped disassembly inference.
+Dynamic2D/default-pool locks and top-mip whole-resourceDiscard are documented
+in local Microsoft LockFlags/ResourceFlags and official LockRect/performance
+docs. NoOverwrite is a buffer contract, not a texture lock flag. Native feature
+implementation and targeted CPU/GPU verification precede production Caps2 bit.

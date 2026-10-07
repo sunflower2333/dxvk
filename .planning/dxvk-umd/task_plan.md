@@ -45,7 +45,10 @@ inputs,33original archive members,9ARM64COFFs/2PEs and SDK/CRT/toolchain/SYS/
 desktop continuity. Production478eca2 is pushed once; the sole automatic
 consolidated run37561240247 is queued. Diagnostic frontend/probe are pinned to
 the fresh uninstalled CapsCandidate-478eca2 for the next real runtime trace.
-Verify original CI artifacts and the separate diagnostic build before execution.
+Full consolidatedCI37561240247 now passes all six jobs. Root independently
+verifies five raw ZIPs/every member, three architecture builds and15 actual
+native ARM64 executions. Original native765 and c065 standalone builds,
+guards and SSH baselines also pass independent root review.
 
 Diagnostic765a7e0 native build/guards/SSH baseline pass, original collection
 and root review pending. Prepare the next separate blocked device-contract
@@ -53,7 +56,19 @@ mode: genuine HAL CreateDevice/Ex under an owned hidden window only after
 exact VirtIO identity and successful SM2 caps; frontend logs input flags and
 callback presence and always rejects before core creation/callbacks. Compile
 and review this extension with original USER32 import library provenance, then
-run it only after the fresh caps selector trace. No actual GPU admission yet.
+run it only after accepted caps. Actual selector-caps-01 observes two adapter
+opens and20 successful GetCaps callbacks, four formats/six queries/gamma0,
+but HAL caps still8876086a in both9/Ex. Exact candidates, signedSYS, DWM1552,
+Explorer6464,34registration/58critical fields retain; owned tasks are removed.
+Device-contract mode remains unexecuted because its HAL preflight fails.
+
+Matching System32 d3d9 public GUID and section layout locate native
+IsD3DHALSupported atRVA1226f0. Its nonzeroDevCaps2 path requires
+Caps2.DYNAMICTEXTURES; native478 advertisesSTREAMOFFSET but rejects dynamic
+textures. Implement real dynamic2D creation/locking before production declares
+the bit. A separate blocked frontend changes only this bit on the exact478
+profile to causally verify rejection and capture genuine device inputs while
+core CreateDevice remains unconditionally blocked. No GPU admission claim.
 
 ## Presentation and query checkpoint details (historical)
 

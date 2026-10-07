@@ -16,7 +16,7 @@ $cases = [ordered]@{
     'dxvk-umd-d3d9-device-test.exe' = 'native D3D9 device PASS checks=\d+; controlled backend, no GPU rendering or runtime admission'
     'dxvk-umd-rotation-test.exe' = 'PASS native DXGI rotation: .*WARP only, admission closed'
     'dxvk-umd-texture1d-test.exe' = 'PASS Texture1D'
-    'dxvk-umd-d3d11-device-test.exe' = 'typed D3D10.1/D3D11 fixture PASS checks=\d+ callbacks=\d+ WARP controls; native Turnip/runtime acceptance remains gated'
+    'dxvk-umd-d3d11-device-test.exe' = '(?m)^typed D3D10\.1/D3D11 fixture PASS checks=\d+ callbacks=\d+ SM5 graphics/queries/packed IA/streams/tessellation/classes WARP controls; native Turnip/runtime acceptance remains gated\r?$'
     'dxvk-umd-compute-container-test.exe' = 'compute container PASS checks=\d+ exact tokens/hash and malformed SM5 controls'
     'dxvk-umd-sm5-container-test.exe' = 'SM5 signatures/interfaces PASS checks=\d+ exact tokens/hash, GS streams, patch factors, typed/depth outputs, native table IDs'
     'dxvk-umd-legacy-api-test.exe' = 'legacy8/9 API bounds PASS checks=\d+; renderer framing follows, admission unchanged'

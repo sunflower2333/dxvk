@@ -2432,3 +2432,54 @@ root handoff9b02834e. Before any target call DX10 found undefined service
 variables under StrictMode; root held the known-defective invocation and
 requests fresh04/local audit rather than a knowingly failed native run.
 DX10 still exclusively reserves CPU; DX11 GPU runner remains local-only.
+
+Corrective42cf765c63e300b8ec058676e4243408a89741d6 is committed/pushedactual0.
+Exactly one automaticCI37635552675 starts; no manual dispatch. Allfour
+duplicate workflows verifieddisabled_manually. Seven committedGitinputs
+join independentcanonical proofc1923023; currentnativecompiled joins are
+WARP88,SM41 78/79onlymesonmetadata,compute18/19onlybuildPSmetadata.
+No successful artifact/core/hardware pins are set yet.
+
+### Target05 native CPU progress
+
+DX10 exact04preflightfailure finalized: original40files/861973bytes
+archive302a2574, threeownedcollector sidecars, source15/SDK23/libs7/tools4,
+all8 hosttransportsactualexit/rawcapture and oneownedtar exit0/drain.
+Release9d46c8f0 returns target; no compiler/fixture/COFF/PE/core/GPU.
+Root verifies originalarchive digest/size/count. Source-order implications
+from04emptystdout remain distinct from observed final preflight PASS.
+Fresh05helper adds explicit System.ServiceProcess assembly load and actual
+resolvedtype/fullname/location/file evidence; source15/flags/RSP/oracle4141/
+CLI5unchanged. Rootdirect05handoffb4b733a8 hashes9prepared inputs/narrow
+04-to05diff. Native05NoProfilePS5.1.26100.1591 ARM64 PASS fouroriginalprefix
+markers plusJSON: parse2/errors0, RSP16/8/16/3/flags14, rawd8cf Add-Type,
+resolvedServiceController assembly133960/SHA2b349085/actualRunning4.
+SSH actual0/drain and priorSYS/binding/DWM1864/Explorer4464 preserved.
+Native05 strict compiler fails: five full64-supported-version-to-UINT C4310
+warnings become C2220 under unchanged /WX. Archivec1b09fa3/57files,
+proof58c27a2a/releasef9ba9e4b retain source15/SDK23/libs7/tools4, all13retention
+flags, three owned handle/exit/raw-drain receipts0/2/0 and eight finalized
+host transports; original SYS/service/binding/DWM/Explorer stay unchanged.
+No link/COFF/PE/CPUoracle/CLI/core/GPU was reached. Follow-on05ffdc2 masks
+only the low32 Version values and proves full64 reconstruction locally.
+
+CI37635552675 completes five successful jobs, including all three backend
+builds. The ARM64 runtime failure is a stale stdout pattern: typed D3D11
+actually exits0 and prints PASS4307/callback462 plus SM5 graphics/queries/
+packed IA/streams/tessellation/classes. Harness expected callbacks followed
+immediately by WARP controls. Stderr malformed-operand text is appended to
+the exception as context and is not a failure predicate. Root changes only
+that precise expected success line and retains failed originals before a
+fresh consolidated push. Whole six-job success/private-loader/hardware pins
+remain pending; DX11 has a short CPU-only frozen helper parse slot.
+
+Independent full-line marker proofa754d516 PASS, including four genuine
+marker/line-ending positives and18 rejection/exit controls. Producer and
+genuine18-case malformed hull-shader rejection path/pinned dxbc parser join
+exact42 originals. Original successful x64/x86 logs both match all28 corrected
+patterns (56 total); old expression matches27 each, only typedD3D11 stale.
+Proofd3ad8439 rejoins original raw job streams and actual gh exit0/size/hash
+receipts; no new fixture/nativePS/GPU execution is claimed. Root's precise
+one-pattern change leaves all actual fixture and runtime exit checks intact.
+Large original API archives timed out at120s in retention01; truncated bytes
+are preserved and excluded, and readonly fresh02 retries300s host downloads.

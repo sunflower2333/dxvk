@@ -8,11 +8,19 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Published candidate is now930d7f7552d1a087ab12e6a2a3756e9556e2398a.
-Exactly one push-triggered CI37630945784 completed: identity/shader-cpu PASS,
+Published candidate is now42cf765c63e300b8ec058676e4243408a89741d6.
+Exactly one corrected push-triggered CI37635552675 completed: identity,
+shader-cpu and all three backend builds PASS; ARM64 runtime stops after
+the typed D3D11 fixture exits0 because its expanded SM5 success message
+does not match the older harness expression. Original archives/logs are
+being retained. Independent proofa754d516 confirms the precise marker fix;
+proofd3ad8439 matches all28 corrected expressions against original successful
+x64/x86 logs (56 matches), with only the old typed-D3D11 marker stale.
+Prior930d7f7 CI37630945784 completed: identity/shader-cpu PASS,
 all three backend jobs fail, ARM64 runtime skipped; no usable candidate.
 Root repairs canonical checkout bytes and missing-private-loader rejection,
-then publishes one corrected consolidated push after local controls pass.
+corrected42cf765 is published after independent835source/attributes guards
+and actual16loader/sanitizer original-negative/fullidentity controls PASS.
 Preceding b6 CI37593963656 fails the D3D11 fixture on x64/x86; ARM64
 production and identity/shader CPU pass, ARM64 native runtime is skipped.
 Keep failed originals. Complete native WARP15 and merged-source SM4.1
@@ -23,6 +31,16 @@ PASS. Strict native ARM64 probe compile/link and CPUoracle12482 now PASS;
 original89-file archive and agent/root reviews finalized, release0a39d778.
 Candidate930d7f7 failed CI; original job logs/two original ZIPs are retained.
 Verify corrected-source CI/original artifacts before setting any hardware pins.
+Publish the one-line marker correction as one automatic push CI; native
+ARM64 execution must still complete all28 cases. No exit/deadline/oracle
+or fixture/decoder change is part of this correction.
+DX10 native05 passes PS5.1 preflight but strict MSVC rejects five unmasked
+full64-supported-version constant narrowings (C4310/C2220). Original57-file
+archivec1b09fa3 and proof58c27a2a are finalized, all three owned stages and
+eight host transports exit/drain, releasef9ba9e4b returns target to root.
+Probe-only low32 correction05ffdc2 is local; fresh strict controls/packet
+review precede another native attempt. DX11 now owns a short CPU-only
+ParseFile6/Add-Type slot for the frozen USER compute helper02 packet.
 
 Root integrated compute096e024, stable stream-outputd153e81, per-stream
 query2c1b0e2, hull fork/join220b4c0, returning query sentinels7db692d,
@@ -924,3 +942,22 @@ C#Add-Type before failing ServiceController assembly unavailable in
 NoProfile host. No compiler/builder/fixture/core/GPU ran; original failure
 collection/release is being finalized; isolated05explicitassembly pending.
 DX11 independently prepares USER compute runner/384-word validator locally.
+
+### Target05 native CPU progress
+
+DX10 exact04preflightfailure finalized: original40files/861973bytes
+archive302a2574, threeownedcollector sidecars, source15/SDK23/libs7/tools4,
+all8 hosttransportsactualexit/rawcapture and oneownedtar exit0/drain.
+Release9d46c8f0 returns target; no compiler/fixture/COFF/PE/core/GPU.
+Root verifies originalarchive digest/size/count. Source-order implications
+from04emptystdout remain distinct from observed final preflight PASS.
+Fresh05helper adds explicit System.ServiceProcess assembly load and actual
+resolvedtype/fullname/location/file evidence; source15/flags/RSP/oracle4141/
+CLI5unchanged. Rootdirect05handoffb4b733a8 hashes9prepared inputs/narrow
+04-to05diff. Native05NoProfilePS5.1.26100.1591 ARM64 PASS fouroriginalprefix
+markers plusJSON: parse2/errors0, RSP16/8/16/3/flags14, rawd8cf Add-Type,
+resolvedServiceController assembly133960/SHA2b349085/actualRunning4.
+SSH actual0/drain and priorSYS/binding/DWM1864/Explorer4464 preserved.
+One strict native compiler/CPU4141+CLI5attempt running; target exclusivelyDX10.
+Fresh42CI identity/shader PASS and all3canonicalrestore steps success;
+backend builds stillrunning. No new core/hardware acceptance.

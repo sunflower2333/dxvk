@@ -3143,3 +3143,62 @@ root handoff9b02834e. Before any target call DX10 found undefined service
 variables under StrictMode; root held the known-defective invocation and
 requests fresh04/local audit rather than a knowingly failed native run.
 DX10 still exclusively reserves CPU; DX11 GPU runner remains local-only.
+
+Corrective42cf765c63e300b8ec058676e4243408a89741d6 is committed/pushedactual0.
+Exactly one automaticCI37635552675 starts; no manual dispatch. Allfour
+duplicate workflows verifieddisabled_manually. Seven committedGitinputs
+join independentcanonical proofc1923023; currentnativecompiled joins are
+WARP88,SM41 78/79onlymesonmetadata,compute18/19onlybuildPSmetadata.
+No successful artifact/core/hardware pins are set yet.
+
+### Target05 native CPU progress
+
+DX10 exact04preflightfailure finalized: original40files/861973bytes
+archive302a2574, threeownedcollector sidecars, source15/SDK23/libs7/tools4,
+all8 hosttransportsactualexit/rawcapture and oneownedtar exit0/drain.
+Release9d46c8f0 returns target; no compiler/fixture/COFF/PE/core/GPU.
+Root verifies originalarchive digest/size/count. Source-order implications
+from04emptystdout remain distinct from observed final preflight PASS.
+Fresh05helper adds explicit System.ServiceProcess assembly load and actual
+resolvedtype/fullname/location/file evidence; source15/flags/RSP/oracle4141/
+CLI5unchanged. Rootdirect05handoffb4b733a8 hashes9prepared inputs/narrow
+04-to05diff. Native05NoProfilePS5.1.26100.1591 ARM64 PASS fouroriginalprefix
+markers plusJSON: parse2/errors0, RSP16/8/16/3/flags14, rawd8cf Add-Type,
+resolvedServiceController assembly133960/SHA2b349085/actualRunning4.
+SSH actual0/drain and priorSYS/binding/DWM1864/Explorer4464 preserved.
+That strict native compiler attempt now fails with five C4310 warnings from
+unmasked full64 D3D10 supported-version constants narrowed to UINT, promoted
+to C2220 by unchanged /WX. No COFF/PE/oracle/CLI/core/GPU was reached.
+Original57-file archivec1b09fa3/893682bytes, proof58c27a2a and releasef9ba9e4b
+are finalized: extract/compiler/collector handles exited0/2/0 and drained,
+eight host transports finalized, source15/SDK23/libs7/tools4 and13retention
+flags joined, SYS/service/binding/DWM1864/Explorer4464 unchanged. Root reopens
+original archive/digests/count; source05ffdc2 adds explicit low32 masking
+locally without changing full64 matching or warning flags.
+
+Fresh42CI completes identity/shader and all three backend builds PASS.
+ARM64 runtime fails after typed D3D11 fixture exit0: original stdout includes
+the expanded mandatory SM5 graphics/queries/packed IA/streams/tessellation/
+classes phrase absent from the old harness regex. Exception also appends
+intentional malformed-operand stderr as context; stderr is not the rejection
+predicate. Root corrects the precise full success line, retaining real exit
+and checks; independent original matcher/all28-case audit is ongoing. All5
+original API ZIPs and six raw job logs are being preserved separately from
+the unchanged six-success-job candidate gate. DX11 owns a short CPU-only
+native helper ParseFile6/Add-Type slot. No new core/hardware acceptance.
+
+Independent marker reviewa754d516 joins original42 producer/decoder/Git
+inputs and candidate scriptfa43550a. Four actual-marker/LF/CRLF/multiline
+positives and18 invalid-line/feature/count/exit controls PASS in the shared
+Python regex syntax; native PS execution remains future CI. Exact hull
+malformed18-case source deliberately logs extended operand kind0 while
+requiring E_INVALIDARG, untouched storage/one callback and unchanged bound
+shader. All28 corrected patterns match original successful x64 and x86
+raw job output (56 matches), proofd3ad8439, with each actual gh transport
+exit0 and raw bytes/hash rejoined. Only the old D3D11 expression is stale.
+Root prepares one precise marker-fix push; fixture/decoder/d8cf/core source,
+all other27 expressions and exit/deadline controls remain unchanged.
+Original5 retention01 kept two complete tiny ZIPs but three large ZIPs timed
+out at120s and remain excluded. Fresh02 first retains all6 rawjoblogs then
+retries only those3 readonly downloads with300s transport bounds; tiny
+originals are byte-copied with original API/exit0 receipts, never relabeled.

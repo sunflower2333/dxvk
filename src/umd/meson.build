@@ -147,6 +147,9 @@ umd_private_children_test = executable('dxvk-umd-private-children-test', '../../
 umd_input_formats_test = executable('dxvk-umd-input-formats-test', '../../tests/umd-input-formats.cpp')
 umd_multisample_policy_test = executable('dxvk-umd-multisample-policy-test', '../../tests/umd-multisample-policy.cpp')
 umd_d3d9_buffer_copy_test = executable('dxvk-umd-d3d9-buffer-copy-test', '../../tests/umd-d3d9-buffer-copy.cpp')
+umd_d3d8_system_identity_test = executable('dxvk-umd-d3d8-system-identity-test',
+  '../../tests/umd-d3d8-system-identity.cpp')
+
 umd_d3d9_runtime_callbacks_test = executable('dxvk-umd-d3d9-runtime-callbacks-test',
   '../../tests/umd-d3d9-runtime-callbacks.cpp')
 

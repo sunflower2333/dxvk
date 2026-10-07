@@ -3,8 +3,8 @@ set -euo pipefail
 bash scripts/test-native-vulkan-loader.sh
 bash scripts/test-native-vertex-input.sh
 dxvk_test_dir=$(mktemp -d /tmp/dxvk-umd-tests.XXXXXX)
-trap 'rm -f "$dxvk_test_dir/identity" "$dxvk_test_dir/runtime-identity" "$dxvk_test_dir/runtime-backend" "$dxvk_test_dir/shader" "$dxvk_test_dir/sm41" "$dxvk_test_dir/d3d9-buffer-copy" "$dxvk_test_dir/private-children" "$dxvk_test_dir/multisample-policy"; rmdir "$dxvk_test_dir"' EXIT
-for name in d3d9-buffer-copy private-children multisample-policy; do
+trap 'rm -f "$dxvk_test_dir/identity" "$dxvk_test_dir/runtime-identity" "$dxvk_test_dir/runtime-backend" "$dxvk_test_dir/shader" "$dxvk_test_dir/sm41" "$dxvk_test_dir/d3d9-buffer-copy" "$dxvk_test_dir/private-children" "$dxvk_test_dir/multisample-policy" "$dxvk_test_dir/d3d8-system-identity"; rmdir "$dxvk_test_dir"' EXIT
+for name in d3d9-buffer-copy private-children multisample-policy d3d8-system-identity; do
   clang++ -std=c++17 -g -O1 -Wall -Wextra -Werror -fsanitize=address,undefined \
     "tests/umd-$name.cpp" -o "$dxvk_test_dir/$name"
   "$dxvk_test_dir/$name"

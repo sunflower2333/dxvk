@@ -1,5 +1,6 @@
 // Genuine Microsoft runtime diagnostics. Enumeration creates no device; the
-// separate device-contract mode requires the frontend that blocks CreateDevice.
+// separate device-contract mode blocks creation. Lifecycle mode permits the
+// exact c8f frontend/core pair and verifies runtime-owned offscreen pixels.
 #include <windows.h>
 #include <d3d9.h>
 #include <d3dumddi.h>
@@ -7,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <initializer_list>
 #include <string>
 
 namespace {
@@ -51,7 +53,7 @@ struct ReadOnlyNameSelector {
     return restored;
   }
   ~ReadOnlyNameSelector() { restore(); }
-  bool install(const WCHAR* front) {
+  bool install(const WCHAR* front, bool lifecycle = false) {
     static_assert(sizeof(PVOID) == sizeof(ULONGLONG));
     constexpr WCHAR ownedPrefix[] = L"C:\\Users\\Public\\DxvkD3D9RuntimeReadOnly-";
     const DWORD length = GetFullPathNameW(front, DWORD(_countof(selectedFront)), selectedFront, nullptr);
@@ -109,7 +111,8 @@ struct ReadOnlyNameSelector {
         originalProtection = protect;
         DWORD ignored = 0;
         if (!VirtualProtect(const_cast<PVOID*>(address), sizeof(PVOID), protect, &ignored)) return false;
-        std::printf("SYSTEM_D3D9_NAME_SELECTOR installed=1 process_local=1 version=0 device_creation=blocked\n");
+        std::printf("SYSTEM_D3D9_NAME_SELECTOR installed=1 process_local=1 version=0 device_creation=%s\n",
+          lifecycle ? "forwarded" : "blocked");
         return true;
       }
     }
@@ -132,11 +135,13 @@ int frontGuard(const WCHAR* path) {
   const HRESULT denied = open(nullptr);
   if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"read-only-legacy-fog-478eca2")) return 1;
   const HRESULT invalid = open(nullptr);
+  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"device-lifecycle-c8fbd55")) return 1;
+  const HRESULT lifecycleInvalid = open(nullptr);
   SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", nullptr);
   FreeLibrary(module);
-  if (denied != D3DERR_NOTAVAILABLE || invalid != E_INVALIDARG) return 1;
-  std::printf("SYSTEM_D3D9_FRONT_GUARD PASS denied=%08lx invalid=%08lx no_core_open=1\n",
-    static_cast<unsigned long>(denied), static_cast<unsigned long>(invalid));
+  if (denied != D3DERR_NOTAVAILABLE || invalid != E_INVALIDARG || lifecycleInvalid != E_INVALIDARG) return 1;
+  std::printf("SYSTEM_D3D9_FRONT_GUARD PASS denied=%08lx invalid=%08lx lifecycle_invalid=%08lx no_core_open=1\n",
+    static_cast<unsigned long>(denied), static_cast<unsigned long>(invalid), static_cast<unsigned long>(lifecycleInvalid));
   return 0;
 }
 
@@ -288,6 +293,131 @@ int frontDeviceContract(const WCHAR* front) {
   return result || !restored || !nameRedirects ? 1 : 0;
 }
 
+bool lifecyclePixels(IDirect3DDevice9* device, const char* name) {
+  struct Surfaces {
+    IDirect3DSurface9* target = nullptr;
+    IDirect3DSurface9* copy = nullptr;
+    ~Surfaces() { if (copy) copy->Release(); if (target) target->Release(); }
+  } surfaces;
+  HRESULT hr = device->CreateRenderTarget(16, 16, D3DFMT_A8R8G8B8,
+    D3DMULTISAMPLE_NONE, 0, FALSE, &surfaces.target, nullptr);
+  std::printf("SYSTEM_D3D9_LIFECYCLE_TARGET api=%s hr=%08lx object=%u\n",
+    name, static_cast<unsigned long>(hr), unsigned(surfaces.target != nullptr));
+  if (hr != S_OK || !surfaces.target) return false;
+  hr = device->SetRenderTarget(0, surfaces.target);
+  if (hr == S_OK) hr = device->Clear(0, nullptr, D3DCLEAR_TARGET, 0x7f3a85c2u, 1.0f, 0);
+  std::printf("SYSTEM_D3D9_LIFECYCLE_CLEAR api=%s color=7f3a85c2 hr=%08lx\n",
+    name, static_cast<unsigned long>(hr));
+  if (hr != S_OK) return false;
+  hr = device->CreateOffscreenPlainSurface(16, 16, D3DFMT_A8R8G8B8,
+    D3DPOOL_SYSTEMMEM, &surfaces.copy, nullptr);
+  if (hr == S_OK && surfaces.copy) hr = device->GetRenderTargetData(surfaces.target, surfaces.copy);
+  std::printf("SYSTEM_D3D9_LIFECYCLE_COPY api=%s hr=%08lx object=%u\n",
+    name, static_cast<unsigned long>(hr), unsigned(surfaces.copy != nullptr));
+  if (hr != S_OK || !surfaces.copy) return false;
+  D3DLOCKED_RECT mapped = {};
+  hr = surfaces.copy->LockRect(&mapped, nullptr, D3DLOCK_READONLY);
+  std::printf("SYSTEM_D3D9_LIFECYCLE_LOCK api=%s hr=%08lx data=%u pitch=%d\n",
+    name, static_cast<unsigned long>(hr), unsigned(mapped.pBits != nullptr), mapped.Pitch);
+  if (hr != S_OK) return false;
+  bool valid = mapped.pBits && mapped.Pitch >= 64;
+  UINT checked = 0, checksum = 2166136261u;
+  if (valid) {
+    for (UINT y = 0; y < 16; ++y) {
+      for (UINT x = 0; x < 16; ++x) {
+        UINT value;
+        std::memcpy(&value, static_cast<const BYTE*>(mapped.pBits) + size_t(y) * size_t(mapped.Pitch) + size_t(x) * 4, sizeof(value));
+        std::printf("SYSTEM_D3D9_LIFECYCLE_PIXEL api=%s x=%u y=%u value=%08x\n", name, x, y, value);
+        valid = valid && value == 0x7f3a85c2u;
+        checksum = (checksum ^ value) * 16777619u;
+        ++checked;
+      }
+    }
+  }
+  const HRESULT unlock = surfaces.copy->UnlockRect();
+  std::printf("SYSTEM_D3D9_LIFECYCLE_READBACK api=%s passed=%u pixels=%u checksum=%08x unlock=%08lx\n",
+    name, unsigned(valid && unlock == S_OK), checked, checksum, static_cast<unsigned long>(unlock));
+  return valid && checked == 256 && unlock == S_OK;
+}
+
+int deviceLifecycle() {
+  if (enumerate()) return 1;
+  struct Objects {
+    IDirect3D9* normal = nullptr;
+    IDirect3D9Ex* extended = nullptr;
+    HWND window = nullptr;
+    ~Objects() {
+      if (extended) extended->Release();
+      if (normal) normal->Release();
+      if (window) DestroyWindow(window);
+    }
+  } objects;
+  objects.normal = Direct3DCreate9(D3D_SDK_VERSION);
+  if (!objects.normal || Direct3DCreate9Ex(D3D_SDK_VERSION, &objects.extended) != S_OK || !objects.extended) return 1;
+  for (IDirect3D9* api : {objects.normal, static_cast<IDirect3D9*>(objects.extended)}) {
+    D3DADAPTER_IDENTIFIER9 identity = {};
+    D3DCAPS9 caps = {};
+    if (api->GetAdapterCount() != 1 || api->GetAdapterIdentifier(0, 0, &identity) != S_OK
+        || identity.VendorId != 0x1af4 || identity.DeviceId != 0x1050
+        || api->GetDeviceCaps(0, D3DDEVTYPE_HAL, &caps) != S_OK
+        || caps.VertexShaderVersion != D3DVS_VERSION(2, 0)
+        || caps.PixelShaderVersion != D3DPS_VERSION(2, 0)) return 1;
+  }
+  objects.window = CreateWindowExW(0, L"STATIC", L"VioGpu runtime lifecycle",
+    WS_OVERLAPPEDWINDOW, 0, 0, 16, 16, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+  if (!objects.window || IsWindowVisible(objects.window)) return 1;
+  D3DPRESENT_PARAMETERS parameters = {};
+  parameters.BackBufferWidth = parameters.BackBufferHeight = 16;
+  parameters.BackBufferFormat = D3DFMT_X8R8G8B8;
+  parameters.BackBufferCount = 1;
+  parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+  parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+  parameters.hDeviceWindow = objects.window;
+  parameters.Windowed = TRUE;
+  parameters.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+  IDirect3DDevice9* normal = nullptr;
+  auto normalParameters = parameters;
+  std::printf("SYSTEM_D3D9_LIFECYCLE_ATTEMPT api=9 hal=1 hardware_vertex_processing=1 window_visible=0\n");
+  const HRESULT normalHr = objects.normal->CreateDevice(0, D3DDEVTYPE_HAL, objects.window,
+    D3DCREATE_HARDWARE_VERTEXPROCESSING, &normalParameters, &normal);
+  std::printf("SYSTEM_D3D9_LIFECYCLE_RESULT api=9 hr=%08lx object=%u\n",
+    static_cast<unsigned long>(normalHr), unsigned(normal != nullptr));
+  const bool normalPassed = normalHr == S_OK && normal && lifecyclePixels(normal, "9");
+  if (normal) {
+    const ULONG references = normal->Release();
+    std::printf("SYSTEM_D3D9_LIFECYCLE_RELEASE api=9 remaining=%lu\n", references);
+    if (references) return 1;
+  }
+  IDirect3DDevice9Ex* extended = nullptr;
+  auto extendedParameters = parameters;
+  std::printf("SYSTEM_D3D9_LIFECYCLE_ATTEMPT api=9Ex hal=1 hardware_vertex_processing=1 window_visible=0\n");
+  const HRESULT extendedHr = objects.extended->CreateDeviceEx(0, D3DDEVTYPE_HAL, objects.window,
+    D3DCREATE_HARDWARE_VERTEXPROCESSING, &extendedParameters, nullptr, &extended);
+  std::printf("SYSTEM_D3D9_LIFECYCLE_RESULT api=9Ex hr=%08lx object=%u\n",
+    static_cast<unsigned long>(extendedHr), unsigned(extended != nullptr));
+  const bool extendedPassed = extendedHr == S_OK && extended && lifecyclePixels(extended, "9Ex");
+  if (extended) {
+    const ULONG references = extended->Release();
+    std::printf("SYSTEM_D3D9_LIFECYCLE_RELEASE api=9Ex remaining=%lu\n", references);
+    if (references) return 1;
+  }
+  std::printf("SYSTEM_D3D9_LIFECYCLE_DONE passed=%u explicit_create_device_calls=2 presentation=0 production_admission=0\n",
+    unsigned(normalPassed && extendedPassed));
+  return normalPassed && extendedPassed ? 0 : 1;
+}
+
+int frontDeviceLifecycle(const WCHAR* front) {
+  ReadOnlyNameSelector selector;
+  if (!selector.install(front, true)) return 1;
+  if (!SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", L"device-lifecycle-c8fbd55")) return 1;
+  const int result = deviceLifecycle();
+  SetEnvironmentVariableW(L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC", nullptr);
+  const bool restored = selector.restore();
+  std::printf("SYSTEM_D3D9_FRONT_DEVICE_LIFECYCLE result=%d redirects=%ld selector_restored=%u presentation=0 production_admission=0\n",
+    result, nameRedirects, unsigned(restored));
+  return result || !restored || !nameRedirects ? 1 : 0;
+}
+
 int wmain(int argc, WCHAR** argv) {
   std::setvbuf(stdout, nullptr, _IONBF, 0);
   try {
@@ -295,7 +425,8 @@ int wmain(int argc, WCHAR** argv) {
     if (argc == 3 && !std::wcscmp(argv[1], L"--front-guard")) return frontGuard(argv[2]);
     if (argc == 3 && !std::wcscmp(argv[1], L"--front-enumerate")) return frontEnumerate(argv[2]);
     if (argc == 3 && !std::wcscmp(argv[1], L"--front-device-contract")) return frontDeviceContract(argv[2]);
+    if (argc == 3 && !std::wcscmp(argv[1], L"--front-device-lifecycle")) return frontDeviceLifecycle(argv[2]);
   } catch (...) { return 1; }
-  std::fprintf(stderr, "Usage: --enumerate | --front-guard <owned-frontend-path> | --front-enumerate <owned-frontend-path> | --front-device-contract <owned-frontend-path>\n");
+  std::fprintf(stderr, "Usage: --enumerate | --front-guard <owned-frontend-path> | --front-enumerate <owned-frontend-path> | --front-device-contract <owned-frontend-path> | --front-device-lifecycle <owned-frontend-path>\n");
   return 64;
 }

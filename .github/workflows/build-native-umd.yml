@@ -134,6 +134,12 @@ jobs:
         with:
           name: dxvk-umd-backend-arm64-${{ github.sha }}
           path: candidate
+      - name: Preserve exact Git runtime input bytes
+        shell: pwsh
+        run: |
+          python scripts/restore-native-ci-source.py
+          if ($LASTEXITCODE) { throw 'Exact Git runtime source checkout failed' }
+          Copy-Item -LiteralPath artifacts/native-canonical-source.json -Destination candidate/arm64-native-canonical-source.json
       - name: Execute native ARM64 runtime ownership and entry regressions
         shell: pwsh
         run: ./scripts/test-native-arm64.ps1 -Directory candidate

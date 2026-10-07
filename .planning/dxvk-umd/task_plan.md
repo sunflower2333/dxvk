@@ -8,7 +8,18 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Published candidate is nowe7811754fc0c9640f57d0bb36843ebb2c35d0017.
+Published source793b7ca9c9861021480972c38d362a0d80313285 completed
+exactly one automatic push CI37644615059: identity/shader-cpu and all three
+backend builds PASS; ARM64 runtime fails before Add-Type or any fixture.
+The retained original C# is exactly Git source with101 LF expanded to CRLF,
+so the strict raw-byte hash guard correctly rejects the runtime checkout.
+Root adds the unchanged canonical Git restoration to that runtime job and
+retains its835-row receipt as arm64-native-canonical-source.json. Successful
+runtime evidence must contain88 original members, including28 owned children.
+Original31cf ARM harness/d8cf C#/markers/30s/fixtures/production stay unchanged.
+Native AST/Add-Type and exact prior CI shader replay both PASS below.
+Preserve failed793 originals; no usable core or hardware acceptance follows.
+Previous candidate e7811754fc0c9640f57d0bb36843ebb2c35d0017 remains failed.
 Exactly one automatic marker-corrected push CI37640080344 completed:
 identity/shader-cpu and all three backend builds PASS; ARM64 runtime fails
 at the twentieth fixture after nineteen accepted cases. The typed D3D11
@@ -66,7 +77,7 @@ a72f56c9, agentproof811332a4/rootproof2c4518cd, all14 retained/exited/drained
 native stages and8 transports finalized; release560c9fed returns target to
 root. Core/GPU/ordinary-runtime/hardware execution remains pending.
 
-Next root revision migrates all28 ARM64 CI cases to unchanged native-tested
+Published793 revision migrates all28 ARM64 CI cases to unchanged native-tested
 d8cf raw concurrent pipe runner, keeping exactly the same markers,30s,
 exit0, PE/source checks, hash log and child working directory. Retains actual
 per-case process JSON before any failure plus original C#/compile metadata;
@@ -75,8 +86,9 @@ Independent local proofcbe55ab8 and nativeARM64 PS5.1 AST/Add-Type original
 proof9b313596 PASS (28 cases/one6argument Run/30000/no Start-Process).
 Native19-file archive4322f363/three owned native stages/three transports0;
 this is parser/compile evidence, not main ARM fixture execution or a timeout
-cause/fix claim. Fresh six-job CI and exact crosscompiled shader replay are
-next. Root currently owns target CPU; peer DX10/11 prepare local GPU runners.
+cause/fix claim. Exact crosscompiled shader replay now PASS; fresh six-job CI
+remains required after the runtime checkout correction. Root owns target CPU;
+peer DX10/11 prepare local GPU runners.
 Five actual System32 original payloads nativeAA64/PE32+ and15-file archive
 1206cc2b rejoin rootproof0dfdc7be; native copies and beforeafter pass. DX10
 also needs BCrypt original. GPU core/source/CI/hash pins stay null.

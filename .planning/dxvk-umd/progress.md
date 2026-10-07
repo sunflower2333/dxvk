@@ -3284,3 +3284,73 @@ excluded. Fresh readonly retention02 has450s host transport bounds and
 reuses only exact complete tiny originals with API digest and actualexit0
 receipts. Native functional deadlines remain30s. Whole six-job acceptance,
 current GPU candidate, public runtime admission and hardware remain false.
+
+
+### Published ARM raw capture revision and exact CI executable replay
+
+Root committed/pushed793b7ca9c9861021480972c38d362a0d80313285 actual0,
+exactly5files (two CI harness/upload files and three plans). One automatic
+push run37644615059; no manual dispatch; four duplicate workflows remain
+disabled_manually. Fresh identity/shader CPU SUCCESS; backend3/native pending.
+Bound strict collector03 cb6b0ba0 and independent success verifier54fc92c7
+pin exact793/run37644615059, preserve835Git/12config/generated5/private3/
+PE-PDB3/56x64-x86 child markers and add87-member ARM runtime originals with
+28actual retained/exited/drained children and exact d8cf/compiled receipt.
+Offline2f6a549a controls pass29ARM/10metadata/3CLI rejects; actual CI not yet
+accepted. Historical collector02/e781 verifier remain immutable.
+
+Prior e781 complete retention02 actual0 retains all5 genuine API archives
+and6raw job logs, receiptd17e188d. Independent failed-run revieweebedad8
+rejoins canonical835 per arch/config12/generated5/private3/PE-PDB3,
+108PE machines,56x64-x86 owned children/markers and ARM19accepted hashes/
+20output pairs. All whole-CI/current-candidate/hardware acceptance false.
+ARM cross shader actualMSVC14.51.36231 HostX64/ARM64 uses /O2 /MT /W3;
+older accepted native used14.44 /O1 /MT /W4 /WX. CRT policy is not different.
+
+Root runs EXACT original e781 crosscompiled shader EXE831488bytes SHA9f258095
+under nativeSystem32 ARM64PS5.1/unchanged d8cf/30000ms, original actual
+exit0/exited/pipesdrained in0.2437476s:7483checks/57FXC/18draw/4608pixels/
+3expected callbacks PASS. Original126-file archive32a1d3ba/425820bytes and
+root proof6a558e64 rejoin114 DXBC/token files plus HLSL to accepted native
+d2f originals. SYSd48/ServiceRunning/DWM1864/Explorer4464 and five System32
+library metadata remain exactly unchanged. Two native children (fixture,
+tar) and3host transports exit0/finalized. Old CI timeout cause remains
+unproven; no CI-success/current-core/real-hardware acceptance is inferred.
+Root first offline regex review omitted CRLF end handling, exit1 preserved;
+corrected review02 only, no original mutation or second native invocation.
+
+Read-only original System32 BCrypt copy collected in that same packet:
+264616bytes/AA64, SHA791feefce0d157b0751a0d81f1a717df775d63d29d930b6b0bfa7d5b5c183182,
+exact native before/after path/version/hash and tar byte joins. DX10 hardware
+helper can now bind this genuine dependency while future core/CI/LUID pins
+stay null. Root retains targetCPU; DX10/11 local helpers/provenance work only.
+
+
+### ARM runtime checkout byte correction after793 CI failure
+
+Exact793b7ca9/run37644615059 completes with five successful jobs and ARM
+runtime112879776058 failure before any fixture starts. Original API runtime
+ZIP11493618960/1509bytes/SHA748400ab3acc46f8a855d3e857dfcdb0c9a2fc7d2329de357809eaf74b28619c
+contains only the retained raw runner. Actual original4798bytes/SHA46299450
+is exactly Git4697bytes/d8cf with101 LF expanded to CRLF. Script31cf line20
+correctly rejects that byte mismatch before runner receipt/Add-Type/loop;
+zero fixture child executions, not a new shader timeout. Root byte proof
+root-raw-runner-checkout-failure-verified-01.json and independent agent review
+join raw archive/log/Git bytes. Exact checkout configuration causing newline
+conversion is not retained; no production or timeout-causality claim follows.
+
+The runtime job now reuses unchanged scripts/restore-native-ci-source.py,
+checks its actual exit, and copies its original835-row canonical receipt into
+candidate/arm64-native-canonical-source.json before fixtures. Existing upload
+patterns retain that JSON inside the same artifact root; accepted runtime
+shape increases87 to88 original members. Original ARM script31cf/C#d8cf,
+28 ordered markers, PE/source/exit0/30s/CWD gates and all compiled sources
+remain unchanged. The actual runner image20260924.168.1 official software
+manifest includes Python3.13.15; no extra dependency action is introduced.
+All5 failed ZIPs/6 job logs are being retained under root-consolidated-arm-raw-01/
+failure-originals-02 using450s read-only host downloads; runtime deadlines
+are unchanged. Frozen successful collector03/verifier54fc remain unexecuted;
+a fresh88-member collector/verifier will bind the next exact source/run.
+Hardware core/CI/source/hash/LUID pins remain null. Root owns target CPU;
+DX10/11 finish local USER runner packets. Administrator management is allowed,
+and graphics acceptance continues in the established limited USER desktop.

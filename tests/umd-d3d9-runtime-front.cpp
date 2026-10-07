@@ -18,9 +18,9 @@ namespace {
 constexpr WCHAR permission[] = L"read-only-legacy-fog-478eca2";
 constexpr WCHAR candidate[] =
   L"C:\\Users\\Public\\DxvkD3D9CapsCandidate-478eca2\\viogpudxvk.dll";
-constexpr WCHAR lifecyclePermission[] = L"device-lifecycle-c7e8953";
+constexpr WCHAR lifecyclePermission[] = L"device-lifecycle-4e91632";
 constexpr WCHAR lifecycleCandidate[] =
-  L"C:\\Users\\Public\\DxvkD3D9DeviceInterfaceCandidate-c7e8953\\viogpudxvk.dll";
+  L"C:\\Users\\Public\\DxvkD3D9DiscardCandidate-4e91632\\viogpudxvk.dll";
 constexpr size_t lifecycleFunctionBytes =
   offsetof(D3DDDI_DEVICEFUNCS, pfnRename) + sizeof(PFND3DDDI_RENAME);
 static_assert(lifecycleFunctionBytes == 99 * sizeof(void*));

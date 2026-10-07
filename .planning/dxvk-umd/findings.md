@@ -1792,3 +1792,11 @@ objects compile cleanly. Agent original failed tar84fa1254e0610376494e0dc4c1d72d
 retains source12/SDK21/libs5/RSP/logs and SYS/System32/desktop checks; root review
 pending. Convert only these compile-time ABI bounds to static_assert, preserving
 runtime guard-page semantics. Native rerun and discard-source packet pending.
+
+
+2026-10-07: Freeze exact4e91632 discard/native9 source89inputs SHA
+c27811a6f2cd25c3524064fa38757c30a07ced3ae4588c36418adadd8fe162c2.
+Native verifier owns new static_assert adapter retry and then target9 fixtures.
+Prepare separate frontend/probe permission device-lifecycle-4e91632 and fixed
+DxvkD3D9DiscardCandidate-4e91632 path; table99/512-pixel oracle/deadlines and
+blocked caps mode stay unchanged. No native build/run or CI push yet.

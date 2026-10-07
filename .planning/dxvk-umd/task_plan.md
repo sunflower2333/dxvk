@@ -800,3 +800,13 @@ gates and native fixture/semantic controls remain required.
 - [complete] Implement owned presentable allocation/pixel publication and typed callback.
 - [in_progress] Verify native callback/pixel/lifetime/reset/reentry controls and exact architecture builds.
 - [pending] Verify actual target presentation and continue ordinary system-runtime admission.
+
+## Dynamic textures and ordinary HAL admission, 2026-10-07
+- [complete] Implement typed dynamic2D mips/discard and retain SYSTEMMEM transfer semantics.
+- [complete] Independently verify exact0dd native42309/521942 fixtures and original toolchain/continuity.
+- [in_progress] Verify consolidated37566610477 and correct strict hardware-probe shadowing warnings.
+- [complete] Freeze independent768pixel oracle and parse isolated dynamic GPU scripts on native ARM64.
+- [pending] Verify full5056+768pixels and1056bytes on hardware with diagnostics1/0.
+- [complete] Verify Caps2-only blocked runtime diagnostic fails before any device API attempts.
+- [in_progress] Build isolated legacy fog-bit diagnostic and measure genuine blocked Microsoft device contract.
+- [pending] Complete ordinary DX8-DX11 hardware rendering and visible presentation; broader GPU program remains active.

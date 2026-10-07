@@ -2327,3 +2327,16 @@ assert exactly one bind plus one destroy-time unbind for video/native pools.
 Do not change production SetTexture semantics. Originalb21 failure379107 and
 zero-warning compile evidence are retained; fresh88-input packet03/native run
 required before production push.
+
+2026-10-07 03:28 UTC: Fresh native0dd packet03 passes42309 adapter and
+521942 device checks, zero strict compiler warnings. Root independently
+reviews original35member archive66cf59ef and all88 Git/archive/native inputs,
+actual9COFF/2ARM64 PE outputs, raw SDK/CRT provenance and candidate/SYS/desktop
+continuity; root-native-dynamic-fixtures-verified-01.json records acceptance.
+Single production push starts consolidated37566610477 at source0dd6f6f.
+New isolated dynamic GPU scripts parse on native ARM64 PowerShell and their
+originals/hash/deadline gates pass root review; GPU768pixels remains unexecuted.
+Separate hardware-probe strict native compile rejects two newly introduced
+C4456 shadowing warnings. Retain original25member archivebe9f9b42; rename only
+the two sampler loop variables and require a fresh native probe compile before
+a corrective production push. No GPU, registration or ordinary admission PASS.

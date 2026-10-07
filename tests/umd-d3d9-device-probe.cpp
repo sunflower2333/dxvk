@@ -718,11 +718,11 @@ public:
               }
               hr = api.pfnSetTexture(m_driverDevice,0,dynamic.hResource); if (FAILED(hr)) return hr;
               for (auto& vertex : verticesWithUv) vertex.u = vertex.v = 0.25f;
-              for (const auto state : {D3DDDITSS_ADDRESSU,D3DDDITSS_ADDRESSV}) {
-                hr = sampler(state,D3DTADDRESS_CLAMP); if (FAILED(hr)) return hr;
+              for (const auto samplerId : {D3DDDITSS_ADDRESSU,D3DDDITSS_ADDRESSV}) {
+                hr = sampler(samplerId,D3DTADDRESS_CLAMP); if (FAILED(hr)) return hr;
               }
-              for (const auto state : {D3DDDITSS_MINFILTER,D3DDDITSS_MAGFILTER}) {
-                hr = sampler(state,D3DTEXF_POINT); if (FAILED(hr)) return hr;
+              for (const auto samplerId : {D3DDDITSS_MINFILTER,D3DDDITSS_MAGFILTER}) {
+                hr = sampler(samplerId,D3DTEXF_POINT); if (FAILED(hr)) return hr;
               }
               for (UINT level = 0; level < 3; ++level) {
                 hr = sampler(D3DDDITSS_MAXMIPLEVEL,level); if (FAILED(hr)) return hr;

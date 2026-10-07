@@ -149,14 +149,7 @@ void APIENTRY createShaderView11(D3D10DDI_HDEVICE h, const D3D11DDIARG_CREATESHA
         ComPtr<ID3D11Texture2D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;
         D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
-        if (!(info.BindFlags & D3D11_BIND_SHADER_RESOURCE) || !(info.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE)
-            || args->TexCube.First2DArrayFace % 6 || !args->TexCube.NumCubes
-            || args->TexCube.NumCubes > info.ArraySize / 6
-            || !dxvk::umd::viewRange(args->TexCube.First2DArrayFace / 6, args->TexCube.NumCubes, info.ArraySize / 6)
-            || !dxvk::umd::viewRange(args->TexCube.MostDetailedMip, args->TexCube.MipLevels, info.MipLevels)) return E_INVALIDARG;
-        desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBEARRAY;
-        desc.TextureCubeArray = {args->TexCube.MostDetailedMip, args->TexCube.MipLevels,
-          args->TexCube.First2DArrayFace, args->TexCube.NumCubes};
+        if (!dxvk::umd::cubeArrayShaderView11Desc(args->TexCube, args->Format, info, desc)) return E_INVALIDARG;
       } else return E_INVALIDARG;
       return device->backend->CreateShaderResourceView(resource.Get(), &desc, &view.backend);
     });

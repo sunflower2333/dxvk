@@ -28,6 +28,7 @@ Add-Type -TypeDefinition ([IO.File]::ReadAllText($retainedRunnerSource))
 $runnerReceipt.type_compiled = $true
 $runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'arm64-fixture-runner-source.json') -Encoding UTF8
 $cases = [ordered]@{
+    'dxvk-umd-cube-probe-oracle-test.exe' = 'PASS cube probe arithmetic checks=159292 bit_flips=154752 texels=4830 hardware=0'
     'dxvk-umd-vertex-input-test.exe' = 'vertex input equality PASS checks=\d+; colliding layouts retained, no GPU runtime'
     'dxvk-umd-runtime-backend-test.exe' = 'runtime backend ownership PASS checks=\d+; CPU descriptor and lifetime contracts'
     'dxvk-umd-d3d9-backend-test.exe' = 'D3D9 backend rejection PASS checks=\d+; no GPU construction or runtime admission'
@@ -37,6 +38,11 @@ $cases = [ordered]@{
     'dxvk-umd-texture1d-test.exe' = 'PASS Texture1D'
     'dxvk-umd-volume-policy-test.exe' = 'PASS volume policy: 385547 checks; independent padded volume and xyz bounds'
     'dxvk-umd-texture3d-test.exe' = 'PASS Texture3D\r?\nprofiles=3\r?\ncases=27\r?\nchecks=\d+\r?\nvoxels=9138\r?\nsampled=945'
+    'dxvk-umd-texturecube-test.exe' = 'PASS TextureCube\r?\ncases=8\r?\nchecks=\d+\r?\ntexels=10380\r?\nreadbacks=7'
+    'dxvk-umd-cube-array-policy-test.exe' = 'PASS cube-array policy: 97387 checks; independent complete-face and mip bounds'
+    'dxvk-umd-cube-array-resource-test.exe' = 'PASS cube-array resource\r?\nprofiles=2\r?\ncases=7\r?\nchecks=\d+\r?\ntexels=3540\r?\nfailures=56'
+    'dxvk-umd-cube-srv-mips-test.exe' = '(?m)^native D3D10\.1/D3D11 cube SRV mip ranges verified checks=\d+ views=102 words=2244 callbacks=36 WARP controls\r?$'
+    'dxvk-umd-cube-array-mips-test.exe' = 'PASS CubeArrayMips\r?\ncases=5\r?\nchecks=\d+\r?\ntexels=30690\r?\nreadbacks=5'
     'dxvk-umd-d3d11-device-test.exe' = '(?m)^typed D3D10\.1/D3D11 fixture PASS checks=\d+ callbacks=\d+ SM5 graphics/queries/packed IA/streams/tessellation/classes WARP controls; native Turnip/runtime acceptance remains gated\r?$'
     'dxvk-umd-compute-container-test.exe' = 'compute container PASS checks=\d+ exact tokens/hash and malformed SM5 controls'
     'dxvk-umd-sm5-container-test.exe' = 'SM5 signatures/interfaces PASS checks=\d+ exact tokens/hash, GS streams, patch factors, typed/depth outputs, native table IDs'
@@ -59,6 +65,13 @@ $cases = [ordered]@{
     'dxvk-umd-query-test.exe' = 'query completion PASS checks='
     'dxvk-umd-system-runtime-test.exe' = 'system runtime control PASS: WARP Draw/readback/Present/immediate teardown'
 }
+$originalDirectories = @{
+    'dxvk-umd-texture3d-test.exe' = 'arm64-texture3d-originals'
+    'dxvk-umd-texturecube-test.exe' = 'arm64-texturecube-originals'
+    'dxvk-umd-cube-array-resource-test.exe' = 'arm64-cube-array-resource-originals'
+    'dxvk-umd-cube-srv-mips-test.exe' = 'arm64-cube-srv-mips-originals'
+    'dxvk-umd-cube-array-mips-test.exe' = 'arm64-cube-array-mips-originals'
+}
 foreach ($name in $cases.Keys) {
     $exe = Join-Path $root $name
     $bytes = [System.IO.File]::ReadAllBytes($exe)
@@ -71,8 +84,8 @@ foreach ($name in $cases.Keys) {
     $out = Join-Path $root "arm64-$name.stdout.txt"
     $err = Join-Path $root "arm64-$name.stderr.txt"
     $childDirectory = $PWD.ProviderPath
-    if ($name -ceq 'dxvk-umd-texture3d-test.exe') {
-        $childDirectory = Join-Path $root 'arm64-texture3d-originals'
+    if ($originalDirectories.ContainsKey($name)) {
+        $childDirectory = Join-Path $root $originalDirectories[$name]
         New-Item -ItemType Directory -Path $childDirectory -ErrorAction Stop | Out-Null
     }
     $process = [DxvkRawProcessF4_02]::Run($exe, '', $childDirectory, $out, $err, 30000)
@@ -97,6 +110,19 @@ foreach ($name in $cases.Keys) {
     Write-Host $text
     if ($process.ExitCode -ne 0 -or $text -notmatch $cases[$name]) {
         throw "$name failed: exit=$($process.ExitCode) $(Get-Content -LiteralPath $err -Raw)"
+    }
+    if ($name -ceq 'dxvk-umd-texturecube-test.exe') {
+        & python (Join-Path $PSScriptRoot 'verify-native-cube-originals.py') $childDirectory --output (Join-Path $root 'arm64-texturecube-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 cube original oracle failed' }
+    } elseif ($name -ceq 'dxvk-umd-cube-array-resource-test.exe') {
+        & python (Join-Path $PSScriptRoot 'verify-native-cube-array-resource-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-cube-array-resource-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 cube-array resource original oracle failed' }
+    } elseif ($name -ceq 'dxvk-umd-cube-srv-mips-test.exe') {
+        & python (Join-Path $PSScriptRoot '../tests/verify-cube-srv-mips-originals.py') $childDirectory --stdout $out | Set-Content (Join-Path $root 'arm64-cube-srv-mips-originals-verified.json') -Encoding UTF8
+        if ($LASTEXITCODE) { throw 'Independent ARM64 cube SRV original oracle failed' }
+    } elseif ($name -ceq 'dxvk-umd-cube-array-mips-test.exe') {
+        & python (Join-Path $PSScriptRoot 'verify-native-cube-array-mips-originals.py') $childDirectory --output (Join-Path $root 'arm64-cube-array-mips-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 cube-array mip original oracle failed' }
     }
     Get-FileHash -Algorithm SHA256 -LiteralPath $exe | Format-List | Out-File -Append (Join-Path $root 'arm64-hashes.txt')
 }

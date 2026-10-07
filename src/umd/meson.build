@@ -49,6 +49,16 @@ umd_compute_oracle_test = executable('dxvk-umd-compute-oracle-test',
   '../../tests/umd-compute-oracle.cpp',
 )
 
+umd_d3d11_cube_probe = executable('dxvk-umd-d3d11-cube-probe',
+  ['../../tests/umd-d3d11-cube-probe.cpp', umd_build_config],
+  link_with : [umd_development],
+  dependencies : [cpp.find_library('d3dcompiler'), lib_gdi32],
+)
+
+umd_cube_probe_oracle_test = executable('dxvk-umd-cube-probe-oracle-test',
+  '../../tests/umd-cube-probe-oracle.cpp',
+)
+
 umd_predication_probe = executable('dxvk-umd-predication-probe', '../../tests/umd-predication.cpp',
   link_with : [umd_development],
   dependencies : [cpp.find_library('d3dcompiler')])
@@ -180,6 +190,29 @@ umd_texture3d_test = executable('dxvk-umd-texture3d-test',
 
 umd_texture1d_test = executable('dxvk-umd-texture1d-test',
   ['../../tests/umd-texture1d.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
+
+umd_texturecube_test = executable('dxvk-umd-texturecube-test',
+  ['../../tests/umd-texturecube.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
+umd_cube_array_policy_test = executable('dxvk-umd-cube-array-policy-test',
+  '../../tests/umd-cube-array-policy.cpp')
+
+umd_cube_array_resource_test = executable('dxvk-umd-cube-array-resource-test',
+  ['../../tests/umd-cube-array-resource.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
+umd_cube_array_mips_test = executable('dxvk-umd-cube-array-mips-test',
+  ['../../tests/umd-cube-array-mips.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
+umd_cube_srv_mips_test = executable('dxvk-umd-cube-srv-mips-test',
+  ['../../tests/umd-cube-srv-mips.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
 

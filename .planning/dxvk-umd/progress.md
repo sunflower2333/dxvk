@@ -2138,3 +2138,24 @@ UMD061ee8f, all frame colors and strict screen oracles remain byte-identical.
 Full061ee8f CI37549764498 is independently complete, all six jobs, five ZIPs,
 three actual architecture links and15actual native executions. No duplicate
 automatic run was triggered by the shared probe-only [skip ci] commit.
+
+## 2026-10-07 emulated ownership diagnostic
+Frozen57input sourced22863e nativeARM64 probe compiles warning-free, six invalid
+CLI and read-only adapter checks pass. Root independently rejoins original
+COFF/PE/libraries/SDK headers and raw official User32 NuGet ZIP member; native
+fixture466831 remains byte-linked and was not rerun. Root reviewer02/03/04 stale
+helper/archive/reused-CI paths remain as failed evidence; fresh05 resolves actual
+receipt paths and passes without modifying original agent evidence.
+Targetpresent43 acquires EMULATED type4 source0 on actualLUID6e6c successfully,
+but first raw legacy primary blit still returnsc01e0342. Emulated owner releases
+status0; sourceallocation/GDIcontext deallocate/destroy0, residency20/20remaining0.
+No screen capture or presentation PASS. SignedSYS/DWM/Explorer and58readiness
+fields retain. Raw12memberarchiveacc123311b702f54bbfcc78ddedabc239ab9e73ce890fc326c7590b0fe1adeef.
+Root failure proof checks8payloads/3scripts/token/task removal and832rational
+earlier query/clip pixels. Source ownership alone does not fix this raw legacy
+primary path. Next isolated probe-only diagnostic sets documented
+PresentToBitmap (0x4000), with exact source/window/rectangles and unchanged
+16384screen oracle; no exclusive owner, mode change or production admission.
+Actual ordinary runtime still requires caps/export negotiation, primary/opened
+resource ownership and runtime-managed window redirection; this raw harness
+provides its own callbacks and must not be mistaken for that admission.

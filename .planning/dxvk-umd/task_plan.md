@@ -68,6 +68,10 @@ verified;19residency references/evictions close, signedSYS/desktop58fields retai
 No screen or ordinary-runtime acceptance. Next probe-only causal diagnostic
 uses documented EMULATED type4 (no real primary ownership); no exclusive
 request, mode change or altered UMD/fixture/screen oracle is introduced.
+Actualpresent43 acquires/releases EMULATED successfully, but raw legacy primary
+blit still rejects c01e0342.20residency owners close and58readiness fields retain.
+Next isolated probe-only diagnostic uses documented PresentToBitmap; strict
+visible screen acceptance remains required, and ordinary runtime stays open.
 
 Previous ae61dde compact clip37/38 acceptance remains unchanged. Production
 caps/exports, registration and paired package pins stay closed. Complete remaining

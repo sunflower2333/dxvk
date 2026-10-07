@@ -1969,8 +1969,13 @@ private:
     request.hContext = s->m_presentContext; request.hWindow = s->m_window.handle();
     request.hSource = args->hSrcAllocation; request.SrcRect = request.DstRect = rect;
     request.Flags.Blt = request.Flags.SrcRectValid = request.Flags.DstRectValid = 1;
+    // Diagnose window bitmap presentation without asking for the desktop's
+    // real primary ownership. Keep the exact source allocation and rectangles.
+    request.Flags.PresentToBitmap = 1;
     request.SubRectCnt = 1; request.pSrcSubRects = &rect;
     request.PresentCount = s->presents + 1;
+    std::printf("D3D9_PRESENT_POLICY stage=%u flags=%08x owner=emulated destination=bitmap\n",
+      s->presents + 1,request.Flags.Value);
     const NTSTATUS status = D3DKMTPresent(&request);
     const HRESULT hr = status == 0 ? S_OK : status < 0 ? result(status) : E_FAIL;
     std::printf("D3D9_KMT_PRESENT stage=%u status=%08lx hr=%08lx context=%u source=%u composition=%u\n",

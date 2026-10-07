@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Actual typed legacy shader callbacks and draws, with a controlled WARP
-// factory. Public textures supply a reference target; no adapter activation.
+// factory. Typed DDIs own the target; public WARP state supplies the reference.
 #include "../src/umd/umd_api.h"
 #include "../src/umd/umd_contract.h"
 #include "../src/umd/umd_result.h"
@@ -185,6 +185,51 @@ template<typename Table> struct NativeShader {
   }
   ~NativeShader() { owner.table.pfnDestroyShader(owner.device, handle); expect(); }
 };
+template<typename Table> struct NativeTarget {
+  Fixture<Table>& owner;
+  std::unique_ptr<Storage> resourceMemory, viewMemory;
+  D3D10DDI_HRESOURCE resource{};
+  D3D10DDI_HRENDERTARGETVIEW handle{};
+  ComPtr<ID3D11Texture2D> texture;
+  ComPtr<ID3D11RenderTargetView> view;
+  NativeTarget(Fixture<Table>& f, UINT samples) : owner(f) {
+    D3D10DDI_MIPINFO mip{16, 16, 1, 16, 16, 1};
+    D3D10DDIARG_CREATERESOURCE desc{};
+    desc.pMipInfoList = &mip; desc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+    desc.Usage = D3D10_DDI_USAGE_DEFAULT; desc.BindFlags = D3D10_DDI_BIND_RENDER_TARGET;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = samples;
+    desc.MipLevels = desc.ArraySize = 1;
+    resourceMemory = std::make_unique<Storage>(f.table.pfnCalcPrivateResourceSize(f.device, &desc));
+    resource = {resourceMemory->bytes.get()};
+    checkpoint("CreateTargetResource"); f.table.pfnCreateResource(f.device, &desc, resource, {}); expect();
+    D3D10DDIARG_CREATERENDERTARGETVIEW args{};
+    args.hDrvResource = resource; args.Format = desc.Format;
+    args.ResourceDimension = desc.ResourceDimension; args.Tex2D.ArraySize = 1;
+    viewMemory = std::make_unique<Storage>(f.table.pfnCalcPrivateRenderTargetViewSize(f.device, &args));
+    handle = {viewMemory->bytes.get()};
+    checkpoint("CreateTargetView"); f.table.pfnCreateRenderTargetView(f.device, &args, handle, {}); expect();
+    bind();
+    // Inspect the actual bound backend view through public COM, never private UMD storage.
+    f.context->OMGetRenderTargets(1, &view, nullptr); CHECK(view);
+    ComPtr<ID3D11Resource> backendResource; view->GetResource(&backendResource);
+    CHECK(backendResource && backendResource.As(&texture) == S_OK && texture);
+    D3D11_TEXTURE2D_DESC actual{}; texture->GetDesc(&actual);
+    CHECK(actual.Width == 16 && actual.Height == 16 && actual.MipLevels == 1 && actual.ArraySize == 1
+      && actual.Format == desc.Format && actual.SampleDesc.Count == samples && actual.SampleDesc.Quality == 0);
+  }
+  void bind() {
+    checkpoint("SetRenderTargets"); owner.table.pfnSetRenderTargets(owner.device, &handle, 1, 0, {}); expect();
+  }
+  void clear(const FLOAT* color) {
+    checkpoint("ClearRenderTargetView"); owner.table.pfnClearRenderTargetView(owner.device, handle, color); expect();
+  }
+  ~NativeTarget() {
+    checkpoint("UnbindRenderTargets"); owner.table.pfnSetRenderTargets(owner.device, nullptr, 0, 0, {}); expect();
+    view.Reset(); texture.Reset();
+    checkpoint("DestroyTargetView"); owner.table.pfnDestroyRenderTargetView(owner.device, handle); expect();
+    checkpoint("DestroyTargetResource"); owner.table.pfnDestroyResource(owner.device, resource); expect();
+  }
+};
 struct RenderInputs {
   ComPtr<ID3D11Texture2D> texture, multi;
   ComPtr<ID3D11ShaderResourceView> sampled, multisampled;
@@ -238,29 +283,28 @@ template<typename Table> void scene(Fixture<Table>& f, const char* pixelEntry, b
   Compiled ps(ShaderStage::Pixel, pixelEntry, model41 ? "ps_4_1" : "ps_4_0");
   NativeShader<Table> vertex(f, vs), pixel(f, ps), geom(f, gs);
   RenderInputs inputs(f.backend.Get());
-  D3D11_TEXTURE2D_DESC desc{}; desc.Width = desc.Height = 16; desc.MipLevels = desc.ArraySize = 1;
-  desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = samples; desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-  ComPtr<ID3D11Texture2D> target; ComPtr<ID3D11RenderTargetView> view;
-  CHECK(f.backend->CreateTexture2D(&desc, nullptr, &target) == S_OK);
-  CHECK(f.backend->CreateRenderTargetView(target.Get(), nullptr, &view) == S_OK);
-  ID3D11RenderTargetView* views[]{view.Get()}; const FLOAT clear[]{0, 0, 0, 0};
-  auto setup = [&] { inputs.bind(f.context.Get()); f.context->OMSetRenderTargets(1, views, nullptr);
-    f.context->ClearRenderTargetView(view.Get(), clear); };
-  setup();
+  NativeTarget<Table> target(f, samples);
+  const FLOAT clear[]{0, 0, 0, 0};
+  inputs.bind(f.context.Get()); target.bind(); target.clear(clear);
+  const D3D10_DDI_VIEWPORT viewport{0, 0, 16, 16, 0, 1};
+  checkpoint("SetViewports"); f.table.pfnSetViewports(f.device, 1, 0, &viewport); expect();
+  checkpoint("IaSetTopology"); f.table.pfnIaSetTopology(f.device, D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST); expect();
   checkpoint("VsSetShader", vs.code[0]); f.table.pfnVsSetShader(f.device, vertex.handle);
   checkpoint("PsSetShader", ps.code[0]); f.table.pfnPsSetShader(f.device, pixel.handle);
   checkpoint("GsSetShader", gs.code[0]);
   f.table.pfnGsSetShader(f.device, geometry ? geom.handle : D3D10DDI_HSHADER{}); expect();
   checkpoint("Draw"); f.table.pfnDraw(f.device, 3, 0); expect(); ++draws;
-  const auto actual = readback(f.backend.Get(), f.context.Get(), target.Get(), samples);
+  const auto actual = readback(f.backend.Get(), f.context.Get(), target.texture.Get(), samples);
   f.table.pfnVsSetShader(f.device, {}); f.table.pfnPsSetShader(f.device, {}); f.table.pfnGsSetShader(f.device, {}); expect();
   ComPtr<ID3D11VertexShader> refVs; ComPtr<ID3D11PixelShader> refPs; ComPtr<ID3D11GeometryShader> refGs;
   CHECK(f.backend->CreateVertexShader(vs.original->GetBufferPointer(), vs.original->GetBufferSize(), nullptr, &refVs) == S_OK);
   CHECK(f.backend->CreatePixelShader(ps.original->GetBufferPointer(), ps.original->GetBufferSize(), nullptr, &refPs) == S_OK);
   if (geometry) CHECK(f.backend->CreateGeometryShader(gs.original->GetBufferPointer(), gs.original->GetBufferSize(), nullptr, &refGs) == S_OK);
-  setup(); f.context->VSSetShader(refVs.Get(), nullptr, 0); f.context->PSSetShader(refPs.Get(), nullptr, 0);
+  inputs.bind(f.context.Get()); ID3D11RenderTargetView* views[]{target.view.Get()};
+  f.context->OMSetRenderTargets(1, views, nullptr); f.context->ClearRenderTargetView(target.view.Get(), clear);
+  f.context->VSSetShader(refVs.Get(), nullptr, 0); f.context->PSSetShader(refPs.Get(), nullptr, 0);
   f.context->GSSetShader(refGs.Get(), nullptr, 0); f.context->Draw(3, 0);
-  const auto reference = readback(f.backend.Get(), f.context.Get(), target.Get(), samples);
+  const auto reference = readback(f.backend.Get(), f.context.Get(), target.texture.Get(), samples);
   for (size_t i = 0; i < actual.size(); ++i) {
     CHECK(actual[i] == reference[i] && (reference[i] >> 24) == 255); ++pixels;
     if (!std::strcmp(pixelEntry, "ps_index") || !std::strcmp(pixelEntry, "ps_interpolation"))

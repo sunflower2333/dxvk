@@ -66,9 +66,13 @@ SampleInfo, four added PS opcodes, GS linkage, four-sample SV_SampleIndex and
 sample-frequency interpolation. MSAA cases also require the independent
 sample-frequency red average127–128. The fixture retains its exact HLSL,
 57 original DXBC binaries and57 token payloads using CREATE_NEW, and logs each
-program/profile/entry/file join. Public resources supply the CPU reference
-pipeline; shader creation/binding and the draw go through the actual typed
-UMD callbacks. This does not activate a Microsoft hardware runtime adapter.
+program/profile/entry/file join. Typed resource/view callbacks create the
+target, and typed target/viewport/topology callbacks establish native draw
+prerequisites. Public COM inspection retrieves the actual bound target for
+readback and the independent original-DXBC reference pipeline. Public input
+resources supply textures, samplers and rasterizer state; shader creation,
+binding and the draw go through the actual typed UMD callbacks. This does not
+activate a Microsoft hardware runtime adapter.
 
 Native MSVC ARM64 compilation/FXC-engine execution/WARP comparisons are
 pending root. The local original MSVC/SDK/WDK-header x64/x86 Clang COFF checks
@@ -122,3 +126,24 @@ change no shader bytes, HLSL, production code, callback ownership, expected
 results, program counts, draw counts or pixel comparisons. A new frozen
 native attempt is required to identify the rejection and verify the complete
 shader suite; root controls the next target handoff.
+
+The frozen ad138ce causal attempt identifies the rejected operation as the
+first typed Draw, with original HRESULT80070057 on the caller thread after
+allthree shader creations and bindings succeeded. Its167-member original
+archive, SHA66a8aa7e1a1738e7a06d24700a8fa7803b3e70e002b3ddfd5919869eaf1bcad4,
+retains the original three FXC programs/token payloads and HLSL, byte-identical
+to c9. Native container568 and strict18COFF/2PE compilation passed; seven
+owned children exited/drained and all12 retention checks passed. No draw or
+pixel oracle passed.
+
+Local source inspection finds a fixture setup omission: public context
+RSSetViewports, IASetPrimitiveTopology and OMSetRenderTargets do not update
+the UMD's viewportBound/topologyBound/targetBound prerequisites. The typed
+Draw therefore rejects before shader preparation or backend drawing. The
+fixture now uses real typed resource/view creation and typed target/viewport/
+topology/clear operations, with public COM inspection of the actual bound
+target. Cleanup unbinds the target, destroys its view and then destroys its
+resource while the device and live callback table remain alive. Production
+code, original HLSL/FXC compilation, three negative callbacks,57 programs,
+18draws and4608 exact-pixel comparisons remain unchanged. Native execution of
+this corrected setup remains pending an explicit root handoff.

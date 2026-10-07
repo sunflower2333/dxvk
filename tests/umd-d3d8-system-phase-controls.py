@@ -27,6 +27,9 @@ encoded = name.encode('utf-16le')
 words = [int.from_bytes(encoded[i:i+2], 'little') for i in range(0, len(encoded), 2)]
 words += [0] * (260 - len(words))
 prefix = [f'D3D8_USER_GATE session=1 elevation=0 elevation_type=3 integrity_rid=8192 sid={phase.SID}',
+          'D3D8_PROCESS_MACHINE process=014c native=aa64 effective=014c pointer_bytes=4 legacy_status=1 legacy_wow=0',
+          r'D3D8_SYSTEM_DIRECTORY machine=014c api=GetSystemWow64Directory2W path=C:\Windows\SysWOW64',
+          r'D3D8_SYSTEM_GDI32 actual=C:\Windows\SysWOW64\gdi32.dll expected=C:\Windows\SysWOW64\gdi32.dll machine=014c pointer_bytes=4',
           'D3D8_KMT_MATCH adapter=17 source=0 luid=ec6b000000000000 software=0 render=1 no_device=1',
           f'D3D8_KMT_NAME version=0 status=00000000 terminated=1 name={name} pointer_bytes=4 raw_bytes=524']
 text = '\n'.join(prefix + [f'D3D8_KMT_NAME_WORD index={i} value={v:04x}' for i, v in enumerate(words)] +
@@ -37,6 +40,12 @@ reject('missing-last-original-word', phase.verify_names, text.replace('D3D8_KMT_
 reject('duplicate-original-word', phase.verify_names, text + 'D3D8_KMT_NAME_WORD index=259 value=0000\n', 'ec6b000000000000', 0)
 reject('word-and-printed-name-disagree', phase.verify_names, text.replace('name=' + name, 'name=' + name.replace('synthetic', 'different')), 'ec6b000000000000', 0)
 reject('wrong-pointer-architecture', phase.verify_names, text.replace('pointer_bytes=4', 'pointer_bytes=8'), 'ec6b000000000000', 0)
+reject('wrong-process-machine', phase.verify_names, text.replace('process=014c', 'process=aa64'), 'ec6b000000000000', 0)
+reject('legacy-directory-selection', phase.verify_names, text.replace('api=GetSystemWow64Directory2W', 'api=GetSystemDirectoryW'), 'ec6b000000000000', 0)
+reject('wrong-system-directory', phase.verify_names, text.replace('path=C:\\Windows\\SysWOW64', 'path=C:\\Windows\\System32'), 'ec6b000000000000', 0)
+reject('wrong-loaded-GDI32-path', phase.verify_names, text.replace('actual=C:\\Windows\\SysWOW64\\gdi32.dll', 'actual=C:\\Windows\\System32\\gdi32.dll'), 'ec6b000000000000', 0)
+reject('missing-machine-evidence', phase.verify_names, text.replace(prefix[1] + '\n', ''), 'ec6b000000000000', 0)
+reject('machine-evidence-after-KMT', phase.verify_names, text.replace(prefix[1] + '\n', '') + prefix[1] + '\n', 'ec6b000000000000', 0)
 reject('wrong-adapter-source', phase.verify_names, text, 'ec6b000000000000', 1)
 reject('elevated-USER', phase.verify_names, text.replace('elevation=0', 'elevation=1'), 'ec6b000000000000', 0)
 reject('factory-output-in-names-phase', phase.verify_names, text + 'D3D8_API operation=Direct3DCreate8 object=1\n', 'ec6b000000000000', 0)

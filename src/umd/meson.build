@@ -67,7 +67,7 @@ umd_d3d9_adapter_test = executable('dxvk-umd-d3d9-adapter-test',
 
 umd_d3d9_device_test = executable('dxvk-umd-d3d9-device-test',
   '../../tests/umd-d3d9-device.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d9_device.cpp',
-  'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp',
+  'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp', 'umd_allocation.cpp',
 )
 
 umd_runtime_backend_test = executable('dxvk-umd-runtime-backend-test',
@@ -87,7 +87,7 @@ umd_d3d9_backend_test = executable('dxvk-umd-d3d9-backend-test',
 umd_d3d9_device_probe = executable('dxvk-umd-d3d9-device-probe',
   '../../tests/umd-d3d9-device-probe.cpp',
   link_with : [umd_development],
-  dependencies : [lib_gdi32],
+  dependencies : [lib_gdi32, cpp.find_library('user32')],
 )
 
 native_entry_sources = ['../../tests/umd-native-entry.cpp', 'umd_adapter.cpp',

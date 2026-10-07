@@ -61,7 +61,7 @@ try {
     Check-Exit 'published DXGI rotation fixture'
     & cl @flags "$root/tests/umd-d3d9-adapter.cpp" "$root/src/umd/umd_d3d9_adapter.cpp" umd_runtime_query.obj /Fe:d3d9-adapter.exe
     Check-Exit 'typed D3D9 adapter fixture'
-    & cl @flags "$root/tests/umd-d3d9-device.cpp" "$root/src/umd/umd_d3d9_adapter.cpp" "$root/src/umd/umd_d3d9_device.cpp" umd_runtime_query.obj umd_runtime_gpu.obj /Fe:d3d9-device.exe
+    & cl @flags "$root/tests/umd-d3d9-device.cpp" "$root/src/umd/umd_d3d9_adapter.cpp" "$root/src/umd/umd_d3d9_device.cpp" umd_runtime_query.obj umd_runtime_gpu.obj umd_allocation.obj /Fe:d3d9-device.exe
     Check-Exit 'typed D3D9 device lifecycle fixture'
     & cl @flags /W4 /WX /external:anglebrackets /external:W0 /c "$root/tests/umd-d3d9-device-probe.cpp"
     Check-Exit 'real KMT D3D9 hardware probe compilation'

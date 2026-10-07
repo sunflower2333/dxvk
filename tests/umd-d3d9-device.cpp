@@ -15,6 +15,7 @@
 #include <vector>
 #include <climits>
 #include <limits>
+#include <map>
 
 static std::atomic<unsigned> checks{0};
 #define CHECK(c) do { const auto n = ++checks; if (!(c)) { \
@@ -138,6 +139,31 @@ struct Fixture {
   UINT bufferOffset = 0, bufferBytes = 0, drawStart = 0, drawMinimum = 0, drawVertexCount = 0;
   INT drawBase = 0;
   DWORD bufferFlags = 0;
+  struct PresentAllocation {
+    dxvk::umd::AllocationInfo info;
+    D3DKMT_HANDLE handle = 0;
+    bool mapped = false;
+    std::vector<uint8_t> guarded;
+  };
+  std::map<HANDLE, PresentAllocation> presentAllocations;
+  char presentContextCookie = 0;
+  bool presentContextLive = false, nullPresentAllocation = false;
+  bool nullPresentResource = false, nullPresentContext = false, badPresentMapping = false;
+  bool shortReadback = false;
+  D3DKMT_HANDLE nextPresentAllocation = 71;
+  unsigned presentAllocationAttempts = 0, presentAllocationCreates = 0;
+  unsigned presentReleaseAttempts = 0, presentReleases = 0;
+  unsigned presentLockAttempts = 0, presentLocks = 0, presentUnlocks = 0;
+  unsigned presentContextAttempts = 0, presentContexts = 0, presentContextCloses = 0;
+  unsigned surfaceReads = 0, presents = 0;
+  HRESULT presentAllocateResult = S_OK, presentReleaseResult = S_OK;
+  HRESULT presentLockResult = S_OK, presentUnlockResult = S_OK;
+  HRESULT presentContextResult = S_OK, presentResult = S_OK, readbackResult = S_OK;
+  std::function<void()> presentAllocateHook, presentReleaseHook, presentLockHook;
+  std::function<void()> presentUnlockHook, presentContextHook, presentHook, readbackHook;
+  std::vector<uint8_t>* rendererPixels = nullptr;
+  std::vector<uint8_t> expectedPresentPixels, presentedPixels;
+  D3DDDICB_PRESENT lastPresent = {};
   void runtime() const { CHECK(callbacksValid && GetCurrentThreadId() == caller); }
 };
 static Fixture* f;
@@ -159,6 +185,17 @@ static HRESULT APIENTRY query(HANDLE adapter, const D3DDDICB_QUERYADAPTERINFO* a
 static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* args) {
   f->runtime();
   CHECK(device == &f->deviceCookie && args && args->EngineAffinity == 1);
+  if (!args->pPrivateDriverData && !args->PrivateDriverDataSize) {
+    ++f->presentContextAttempts;
+    CHECK(!f->presentContextLive);
+    if (FAILED(f->presentContextResult)) return f->presentContextResult;
+    if (!f->nullPresentContext) {
+      args->hContext = &f->presentContextCookie;
+      f->presentContextLive = true; ++f->presentContexts;
+    }
+    if (f->presentContextHook) { auto hook = std::move(f->presentContextHook); hook(); }
+    return f->presentContextResult;
+  }
   CHECK(args->PrivateDriverDataSize == 32 && read(args->pPrivateDriverData, 16, 8) == f->generation);
   ++f->contexts;
   if (f->contextFailure) return E_OUTOFMEMORY;
@@ -171,6 +208,12 @@ static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* arg
 }
 static HRESULT APIENTRY destroyContext(HANDLE device, const D3DDDICB_DESTROYCONTEXT* args) {
   f->runtime();
+  if (args && args->hContext == &f->presentContextCookie) {
+    CHECK(device == &f->deviceCookie && f->presentContextLive);
+    f->presentContextLive = false; ++f->presentContextCloses;
+    f->cleanup.push_back('P');
+    return S_OK;
+  }
   CHECK(device == &f->deviceCookie && args && args->hContext == &f->contextCookie);
   CHECK(!f->allocated && !f->mapped);
   f->cleanup.push_back('C'); ++f->contextCloses;
@@ -195,6 +238,29 @@ static HRESULT APIENTRY escape(HANDLE adapter, const D3DDDICB_ESCAPE* args) {
 }
 static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
   f->runtime();
+  if (args && args->hResource) {
+    CHECK(device == &f->deviceCookie && args->NumAllocations == 1 && args->pAllocationInfo);
+    CHECK(!args->PrivateDriverDataSize && !args->pPrivateDriverData && !args->hKMResource);
+    CHECK(args->pAllocationInfo->PrivateDriverDataSize == sizeof(dxvk::umd::AllocationInfo));
+    dxvk::umd::AllocationInfo info;
+    std::memcpy(&info, args->pAllocationInfo->pPrivateDriverData, sizeof(info));
+    CHECK(info.magic == 0x504d5644 && !info.version && info.headerSize == 80 && !info.reserved);
+    CHECK(info.flags == 2 && !info.contextId && !info.resetGeneration && !info.requestedIova);
+    CHECK((info.format == 1 || info.format == 2) && info.width && info.height);
+    CHECK(info.pitch == info.width * 4 && info.size == uint64_t(info.pitch) * info.height);
+    ++f->presentAllocationAttempts;
+    if (FAILED(f->presentAllocateResult)) return f->presentAllocateResult;
+    CHECK(!f->presentAllocations.count(args->hResource));
+    Fixture::PresentAllocation allocation;
+    allocation.info = info; allocation.handle = f->nextPresentAllocation++;
+    allocation.guarded.assign(size_t(info.size) + 32, 0xcd);
+    args->pAllocationInfo->hAllocation = f->nullPresentAllocation ? 0 : allocation.handle;
+    args->hKMResource = f->nullPresentResource ? 0 : allocation.handle + 1000;
+    f->presentAllocations.emplace(args->hResource, std::move(allocation));
+    ++f->presentAllocationCreates;
+    if (f->presentAllocateHook) { auto hook = std::move(f->presentAllocateHook); hook(); }
+    return f->presentAllocateResult;
+  }
   CHECK(device == &f->deviceCookie && args && !args->hResource && args->NumAllocations == 1);
   CHECK(args->pAllocationInfo && args->pAllocationInfo->PrivateDriverDataSize == sizeof(dxvk::umd::AllocationInfo));
   dxvk::umd::AllocationInfo info;
@@ -209,21 +275,78 @@ static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
 }
 static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* args) {
   f->runtime();
+  if (args && args->hResource) {
+    CHECK(device == &f->deviceCookie && !args->NumAllocations && !args->HandleList);
+    auto entry = f->presentAllocations.find(args->hResource);
+    CHECK(entry != f->presentAllocations.end() && !entry->second.mapped);
+    ++f->presentReleaseAttempts;
+    if (f->presentReleaseHook) { auto hook = std::move(f->presentReleaseHook); hook(); }
+    if (SUCCEEDED(f->presentReleaseResult)) {
+      ++f->presentReleases; f->presentAllocations.erase(entry); f->cleanup.push_back('R');
+    }
+    return f->presentReleaseResult;
+  }
   CHECK(device == &f->deviceCookie && args && !args->hResource && args->NumAllocations == 1);
   CHECK(args->HandleList && *args->HandleList == 31 && f->allocated && !f->mapped);
   ++f->deallocations; f->allocated = false; f->cleanup.push_back('A'); return S_OK;
 }
 static HRESULT APIENTRY lock(HANDLE device, D3DDDICB_LOCK* args) {
   f->runtime();
+  if (args && args->hAllocation != 31) {
+    CHECK(device == &f->deviceCookie && args->Flags.LockEntire && args->Flags.WriteOnly);
+    CHECK(!args->Flags.ReadOnly && !args->Flags.Discard && !args->Flags.IgnoreSync);
+    Fixture::PresentAllocation* allocation = nullptr;
+    for (auto& entry : f->presentAllocations)
+      if (entry.second.handle == args->hAllocation) allocation = &entry.second;
+    CHECK(allocation && !allocation->mapped);
+    ++f->presentLockAttempts;
+    if (FAILED(f->presentLockResult)) return f->presentLockResult;
+    allocation->mapped = true; ++f->presentLocks;
+    args->pData = f->badPresentMapping ? nullptr : allocation->guarded.data() + 16;
+    if (f->presentLockHook) { auto hook = std::move(f->presentLockHook); hook(); }
+    return f->presentLockResult;
+  }
   CHECK(device == &f->deviceCookie && args && args->hAllocation == 31 && f->allocated && !f->mapped);
   ++f->locks; f->mapped = true; args->pData = f->pixels.data(); return S_OK;
 }
 static HRESULT APIENTRY unlock(HANDLE device, const D3DDDICB_UNLOCK* args) {
   f->runtime();
+  if (args && args->NumAllocations == 1 && args->phAllocations && *args->phAllocations != 31) {
+    CHECK(device == &f->deviceCookie);
+    Fixture::PresentAllocation* allocation = nullptr;
+    for (auto& entry : f->presentAllocations)
+      if (entry.second.handle == *args->phAllocations) allocation = &entry.second;
+    CHECK(allocation && allocation->mapped);
+    for (unsigned i = 0; i < 16; ++i) {
+      CHECK(allocation->guarded[i] == 0xcd);
+      CHECK(allocation->guarded[allocation->guarded.size() - 1 - i] == 0xcd);
+    }
+    allocation->mapped = false; ++f->presentUnlocks;
+    if (f->presentUnlockHook) { auto hook = std::move(f->presentUnlockHook); hook(); }
+    return f->presentUnlockResult;
+  }
   CHECK(device == &f->deviceCookie && args && args->NumAllocations == 1 && *args->phAllocations == 31);
   CHECK(f->mapped); ++f->unlocks; f->mapped = false; f->cleanup.push_back('U'); return S_OK;
 }
 static HRESULT APIENTRY render(HANDLE, D3DDDICB_RENDER*) { CHECK(false); return E_FAIL; }
+
+static HRESULT APIENTRY presentCallback(HANDLE device, D3DDDICB_PRESENT* args) {
+  f->runtime();
+  CHECK(device == &f->deviceCookie && args && f->presentContextLive);
+  CHECK(args->hContext == &f->presentContextCookie && !args->hDstAllocation);
+  auto expected = D3DDDICB_PRESENT{};
+  expected.hSrcAllocation = args->hSrcAllocation; expected.hContext = &f->presentContextCookie;
+  CHECK(snapshot(*args) == snapshot(expected));
+  Fixture::PresentAllocation* allocation = nullptr;
+  for (auto& entry : f->presentAllocations)
+    if (entry.second.handle == args->hSrcAllocation) allocation = &entry.second;
+  CHECK(allocation && !allocation->mapped && args->hSrcAllocation != 31);
+  f->presentedPixels.assign(allocation->guarded.begin() + 16, allocation->guarded.end() - 16);
+  CHECK(f->presentedPixels == f->expectedPresentPixels);
+  f->lastPresent = *args; ++f->presents;
+  if (f->presentHook) { auto hook = std::move(f->presentHook); hook(); }
+  return f->presentResult;
+}
 
 // Substitute only the renderer for this CPU fixture. The actual typed adapter,
 // device lifetime, callback pump and RuntimeGpu allocation/context code run.
@@ -772,6 +895,19 @@ HRESULT dxvk::umd::D3D9Backend::unlockSurface(D3D9SurfaceResource& resource, boo
   return S_OK;
 }
 
+HRESULT dxvk::umd::D3D9Backend::readSurface(D3D9SurfaceResource& resource,
+    std::vector<uint8_t>& pixels) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  CHECK(resource.m_state->desc.renderTarget && !resource.m_state->locked);
+  ++f->surfaceReads;
+  if (f->readbackHook) { auto hook = std::move(f->readbackHook); hook(); }
+  if (f->readbackResult != S_OK) return f->readbackResult;
+  pixels = resource.m_state->bytes;
+  f->rendererPixels = &resource.m_state->bytes;
+  if (f->shortReadback) pixels.pop_back();
+  return S_OK;
+}
+
 static void initialize(Fixture& fixture) {
   f = &fixture;
   D3DDDI_ADAPTERCALLBACKS callbacks = {}; callbacks.pfnQueryAdapterInfoCb = query;
@@ -809,6 +945,7 @@ static void createDevice() {
   CHECK(f->table.pfnFlush && f->table.pfnDestroyDevice);
   auto expectedTable = D3DDDI_DEVICEFUNCS{};
   expectedTable.pfnFlush = f->table.pfnFlush; expectedTable.pfnDestroyDevice = f->table.pfnDestroyDevice;
+  expectedTable.pfnPresent = f->table.pfnPresent;
   expectedTable.pfnCreateResource = f->table.pfnCreateResource;
   expectedTable.pfnDestroyResource = f->table.pfnDestroyResource;
   expectedTable.pfnSetRenderTarget = f->table.pfnSetRenderTarget;
@@ -2719,7 +2856,246 @@ static void queryContracts() {
   }
 }
 
+static D3DDDIARG_PRESENT presentArgs(HANDLE resource) {
+  D3DDDIARG_PRESENT args = {};
+  args.hSrcResource = resource; args.Flags.Blt = 1;
+  args.DstSubResourceIndex = UINT_MAX;
+  args.FlipInterval = static_cast<D3DDDI_FLIPINTERVAL_TYPE>(UINT_MAX);
+  return args;
+}
+
+static HANDLE presentTarget(HANDLE cookie, D3DFORMAT format = D3DFMT_A8R8G8B8) {
+  D3DDDI_SURFACEINFO info = {3,2,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+  auto resource = resourceArgs(cookie, &info, 1, true);
+  resource.Format = static_cast<D3DDDIFORMAT>(format);
+  CHECK(f->table.pfnCreateResource(f->device, &resource) == S_OK);
+  D3DDDIARG_LOCK mapping = {}; mapping.hResource = resource.hResource;
+  CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && mapping.pSurfData && mapping.Pitch >= 12);
+  const std::array<DWORD,6> colors{0xff123456,0xffa53179,0xff05d8e2,0xfff38216,0xff3142e7,0xff5b1c93};
+  f->expectedPresentPixels.resize(sizeof(colors));
+  std::memcpy(f->expectedPresentPixels.data(), colors.data(), sizeof(colors));
+  for (unsigned row = 0; row < 2; ++row)
+    std::memcpy(static_cast<uint8_t*>(mapping.pSurfData) + size_t(row) * mapping.Pitch,
+      colors.data() + row * 3, 12);
+  D3DDDIARG_UNLOCK unlock = {}; unlock.hResource = resource.hResource;
+  CHECK(f->table.pfnUnlock(f->device, &unlock) == S_OK);
+  return resource.hResource;
+}
+
+static void closePresentDevice(HRESULT expected = S_OK) {
+  CHECK(f->table.pfnDestroyDevice(f->device) == expected);
+  CHECK(!f->allocated && !f->mapped && f->contexts == f->contextCloses);
+  CHECK(f->allocations == f->deallocations && f->locks == f->unlocks);
+  CHECK(f->presentAllocations.empty() && f->presentAllocationCreates == f->presentReleases);
+  CHECK(f->presentLocks == f->presentUnlocks && !f->presentContextLive);
+  CHECK(f->presentContexts == f->presentContextCloses && f->surfaceCreates == f->surfaceCloses);
+  CHECK(!f->cleanup.empty() && f->cleanup.back() == 'C');
+  f->callbacksValid = false;
+  CHECK(f->table.pfnDestroyDevice(f->device) == E_INVALIDARG);
+  CHECK(f->table.pfnPresent(f->device, nullptr) == E_INVALIDARG);
+  f->callbacksValid = true;
+}
+
+static void presentationContracts() {
+  for (const auto format : {D3DFMT_A8R8G8B8,D3DFMT_X8R8G8B8}) {
+    Fixture fixture; initialize(fixture); f->input.pfnPresentCb = presentCallback;
+    // Typed callbacks are copied before any callback can mutate the input table.
+    f->queryHook = [] { f->input.pfnPresentCb = nullptr; };
+    createDevice(); CHECK(f->table.pfnPresent);
+    char cookie; const HANDLE resource = presentTarget(&cookie, format);
+    auto args = presentArgs(resource); const auto before = snapshot(args);
+    f->queryHook = [&] { args.hSrcResource = nullptr; args.Flags.Value = 0; };
+    // Kernel callbacks can overwrite the renderer's private storage only after
+    // readback. The published frame must still use the DDI-owned original copy.
+    f->presentAllocateHook = [] {
+      CHECK(f->rendererPixels && f->surfaceReads == 1);
+      f->rendererPixels->assign(f->rendererPixels->size(), 0x1d);
+    };
+    CHECK(f->table.pfnPresent(f->device, &args) == S_OK);
+    CHECK(snapshot(args) != before && f->presents == 1 && f->surfaceReads == 1);
+    CHECK(f->presentAllocations.size() == 1 && f->presentAllocations.count(&cookie));
+    CHECK(f->presentAllocations.begin()->second.info.format == (format == D3DFMT_X8R8G8B8 ? 2u : 1u));
+    CHECK(f->lastPresent.hSrcAllocation == 71 && uintptr_t(resource) != 71);
+    *f->rendererPixels = f->expectedPresentPixels;
+    args = presentArgs(resource);
+    f->presentLockHook = [] { f->rendererPixels->assign(f->rendererPixels->size(), 0x72); };
+    CHECK(f->table.pfnPresent(f->device, &args) == S_OK);
+    CHECK(snapshot(args) == before && f->presents == 2 && f->surfaceReads == 2);
+    CHECK(f->presentAllocationCreates == 1 && f->presentContexts == 1);
+    CHECK(f->presentLocks == 2 && f->presentUnlocks == 2);
+    CHECK(f->table.pfnDestroyResource(f->device, resource) == S_OK);
+    CHECK(f->presentReleases == 1 && f->presentAllocations.empty());
+    CHECK(f->table.pfnPresent(f->device, &args) == E_INVALIDARG);
+    closePresentDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie; const HANDLE resource = presentTarget(&cookie);
+    auto args = presentArgs(resource);
+    CHECK(f->table.pfnPresent(f->device, &args) == D3DERR_NOTAVAILABLE);
+    CHECK(!f->surfaceReads && !f->presentAllocationAttempts && !f->presents);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); f->input.pfnPresentCb = presentCallback; createDevice();
+    char cookie, otherCookie, multiCookie, bufferCookie;
+    const HANDLE resource = presentTarget(&cookie);
+    auto valid = presentArgs(resource);
+    CHECK(f->table.pfnPresent(f->device, nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnPresent(nullptr, &valid) == E_INVALIDARG);
+    for (unsigned field = 0; field < 5; ++field) {
+      auto args = valid;
+      if (field == 0) args.hSrcResource = nullptr;
+      if (field == 1) args.hSrcResource = reinterpret_cast<HANDLE>(UINT_PTR(0xcafef00d));
+      if (field == 2) args.hDstResource = resource;
+      if (field == 3) args.SrcSubResourceIndex = 1;
+      if (field == 4) args.Flags.Value = 4;
+      const auto before = snapshot(args);
+      CHECK(f->table.pfnPresent(f->device, &args) == E_INVALIDARG && snapshot(args) == before);
+    }
+    for (const UINT flags : {0u,2u,3u,5u,8u,0x80000001u}) {
+      auto args = valid; args.Flags.Value = flags;
+      CHECK(f->table.pfnPresent(f->device, &args) == E_INVALIDARG);
+    }
+    D3DDDI_SURFACEINFO infos[2] = {{3,2,0,nullptr,0,0},{3,2,0,nullptr,0,0}};
+    auto other = resourceArgs(&otherCookie, infos, 1);
+    CHECK(f->table.pfnCreateResource(f->device, &other) == S_OK);
+    auto args = presentArgs(other.hResource);
+    CHECK(f->table.pfnPresent(f->device, &args) == E_INVALIDARG);
+    auto multi = resourceArgs(&multiCookie, infos, 2, true);
+    CHECK(f->table.pfnCreateResource(f->device, &multi) == S_OK);
+    args = presentArgs(multi.hResource);
+    CHECK(f->table.pfnPresent(f->device, &args) == D3DERR_NOTAVAILABLE);
+    infos[0].Width = 24;
+    auto buffer = bufferArgs(&bufferCookie, infos);
+    CHECK(f->table.pfnCreateResource(f->device, &buffer) == S_OK);
+    args = presentArgs(buffer.hResource);
+    CHECK(f->table.pfnPresent(f->device, &args) == D3DERR_NOTAVAILABLE);
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = resource;
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+    CHECK(f->table.pfnPresent(f->device, &valid) == E_INVALIDARG);
+    D3DDDIARG_UNLOCK unlock = {}; unlock.hResource = resource;
+    CHECK(f->table.pfnUnlock(f->device, &unlock) == S_OK);
+    CHECK(!f->surfaceReads && !f->presentAllocationCreates && !f->presents);
+    closePresentDevice(); closeAdapter();
+  }
+  // Each failed stage must stop before submission; successful acquisition must
+  // still be balanced, including unexpected positive statuses and null outputs.
+  for (unsigned failure = 0; failure < 16; ++failure) {
+    Fixture fixture; initialize(fixture); f->input.pfnPresentCb = presentCallback; createDevice();
+    char cookie; const HANDLE resource = presentTarget(&cookie);
+    auto args = presentArgs(resource); HRESULT expected = E_FAIL;
+    if (failure == 0) f->flushResult = E_FAIL;
+    if (failure == 1) f->flushResult = S_FALSE;
+    if (failure == 2) f->readbackResult = E_FAIL;
+    if (failure == 3) f->readbackResult = S_FALSE;
+    if (failure == 4) f->shortReadback = true;
+    if (failure == 5) { f->presentAllocateResult = E_OUTOFMEMORY; expected = E_OUTOFMEMORY; }
+    if (failure == 6) f->presentAllocateResult = S_FALSE;
+    if (failure == 7) f->nullPresentAllocation = true;
+    if (failure == 8) f->nullPresentResource = true;
+    if (failure == 9) f->presentLockResult = E_FAIL;
+    if (failure == 10) f->presentLockResult = S_FALSE;
+    if (failure == 11) f->badPresentMapping = true;
+    if (failure == 12) f->presentUnlockResult = E_FAIL;
+    if (failure == 13) f->presentUnlockResult = S_FALSE;
+    if (failure == 14) f->presentContextResult = S_FALSE;
+    if (failure == 15) f->nullPresentContext = true;
+    const auto before = snapshot(args);
+    CHECK(f->table.pfnPresent(f->device, &args) == expected && snapshot(args) == before);
+    CHECK(!f->presents && f->presentLocks == f->presentUnlocks);
+    if (failure < 5) CHECK(!f->presentAllocationAttempts);
+    if (failure >= 6 && failure <= 8) CHECK(f->presentAllocationCreates == f->presentReleases);
+    if (failure == 14) CHECK(f->presentContexts == 1 && f->presentContextCloses == 1);
+    f->flushResult = f->readbackResult = f->presentAllocateResult = S_OK;
+    f->presentLockResult = f->presentUnlockResult = f->presentContextResult = S_OK;
+    f->shortReadback = f->nullPresentAllocation = f->nullPresentResource = false;
+    f->badPresentMapping = f->nullPresentContext = false;
+    CHECK(f->table.pfnPresent(f->device, &args) == S_OK && f->presents == 1);
+    closePresentDevice(); closeAdapter();
+  }
+  for (const HRESULT callbackResult : {E_FAIL,S_FALSE}) {
+    Fixture fixture; initialize(fixture); f->input.pfnPresentCb = presentCallback; createDevice();
+    char cookie; const HANDLE resource = presentTarget(&cookie);
+    auto args = presentArgs(resource); f->presentResult = callbackResult;
+    CHECK(f->table.pfnPresent(f->device, &args) == E_FAIL && f->presents == 1);
+    f->presentResult = S_OK;
+    CHECK(f->table.pfnPresent(f->device, &args) == S_OK && f->presents == 2);
+    CHECK(f->presentAllocationCreates == 1 && f->presentContexts == 1);
+    closePresentDevice(); closeAdapter();
+  }
+  for (unsigned stage = 0; stage < 6; ++stage) {
+    Fixture fixture; initialize(fixture); f->input.pfnPresentCb = presentCallback; createDevice();
+    char cookie; const HANDLE resource = presentTarget(&cookie);
+    auto args = presentArgs(resource);
+    auto reentry = [&] {
+      CHECK(f->table.pfnPresent(f->device, &args) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnDestroyResource(f->device, resource) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnDestroyDevice(f->device) == D3DERR_WASSTILLDRAWING);
+    };
+    if (stage == 0) f->queryHook = reentry;
+    if (stage == 1) f->presentAllocateHook = reentry;
+    if (stage == 2) f->presentLockHook = reentry;
+    if (stage == 3) f->presentUnlockHook = reentry;
+    if (stage == 4) f->presentContextHook = reentry;
+    if (stage == 5) f->presentHook = reentry;
+    CHECK(f->table.pfnPresent(f->device, &args) == S_OK && f->presents == 1);
+    f->presentReleaseHook = reentry;
+    CHECK(f->table.pfnDestroyResource(f->device, resource) == S_OK && f->presentReleases == 1);
+    closePresentDevice(); closeAdapter();
+  }
+  for (const HRESULT released : {E_FAIL,S_FALSE}) {
+    Fixture fixture; initialize(fixture); f->input.pfnPresentCb = presentCallback; createDevice();
+    char cookie; const HANDLE resource = presentTarget(&cookie);
+    auto args = presentArgs(resource);
+    CHECK(f->table.pfnPresent(f->device, &args) == S_OK);
+    f->presentReleaseResult = released;
+    CHECK(f->table.pfnDestroyResource(f->device, resource) == E_FAIL);
+    CHECK(f->presentReleaseAttempts == 1 && f->presentReleases == (released == S_FALSE ? 1u : 0u));
+    f->presentReleaseResult = S_OK;
+    CHECK(f->table.pfnDestroyResource(f->device, resource) == S_OK);
+    CHECK(f->presentReleases == 1 && f->presentReleaseAttempts == (released == S_FALSE ? 1u : 2u));
+    CHECK(f->table.pfnDestroyResource(f->device, resource) == E_INVALIDARG);
+    closePresentDevice(); closeAdapter();
+  }
+  for (unsigned phase = 0; phase < 6; ++phase) {
+    for (const bool retireAdapter : {false,true}) {
+      if (phase == 0 && retireAdapter) continue; // Readback runs on the worker.
+      Fixture fixture; initialize(fixture); f->input.pfnPresentCb = presentCallback; createDevice();
+      char cookie; const HANDLE resource = presentTarget(&cookie);
+      auto args = presentArgs(resource);
+      auto retire = [&] { if (retireAdapter) closeAdapter(); else ++f->generation; };
+      if (phase == 0) f->readbackHook = retire;
+      if (phase == 1) f->presentAllocateHook = retire;
+      if (phase == 2) f->presentLockHook = retire;
+      if (phase == 3) f->presentUnlockHook = retire;
+      if (phase == 4) f->presentContextHook = retire;
+      if (phase == 5) f->presentHook = retire;
+      CHECK(f->table.pfnPresent(f->device, &args) == D3DERR_DEVICELOST);
+      CHECK(f->presents == (phase == 5 ? 1u : 0u));
+      if (!retireAdapter) --f->generation;
+      const auto queries = f->queries, reads = f->surfaceReads, submits = f->presents;
+      CHECK(f->table.pfnPresent(f->device, &args) == D3DERR_DEVICELOST);
+      CHECK(f->queries == queries && f->surfaceReads == reads && f->presents == submits);
+      closePresentDevice();
+      if (!retireAdapter) closeAdapter();
+    }
+  }
+  {
+    Fixture a; initialize(a); a.input.pfnPresentCb = presentCallback; createDevice();
+    char cookie; auto args = presentArgs(presentTarget(&cookie));
+    Fixture b; initialize(b); b.input.pfnPresentCb = presentCallback; createDevice();
+    CHECK(b.table.pfnPresent(b.device, &args) == E_INVALIDARG);
+    CHECK(!b.surfaceReads && !b.presentAllocationAttempts && !b.presents);
+    closePresentDevice(); closeAdapter();
+    f = &a;
+    CHECK(a.table.pfnPresent(a.device, &args) == S_OK);
+    closePresentDevice(); closeAdapter();
+  }
+}
+
 int main() {
+  presentationContracts();
   queryContracts();
   bufferTransferContracts();
   fixedFunctionContracts();

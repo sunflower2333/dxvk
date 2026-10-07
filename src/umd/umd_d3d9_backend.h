@@ -144,6 +144,7 @@ public:
   HRESULT lockSurface(D3D9SurfaceResource& surface, const RECT* area,
                       DWORD flags, D3DLOCKED_RECT& result);
   HRESULT unlockSurface(D3D9SurfaceResource& surface, bool upload = true);
+  HRESULT readSurface(D3D9SurfaceResource& surface, std::vector<uint8_t>& pixels);
   HRESULT createVertexDeclaration(const D3DVERTEXELEMENT9* elements,
                                  std::unique_ptr<D3D9VertexDeclaration>& result);
   HRESULT setVertexDeclaration(D3D9VertexDeclaration* declaration);

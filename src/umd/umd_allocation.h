@@ -29,6 +29,7 @@ static_assert(offsetof(AllocationInfo, pitch) == 64);
 // another process opens it.
 inline DXGI_FORMAT allocationFormat(uint32_t format) {
   if (format == 1) return DXGI_FORMAT_B8G8R8A8_UNORM;
+  if (format == 2) return DXGI_FORMAT_B8G8R8X8_UNORM;
   if (format == 3) return DXGI_FORMAT_R8G8B8A8_UNORM;
   return DXGI_FORMAT_UNKNOWN;
 }
@@ -68,7 +69,7 @@ private:
   bool m_opened = false;
 };
 
-// Only the kernel callback fields used by this D3D10.0 bridge are copied;
+// Only kernel callback fields used by the negotiated bridge are copied;
 // copying a whole current-SDK table could read past an older runtime's table.
 // The DXGI callback table is retained live, as required by its separate ABI.
 class RuntimeMemory {
@@ -81,7 +82,11 @@ public:
     const DXGI_DDI_BASE_CALLBACKS* dxgi,
     std::shared_ptr<const AdapterIdentity> identity = {},
     std::shared_ptr<RuntimeService> service = {});
+  void initialize9(HANDLE device, const D3DDDI_DEVICECALLBACKS& kernel,
+    std::shared_ptr<const AdapterIdentity> identity,
+    std::shared_ptr<RuntimeService> service);
   bool available() const;
+  bool available9() const { return m_callbacks.pfnPresentCb && available(); }
   HRESULT allocate(RuntimeAllocation& out, HANDLE resource, UINT width,
     UINT height, DXGI_FORMAT format) {
     return call([&] { return allocateImpl(out, resource, width, height, format); });
@@ -109,6 +114,10 @@ public:
     const std::function<bool()>& live = {}) {
     return call([&] { return presentImpl(source, args, live); });
   }
+  HRESULT present9(RuntimeAllocation& source, const D3DDDIARG_PRESENT& args,
+    const std::function<bool()>& live = {}) {
+    return call([&] { return present9Impl(source, args, live); });
+  }
   HRESULT close() { return !m_context ? S_OK : call([&] { return closeImpl(); }); }
 private:
   template<typename Function> HRESULT call(Function&& function) {
@@ -125,6 +134,8 @@ private:
     bool publish);
   HRESULT presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args,
     const std::function<bool()>& live);
+  HRESULT present9Impl(RuntimeAllocation& source, const D3DDDIARG_PRESENT& args,
+    const std::function<bool()>& live);
   HRESULT closeImpl();
   HRESULT ensureContext();
   HRESULT checkIdentity();
@@ -139,6 +150,7 @@ private:
   std::shared_ptr<RuntimeService> m_service;
   bool m_removed = false;
   bool m_querying = false;
+  bool m_releasing9 = false;
 };
 
 }

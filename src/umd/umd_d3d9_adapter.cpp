@@ -117,6 +117,7 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
     callbacks.pfnCreateContextCb = source.pfnCreateContextCb;
     callbacks.pfnDestroyContextCb = source.pfnDestroyContextCb;
     callbacks.pfnEscapeCb = source.pfnEscapeCb; callbacks.pfnRenderCb = source.pfnRenderCb;
+    callbacks.pfnPresentCb = source.pfnPresentCb;
     D3DDDI_DEVICEFUNCS table = {};
     auto output = args->pDeviceFuncs;
     D3DDDIARG_CREATEDEVICE local = {};

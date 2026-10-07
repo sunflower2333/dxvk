@@ -1,5 +1,6 @@
 #include "umd_d3d9_adapter.h"
 #include "umd_d3d9_backend.h"
+#include "umd_allocation.h"
 #include "umd_runtime_gpu.h"
 #include "../d3d9/d3d9_shader_code.h"
 #include "../d3d9/d3d9_caps.h"
@@ -33,6 +34,7 @@ HRESULT result(HRESULT hr) {
 
 struct Surface {
   dxvk::umd::D3D9SurfaceDesc desc;
+  std::unique_ptr<dxvk::umd::RuntimeAllocation> present;
   std::unique_ptr<dxvk::umd::D3D9SurfaceResource> backend;
   bool locked = false, notifyOnly = false;
 };
@@ -66,6 +68,7 @@ struct Query {
 struct Device {
   std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>(true);
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
+  dxvk::umd::RuntimeMemory memory;
   std::unique_ptr<dxvk::umd::D3D9Backend> backend;
   HANDLE runtime = nullptr;
   bool busy = false, closing = false;
@@ -117,6 +120,13 @@ struct Device {
           if (light.second.enabled) backend->setLightEnabled(light.second.slot, false);
         if (!resources.empty() || !declarations.empty() || !shaders.empty() || !queries.empty()) backend->flush();
       } } catch (...) { hr = E_FAIL; }
+      for (auto& resource : resources) {
+        for (auto& surface : resource.second->surfaces) {
+          if (!surface.present) continue;
+          const HRESULT cleanup = result(surface.present->release());
+          if (FAILED(cleanup)) hr = cleanup;
+        }
+      }
       resources.clear();
       runtimeResources.clear();
       declarations.clear();
@@ -135,6 +145,10 @@ struct Device {
       backend.reset();
     }); }
     catch (...) { hr = E_FAIL; }
+    try {
+      const HRESULT cleanup = result(memory.close());
+      if (FAILED(cleanup)) hr = cleanup;
+    } catch (...) { hr = E_FAIL; }
     try {
       const HRESULT cleanup = gpu ? result(gpu->close()) : S_OK;
       if (FAILED(cleanup)) hr = cleanup;
@@ -335,6 +349,52 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   });
 }
 
+HRESULT APIENTRY present(HANDLE handle, const D3DDDIARG_PRESENT* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  // Destination index and flip interval are reserved for this source-only
+  // blit. A runtime resource token is never a kernel allocation handle.
+  if (!input.hSrcResource || input.hDstResource || input.SrcSubResourceIndex
+      || input.Flags.Value != 1) return E_INVALIDARG;
+  return operation(handle, [&](Device& device) {
+    const auto entry = device.resources.find(input.hSrcResource);
+    if (entry == device.resources.end()) return E_INVALIDARG;
+    auto& resource = *entry->second;
+    if (resource.surfaces.size() != 1 || resource.buffer) return D3DERR_NOTAVAILABLE;
+    auto& surface = resource.surfaces[0];
+    if (!surface.desc.renderTarget || surface.desc.depthStencil
+        || surface.desc.systemMemory || surface.locked) return E_INVALIDARG;
+    if (!device.memory.available9()) return D3DERR_NOTAVAILABLE;
+    HRESULT hr = result(device.backend->flush());
+    if (FAILED(hr)) return hr;
+    std::vector<uint8_t> pixels;
+    hr = result(device.backend->readSurface(*surface.backend, pixels));
+    if (FAILED(hr)) return hr;
+    const uint64_t size = uint64_t(surface.desc.width) * surface.desc.height * 4;
+    if (size != pixels.size()) return E_FAIL;
+    const auto runtime = device.gpu->backend();
+    hr = result(runtime.create.callbacks->status(runtime.create.owner));
+    if (FAILED(hr)) return hr;
+    if (!surface.present) {
+      auto allocation = std::make_unique<dxvk::umd::RuntimeAllocation>();
+      const auto format = surface.desc.format == D3DFMT_X8R8G8B8
+        ? DXGI_FORMAT_B8G8R8X8_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
+      hr = result(device.memory.allocate(*allocation, resource.runtime,
+        surface.desc.width, surface.desc.height, format));
+      if (FAILED(hr)) return hr;
+      surface.present = std::move(allocation);
+    }
+    // Readback is complete and unmapped before any caller-thread publication
+    // callback. The DDI owns these tightly packed bytes throughout the copy.
+    hr = result(device.memory.upload(*surface.present, pixels.data(), surface.desc.width * 4));
+    if (FAILED(hr)) return hr;
+    hr = result(runtime.create.callbacks->status(runtime.create.owner));
+    if (FAILED(hr)) return hr;
+    return result(device.memory.present9(*surface.present, input,
+      [&] { return !device.closing && !device.removed; }));
+  });
+}
+
 HRESULT APIENTRY destroyResource(HANDLE handle, HANDLE token) {
   return operation(handle, [&](Device& device) {
     const auto entry = device.resources.find(token);
@@ -372,6 +432,11 @@ HRESULT APIENTRY destroyResource(HANDLE handle, HANDLE token) {
     // The backend joins recording/submission before runtime backing expires.
     const HRESULT hr = result(device.backend->flush());
     if (FAILED(hr) && hr != D3DERR_DEVICELOST) return hr;
+    for (auto& surface : entry->second->surfaces) {
+      if (!surface.present) continue;
+      const HRESULT cleanup = result(surface.present->release());
+      if (FAILED(cleanup)) return cleanup;
+    }
     device.runtimeResources.erase(entry->second->runtime);
     device.resources.erase(entry);
     return hr;
@@ -1420,6 +1485,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
     ~Guard() { if (!published) { owner->close(); releaseRuntime(owner); } }
   } guard{owner};
   owner->gpu = RuntimeGpu::create(owner->runtime, cb, identity, owner->service);
+  owner->memory.initialize9(owner->runtime, cb, identity, owner->service);
   const RuntimeBackend runtime = owner->gpu->backend();
   AdapterLuid luid;
   std::memcpy(luid.data(), &identity->luid, luid.size());
@@ -1431,6 +1497,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   D3DDDI_DEVICEFUNCS table = {};
   table.pfnFlush = flush;
   table.pfnDestroyDevice = destroyDevice;
+  table.pfnPresent = present;
   table.pfnCreateResource = createResource;
   table.pfnDestroyResource = destroyResource;
   table.pfnSetRenderTarget = setRenderTarget;

@@ -34,6 +34,21 @@ private renderer backing and pfnPresent is absent. Implement owned presentation
 allocation/pixel publication and typed callback with serialized snapshots,
 reset/reentry/retirement/cleanup verification, followed by target display proof.
 
+Presentation implementation is now local: completed private renderer readback,
+owned standard linear source allocation, a separate created GDI context and the
+typed native PresentCb with real kernel handles. Preflight01 strictly compiles
+six fixture translation units plus the separate probe (seven original COFFs),
+including actual umd_allocation.cpp; all272881 old checks pass. Immutable57input
+archive03d74ae8 and native proof guest-preflight-01 retain the source/build chain.
+Behavior preflight02 archive233efc63 compiled but failed first positive check2153:
+the adapter callback snapshot omitted PresentCb. Fresh preflight03 e5242c24 adds
+that exact field and the separate screen probe; unchanged full fixture now passes
+466831checks, zero warnings, all57inputs/sevenCOFFs/native continuity verified.
+Six compiled semantic controls and native wrapper parsing are pending. Target
+probe --present renders four64x64screen frames across A8/X8 with owned/reused
+kernel allocation and GDI context; independent16384RGB oracle73b9e1c5 is frozen.
+The existing5056pixels+1056bytes remain required. No presentation GPU PASS yet.
+
 Previous ae61dde compact clip37/38 acceptance remains unchanged. Production
 caps/exports, registration and paired package pins stay closed. Complete remaining
 resource/state/presentation/reset and ordinary Microsoft system-runtime DX8-DX11

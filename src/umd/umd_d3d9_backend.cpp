@@ -8,6 +8,7 @@
 #include <dxgi.h>
 #include <new>
 #include <vector>
+#include <climits>
 
 namespace dxvk::umd {
 
@@ -19,6 +20,7 @@ struct D3D9Backend::State : GpuBackend {
 
 struct D3D9SurfaceResource::State {
   Com<IDirect3DSurface9> surface;
+  Com<IDirect3DSurface9> readback;
   D3D9SurfaceDesc desc;
   D3DLOCKED_RECT mapping = {};
   RECT area = {};
@@ -361,6 +363,38 @@ HRESULT D3D9Backend::unlockSurface(D3D9SurfaceResource& resource, bool upload) {
   }
   const HRESULT hr = state.surface->UnlockRect();
   if (SUCCEEDED(hr)) state.locked = false;
+  return hr;
+}
+
+HRESULT D3D9Backend::readSurface(D3D9SurfaceResource& resource, std::vector<uint8_t>& output) {
+  auto& state = *resource.m_state;
+  const auto& desc = state.desc;
+  if (!desc.renderTarget || desc.depthStencil || desc.systemMemory || state.locked
+      || !desc.width || !desc.height || desc.width > UINT(INT_MAX / 4)
+      || uint64_t(desc.width) * desc.height * 4 > SIZE_MAX) return E_INVALIDARG;
+  if (!state.readback) {
+    Com<IDirect3DSurface9> readback;
+    const HRESULT hr = m_state->d3d->CreateOffscreenPlainSurface(desc.width, desc.height,
+      desc.format, D3DPOOL_SYSTEMMEM, &readback, nullptr);
+    if (hr != S_OK || !readback) return FAILED(hr) ? hr : E_FAIL;
+    state.readback = std::move(readback);
+  }
+  const HRESULT copied = m_state->d3d->GetRenderTargetData(state.surface.ptr(), state.readback.ptr());
+  if (copied != S_OK) return FAILED(copied) ? copied : E_FAIL;
+  // Allocate before locking; an allocation exception must not leave a map.
+  const UINT row = desc.width * 4;
+  std::vector<uint8_t> pixels(size_t(row) * desc.height);
+  D3DLOCKED_RECT map = {};
+  const HRESULT locked = state.readback->LockRect(&map, nullptr, D3DLOCK_READONLY);
+  if (FAILED(locked)) return locked;
+  HRESULT hr = locked == S_OK ? S_OK : E_FAIL;
+  const uint64_t extent = map.Pitch > 0 ? uint64_t(UINT(map.Pitch)) * (desc.height - 1) + row : 0;
+  if (hr == S_OK && (!map.pBits || map.Pitch < INT(row)
+      || extent > UINTPTR_MAX - reinterpret_cast<uintptr_t>(map.pBits))) hr = E_FAIL;
+  if (hr == S_OK) copyRows(pixels.data(), row, map.pBits, UINT(map.Pitch), row, desc.height);
+  const HRESULT unlocked = state.readback->UnlockRect();
+  if (unlocked != S_OK) return FAILED(unlocked) ? unlocked : E_FAIL;
+  if (hr == S_OK) output = std::move(pixels);
   return hr;
 }
 

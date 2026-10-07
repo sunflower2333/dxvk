@@ -2027,3 +2027,41 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
   Initial checkpoint01 rawCRLF prevented regex matches; fresh02 normalizes text
   as original strictverifier, all832 rationalrawpixels perrun PASS. No production
   issue or failedGPUtest is hidden by these retained local reviewer corrections.
+
+- Presentation local implementation publishes an owned completed readback through
+  the real RuntimeMemory typed9 allocation/callback path and separately created
+  GDI context. Native preflight01 archive03d74ae8 independently verifies57inputs,
+  seven original AA64COFFs (six fixture units plus probe), zero warnings and the
+  original272881checks; query candidate/SYS/desktop continuity retain. Root adds
+  behavioral source02: six distinct pixels in3x2 A8/X8 targets, copied callback
+  and argument snapshots, owned readback despite renderer mutation, reuse,
+  malformed/nonpresentable resources, exact callback statuses, balanced partial
+  acquisition, reentry, reset/adapter-close and failed-deallocation retries.
+  Unexpected successful deallocation retires ownership while returning E_FAIL
+  so retry cannot double-free. Frozen57input preflight02 archive233efc63 is sent
+  to the build subagent. Actual typed display probe development continues; no
+  presentation GPU result or ordinary-runtime admission claimed.
+
+- Native presentation behavior02 compiles strictly but actual fixture exits1 at
+  check2153/line2914. Root identifies omitted PresentCb in the adapter's callback
+  snapshot and adds its one field. Fresh immutable03 e5242c24 compiles strictly
+  and passes466831checks; unchanged02/03 oracle and54common inputs are linked.
+  All57after-run/source/archive hashes, six real fixture TUs+probe/sevenAA64COFFs,
+  actualallocation symbols/static imports and querycandidate/SYS/desktop retain.
+  Exact original failed02 and successful03 evidence remain separate. Root fixes
+  CI fixture linking to include its already-built umd_allocation.obj and adds
+  user32 only to the target probe. Owned64x64window/screen capture, real KMT
+  Present and GDI context/resource handling are strict-compiled, unexecuted GPU.
+  Fresh presentation wrappers/verifier preserve all query checks and add a16384
+  screen-RGB oracle73b9e1c5; six compiled one-mutation controls are delegated.
+  Local planning patch with an empty final hunk failed atomically and was reapplied
+  without it; guessed verifier/workflow filenames were read-only misses.
+
+- Root independently joins original positive03's57frozen/Git/after-run inputs,
+  all20native-evidence archive members and seven actualAA64COFFs, six strict
+  compiler TUs, nativePE and actual466831stdout; root-present-preflight-verified-
+  02.json PASS. Original reviewer01 assumed a different stdout summary spelling;
+  fresh02 checks the actual exact native summary without changing source/proof.
+  Screen oracle parser self-check01 passes a synthetic full16384pixel record and
+  rejects six damaged variants; explicitly no GPU evidence. Frozen query proof,
+  wrappers and candidate remain unchanged. Production architecture CI is next.

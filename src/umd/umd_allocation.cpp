@@ -46,22 +46,32 @@ void RuntimeMemory::initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kern
   m_callbacks.pfnUnlockCb = kernel.pfnUnlockCb;
   m_callbacks.pfnCreateContextCb = kernel.pfnCreateContextCb;
   m_callbacks.pfnDestroyContextCb = kernel.pfnDestroyContextCb;
+  m_callbacks.pfnPresentCb = nullptr;
   m_dxgi = dxgi;
   m_identity = std::move(identity);
   m_service = std::move(service);
   m_removed = false;
 }
 
+void RuntimeMemory::initialize9(HANDLE device, const D3DDDI_DEVICECALLBACKS& kernel,
+    std::shared_ptr<const AdapterIdentity> identity, std::shared_ptr<RuntimeService> service) {
+  initialize(device, kernel, nullptr, std::move(identity), std::move(service));
+  // The typed D3D9 callback is part of the common kernel table. DXGI has a
+  // different callback ABI and retains its independently live table above.
+  m_callbacks.pfnPresentCb = kernel.pfnPresentCb;
+}
+
 HRESULT RuntimeMemory::checkIdentity() {
   // The older standalone allocation helper has no runtime adapter binding.
   // The actual native entry always supplies its immutable original identity.
   if (!m_identity) return S_OK;
-  if (m_removed) return DXGI_ERROR_DEVICE_REMOVED;
+  if (m_removed || !m_identity->available()) return DXGI_ERROR_DEVICE_REMOVED;
   if (m_querying) return DXGI_ERROR_WAS_STILL_DRAWING;
   m_querying = true;
   struct QueryScope { bool& querying; ~QueryScope() { querying = false; } } scope{m_querying};
   RuntimeIdentity current;
   HRESULT hr = queryRuntimeIdentity(m_identity->runtime, m_identity->query, current);
+  if (!m_identity->available()) hr = DXGI_ERROR_DEVICE_REMOVED;
   if (hr == S_OK && (std::memcmp(current.luid.data(), &m_identity->luid, sizeof(LUID))
       || current.generation != m_identity->generation
       || current.capabilities != m_identity->capabilities))
@@ -74,7 +84,7 @@ bool RuntimeMemory::available() const {
   return m_device && m_callbacks.pfnAllocateCb && m_callbacks.pfnDeallocateCb
       && m_callbacks.pfnLockCb && m_callbacks.pfnUnlockCb
       && m_callbacks.pfnCreateContextCb && m_callbacks.pfnDestroyContextCb
-      && m_dxgi && m_dxgi->pfnPresentCb;
+      && (m_callbacks.pfnPresentCb || (m_dxgi && m_dxgi->pfnPresentCb));
 }
 
 HRESULT RuntimeMemory::allocateImpl(RuntimeAllocation& out, HANDLE resource,
@@ -84,6 +94,7 @@ HRESULT RuntimeMemory::allocateImpl(RuntimeAllocation& out, HANDLE resource,
     return E_INVALIDARG;
   AllocationInfo info;
   if (format == DXGI_FORMAT_B8G8R8A8_UNORM) info.format = 1;
+  else if (format == DXGI_FORMAT_B8G8R8X8_UNORM) info.format = 2;
   else if (format == DXGI_FORMAT_R8G8B8A8_UNORM) info.format = 3;
   else return DXGI_ERROR_UNSUPPORTED;
   info.width = width; info.height = height; info.pitch = width * 4;
@@ -135,6 +146,22 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   request.hResource = allocation.m_resource;
   const auto deallocate = m_callbacks.pfnDeallocateCb;
   const HANDLE device = m_device;
+  if (m_callbacks.pfnPresentCb) {
+    // Typed9 serializes destruction with every DDI on this device. Preserve
+    // ownership on a failed callback so DestroyResource can retry; guard even
+    // a direct recursive release before invoking the runtime again.
+    if (m_releasing9) return DXGI_ERROR_WAS_STILL_DRAWING;
+    m_releasing9 = true;
+    struct ReleaseScope { bool& flag; ~ReleaseScope() { flag = false; } } scope{m_releasing9};
+    const HRESULT released = deallocate(device, &request);
+    if (FAILED(released)) return released;
+    // A callback-reported success freed the resource even if the status is
+    // outside the exact-S_OK contract. Reject it without freeing twice.
+    allocation.m_owner = nullptr; allocation.m_resource = nullptr;
+    allocation.m_handle = 0; allocation.m_published = false;
+    allocation.m_kernelResource = 0; allocation.m_generation = 0;
+    return completed(released);
+  }
   // Retire all user ownership before entering runtime code. A recursive
   // Release/DestroyResource must neither deallocate twice nor touch old state.
   allocation.m_owner = nullptr; allocation.m_resource = nullptr;
@@ -156,7 +183,7 @@ HRESULT RuntimeMemory::adoptImpl(RuntimeAllocation& out, D3DKMT_HANDLE allocatio
   if (info.magic != AllocationInfo{}.magic || info.version != AllocationInfo{}.version
       || info.headerSize != AllocationInfo{}.headerSize || info.reserved
       || !info.width || !info.height || info.width > 16384 || info.height > 16384
-      || (info.format != 1 && info.format != 3)
+      || (info.format != 1 && info.format != 2 && info.format != 3)
       || info.pitch < uint64_t(info.width) * 4
       || uint64_t(info.pitch) * info.height > info.size)
     return E_INVALIDARG;
@@ -280,6 +307,38 @@ HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG
   // Do not substitute a global scanout escape or override its sync interval.
   const auto present = m_dxgi ? m_dxgi->pfnPresentCb : nullptr;
   if (!present) return DXGI_ERROR_UNSUPPORTED;
+  hr = completed(present(m_device, &request));
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (FAILED(hr)) return hr;
+  hr = checkIdentity();
+  return live && !live() ? DXGI_ERROR_DEVICE_REMOVED : hr;
+}
+
+HRESULT RuntimeMemory::present9Impl(RuntimeAllocation& source, const D3DDDIARG_PRESENT& args,
+    const std::function<bool()>& live) {
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (!available9()) return DXGI_ERROR_UNSUPPORTED;
+  // Initial windowed source blits only. Destination index and flip interval
+  // are reserved without a destination or flip; do not validate those fields.
+  if (source.m_owner != this || !source.m_handle || !source.m_published
+      || !args.hSrcResource || args.SrcSubResourceIndex || args.hDstResource
+      || args.Flags.Value != 1) return E_INVALIDARG;
+  HRESULT hr = checkIdentity();
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (FAILED(hr)) return hr;
+  // The synchronized linear allocation is a standard CPU-visible source.
+  // KMD presents it on a separately owned GDI context, not the Vulkan context
+  // whose native allocation identities and command stream are different.
+  hr = ensureContext();
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (FAILED(hr)) return hr;
+  hr = checkIdentity();
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (FAILED(hr)) return hr;
+  D3DDDICB_PRESENT request = {};
+  request.hSrcAllocation = source.m_handle;
+  request.hContext = m_context;
+  const auto present = m_callbacks.pfnPresentCb;
   hr = completed(present(m_device, &request));
   if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(hr)) return hr;

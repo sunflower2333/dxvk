@@ -2,6 +2,7 @@
 // the Microsoft D3D runtime does not supply these callbacks or load this UMD.
 #include "../src/umd/umd_d3d9_adapter.h"
 #include "../src/umd/umd_runtime_identity.h"
+#include "../src/umd/umd_allocation.h"
 #include <d3dkmthk.h>
 #include <d3d9.h>
 #include <algorithm>
@@ -9,6 +10,77 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <map>
+
+class PresentWindow {
+public:
+  ~PresentWindow() {
+    if (m_window) DestroyWindow(m_window);
+    if (m_class) UnregisterClassW(L"DxvkTypedPresentProbe", GetModuleHandleW(nullptr));
+  }
+  HRESULT create() {
+    SetProcessDPIAware();
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = procedure; wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"DxvkTypedPresentProbe";
+    m_class = RegisterClassW(&wc);
+    if (!m_class) return HRESULT_FROM_WIN32(GetLastError());
+    m_window = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+      wc.lpszClassName, L"DXVK typed presentation probe", WS_POPUP,
+      64,64,64,64,nullptr,nullptr,wc.hInstance,nullptr);
+    if (!m_window) return HRESULT_FROM_WIN32(GetLastError());
+    ShowWindow(m_window,SW_SHOWNOACTIVATE);
+    if (!UpdateWindow(m_window)) return HRESULT_FROM_WIN32(GetLastError());
+    RECT client = {};
+    if (!GetClientRect(m_window,&client) || client.right != 64 || client.bottom != 64) return E_FAIL;
+    return S_OK;
+  }
+  HWND handle() const { return m_window; }
+  void pump() const {
+    MSG msg;
+    while (PeekMessageW(&msg,m_window,0,0,PM_REMOVE)) {
+      TranslateMessage(&msg); DispatchMessageW(&msg);
+    }
+  }
+  HRESULT capture(std::array<UINT,4096>& pixels) const {
+    POINT origin = {};
+    if (!m_window || !ClientToScreen(m_window,&origin)) return E_FAIL;
+    HDC screen = GetDC(nullptr);
+    if (!screen) return E_FAIL;
+    HDC memory = CreateCompatibleDC(screen);
+    BITMAPINFO info = {};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = 64; info.bmiHeader.biHeight = -64;
+    info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32; info.bmiHeader.biCompression = BI_RGB;
+    void* data = nullptr;
+    HBITMAP bitmap = memory ? CreateDIBSection(screen,&info,DIB_RGB_COLORS,&data,nullptr,0) : nullptr;
+    HGDIOBJ previous = bitmap ? SelectObject(memory,bitmap) : nullptr;
+    HRESULT hr = E_FAIL;
+    if (previous && previous != HGDI_ERROR && data
+        && BitBlt(memory,0,0,64,64,screen,origin.x,origin.y,SRCCOPY | CAPTUREBLT)
+        && GdiFlush()) {
+      std::memcpy(pixels.data(),data,sizeof(pixels)); hr = S_OK;
+    }
+    if (previous && previous != HGDI_ERROR) SelectObject(memory,previous);
+    if (bitmap) DeleteObject(bitmap);
+    if (memory) DeleteDC(memory);
+    ReleaseDC(nullptr,screen);
+    return hr;
+  }
+private:
+  static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_PAINT) {
+      PAINTSTRUCT paint;
+      const HDC dc = BeginPaint(window,&paint);
+      // This fallback paint deliberately has no frame-oracle colors.
+      if (dc) FillRect(dc,&paint.rcPaint,static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+      EndPaint(window,&paint); return 0;
+    }
+    return DefWindowProcW(window,message,wparam,lparam);
+  }
+  HWND m_window = nullptr;
+  ATOM m_class = 0;
+};
 
 static void printLuid(const LUID& luid) {
   const auto bytes = reinterpret_cast<const unsigned char*>(&luid);
@@ -107,6 +179,7 @@ public:
     kernel.pfnLockCb = lock; kernel.pfnUnlockCb = unlock;
     kernel.pfnCreateContextCb = createContext; kernel.pfnDestroyContextCb = destroyContext;
     kernel.pfnEscapeCb = escape; kernel.pfnRenderCb = render;
+    kernel.pfnPresentCb = present;
     D3DDDIARG_CREATEDEVICE device = {};
     device.hDevice = &m_deviceOwner; device.Interface = 9;
     device.pCallbacks = &kernel; device.pDeviceFuncs = &m_deviceFuncs;
@@ -132,11 +205,13 @@ public:
     // and Turnip may suppress its empty submission; render callbacks are a
     // rendering-workload oracle, not evidence required for balanced lifetime.
     return contexts == 1 && contextCloses == 1 && allocations && allocations == deallocations
-      && locks == unlocks && !m_context && !wrongThreads ? S_OK : E_FAIL;
+      && locks == unlocks && !m_context && !m_presentContext && m_resources.empty()
+      && presentContexts == presentContextCloses && !wrongThreads ? S_OK : E_FAIL;
   }
   HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false,
                           bool buffers = false, bool depthStencil = false, bool fixedFunction = false,
-                          bool bufferTransfer = false, bool clipPlanes = false, bool gpuQueries = false) {
+                          bool bufferTransfer = false, bool clipPlanes = false, bool gpuQueries = false,
+                          bool presentation = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -1468,6 +1543,10 @@ public:
         std::printf("D3D9_QUERY_READBACK PASS pixels=%u checksum=%08x queries=6 completions=%u occlusion=64/16/0 event=full-BOOL timestamps=ordered frequency=positive disjoint=false guards=retained cached=exact lifetime=owned\n",checked,checksum,completions);
       }
     }
+    if (presentation) {
+      hr = verifyPresentation();
+      if (FAILED(hr)) return hr;
+    }
     hr = api.pfnDestroyResource(m_driverDevice, target.hResource);
     if (FAILED(hr)) return hr;
     hr = api.pfnDestroyResource(m_driverDevice, system.hResource);
@@ -1477,6 +1556,85 @@ public:
     // This workload records real clears and image-to-buffer transfers. Empty
     // submit acceptance is insufficient for its rendering oracle.
     return FAILED(hr) ? hr : renders ? S_OK : E_FAIL;
+  }
+  HRESULT verifyPresentation() {
+    const auto& api = m_deviceFuncs;
+    if (!api.pfnPresent || !api.pfnSetViewport) return E_FAIL;
+    HRESULT hr = m_window.create();
+    std::printf("D3D9_PRESENT_WINDOW hr=%08lx client=64x64\n",static_cast<unsigned long>(hr));
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    const UINT colors[4][4] = {
+      {0xff2748ad,0xffd1376b,0xff42b87c,0xffeab325},
+      {0xff6f32c5,0xff198bd4,0xffbaed43,0xffe56139},
+      {0xff82d719,0xffbc46a8,0xff357fe2,0xffef9031},
+      {0xffd6ac35,0xff4ae179,0xff973ce8,0xff205db7}
+    };
+    UINT checked = 0, checksum = 2166136261u;
+    for (unsigned format = 0; format < 2; ++format) {
+      char runtimeOwner;
+      D3DDDI_SURFACEINFO info = {64,64,1,nullptr,0,0};
+      D3DDDIARG_CREATERESOURCE target = {};
+      target.hResource = &runtimeOwner; target.pSurfList = &info; target.SurfCount = 1;
+      target.Pool = D3DDDIPOOL_LOCALVIDMEM;
+      target.Format = static_cast<D3DDDIFORMAT>(format ? D3DFMT_X8R8G8B8 : D3DFMT_A8R8G8B8);
+      target.Flags.RenderTarget = target.Flags.NotLockable = 1;
+      hr = api.pfnCreateResource(m_driverDevice,&target);
+      std::printf("D3D9_PRESENT_RESOURCE format=%u hr=%08lx\n",format,static_cast<unsigned long>(hr));
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      const D3DDDIARG_SETRENDERTARGET bind = {0,target.hResource,0};
+      hr = api.pfnSetRenderTarget(m_driverDevice,&bind); if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      const D3DDDIARG_VIEWPORTINFO viewport = {0,0,64,64};
+      hr = api.pfnSetViewport(m_driverDevice,&viewport); if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      for (unsigned frame = 0; frame < 2; ++frame) {
+        const unsigned stage = format * 2 + frame + 1;
+        for (unsigned quadrant = 0; quadrant < 4; ++quadrant) {
+          const LONG x = LONG(quadrant % 2) * 32, y = LONG(quadrant / 2) * 32;
+          const RECT rect = {x,y,x+32,y+32};
+          D3DDDIARG_CLEAR fill = {};
+          fill.Flags = D3DCLEAR_TARGET; fill.FillColor = colors[stage - 1][quadrant];
+          hr = api.pfnClear(m_driverDevice,&fill,1,&rect);
+          if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+        }
+        m_window.pump();
+        D3DDDIARG_PRESENT args = {};
+        args.hSrcResource = target.hResource; args.Flags.Blt = 1;
+        args.DstSubResourceIndex = UINT_MAX;
+        args.FlipInterval = static_cast<D3DDDI_FLIPINTERVAL_TYPE>(UINT_MAX);
+        const auto before = args;
+        hr = api.pfnPresent(m_driverDevice,&args);
+        std::printf("D3D9_PRESENT_SUBMIT stage=%u format=%u hr=%08lx\n",stage,format,static_cast<unsigned long>(hr));
+        if (hr != S_OK || std::memcmp(&before,&args,sizeof(args))) return FAILED(hr) ? hr : E_FAIL;
+        std::array<UINT,4096> capture = {};
+        const ULONGLONG deadline = GetTickCount64() + 2500;
+        unsigned consecutive = 0, polls = 0;
+        while (GetTickCount64() < deadline && consecutive < 2) {
+          m_window.pump();
+          hr = m_window.capture(capture); ++polls;
+          if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+          bool equal = true;
+          for (UINT y = 0; y < 64; ++y) for (UINT x = 0; x < 64; ++x) {
+            const UINT expected = colors[stage - 1][(y / 32) * 2 + x / 32] & 0xffffff;
+            if ((capture[y * 64 + x] & 0xffffff) != expected) equal = false;
+          }
+          consecutive = equal ? consecutive + 1 : 0;
+          if (consecutive < 2) Sleep(20);
+        }
+        // Preserve every actual screen pixel even if presentation never matches.
+        for (UINT y = 0; y < 64; ++y) for (UINT x = 0; x < 64; ++x) {
+          const UINT value = capture[y * 64 + x];
+          std::printf("D3D9_PRESENT_SCREEN_PIXEL stage=%u x=%u y=%u value=%08x\n",stage,x,y,value);
+          checksum = (checksum ^ (value & 0xffffff)) * 16777619u; ++checked;
+        }
+        std::printf("D3D9_PRESENT_SCREEN stage=%u polls=%u consecutive=%u pixels=4096 hr=%08lx\n",
+          stage,polls,consecutive,static_cast<unsigned long>(consecutive == 2 ? S_OK : E_FAIL));
+        if (consecutive != 2) return E_FAIL;
+      }
+      hr = api.pfnDestroyResource(m_driverDevice,target.hResource);
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    }
+    if (presents != 4 || presentAllocations != 2 || presentDeallocations != 2 || presentContexts != 1) return E_FAIL;
+    std::printf("D3D9_PRESENT_READBACK PASS pixels=%u checksum=%08x submissions=4 allocations=2/2 context=1 formats=A8/X8 frames=updated/reused source=owned capture=screen-rgb\n",checked,checksum);
+    return S_OK;
   }
   HRESULT close() {
     HRESULT hr = S_OK;
@@ -1495,6 +1653,12 @@ public:
       if (FAILED(cleanup)) hr = cleanup;
       m_context = 0;
     }
+    if (m_presentContext) {
+      D3DKMT_DESTROYCONTEXT request = {}; request.hContext = m_presentContext;
+      const HRESULT cleanup = result(D3DKMTDestroyContext(&request));
+      if (FAILED(cleanup)) hr = cleanup;
+      m_presentContext = 0;
+    }
     if (m_device) {
       if (m_pagingQueue) {
         D3DDDI_DESTROYPAGINGQUEUE paging = {}; paging.hPagingQueue = m_pagingQueue;
@@ -1505,6 +1669,7 @@ public:
       std::printf("KMT_RESIDENCY references=%u evictions=%u remaining=%zu\n",
         residencyReferences, residencyEvictions, m_resident.size());
       if (!m_resident.empty() || residencyReferences != residencyEvictions) hr = E_FAIL;
+      if (!m_resources.empty()) hr = E_FAIL;
       D3DKMT_DESTROYDEVICE request = {}; request.hDevice = m_device;
       const HRESULT cleanup = result(D3DKMTDestroyDevice(&request));
       if (FAILED(cleanup)) hr = cleanup;
@@ -1575,14 +1740,21 @@ private:
   }
   static HRESULT APIENTRY createContext(HANDLE handle, D3DDDICB_CREATECONTEXT* args) {
     auto s = self(handle);
-    if (!s || handle != &s->m_deviceOwner || !args || s->m_context) return E_INVALIDARG;
+    if (!s || handle != &s->m_deviceOwner || !args) return E_INVALIDARG;
+    const bool standard = !args->pPrivateDriverData && !args->PrivateDriverDataSize;
+    auto& context = standard ? s->m_presentContext : s->m_context;
+    if (context) return E_INVALIDARG;
     D3DKMT_CREATECONTEXT request = {};
     request.hDevice = s->m_device; request.NodeOrdinal = args->NodeOrdinal;
     request.EngineAffinity = args->EngineAffinity; request.Flags = args->Flags;
     request.pPrivateDriverData = args->pPrivateDriverData; request.PrivateDriverDataSize = args->PrivateDriverDataSize;
     const HRESULT hr = result(D3DKMTCreateContext(&request));
+    if (standard) std::printf("D3D9_PRESENT_CONTEXT_CREATE hr=%08lx context=%u\n",
+      static_cast<unsigned long>(hr),request.hContext);
     if (SUCCEEDED(hr)) {
-      s->m_context = request.hContext; args->hContext = &s->m_contextOwner; ++s->contexts;
+      context = request.hContext;
+      args->hContext = standard ? &s->m_presentContextOwner : &s->m_contextOwner;
+      if (standard) ++s->presentContexts; else ++s->contexts;
       args->pCommandBuffer = request.pCommandBuffer; args->CommandBufferSize = request.CommandBufferSize;
       args->pAllocationList = request.pAllocationList; args->AllocationListSize = request.AllocationListSize;
       args->pPatchLocationList = request.pPatchLocationList; args->PatchLocationListSize = request.PatchLocationListSize;
@@ -1591,39 +1763,85 @@ private:
   }
   static HRESULT APIENTRY destroyContext(HANDLE handle, const D3DDDICB_DESTROYCONTEXT* args) {
     auto s = self(handle);
-    if (!s || handle != &s->m_deviceOwner || !args || args->hContext != &s->m_contextOwner || !s->m_context) return E_INVALIDARG;
-    D3DKMT_DESTROYCONTEXT request = {}; request.hContext = s->m_context;
+    if (!s || handle != &s->m_deviceOwner || !args) return E_INVALIDARG;
+    const bool standard = args->hContext == &s->m_presentContextOwner;
+    if (!standard && args->hContext != &s->m_contextOwner) return E_INVALIDARG;
+    auto& context = standard ? s->m_presentContext : s->m_context;
+    if (!context) return E_INVALIDARG;
+    D3DKMT_DESTROYCONTEXT request = {}; request.hContext = context;
     const HRESULT hr = result(D3DKMTDestroyContext(&request));
-    if (SUCCEEDED(hr)) { s->m_context = 0; ++s->contextCloses; }
+    if (standard) std::printf("D3D9_PRESENT_CONTEXT_DESTROY hr=%08lx\n",static_cast<unsigned long>(hr));
+    if (SUCCEEDED(hr)) {
+      context = 0;
+      if (standard) ++s->presentContextCloses; else ++s->contextCloses;
+    }
     return hr;
   }
   static HRESULT APIENTRY allocate(HANDLE handle, D3DDDICB_ALLOCATE* args) {
     auto s = self(handle);
-    if (!s || handle != &s->m_deviceOwner || !args || args->hResource || args->hKMResource || !args->NumAllocations) return E_INVALIDARG;
+    if (!s || handle != &s->m_deviceOwner || !args || args->hKMResource
+        || !args->NumAllocations || !args->pAllocationInfo) return E_INVALIDARG;
+    ResourceAllocation* resource = nullptr;
+    if (args->hResource) {
+      if (args->NumAllocations != 1 || s->m_resources.count(args->hResource)) return E_INVALIDARG;
+      // Reserve ownership storage before the kernel can create any allocation.
+      auto entry = s->m_resources.emplace(args->hResource,ResourceAllocation{}).first;
+      try { entry->second.allocations.resize(args->NumAllocations); }
+      catch (...) { s->m_resources.erase(entry); return E_OUTOFMEMORY; }
+      resource = &entry->second;
+    }
     D3DKMT_CREATEALLOCATION request = {};
     request.hDevice = s->m_device; request.NumAllocations = args->NumAllocations; request.pAllocationInfo = args->pAllocationInfo;
+    request.pPrivateDriverData = args->pPrivateDriverData; request.PrivateDriverDataSize = args->PrivateDriverDataSize;
+    if (resource) {
+      request.Flags.CreateResource = 1;
+      request.hPrivateRuntimeResourceHandle = args->hResource;
+    }
     const HRESULT hr = result(D3DKMTCreateAllocation(&request));
-    if (SUCCEEDED(hr)) { args->hKMResource = request.hResource; s->allocations += args->NumAllocations; }
+    if (SUCCEEDED(hr)) {
+      args->hKMResource = request.hResource; s->allocations += args->NumAllocations;
+      if (resource) {
+        resource->kernel = request.hResource;
+        for (UINT i = 0; i < args->NumAllocations; ++i) resource->allocations[i] = args->pAllocationInfo[i].hAllocation;
+        ++s->presentAllocations;
+      }
+    } else if (resource) s->m_resources.erase(args->hResource);
+    if (args->hResource) std::printf("D3D9_PRESENT_ALLOCATION hr=%08lx resource=%u allocation=%u\n",
+      static_cast<unsigned long>(hr),args->hKMResource,args->pAllocationInfo->hAllocation);
     return hr;
   }
   static HRESULT APIENTRY deallocate(HANDLE handle, const D3DDDICB_DEALLOCATE* args) {
     auto s = self(handle);
-    if (!s || handle != &s->m_deviceOwner || !args || args->hResource
-        || !args->NumAllocations || !args->HandleList) return E_INVALIDARG;
-    for (UINT i = 0; i < args->NumAllocations; ++i) {
-      const auto found = std::find(s->m_resident.begin(), s->m_resident.end(), args->HandleList[i]);
+    if (!s || handle != &s->m_deviceOwner || !args) return E_INVALIDARG;
+    ResourceAllocation* resource = nullptr;
+    const D3DKMT_HANDLE* handles = args->HandleList;
+    UINT count = args->NumAllocations;
+    if (args->hResource) {
+      const auto entry = s->m_resources.find(args->hResource);
+      if (entry == s->m_resources.end() || count || handles) return E_INVALIDARG;
+      resource = &entry->second; handles = resource->allocations.data(); count = UINT(resource->allocations.size());
+    }
+    if (!count || !handles) return E_INVALIDARG;
+    for (UINT i = 0; i < count; ++i) {
+      const auto found = std::find(s->m_resident.begin(), s->m_resident.end(), handles[i]);
       if (found == s->m_resident.end()) continue;
       D3DKMT_EVICT evict = {}; evict.hDevice = s->m_device;
-      evict.NumAllocations = 1; evict.AllocationList = &args->HandleList[i];
+      evict.NumAllocations = 1; evict.AllocationList = &handles[i];
       const NTSTATUS status = D3DKMTEvict(&evict);
-      std::printf("KMT_EVICT allocation=%u status=%08lx\n", args->HandleList[i], static_cast<unsigned long>(status));
+      std::printf("KMT_EVICT allocation=%u status=%08lx\n",handles[i],static_cast<unsigned long>(status));
       if (status != 0) return status < 0 ? result(status) : E_FAIL;
       s->m_resident.erase(found); ++s->residencyEvictions;
     }
     D3DKMT_DESTROYALLOCATION request = {};
-    request.hDevice = s->m_device; request.AllocationCount = args->NumAllocations; request.phAllocationList = args->HandleList;
+    request.hDevice = s->m_device;
+    if (resource && resource->kernel) request.hResource = resource->kernel;
+    else { request.AllocationCount = count; request.phAllocationList = handles; }
     const HRESULT hr = result(D3DKMTDestroyAllocation(&request));
-    if (SUCCEEDED(hr)) s->deallocations += args->NumAllocations;
+    if (SUCCEEDED(hr)) {
+      s->deallocations += count;
+      if (resource) { ++s->presentDeallocations; s->m_resources.erase(args->hResource); }
+    }
+    if (args->hResource) std::printf("D3D9_PRESENT_DEALLOCATION hr=%08lx\n",static_cast<unsigned long>(hr));
     return hr;
   }
   static HRESULT APIENTRY lock(HANDLE handle, D3DDDICB_LOCK* args) {
@@ -1686,18 +1904,53 @@ private:
     if (SUCCEEDED(hr)) ++s->renders;
     return hr;
   }
-  Owner m_adapterOwner{this}, m_deviceOwner{this}, m_contextOwner{this};
+  static HRESULT APIENTRY present(HANDLE handle, D3DDDICB_PRESENT* args) {
+    auto s = self(handle);
+    if (!s || handle != &s->m_deviceOwner || !args || !s->m_window.handle()
+        || args->hContext != &s->m_presentContextOwner || !s->m_presentContext
+        || !args->hSrcAllocation || args->hDstAllocation || args->BroadcastContextCount
+        || args->PrivateDriverDataSize || args->pPrivateDriverData || args->SyncIntervalOverrideValid) return E_INVALIDARG;
+    bool owned = false;
+    for (const auto& resource : s->m_resources)
+      if (resource.second.allocations.size() == 1 && resource.second.allocations[0] == args->hSrcAllocation) owned = true;
+    if (!owned) return E_INVALIDARG;
+    D3DDDI_ALLOCATIONLIST reference = {}; reference.hAllocation = args->hSrcAllocation;
+    D3DDDICB_RENDER residency = {};
+    residency.NumAllocations = residency.NewAllocationListSize = 1; residency.pNewAllocationList = &reference;
+    const HRESULT resident = s->resident(residency);
+    if (FAILED(resident)) return resident;
+    const RECT rect = {0,0,64,64};
+    D3DKMT_PRESENT request = {};
+    request.hContext = s->m_presentContext; request.hWindow = s->m_window.handle();
+    request.hSource = args->hSrcAllocation; request.SrcRect = request.DstRect = rect;
+    request.Flags.Blt = request.Flags.SrcRectValid = request.Flags.DstRectValid = 1;
+    request.SubRectCnt = 1; request.pSrcSubRects = &rect;
+    request.PresentCount = s->presents + 1;
+    const NTSTATUS status = D3DKMTPresent(&request);
+    const HRESULT hr = status == 0 ? S_OK : status < 0 ? result(status) : E_FAIL;
+    std::printf("D3D9_KMT_PRESENT stage=%u status=%08lx hr=%08lx context=%u source=%u composition=%u\n",
+      s->presents + 1,static_cast<unsigned long>(status),static_cast<unsigned long>(hr),
+      s->m_presentContext,args->hSrcAllocation,unsigned(request.bOptimizeForComposition));
+    if (hr == S_OK) ++s->presents;
+    return hr;
+  }
+  struct ResourceAllocation { D3DKMT_HANDLE kernel = 0; std::vector<D3DKMT_HANDLE> allocations; };
+  Owner m_adapterOwner{this}, m_deviceOwner{this}, m_contextOwner{this}, m_presentContextOwner{this};
   DWORD m_thread = GetCurrentThreadId();
-  D3DKMT_HANDLE m_adapter = 0, m_device = 0, m_context = 0;
+  D3DKMT_HANDLE m_adapter = 0, m_device = 0, m_context = 0, m_presentContext = 0;
   D3DKMT_HANDLE m_pagingQueue = 0, m_pagingSync = 0;
   UINT64 m_pendingPaging = 0;
   std::vector<D3DKMT_HANDLE> m_resident;
+  std::map<HANDLE,ResourceAllocation> m_resources;
+  PresentWindow m_window;
   HANDLE m_driverAdapter = nullptr, m_driverDevice = nullptr;
   D3DDDI_ADAPTERFUNCS m_adapterFuncs = {};
   D3DDDI_DEVICEFUNCS m_deviceFuncs = {};
   unsigned queries = 0, contexts = 0, contextCloses = 0, allocations = 0, deallocations = 0;
   unsigned locks = 0, unlocks = 0, renders = 0, escapes = 0, wrongThreads = 0;
   unsigned residencyReferences = 0, residencyEvictions = 0;
+  unsigned presents = 0, presentContexts = 0, presentContextCloses = 0;
+  unsigned presentAllocations = 0, presentDeallocations = 0;
 };
 
 int wmain(int argc, WCHAR** argv) {
@@ -1707,7 +1960,8 @@ int wmain(int argc, WCHAR** argv) {
     catch (...) { return 1; }
   }
   LUID luid = {};
-  const bool gpuQueries = argc == 3 && !wcscmp(argv[2], L"--queries");
+  const bool presentation = argc == 3 && !wcscmp(argv[2], L"--present");
+  const bool gpuQueries = presentation || (argc == 3 && !wcscmp(argv[2], L"--queries"));
   const bool clipPlanes = gpuQueries || (argc == 3 && !wcscmp(argv[2], L"--clip-planes"));
   const bool bufferTransfer = clipPlanes || (argc == 3 && !wcscmp(argv[2], L"--buffer-transfer"));
   const bool fixedFunction = bufferTransfer || (argc == 3 && !wcscmp(argv[2], L"--fixed-function"));
@@ -1718,17 +1972,17 @@ int wmain(int argc, WCHAR** argv) {
   const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer|--clip-planes|--queries]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer|--clip-planes|--queries|--present]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer,clipPlanes,gpuQueries) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer,clipPlanes,gpuQueries,presentation) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    gpuQueries ? "QUERY" : clipPlanes ? "CLIP" : bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    gpuQueries ? "typed GPU query completion/occlusion/timestamp/readback" : clipPlanes ? "typed homogeneous clip-plane draw/readback pixels" : bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    presentation ? "PRESENT" : gpuQueries ? "QUERY" : clipPlanes ? "CLIP" : bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    presentation ? "typed kernel blit and actual screen pixels" : gpuQueries ? "typed GPU query completion/occlusion/timestamp/readback" : clipPlanes ? "typed homogeneous clip-plane draw/readback pixels" : bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

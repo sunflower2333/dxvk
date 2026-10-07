@@ -49,6 +49,9 @@ int d3d8RuntimeFrontGuard(const wchar_t* frontend) noexcept {
     if (open(nullptr) != D3DERR_NOTAVAILABLE) return 1;
     if (!SetEnvironmentVariableW(policy::permissionName, policy::permissionValue)) return 1;
     if (open(nullptr) != E_INVALIDARG) return 1;
+    if (!SetEnvironmentVariableW(policy::permissionName, policy::devicePermissionValue)
+        || open(nullptr) != E_INVALIDARG || GetModuleHandleW(L"viogpudxvk.dll")) return 1;
+    if (!SetEnvironmentVariableW(policy::permissionName, policy::permissionValue)) return 1;
     unsigned rejected = 0;
     for (UINT version : {0u, 7u, 9u, 10u, 11u, 0xffffffffu}) {
       D3DDDIARG_OPENADAPTER args{};
@@ -74,7 +77,7 @@ int d3d8RuntimeFrontGuard(const wchar_t* frontend) noexcept {
     guard.permissionSet = false;
     char line[256];
     const int bytes = std::snprintf(line, sizeof(line),
-      "D3D8_FRONT_GUARD PASS denied=8876086a wrong_permission=8876086a null=80070057 invalid_interfaces=%u non_system_caller=1 no_core_open=1 system_runtime_calls=0\n", rejected);
+      "D3D8_FRONT_GUARD PASS denied=8876086a wrong_permission=8876086a null=80070057 invalid_interfaces=%u non_system_caller=1 no_core_open=1 system_runtime_calls=0 device_permission_null=80070057\n", rejected);
     if (bytes <= 0 || size_t(bytes) >= sizeof(line)) return 1;
     DWORD written = 0;
     return !WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), line, DWORD(bytes), &written, nullptr)

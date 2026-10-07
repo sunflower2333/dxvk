@@ -32,6 +32,22 @@ bool select(GuardedName& output, int32_t status = 0, uint32_t type = 1,
 
 int main() {
   namespace policy = dxvk::test::runtime8;
+  using Mode = policy::Mode;
+  CHECK(policy::permissionMode(View(u"read-only-d3d8-interface8-v1")) == Mode::ReadOnly);
+  CHECK(policy::permissionMode(View(u"device-render-d3d8-interface8-v1")) == Mode::Device);
+  for (View bad : {View(u""), View(u"device-render-d3d8-interface8-v1 "),
+      View(u"DEVICE-render-d3d8-interface8-v1"), View(u"device-render-d3d9-interface8-v1"),
+      View(u"device-render-d3d8-interface9-v1")})
+    CHECK(policy::permissionMode(bad) == Mode::Denied);
+  std::u16string embeddedPermission(u"device-render-d3d8-interface8-v1");
+  embeddedPermission.push_back(0); embeddedPermission.append(u"extra");
+  CHECK(policy::permissionMode(View(embeddedPermission)) == Mode::Denied);
+  for (Mode captured : {Mode::Denied, Mode::ReadOnly, Mode::Device})
+    for (Mode current : {Mode::Denied, Mode::ReadOnly, Mode::Device})
+      CHECK(policy::mayCreateDevice(captured, current, 8)
+        == (captured == Mode::Device && current == Mode::Device));
+  for (uint32_t badApi : {0u, 7u, 9u, 10u, 11u, 0xffffffffu})
+    CHECK(!policy::mayCreateDevice(Mode::Device, Mode::Device, badApi));
   CHECK(policy::capsBytes == 212);
   CHECK(policy::hexIdentity(View(coreCommit), 40));
   CHECK(policy::hexIdentity(View(u"0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"), 64));

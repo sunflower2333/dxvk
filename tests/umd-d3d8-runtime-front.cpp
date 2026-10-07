@@ -1,4 +1,4 @@
-// Process-local read-only frontend for Microsoft's genuine I386 D3D8 runtime.
+// Process-local enumeration/device diagnostic frontend for Microsoft's genuine I386 D3D8 runtime.
 // This owned harness is separate from production UMD registration/admission.
 #include <windows.h>
 #include <d3d9.h>
@@ -17,15 +17,32 @@
 #include <unordered_map>
 #include <vector>
 #include "umd-d3d8-runtime-policy.h"
+#include "umd-d3d8-runtime-callbacks.h"
 #include "../src/umd/umd_runtime_imports.h"
 
 static_assert(sizeof(void*) == 4, "Microsoft D3D8 on the target requires an I386 frontend");
 static_assert(D3DDDICAPS_GETD3D8CAPS == 12);
 namespace {
 namespace policy = dxvk::test::runtime8;
-struct Adapter { D3DDDI_ADAPTERFUNCS original; HANDLE runtime; UINT version; };
+struct Adapter {
+  D3DDDI_ADAPTERFUNCS original; HANDLE runtime; UINT version;
+  policy::Mode mode;
+  std::wstring corePath, coreSha256, coreCommit;
+};
+using Callbacks = dxvk::test::RuntimeCallbacks8;
+constexpr size_t functionBytes = offsetof(D3DDDI_DEVICEFUNCS, pfnRename) + sizeof(PFND3DDDI_RENAME);
+static_assert(functionBytes == 99 * sizeof(void*));
+struct Device {
+  const D3DDDI_DEVICEFUNCS original;
+  const std::shared_ptr<const Adapter> adapter;
+  const Callbacks::Pin callbacks;
+  std::atomic<bool> destroying{false};
+  Device(const D3DDDI_DEVICEFUNCS& functions, std::shared_ptr<const Adapter> inputAdapter, Callbacks::Pin inputCallbacks)
+    : original(functions), adapter(std::move(inputAdapter)), callbacks(std::move(inputCallbacks)) { }
+};
 std::mutex registryMutex;
 std::unordered_map<HANDLE, std::shared_ptr<const Adapter>> adapters;
+std::unordered_map<HANDLE, std::shared_ptr<Device>> devices;
 std::atomic<unsigned> traceSequence{0};
 
 void trace(const char* format, ...) {
@@ -34,16 +51,18 @@ void trace(const char* format, ...) {
   va_list args; va_start(args, format);
   const int length = std::vsnprintf(line, sizeof(line) - 2, format, args); va_end(args);
   if (length >= 0 && size_t(length) < sizeof(line) - 2) {
-    line[length] = '\n';
+    const int bytes = length && line[length - 1] == '\n' ? length : length + 1;
+    if (bytes != length) line[length] = '\n';
     DWORD written = 0;
-    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), line, DWORD(length + 1), &written, nullptr);
+    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), line, DWORD(bytes), &written, nullptr);
   }
   SetLastError(lastError);
 }
-bool permitted() {
+policy::Mode permission() {
   WCHAR value[96]{};
   const DWORD count = GetEnvironmentVariableW(policy::permissionName, value, DWORD(std::size(value)));
-  return count && count < std::size(value) && !std::wcscmp(value, policy::permissionValue);
+  return count && count < std::size(value)
+    ? policy::permissionMode(std::wstring_view(value, count)) : policy::Mode::Denied;
 }
 std::wstring modulePath(HMODULE module) {
   WCHAR path[32768];
@@ -226,35 +245,142 @@ HRESULT APIENTRY getCaps(HANDLE handle, const D3DDDIARG_GETCAPS* args) {
   }
   return hr;
 }
-HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
-  const auto owner = retain(handle);
-  if (!owner || !args) return E_INVALIDARG;
+std::shared_ptr<Device> retainDevice(HANDLE handle) {
+  std::lock_guard<std::mutex> lock(registryMutex);
+  const auto entry = devices.find(handle);
+  return entry == devices.end() ? nullptr : entry->second;
+}
+HRESULT APIENTRY deviceCreateResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
+  const auto owner = retainDevice(handle);
+  if (!owner || !args || owner->destroying.load()) return E_INVALIDARG;
   const auto input = *args;
-  trace("SYSTEM_D3D8_CREATE_BLOCKED adapter=%p runtime=%p interface=%u version=%u flags=%08x callbacks=%u functions=%u command=%u allocation_list=%u patch_list=%u core_create_calls=0 hr=%08lx",
+  trace("SYSTEM_D3D8_RESOURCE_BEGIN device=%p runtime=%p flags=%08x format=%u pool=%u surfaces=%u mips=%u fvf=%08x",
+    handle, input.hResource, input.Flags.Value, unsigned(input.Format), unsigned(input.Pool),
+    input.SurfCount, input.MipLevels, input.Fvf);
+  const HRESULT hr = owner->original.pfnCreateResource(handle, args);
+  trace("SYSTEM_D3D8_RESOURCE_END device=%p runtime=%p driver=%p hr=%08lx",
+    handle, input.hResource, args->hResource, static_cast<unsigned long>(hr));
+  return hr;
+}
+HRESULT APIENTRY deviceDestroyResource(HANDLE handle, HANDLE resource) {
+  const auto owner = retainDevice(handle);
+  if (!owner) return E_INVALIDARG;
+  const HRESULT hr = owner->original.pfnDestroyResource(handle, resource);
+  trace("SYSTEM_D3D8_RESOURCE_DESTROY device=%p resource=%p hr=%08lx", handle, resource, static_cast<unsigned long>(hr));
+  return hr;
+}
+HRESULT APIENTRY devicePresent(HANDLE handle, const D3DDDIARG_PRESENT* args) {
+  const auto owner = retainDevice(handle);
+  if (!owner || !args || owner->destroying.load()) return E_INVALIDARG;
+  trace("SYSTEM_D3D8_PRESENT_BEGIN device=%p", handle);
+  const HRESULT hr = owner->original.pfnPresent(handle, args);
+  trace("SYSTEM_D3D8_PRESENT_END device=%p hr=%08lx", handle, static_cast<unsigned long>(hr));
+  return hr;
+}
+HRESULT APIENTRY deviceDestroy(HANDLE handle) {
+  const auto owner = retainDevice(handle);
+  if (!owner || owner->destroying.exchange(true)) return E_INVALIDARG;
+  // Original callbacks stay registered and pinned until actual core teardown
+  // returns. In-flight callback wrappers retain their own shared owners.
+  trace("SYSTEM_D3D8_DEVICE_DESTROY_BEGIN device=%p callback_owner_live=1", handle);
+  const HRESULT hr = owner->original.pfnDestroyDevice(handle);
+  if (hr != S_OK) {
+    owner->destroying.store(false); Callbacks::summary(owner->callbacks, "destroy-failed");
+    trace("SYSTEM_D3D8_DEVICE_DESTROY_FAILED device=%p hr=%08lx callback_owner_retained=1", handle, static_cast<unsigned long>(hr));
+    return hr;
+  }
+  size_t remaining = 0;
+  {
+    std::lock_guard<std::mutex> lock(registryMutex);
+    const auto entry = devices.find(handle);
+    if (entry != devices.end() && entry->second == owner) devices.erase(entry);
+    remaining = devices.size();
+  }
+  Callbacks::summary(owner->callbacks, "destroyed");
+  Callbacks::remove(owner->callbacks);
+  trace("SYSTEM_D3D8_DEVICE_DESTROY device=%p hr=%08lx remaining=%zu callback_owner_released=1",
+    handle, static_cast<unsigned long>(hr), remaining);
+  return hr;
+}
+HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
+  const auto adapter = retain(handle);
+  if (!adapter || !args) return E_INVALIDARG;
+  const auto input = *args;
+  trace("SYSTEM_D3D8_CREATE_CONTRACT adapter=%p runtime=%p interface=%u version=%u flags=%08x callbacks=%u functions=%u command=%u allocation_list=%u patch_list=%u captured_mode=%u",
     handle, input.hDevice, input.Interface, input.Version, input.Flags.Value,
     unsigned(input.pCallbacks != nullptr), unsigned(input.pDeviceFuncs != nullptr),
-    input.CommandBufferSize, input.AllocationListSize, input.PatchLocationListSize,
-    static_cast<unsigned long>(D3DERR_NOTAVAILABLE));
-  return D3DERR_NOTAVAILABLE;
+    input.CommandBufferSize, input.AllocationListSize, input.PatchLocationListSize, unsigned(adapter->mode));
+  if (!policy::mayCreateDevice(adapter->mode, permission(), input.Interface)) {
+    trace("SYSTEM_D3D8_CREATE_BLOCKED adapter=%p core_create_calls=0 hr=%08lx",
+      handle, static_cast<unsigned long>(D3DERR_NOTAVAILABLE));
+    return D3DERR_NOTAVAILABLE;
+  }
+  // Keep the exact core pins immutable across OpenAdapter and device creation.
+  if (environment(policy::corePathName, 259) != adapter->corePath
+      || environment(policy::coreSha256Name, 64) != adapter->coreSha256
+      || environment(policy::coreCommitName, 40) != adapter->coreCommit) return E_INVALIDARG;
+  if (!input.hDevice || !input.pDeviceFuncs || !input.pCallbacks) return E_INVALIDARG;
+  Callbacks::Pin callbacks;
+  try { callbacks = Callbacks::install(input.hDevice, adapter->runtime, input.pCallbacks, trace); }
+  catch (...) { return E_OUTOFMEMORY; }
+  if (!callbacks) return E_INVALIDARG;
+  struct Guard {
+    D3DDDIARG_CREATEDEVICE* args;
+    const D3DDDI_DEVICECALLBACKS* original;
+    Callbacks::Pin callbacks;
+    bool published = false;
+    ~Guard() { args->pCallbacks = original; if (!published) Callbacks::remove(callbacks); }
+  } guard{args, input.pCallbacks, callbacks};
+  trace("SYSTEM_D3D8_CALLBACK_TABLE runtime=%p adapter_runtime=%p original=%p wrapped=%p bytes=%zu owned_snapshot=1 borrowed_table_reread=0",
+    input.hDevice, adapter->runtime, input.pCallbacks, &callbacks->wrapped, Callbacks::callbackBytes);
+  args->pCallbacks = &callbacks->wrapped;
+  const HRESULT hr = adapter->original.pfnCreateDevice(handle, args);
+  trace("SYSTEM_D3D8_CREATE_RETURN runtime=%p driver=%p hr=%08lx interface=8 core_create_calls=1",
+    input.hDevice, args->hDevice, static_cast<unsigned long>(hr));
+  if (hr != S_OK) { Callbacks::summary(callbacks, "create-failed"); return FAILED(hr) ? hr : E_FAIL; }
+  D3DDDI_DEVICEFUNCS original{};
+  std::memcpy(&original, input.pDeviceFuncs, functionBytes);
+  if (!args->hDevice || !original.pfnDestroyDevice || !original.pfnCreateResource
+      || !original.pfnDestroyResource || !original.pfnPresent) {
+    if (original.pfnDestroyDevice) original.pfnDestroyDevice(args->hDevice);
+    return E_NOINTERFACE;
+  }
+  bool inserted = false;
+  try {
+    auto owner = std::make_shared<Device>(original, adapter, callbacks);
+    std::lock_guard<std::mutex> lock(registryMutex);
+    inserted = devices.emplace(args->hDevice, std::move(owner)).second;
+  } catch (...) { original.pfnDestroyDevice(args->hDevice); return E_OUTOFMEMORY; }
+  if (!inserted) { original.pfnDestroyDevice(args->hDevice); return E_FAIL; }
+  input.pDeviceFuncs->pfnCreateResource = deviceCreateResource;
+  input.pDeviceFuncs->pfnDestroyResource = deviceDestroyResource;
+  input.pDeviceFuncs->pfnPresent = devicePresent;
+  input.pDeviceFuncs->pfnDestroyDevice = deviceDestroy;
+  guard.published = true;
+  trace("SYSTEM_D3D8_DEVICE_FUNCTIONS bytes=%zu interface=%u published=1", functionBytes, unsigned(D3D_UMD_INTERFACE_VERSION_VISTA));
+  return S_OK;
 }
 HRESULT APIENTRY closeAdapter(HANDLE handle) {
-  std::shared_ptr<const Adapter> owner; size_t remaining = 0;
+  const auto owner = retain(handle); if (!owner) return E_INVALIDARG;
+  const HRESULT hr = owner->original.pfnCloseAdapter(handle);
+  size_t remaining = 0, liveDevices = 0;
   {
     std::lock_guard<std::mutex> lock(registryMutex);
     const auto entry = adapters.find(handle);
-    if (entry == adapters.end()) return E_INVALIDARG;
-    owner = entry->second; adapters.erase(entry); remaining = adapters.size();
+    if (hr == S_OK && entry != adapters.end() && entry->second == owner) adapters.erase(entry);
+    remaining = adapters.size();
+    for (const auto& device : devices) liveDevices += unsigned(device.second->adapter == owner);
   }
-  const HRESULT hr = owner->original.pfnCloseAdapter(handle);
-  trace("SYSTEM_D3D8_CLOSE adapter=%p runtime=%p hr=%08lx remaining=%zu",
-        handle, owner->runtime, static_cast<unsigned long>(hr), remaining);
+  trace("SYSTEM_D3D8_CLOSE adapter=%p runtime=%p hr=%08lx remaining=%zu live_devices=%zu",
+    handle, owner->runtime, static_cast<unsigned long>(hr), remaining, liveDevices);
   return hr;
 }
 }
 
 extern "C" HRESULT APIENTRY OpenAdapter(D3DDDIARG_OPENADAPTER* args) {
   try {
-  if (!permitted()) return D3DERR_NOTAVAILABLE;
+  const auto mode = permission();
+  if (mode == policy::Mode::Denied) return D3DERR_NOTAVAILABLE;
   if (!args) return E_INVALIDARG;
   const auto input = *args;
   if (input.Interface != 8) return D3DERR_NOTAVAILABLE;
@@ -262,9 +388,9 @@ extern "C" HRESULT APIENTRY OpenAdapter(D3DDDIARG_OPENADAPTER* args) {
   std::wstring caller;
   if (!system8Caller(_ReturnAddress(), caller)) return D3DERR_NOTAVAILABLE;
   if (!input.pAdapterCallbacks->pfnQueryAdapterInfoCb) return E_INVALIDARG;
-  trace("SYSTEM_D3D8_OPEN_BEGIN interface=%u version=%u runtime=%p caller=%ls pointer_bytes=%zu readonly=1",
-        input.Interface, input.Version, input.hAdapter, caller.c_str(), sizeof(void*));
-  // All three pins come from the actual future successful consolidated I386
+  trace("SYSTEM_D3D8_OPEN_BEGIN interface=%u version=%u runtime=%p caller=%ls pointer_bytes=%zu readonly=%u",
+        input.Interface, input.Version, input.hAdapter, caller.c_str(), sizeof(void*), unsigned(mode == policy::Mode::ReadOnly));
+  // All three pins come from an actual successful consolidated I386
   // artifact receipt. No core is built, patched or relabeled by this harness.
   const CoreIdentity identity{environment(policy::corePathName, 259),
     environment(policy::coreSha256Name, 64), environment(policy::coreCommitName, 40)};
@@ -292,7 +418,7 @@ extern "C" HRESULT APIENTRY OpenAdapter(D3DDDIARG_OPENADAPTER* args) {
     return E_NOINTERFACE;
   }
   try {
-    auto owner = std::make_shared<Adapter>(Adapter{original, input.hAdapter, input.Version});
+    auto owner = std::make_shared<Adapter>(Adapter{original, input.hAdapter, input.Version, mode, identity.path, identity.sha256, identity.commit});
     bool inserted = false;
     {
       std::lock_guard<std::mutex> lock(registryMutex);

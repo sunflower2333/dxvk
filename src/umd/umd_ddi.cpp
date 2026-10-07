@@ -344,6 +344,8 @@ struct Shader : Child {
   std::optional<dxvk::umd::ShaderCode11> native11;
   dxvk::umd::ShaderStreamOutput11 nativeStream;
   std::vector<unsigned char> compiledNative11;
+  std::vector<unsigned char> compiledVertexBytecode;
+  std::vector<unsigned char> passthroughSource;
   std::vector<UINT> code;
   std::vector<dxvk::umd::ShaderSignatureEntry> inputs;
   std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
@@ -352,6 +354,7 @@ struct Shader : Child {
   bool needsLayout = false;
   bool needsLinkage = false;
   bool withStreamOutput = false;
+  bool streamOutputPassthrough = false;
   struct dxvk::umd::StreamOutput streamOutput;
 };
 struct InputLayout : Child {
@@ -1563,8 +1566,10 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
     }
     HRESULT hr = S_OK;
     if (candidate.needsLayout || candidate.needsLinkage) candidate.code.assign(code, code + code[1]);
-    else if (stage == dxvk::umd::ShaderStage::Vertex)
+    else if (stage == dxvk::umd::ShaderStage::Vertex) {
       hr = device->backend->CreateVertexShader(bytecode.data(), bytecode.size(), nullptr, &candidate.vertex);
+      if (SUCCEEDED(hr)) candidate.compiledVertexBytecode = std::move(bytecode);
+    }
     else hr = device->backend->CreatePixelShader(bytecode.data(), bytecode.size(), nullptr, &candidate.pixel);
     if (FAILED(hr)) { device->error(hr); return; }
     *shader = std::move(candidate);
@@ -1592,8 +1597,28 @@ void APIENTRY createGeometryStream(D3D10DDI_HDEVICE h,
     D3D10DDI_HSHADER out, D3D10DDI_HRTSHADER,
     const D3D10DDIARG_STAGE_IO_SIGNATURES* signature) {
   if (!args) { get(h)->error(E_INVALIDARG); return; }
-  // This slice accepts actual GS bytecode. Null-GS signature-only passthrough
-  // remains an explicit admission gap rather than an invented shader.
+  if (!args->pShaderCode) {
+    auto device = get(h);
+    if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
+    auto shader = new (out.pDrvPrivate) Shader();
+    shader->owner = device; shader->stage = dxvk::umd::ShaderStage::Geometry;
+    try {
+      Shader candidate;
+      candidate.owner = device; candidate.stage = dxvk::umd::ShaderStage::Geometry;
+      if (!signature || !dxvk::umd::streamOutputPassthroughSignature(*signature, candidate.outputs)
+          || !dxvk::umd::streamOutputDeclaration(*args, *signature, candidate.streamOutput)) {
+        device->error(E_INVALIDARG); return;
+      }
+      // No GS code exists. The prior VS supplies the genuine compiled output
+      // signature when drawn; generic varyings retain their exact raw32 bits.
+      candidate.inputs = candidate.outputs;
+      candidate.retirement = std::make_unique<ComRetirement>();
+      candidate.needsLinkage = candidate.withStreamOutput = candidate.streamOutputPassthrough = true;
+      *shader = std::move(candidate);
+    } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
+      catch (...) { device->error(E_FAIL); }
+    return;
+  }
   createShader(h, args->pShaderCode, out, signature, dxvk::umd::ShaderStage::Geometry, args);
 }
 void APIENTRY destroyShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
@@ -1652,7 +1677,7 @@ void APIENTRY setPixelShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
 void APIENTRY setGeometryShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto device = get(h); auto object = get(shader);
   if (object && (object->owner != device || object->stage != dxvk::umd::ShaderStage::Geometry
-      || object->code.empty())) { device->error(E_INVALIDARG); return; }
+      || (object->code.empty() && !object->streamOutputPassthrough))) { device->error(E_INVALIDARG); return; }
   try {
     device->context->GSSetShader(object ? object->geometry.Get() : nullptr, nullptr, 0);
     device->geometryShader = object;
@@ -2076,13 +2101,44 @@ bool prepareGeometryShader(Device* device) {
   device->context->GSSetShader(shader->geometry.Get(), nullptr, 0);
   return true;
 }
+bool preparePassthroughGeometryShader(Device* device, const std::vector<unsigned char>& bytecode, bool bind = true) {
+  auto shader = device->geometryShader;
+  if (!shader || !shader->streamOutputPassthrough || bytecode.empty()) {
+    device->error(E_INVALIDARG); return false;
+  }
+  if (!shader->geometry || shader->passthroughSource != bytecode) {
+    ComPtr<ID3D11GeometryShader> compiled;
+    HRESULT hr;
+    if (shader->native11) {
+      const auto& stream = shader->nativeStream;
+      std::vector<D3D11_SO_DECLARATION_ENTRY> entries;
+      for (const auto& entry : stream.entries)
+        entries.push_back({entry.stream, entry.semantic.empty() ? nullptr : entry.semantic.c_str(),
+          entry.semanticIndex, entry.start, entry.count, entry.slot});
+      hr = device->backend->CreateGeometryShaderWithStreamOutput(bytecode.data(), bytecode.size(),
+        entries.empty() ? nullptr : entries.data(), UINT(entries.size()), stream.strides.data(), stream.strideCount,
+        stream.rasterizedStream, nullptr, &compiled);
+    } else {
+      const auto& stream = shader->streamOutput;
+      hr = device->backend->CreateGeometryShaderWithStreamOutput(bytecode.data(), bytecode.size(),
+        stream.entries.data(), UINT(stream.entries.size()), stream.strides.data(), stream.strideCount,
+        D3D11_SO_NO_RASTERIZED_STREAM, nullptr, &compiled);
+    }
+    if (hr != S_OK || !compiled) { device->error(FAILED(hr) ? hr : E_FAIL); return false; }
+    shader->passthroughSource = bytecode;
+    shader->geometry = std::move(compiled);
+  }
+  if (bind) device->context->GSSetShader(shader->geometry.Get(), nullptr, 0);
+  return true;
+}
 bool prepareVertexShader(Device* device) {
   auto shader = device->vertexShader;
   if (!shader || (!device->pixelShader && !device->geometryShader)) return false;
   auto layout = device->inputLayout;
   if (shader->needsLayout && (!layout || !layout->backend)) { device->error(E_INVALIDARG); return false; }
   try {
-    if (!prepareGeometryShader(device)) return false;
+    const bool passthrough = device->geometryShader && device->geometryShader->streamOutputPassthrough;
+    if (!passthrough && !prepareGeometryShader(device)) return false;
     const auto next = device->geometryShader ? device->geometryShader : device->pixelShader;
     std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
     if (!dxvk::umd::linkVertexOutputs(shader->outputs.data(), shader->outputs.size(),
@@ -2107,7 +2163,9 @@ bool prepareVertexShader(Device* device) {
       if (FAILED(hr)) { device->error(hr); return false; }
       shader->vertex = std::move(compiled); shader->compiledInputTypes = inputTypes;
       shader->compiledOutputTypes = outputTypes;
+      shader->compiledVertexBytecode = std::move(bytecode);
     }
+    if (passthrough && !preparePassthroughGeometryShader(device, shader->compiledVertexBytecode)) return false;
     device->context->VSSetShader(shader->vertex.Get(), nullptr, 0);
     return true;
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }

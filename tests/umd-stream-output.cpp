@@ -144,6 +144,98 @@ float4 ps() : SV_Target { return float4(1,0,0,1); }
   auto splitGeometry = shader("gs","gs_4_0",true,split,2,0);
   auto sparseGeometry = shader("gs","gs_4_0",true,sparse,3,32);
   auto replay = shader("replay","vs_4_0",false), pixel = shader("ps","ps_4_0",false);
+
+  // Signature-only SO carries the original prior-stage output registers.
+  D3D10DDIARG_SIGNATURE_ENTRY passEntries[] = {
+    {D3D10_SB_NAME_POSITION,0,15},{D3D10_SB_NAME_UNDEFINED,1,15}};
+  D3D10DDIARG_STAGE_IO_SIGNATURES passSignature = {nullptr,0,passEntries,2};
+  std::vector<dxvk::umd::ShaderSignatureEntry> passInputs;
+  CHECK(dxvk::umd::streamOutputPassthroughSignature(passSignature,passInputs));
+  CHECK(passInputs.size() == 2 && passInputs[0].scalar == dxvk::umd::ShaderScalar::Float32
+    && passInputs[1].scalar == dxvk::umd::ShaderScalar::Uint32);
+  for (UINT invalidCase = 0; invalidCase < 11; ++invalidCase) {
+    auto bad = passSignature;
+    D3D10DDIARG_SIGNATURE_ENTRY badEntries[] = {passEntries[0],passEntries[1]};
+    bad.pOutputSignature = badEntries;
+    switch (invalidCase) {
+      case 0: bad.NumOutputSignatureEntries = 0; break;
+      case 1: bad.NumOutputSignatureEntries = 33; break;
+      case 2: bad.pOutputSignature = nullptr; break;
+      case 3: badEntries[1].Register = 0; break;
+      case 4: badEntries[1].Register = 32; break;
+      case 5: badEntries[1].Mask = 0; break;
+      case 6: badEntries[1].Mask = 16; break;
+      case 7: badEntries[1].SystemValue = D3D10_SB_NAME_VERTEX_ID; break;
+      case 8: bad.NumInputSignatureEntries = 1; break;
+      case 9: badEntries[1].SystemValue = D3D10_SB_NAME_POSITION; break;
+      case 10: badEntries[0].Mask = 3; break;
+    }
+    CHECK(!dxvk::umd::streamOutputPassthroughSignature(bad,passInputs) && passInputs.empty());
+  }
+  D3D10DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT passDesc = {nullptr,packed,2,32};
+  shaders.emplace_back(f.pfnCalcPrivateGeometryShaderWithStreamOutput(device,&passDesc,&passSignature));
+  const auto passGeometry = shaders.back().handle<D3D10DDI_HSHADER>();
+  f.pfnCreateGeometryShaderWithStreamOutput(device,&passDesc,passGeometry,{},&passSignature); ok();
+  constexpr char passSource[] = R"(
+struct Output { float4 position : SV_Position; uint4 payload : TEXCOORD0; };
+Output first(uint id : SV_VertexID) {
+  Output o; float2 xy = float2((id << 1) & 2, id & 2);
+  o.position = float4(xy * float2(2,-2) + float2(-1,1),0,1);
+  o.payload = uint4(0x11223344 + id,0x87654321,0x7fc01234,0x80000000); return o;
+}
+Output second(uint id : SV_VertexID) {
+  Output o = first(id); o.payload = uint4(0x7fc00001,0x11223344 + id,0x80000000,0x87654321); return o;
+}
+)";
+  auto passVertex = [&](const char* entry) {
+    std::vector<UINT> tokens;
+    ComPtr<ID3DBlob> original;
+    CHECK(compileHlslTokens(passSource,entry,"vs_4_0",tokens,&original));
+    ComPtr<ID3D11ShaderReflection> reflection;
+    CHECK(SUCCEEDED(D3DReflect(original->GetBufferPointer(),original->GetBufferSize(),
+      __uuidof(ID3D11ShaderReflection),&reflection)));
+    D3D11_SHADER_DESC desc{}; CHECK(SUCCEEDED(reflection->GetDesc(&desc)));
+    CHECK(desc.InputParameters == 1 && desc.OutputParameters == 2);
+    D3D11_SIGNATURE_PARAMETER_DESC input{};
+    CHECK(SUCCEEDED(reflection->GetInputParameterDesc(0,&input)) && input.SystemValueType == D3D_NAME_VERTEX_ID);
+    D3D10DDIARG_SIGNATURE_ENTRY inputEntry = {D3D10_SB_NAME_VERTEX_ID,input.Register,input.Mask};
+    for (UINT i = 0; i < 2; ++i) {
+      D3D11_SIGNATURE_PARAMETER_DESC output{};
+      CHECK(SUCCEEDED(reflection->GetOutputParameterDesc(i,&output)));
+      CHECK(output.Register == passEntries[i].Register && output.Mask == passEntries[i].Mask
+        && UINT(output.SystemValueType) == UINT(passEntries[i].SystemValue));
+    }
+    auto signature = passSignature; signature.pInputSignature = &inputEntry; signature.NumInputSignatureEntries = 1;
+    shaders.emplace_back(f.pfnCalcPrivateShaderSize(device,tokens.data(),&signature));
+    auto result = shaders.back().handle<D3D10DDI_HSHADER>();
+    f.pfnCreateVertexShader(device,tokens.data(),result,{},&signature); ok(); return result;
+  };
+  const auto passFirst = passVertex("first"), passSecond = passVertex("second");
+  const auto passOutput = buffer(256);
+  f.pfnGsSetShader(device,passGeometry);
+  f.pfnIaSetTopology(device,D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST); ok();
+  const float passPositions[] = {-1,1,0,1,3,1,0,1,-1,-3,0,1};
+  for (UINT iteration = 0; iteration < 3; ++iteration) {
+    const bool second = iteration == 1;
+    f.pfnVsSetShader(device,second ? passSecond : passFirst);
+    const UINT zero = 0; f.pfnSoSetTargets(device,1,0,&passOutput,&zero);
+    f.pfnDraw(device,3,0); ok(); f.pfnSoSetTargets(device,0,0,nullptr,nullptr); ok();
+    const auto result = words(passOutput);
+    for (UINT v = 0; v < 3; ++v) for (UINT c = 0; c < 4; ++c) {
+      UINT expectedPosition; std::memcpy(&expectedPosition,&passPositions[v*4+c],4);
+      const UINT firstPayload[] = {0x11223344 + v,0x87654321,0x7fc01234,0x80000000};
+      const UINT secondPayload[] = {0x7fc00001,0x11223344 + v,0x80000000,0x87654321};
+      CHECK(result[v*8+c] == expectedPosition);
+      CHECK(result[v*8+4+c] == (second ? secondPayload[c] : firstPayload[c]));
+    }
+    for (UINT i = 24; i < 64; ++i) CHECK(result[i] == 0xcccccccc);
+  }
+  const auto passBeforeRejected = words(passOutput);
+  f.pfnVsSetShader(device,vertex); // This VS lacks required output register1.
+  const UINT passZero = 0; f.pfnSoSetTargets(device,1,0,&passOutput,&passZero);
+  f.pfnDraw(device,3,0); invalid(); f.pfnSoSetTargets(device,0,0,nullptr,nullptr); ok();
+  CHECK(words(passOutput) == passBeforeRejected);
+  std::puts("STREAM_OUTPUT null-GS PASS draws=3 words=72 raw_uint=1 prior_stage_rebind=1 missing_output_rejected=1");
   auto query = [&](D3D10DDI_QUERY type) {
     D3D10DDIARG_CREATEQUERY desc = {type,0};
     queries.emplace_back(f.pfnCalcPrivateQuerySize(device,&desc));

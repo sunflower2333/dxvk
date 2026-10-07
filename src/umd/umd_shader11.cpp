@@ -185,7 +185,8 @@ bool linkShader11Outputs(const std::vector<ShaderIo11>& original,
   output = std::move(staged); return true;
 }
 
-bool shader11StreamOutput(const ShaderCode11& shader,
+namespace {
+bool streamOutputSignature11(const dxbc_spv::dxbc::Signature& signature,
     const ShaderStreamDeclaration11* entries, size_t count,
     const uint32_t* strides, size_t strideCount, uint32_t rasterizedStream,
     ShaderStreamOutput11& output) {
@@ -193,10 +194,6 @@ bool shader11StreamOutput(const ShaderCode11& shader,
   output = {};
   if (count > 512 || (count && !entries) || strideCount > 4 || (strideCount && !strides)
       || (rasterizedStream >= 4 && rasterizedStream != UINT32_MAX)) return false;
-  std::vector<unsigned char> binary;
-  if (!buildShader11Container(shader, binary)) return false;
-  dxbc::Container container(binary.data(), binary.size());
-  dxbc::Signature signature(container.getOutputSignatureChunk());
   if (!signature) return false;
   ShaderStreamOutput11 staged; staged.rasterizedStream = rasterizedStream;
   std::array<uint32_t, 4> slotStreams; slotStreams.fill(UINT32_MAX);
@@ -247,6 +244,33 @@ bool shader11StreamOutput(const ShaderCode11& shader,
     return a.stream < b.stream;
   });
   output = std::move(staged); return true;
+}
+}
+
+bool shader11StreamOutput(const ShaderCode11& shader,
+    const ShaderStreamDeclaration11* entries, size_t count,
+    const uint32_t* strides, size_t strideCount, uint32_t rasterizedStream,
+    ShaderStreamOutput11& output) {
+  output = {};
+  std::vector<unsigned char> binary;
+  if (!buildShader11Container(shader, binary)) return false;
+  dxbc_spv::dxbc::Container container(binary.data(), binary.size());
+  dxbc_spv::dxbc::Signature signature(container.getOutputSignatureChunk());
+  return streamOutputSignature11(signature, entries, count, strides, strideCount, rasterizedStream, output);
+}
+
+bool shader11StreamOutput(const std::vector<ShaderIo11>& signature,
+    const ShaderStreamDeclaration11* entries, size_t count,
+    const uint32_t* strides, size_t strideCount, uint32_t rasterizedStream,
+    ShaderStreamOutput11& output) {
+  output = {};
+  if (signature.empty() || signature.size() > 128) return false;
+  std::vector<ShaderIo11> validated;
+  for (const auto& entry : signature) if (!addIo(validated, entry)) return false;
+  std::vector<unsigned char> bytes;
+  if (!writeSignature(validated, dxbc_spv::util::FourCC("OSG1"), false, false, bytes)) return false;
+  dxbc_spv::dxbc::Signature decoded(dxbc_spv::util::ByteReader(bytes.data(), bytes.size()));
+  return streamOutputSignature11(decoded, entries, count, strides, strideCount, rasterizedStream, output);
 }
 
 bool decodeShader11(ShaderStage stage, const uint32_t* code, size_t words, ShaderCode11& output) {

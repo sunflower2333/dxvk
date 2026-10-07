@@ -14,6 +14,31 @@ struct StreamOutput {
   UINT strideCount = 0;
 };
 
+inline bool streamOutputPassthroughSignature(const D3D10DDIARG_STAGE_IO_SIGNATURES& native,
+    std::vector<ShaderSignatureEntry>& output) {
+  output.clear();
+  if (!native.NumOutputSignatureEntries || native.NumOutputSignatureEntries > 32
+      || !native.pOutputSignature || native.NumInputSignatureEntries > 32
+      || (native.NumInputSignatureEntries && !native.pInputSignature)) return false;
+  std::array<bool,32> used{};
+  bool position = false;
+  std::vector<ShaderSignatureEntry> candidate;
+  for (UINT i = 0; i < native.NumOutputSignatureEntries; ++i) {
+    const auto& entry = native.pOutputSignature[i];
+    if (entry.Register >= used.size() || used[entry.Register] || !entry.Mask || (entry.Mask & ~15u)
+        || (entry.SystemValue != D3D10_SB_NAME_UNDEFINED && entry.SystemValue != D3D10_SB_NAME_POSITION)) return false;
+    if (entry.SystemValue == D3D10_SB_NAME_POSITION) {
+      if (position || entry.Mask != 15) return false;
+      position = true;
+    }
+    used[entry.Register] = true;
+    candidate.push_back({UINT(entry.SystemValue),entry.Register,entry.Mask,
+      entry.SystemValue == D3D10_SB_NAME_POSITION ? ShaderScalar::Float32 : ShaderScalar::Uint32});
+  }
+  output = std::move(candidate);
+  return true;
+}
+
 inline bool streamOutputDeclaration(const D3D10DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT& native,
     const D3D10DDIARG_STAGE_IO_SIGNATURES& signature, StreamOutput& output) {
   output = {};

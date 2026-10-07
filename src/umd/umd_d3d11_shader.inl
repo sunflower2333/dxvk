@@ -179,6 +179,47 @@ void APIENTRY createGeometryStream11(D3D10DDI_HDEVICE h,
     const D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT* stream, D3D10DDI_HSHADER output,
     D3D10DDI_HRTSHADER, const D3D10DDIARG_STAGE_IO_SIGNATURES* signature) {
   if (!stream) { get(h)->error(E_INVALIDARG); return; }
+  if (!stream->pShaderCode) {
+    auto device = get(h);
+    HRESULT hr = E_INVALIDARG;
+    try {
+      if (!output.pDrvPrivate || uintptr_t(output.pDrvPrivate) % alignof(Shader) || !signature
+          || stream->NumEntries > 512 || (stream->NumEntries && !stream->pOutputStreamDecl)
+          || stream->NumStrides > 4 || (stream->NumStrides && !stream->BufferStridesInBytes)
+          || stream->RasterizedStream != D3D11_SO_NO_RASTERIZED_STREAM
+          || !signatureRange11(signature->pInputSignature, signature->NumInputSignatureEntries)) {
+        device->error(E_INVALIDARG); return;
+      }
+      std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
+      if (!dxvk::umd::streamOutputPassthroughSignature(*signature, outputs)) {
+        device->error(E_INVALIDARG); return;
+      }
+      Shader staged; staged.owner = device; staged.stage = dxvk::umd::ShaderStage::Geometry;
+      // Metadata only. Draw selects genuine active VS/DS bytecode, and never
+      // compiles this signature as a shader program.
+      dxvk::umd::ShaderCode11 decoded;
+      for (const auto& entry : outputs)
+        decoded.outputs.push_back({entry.systemValue, entry.registerIndex, entry.mask, entry.scalar});
+      std::vector<dxvk::umd::ShaderStreamDeclaration11> entries;
+      for (UINT i = 0; i < stream->NumEntries; ++i) {
+        const auto& entry = stream->pOutputStreamDecl[i];
+        if (entry.Stream) { device->error(E_INVALIDARG); return; }
+        entries.push_back({entry.Stream, entry.OutputSlot, entry.RegisterIndex, entry.RegisterMask});
+      }
+      if (!dxvk::umd::shader11StreamOutput(decoded.outputs, entries.data(), entries.size(), stream->BufferStridesInBytes,
+          stream->NumStrides, stream->RasterizedStream, staged.nativeStream)) {
+        device->error(E_INVALIDARG); return;
+      }
+      staged.retirement = std::make_unique<ComRetirement>();
+      staged.withStreamOutput = staged.streamOutputPassthrough = true;
+      staged.native11 = std::move(decoded);
+      hr = device->retired ? DXGI_ERROR_DEVICE_REMOVED : S_OK;
+      if (hr == S_OK) new (output.pDrvPrivate) Shader(std::move(staged));
+    } catch (const std::bad_alloc&) { hr = E_OUTOFMEMORY; }
+      catch (...) { hr = E_FAIL; }
+    device->error(hr);
+    return;
+  }
   get(h)->error(createNativeShader11(get(h), stream->pShaderCode, output, dxvk::umd::ShaderStage::Geometry, signature, nullptr, stream));
 }
 void APIENTRY createHullShader11(D3D10DDI_HDEVICE h, const UINT* code,
@@ -282,6 +323,8 @@ bool prepareNativeGraphics11(Device* device) {
   }
   const std::array<Shader*, 5> shaders = {device->vertexShader, device->hullShader, device->domainShader,
     device->geometryShader, device->pixelShader};
+  const bool passthrough = shaders[3] && shaders[3]->streamOutputPassthrough;
+  const size_t prior = patch ? 2 : 0;
   std::array<std::optional<dxvk::umd::ShaderCode11>, 5> codes;
   try {
     for (size_t i = 0; i < shaders.size(); ++i) if (shaders[i]) {
@@ -321,11 +364,15 @@ bool prepareNativeGraphics11(Device* device) {
       if (!dxvk::umd::linkShader11Outputs(codes[1]->patch, codes[2]->patch, 0, linked)) { device->error(E_INVALIDARG); return false; }
       codes[1]->patch = std::move(linked);
     }
+    if (passthrough && (!codes[prior] || codes[prior]->interfaceSlots)) {
+      device->error(E_INVALIDARG); return false;
+    }
     // Compile every changed signature before committing the first binding.
-    for (size_t i = 0; i < shaders.size(); ++i) if (shaders[i]) {
+    for (size_t i = 0; i < shaders.size(); ++i) if (shaders[i] && !(i == 3 && passthrough)) {
       const HRESULT hr = compileNativeShader11(device, *shaders[i], *codes[i]);
       if (FAILED(hr)) { device->error(hr); return false; }
     }
+    if (passthrough && !preparePassthroughGeometryShader(device, shaders[prior]->compiledNative11, false)) return false;
     for (auto shader : shaders) if (shader)
       bindNativeShader11(device, shader->stage, shader, device->classBindings[UINT(shader->stage)]);
     return true;

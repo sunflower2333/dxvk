@@ -105,3 +105,25 @@ Official contracts reviewed in the workspace Microsoft DDI documentation:
 OpenAdapter10_2/GetSupportedVersions, D3D10_2DDI_ADAPTERFUNCS/GetCaps,
 D3D11DDI threading/shader/pipeline capabilities and QueryAdapterInfo. Actual
 WDK types and three architecture compilation remain authoritative for ABI.
+
+## Null-code stream output in development DDIs
+
+The D3D10 and D3D11 development tables accept a bounded null-code geometry
+stream-output object. The object retains the runtime output signature and SO
+declarations. Draw links the actual prior-stage outputs and creates the backend
+SO geometry object from the active vertex shader DXBC, or the active domain
+shader DXBC in a D3D11 patch pipeline. The cache compares complete prior-stage
+bytecode, so switching shaders cannot reuse another shader's stream program.
+No shader instruction program is synthesized for a null-code object.
+
+This slice supports plain register varyings and SV_Position, with at most 32
+unique output registers. D3D11 null-code SO currently uses stream 0, no rasterized
+stream and a prior shader without class-interface slots; other combinations
+report E_INVALIDARG. The ordinary runtime admission masks remain unchanged.
+
+The stream-output fixture adds three vertex-shader rebind draws, 72 raw 32-bit words,
+tail canaries and a missing-output rejection. The SM5 fixture adds the same
+raw-bit checks with an original public D3D11 API comparison, and a 1024-word
+domain-shader capture compared with original VS/HS/DS blobs. Original Microsoft
+SDK/WDK/MSVC-header x86/x64 compilation passes; native fixture execution and
+Turnip/system-runtime acceptance are separate pending gates.

@@ -61,5 +61,11 @@ bool shader11StreamOutput(const ShaderCode11& shader,
   const ShaderStreamDeclaration11* entries, size_t count,
   const uint32_t* strides, size_t strideCount, uint32_t rasterizedStream,
   ShaderStreamOutput11& output);
+// A null-code SO object has an output signature without shader instructions.
+// Resolve its declarations without constructing an invented shader program.
+bool shader11StreamOutput(const std::vector<ShaderIo11>& signature,
+  const ShaderStreamDeclaration11* entries, size_t count,
+  const uint32_t* strides, size_t strideCount, uint32_t rasterizedStream,
+  ShaderStreamOutput11& output);
 
 }

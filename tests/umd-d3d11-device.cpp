@@ -924,6 +924,91 @@ static void graphicsSm5(Fixture& f) {
   f.output.table.pfnIaSetTopology(f.device,D3D10_DDI_PRIMITIVE_TOPOLOGY(65)); failure(E_INVALIDARG);
   f.output.table.pfnDraw(f.device,3,0); ok();
 }
+static void geometryPassthrough(Fixture& f) {
+  using dxvk::umd::ShaderStage;
+  auto& table = f.output.table;
+  const char* sourceA = R"(
+struct O{float4 p:SV_Position;uint4 v:DATA0;};
+O main(uint id:SV_VertexID){O o;o.p=float4(0,0,0,1);
+o.v=uint4(0x7fc01234u,0x80000000u,0x87654321u,id);return o;})";
+  const char* sourceB = R"(
+struct O{float4 p:SV_Position;uint4 v:DATA0;};
+O main(uint id:SV_VertexID){O o;o.p=float4(0,0,0,1);
+o.v=uint4(0xffc04321u,0xffffffffu,0x11223344u,id+100u);return o;})";
+  GraphicsShader vertexA(f,ShaderStage::Vertex,sourceA), vertexB(f,ShaderStage::Vertex,sourceB);
+  dxbc_spv::dxbc::Container container(vertexA.original->GetBufferPointer(),vertexA.original->GetBufferSize()); CHECK(container);
+  auto outputs = nativeSignature(container.getOutputSignatureChunk());
+  D3D10DDIARG_STAGE_IO_SIGNATURES signature{nullptr,0,outputs.data(),UINT(outputs.size())};
+  std::array<D3D11DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY,2> entries = {{
+    {0,0,semanticRegister(vertexA,false,"SV_Position"),15},
+    {0,0,semanticRegister(vertexA,false,"DATA"),15}}};
+  const UINT stride = 32, start = 0;
+  D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT args{};
+  args.pOutputStreamDecl=entries.data(); args.NumEntries=UINT(entries.size());
+  args.BufferStridesInBytes=&stride; args.NumStrides=1; args.RasterizedStream=D3D11_SO_NO_RASTERIZED_STREAM;
+  Storage storage(table.pfnCalcPrivateShaderSize(f.device,nullptr,nullptr));
+  D3D10DDI_HSHADER passthrough{storage.data()};
+  table.pfnCreateGeometryShaderWithStreamOutput(f.device,&args,passthrough,{},&signature); ok(); storage.check();
+  auto reject = [&](const D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT& invalid,
+      const D3D10DDIARG_STAGE_IO_SIGNATURES* invalidSignature) {
+    Storage unused(table.pfnCalcPrivateShaderSize(f.device,nullptr,nullptr));
+    ComPtr<ID3D11GeometryShader> before,after; f.context->GSGetShader(&before,nullptr,nullptr);
+    table.pfnCreateGeometryShaderWithStreamOutput(f.device,&invalid,{unused.data()},{},invalidSignature);
+    failure(E_INVALIDARG); CHECK(unused.empty()); unused.check();
+    f.context->GSGetShader(&after,nullptr,nullptr); CHECK(after.Get()==before.Get());
+  };
+  reject(args,nullptr);
+  auto invalid=args; invalid.NumEntries=513; reject(invalid,&signature);
+  invalid=args; invalid.pOutputStreamDecl=nullptr; reject(invalid,&signature);
+  invalid=args; invalid.NumStrides=5; reject(invalid,&signature);
+  invalid=args; invalid.BufferStridesInBytes=nullptr; reject(invalid,&signature);
+  invalid=args; invalid.RasterizedStream=0; reject(invalid,&signature);
+  auto malformed=entries; invalid=args; invalid.pOutputStreamDecl=malformed.data();
+  malformed[0].Stream=1; reject(invalid,&signature); malformed=entries;
+  malformed[0].OutputSlot=4; reject(invalid,&signature); malformed=entries;
+  malformed[0].RegisterIndex=32; reject(invalid,&signature); malformed=entries;
+  malformed[0].RegisterMask=0; reject(invalid,&signature); malformed=entries;
+  malformed[0].RegisterMask=16; reject(invalid,&signature);
+  std::array<UINT,64> poison; poison.fill(0xa5a55a5a);
+  Buffer captured(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  table.pfnPsSetShader(f.device,{}); table.pfnHsSetShader(f.device,{}); table.pfnDsSetShader(f.device,{});
+  table.pfnIaSetInputLayout(f.device,{}); table.pfnIaSetTopology(f.device,D3D10_DDI_PRIMITIVE_TOPOLOGY_POINTLIST);
+  table.pfnGsSetShader(f.device,passthrough); ok();
+  std::vector<UINT> expected;
+  for (UINT draw=0; draw<3; ++draw) {
+    (draw==1 ? vertexB : vertexA).bind();
+    table.pfnSoSetTargets(f.device,1,3,&captured.handle,&start); ok();
+    table.pfnDraw(f.device,3,0); ok();
+    expected=captured.read(64);
+    for (UINT id=0; id<3; ++id) {
+      const UINT index=id*8;
+      CHECK(expected[index]==0 && expected[index+1]==0 && expected[index+2]==0 && expected[index+3]==0x3f800000u);
+      CHECK(expected[index+4]==(draw==1 ? 0xffc04321u : 0x7fc01234u));
+      CHECK(expected[index+5]==(draw==1 ? 0xffffffffu : 0x80000000u));
+      CHECK(expected[index+6]==(draw==1 ? 0x11223344u : 0x87654321u));
+      CHECK(expected[index+7]==id+(draw==1 ? 100u : 0u));
+    }
+    for (UINT i=24; i<64; ++i) CHECK(expected[i]==poison[i]);
+  }
+  GraphicsShader missing(f,ShaderStage::Vertex,"float4 main(uint id:SV_VertexID):SV_Position{return float4(id,0,0,1);}");
+  missing.bind(); table.pfnSoSetTargets(f.device,1,0,&captured.handle,&start); ok();
+  table.pfnDraw(f.device,3,0); failure(E_INVALIDARG); CHECK(captured.read(64)==expected);
+  // Compare the entire capture and tail with the original app blob through
+  // the public API, independently of the native signature reconstruction.
+  ComPtr<ID3D11Device> backend; f.context->GetDevice(&backend);
+  ComPtr<ID3D11VertexShader> referenceVertex; ComPtr<ID3D11GeometryShader> referenceGeometry;
+  CHECK(backend->CreateVertexShader(vertexA.original->GetBufferPointer(),vertexA.original->GetBufferSize(),nullptr,&referenceVertex)==S_OK);
+  const D3D11_SO_DECLARATION_ENTRY publicEntries[] = {{0,"SV_Position",0,0,4,0},{0,"DATA",0,0,4,0}};
+  CHECK(backend->CreateGeometryShaderWithStreamOutput(vertexA.original->GetBufferPointer(),vertexA.original->GetBufferSize(),
+    publicEntries,2,&stride,1,D3D11_SO_NO_RASTERIZED_STREAM,nullptr,&referenceGeometry)==S_OK);
+  Buffer control(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  table.pfnSoSetTargets(f.device,1,0,&control.handle,&start); ok();
+  f.context->VSSetShader(referenceVertex.Get(),nullptr,0); f.context->GSSetShader(referenceGeometry.Get(),nullptr,0);
+  f.context->Draw(3,0); CHECK(control.read(64)==expected);
+  table.pfnSoSetTargets(f.device,0,4,nullptr,nullptr); table.pfnGsSetShader(f.device,{}); ok();
+  table.pfnDestroyShader(f.device,passthrough); ok(); storage.check();
+  std::puts("SM5 null-GS stream output PASS draws=3 words=72 raw_uint=1 public_control=1 missing_output_rejected=1");
+}
 static void geometryStreams(Fixture& f) {
   using dxvk::umd::ShaderStage;
   GraphicsShader vertex(f,ShaderStage::Vertex,"struct V{float4 p:SV_Position;uint id:DATA0;};V main(uint id:SV_VertexID){V v;v.p=float4(0,0,0,1);v.id=id;return v;}");
@@ -1183,6 +1268,47 @@ return c[0].p*uv.x+c[1].p*uv.y+c[2].p*uv.z;})";
   const auto data = query.result<D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS>();
   CHECK(data.HSInvocations && data.DSInvocations >= 3 && data.PSInvocations);
   CHECK(target.texture.pixel()[0] == 0xffffff00);
+  {
+    auto& table=f.output.table;
+    dxbc_spv::dxbc::Container container(ds.original->GetBufferPointer(),ds.original->GetBufferSize()); CHECK(container);
+    auto outputs=nativeSignature(container.getOutputSignatureChunk());
+    D3D10DDIARG_STAGE_IO_SIGNATURES signature{nullptr,0,outputs.data(),UINT(outputs.size())};
+    const D3D11DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY entry{0,0,semanticRegister(ds,false,"SV_Position"),15};
+    const UINT stride=16,start=0;
+    D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT args{};
+    args.pOutputStreamDecl=&entry; args.NumEntries=1; args.BufferStridesInBytes=&stride; args.NumStrides=1;
+    args.RasterizedStream=D3D11_SO_NO_RASTERIZED_STREAM;
+    Storage storage(table.pfnCalcPrivateShaderSize(f.device,nullptr,nullptr));
+    D3D10DDI_HSHADER passthrough{storage.data()};
+    table.pfnCreateGeometryShaderWithStreamOutput(f.device,&args,passthrough,{},&signature); ok(); storage.check();
+    std::array<UINT,1024> poison; poison.fill(0xa5a55a5a);
+    Buffer captured(f,4096,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+    table.pfnPsSetShader(f.device,{}); table.pfnGsSetShader(f.device,passthrough);
+    table.pfnSoSetTargets(f.device,1,3,&captured.handle,&start); ok();
+    table.pfnDraw(f.device,3,0); ok();
+    const auto expected=captured.read(1024);
+    CHECK(expected[3]==0x3f800000u && expected.back()==poison.back());
+    // The domain shader supplies the actual prior-stage program. Compare all
+    // emitted and untouched words with original public VS/HS/DS blobs.
+    ComPtr<ID3D11Device> backend; f.context->GetDevice(&backend);
+    ComPtr<ID3D11VertexShader> referenceVertex; ComPtr<ID3D11HullShader> referenceHull;
+    ComPtr<ID3D11DomainShader> referenceDomain; ComPtr<ID3D11GeometryShader> referenceGeometry;
+    CHECK(backend->CreateVertexShader(vertex.original->GetBufferPointer(),vertex.original->GetBufferSize(),nullptr,&referenceVertex)==S_OK);
+    CHECK(backend->CreateHullShader(hs.original->GetBufferPointer(),hs.original->GetBufferSize(),nullptr,&referenceHull)==S_OK);
+    CHECK(backend->CreateDomainShader(ds.original->GetBufferPointer(),ds.original->GetBufferSize(),nullptr,&referenceDomain)==S_OK);
+    const D3D11_SO_DECLARATION_ENTRY publicEntry{0,"SV_Position",0,0,4,0};
+    CHECK(backend->CreateGeometryShaderWithStreamOutput(ds.original->GetBufferPointer(),ds.original->GetBufferSize(),
+      &publicEntry,1,&stride,1,D3D11_SO_NO_RASTERIZED_STREAM,nullptr,&referenceGeometry)==S_OK);
+    Buffer control(f,4096,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+    table.pfnSoSetTargets(f.device,1,0,&control.handle,&start); ok();
+    f.context->VSSetShader(referenceVertex.Get(),nullptr,0); f.context->HSSetShader(referenceHull.Get(),nullptr,0);
+    f.context->DSSetShader(referenceDomain.Get(),nullptr,0); f.context->GSSetShader(referenceGeometry.Get(),nullptr,0);
+    f.context->Draw(3,0); CHECK(control.read(1024)==expected);
+    table.pfnSoSetTargets(f.device,0,4,nullptr,nullptr); table.pfnGsSetShader(f.device,{}); ok();
+    table.pfnDestroyShader(f.device,passthrough); ok(); storage.check();
+    vertex.bind(); hs.bind(); ds.bind(); pixel.bind();
+    std::puts("SM5 null-GS domain stream output PASS public_control=1 words=1024");
+  }
   f.output.table.pfnDsSetShader(f.device,{}); ok();
   f.output.table.pfnDraw(f.device,3,0); failure(E_INVALIDARG);
   f.output.table.pfnHsSetShader(f.device,{}); f.output.table.pfnIaSetTopology(f.device,D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST); ok();
@@ -1257,6 +1383,7 @@ int main() {
     inputAssembler11(f);
     queryAndLayoutHandles(f);
     graphicsSm5(f);
+    geometryPassthrough(f);
     geometryStreams(f);
     tessellation(f);
     classInterfaces(f);

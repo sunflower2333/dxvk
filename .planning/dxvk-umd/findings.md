@@ -2906,3 +2906,75 @@ helper166f identity/trace validation; eight oldphasehelper bytes unchanged,
 newnames05 admission stillpending. Target ROOT-idle before DX10 dualhardware
 handoff. Live GitHub recheck confirmsCI618 stillsuccess and four redundant
 workflowsdisabled; solematching automaticbuild remainsactive.
+
+
+2026-10-08 trunk pushed once,3d39760 (618→3d39760 actualgitpush0): DX8 seven
+native-tested commits merged5b51100 plus27controlfix274f429. DX10 threeprobe
+commits integrated363d9cd/09b47d9/3d39760; actualtrunkprobe/oraclethreefiles
+exactsource05ff andsharedtransport exacteb3a9d8, portableoracle4141/WerrorPASS.
+An offlinejoin used05ff for separatetransport (pathabsent) and failedbefore
+writingproof; correctedexplicitprovenance02 passesfourbytejoins. Production
+SO/volume/CI618bytes unchanged. New CI on3d is pending; no hardware admission
+for newsource. ROOT sealedDX10directreview joins38files/81TAR/72roles; manifest
+5d9d198a adds onlyactualrootrole2f406791 to71 unchangedroles. Exclusiveauth
+fb1acf22 toDX10d7USER05/10_0+10_1/1792pixels; management USERSSH knownworking,
+limited USERsession1tasks unchanged. CPU05release100c ROOTaccepted; allROOT/
+EWDK/DX11targetcalls remain suspendeduntil explicitDX10closure/release.
+
+DX10 failed01 managementframe cannot be compared against limitedUSER's
+DWMStartTime visibility. ROOT verified actual401bef3d/06e091c6 frames are equal
+aparttimestamp, while USER20e6c984 sees sameDWM1864 butnullStartTime. Frozen
+worker helpers retainUSER comparison; corrected02 controller separately binds
+actualmanagement snapshot inmanifest/auth andchecks82staged originals.
+This changes noprotected34/SYS/package/PnP/desktop lifetime guard.
+
+
+2026-10-08 DX10fresh02 actual hardware acceptance is complete for immutable
+source d7e5c7d/coreb0fcbc3a, probe05ffdc2/sharedtransporteb3a9d8, CI37648387721,
+LUIDec6b. ROOT directprooffd8347aa verifies231 originalfiles/344TAR members,
+1792 literalRGBA pixels (clear/red/Gather4/4xSampleIndex), actual shader words
+and native raw KMT retirement. Both tasks/9native/12host owners closed;
+protected driver/static34/desktop continuity retained, dynamic telemetry143
+changes preserved. Separate management baseline fixed the cross-privilege
+DWMStartTime comparison without weakening limitedUSER guards. Local missing
+HLSL reader failure required only a fresh byte-identical reader closure; the
+native render attempt was not repeated. Ordinary-runtime admission remains
+closed and current3d candidate never inherits this d7 evidence.
+
+Typed10.1 uses an inherited legacy CreateResource callback: strict singlecube
+ArraySize6 now creates a genuine base10 cube, but blocks cube arrays. Local
+10.1 cube SRV documentation explicitly allows First2DArrayFace+6*NumCubes
+within Resource.ArraySize. DX10 peer owns a separate typed10.1 resource
+boundary; base10strict6 stays. Modern cubeArray SRVs also require a distinct
+GenerateMips policy branch, since current mipGenerationStatus recognizes
+only singleCube/2D/2DArray; ROOT owns that small branch/new typed11 scope test.
+
+
+2026-10-08 ROOT accepts names05 failure and readonly DLL release: original
+names archive390a9fd7/1961779bytes/38files and native11944/handle2640/exit1/
+drained1.823s stdout232 contain only USERidentity and explicit-process-machine-
+APIs win32=127. No KMT/machine/directory/factory/core/GPU stage reached. Native
+collector11864/0 and sevenhosts closed, taskremoved; ROOTproof9fa594fa accepts
+release90252e9d. Subsequent readonly export archive50418477/1462431bytes/16files
+joins five frozenhelpers, source/copy/source-after threeDLLs, native12196/0
+andtar7700/0/drained, eighthosts closed (two wrapper-only guards retained),
+SYS/desktop/static34 unchanged. ROOT boundedPE/APIset reader directly confirms
+SysWOW64Kernel32 lacks Directory2W/A, IsWow64Process2 forwards to contract;
+KernelBase Directory2W executable20ca80/ordinal834 and IsWow64Process2
+executable14a5f0. NativeAPIsetv6/count973 WOW64l1-1-3 routesKernelBase. Direct
+proof1cfbc585/2963bytes accepts release772fe285. FirstROOT reader draft assumed
+all exports arecode and rejected dataWow64Transition; draft retained and no
+proof written, corrected only to requirecode for the requested exact APIs.
+Target ROOT-owned idle; EWDK develops narrow same-API resolution under missing
+Kernel32 export only, explicit actualI386/pointer4/canonical provider guards,
+and fresh nativeCPU source/build packet. No legacy architecture fallback.
+
+Cube slices now committed locally791006c/1f2ffde/7669c3a/b5b863b; ROOT prepares
+one combined isolated candidate and all Meson/CI raw readbacks. Typed10.1
+resource policy97387 GCC/Clang sanitizer controls and8strictCOFF pass; modern
+SRV production/fixture4strictCOFF pass. ROOT CubeARRAYGenMips fixture expects
+5cases/450subresources/30690texels/900files, strictx64/x86 production+fixture
+PASS and ARM64fixture strictLLVM COFF PASS. NativeMSVC/reference/hardware are
+pending; unchangedofficial ARM64intrin.h prefetch incompatibility is retained.
+CurrentCI3d37689715890 stillsuccess; liveGitHub confirmsfourredundant workflows
+remain disabled and solematchingautomaticbackend active. No newpush/dispatch.

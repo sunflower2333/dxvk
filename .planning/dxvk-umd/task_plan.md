@@ -8,13 +8,14 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Latest source618ca58/sole automatic CI37681929181 PASS allsix jobs. ROOT original
-collector06 actual0 and independent direct review admit candidate preparation:
-five genuine ZIPs/1721 original files, source853 blobs+5gitlinks/four canonical
+Current trunk3d39760 pushed once with integrated DX8 and typedDX10 probes;
+soleautomaticCI37689715890 PASS allsix and ROOT direct original review PASS.
+Five genuine ZIPs/1721 original files, source881 blobs+5gitlinks/four canonical
 receipts/three DLL-PDB/config/private-loader chains, ARM30+x64/x86 60 owned
-fixtures all0/drained. All3 architecture complete volume309 production originals
-(9138voxels/945sampled) plus108 public observations retained. Latest ARMcore
-6262784/a4053e44 remains hardware-unrun; never relabel d7 proof as source618.
+fixtures all0/drained. ROOT also independently recomputed each architecture's
+309 production volume files (9138voxels/945sampled) and retained108 public
+observations. Latest ARMcore6262784/40f679e5 is candidate-only/hardware-unrun;
+previous618/a4053e44 and actuald7/b0fcbc3a scopes remain distinct.
 
 Actual d7 viogpu DX11 compute GPU08 and D3D9 locked-buffer draw are ROOT-accepted.
 D3D9 actual archive13801813 joins143 original files/199 TAR members,63 input
@@ -22,12 +23,24 @@ roles/32 raw Git inputs;2624 native pixel checks include1152 independently
 replayed locked pixels/18 stages with word6d390bc5 and byte41e03dc5 checksums.
 Context1/1,allocation15/15,lock14/14,render42,escape328,wrong_thread0,residents0;
 static34/SYS/desktop retained,ten native+nine host children closed,taskremoved.
-Explicit releaseee3c23b6 independently accepted. Target now exclusively
-ROOT-idle after CPU05 release100c118d; DX10 dual-profile handoff next.
-DX10 USER05 native helper prefix remains accepted. ROOT directly joined71 roles,
-25 rawGit,39 genuine archive members,80 stagedfiles and9 unchangedhelpers;
-actual review2f406791 enables fresh72-role sealing. Concrete1792-pixel limited
-USER10_0/10_1 hardware gate is next after CPU05 final release, still unexecuted.
+Explicit releaseee3c23b6 independently accepted. DX10 fresh02 dual-profile d7
+USER05 is now ROOT-accepted. Names05 failed beforeKMT; failure/release90252e9d
+and subsequent readonly-provider release772fe285 are ROOT-accepted. Target is
+ROOT-owned/idle pending a fresh locally reviewed repair/build handoff.
+Failed01 stopped before any graphics task at the cross-privilege DWMStartTime
+comparison. ROOT accepted retained101-file archive/releasebc6a7b and verified
+same-attempt management continuity. Fresh02 separates the management baseline
+from the unchanged limited USER worker guards:82sealedfiles/72roles/9helpers,
+ROOT preparation5280b214, manifestfbe66424. Native Inputs/Before/Dual/After and
+collection all exit0/drained. ROOT direct reviewfd8347aa independently joins
+original184189818-byte archive/ad75e5ed (231files/344members), all1792 literal
+RGBA pixels, exact shaders/source/retained handles/tasks and limitedUSER1.
+10_0 draws1/pixels512 and10_1 draws3/pixels1280; balanced KMT contexts,
+allocations,locks,residency, zeroerrors/leaks/wrongthreads/pendingpaging.
+Both tasks removed, native9+host12 closed; SYS/desktop/static34 retained.
+Releasecebe6146 accepted. First offline review lacked HLSL; both actual failed
+local children remain preserved, unchanged reader passed from exact closure03.
+Oldd7 hardware acceptance does not admit current3d or ordinary runtime.
 
 DX8 CPU04 native EWDK PASS/root review: Git30+licensed3/575 tools unchanged,
 5I386COFF/4PE/policy329/callback62+forwarded11/30 invalidCLI. AST5/AddType then
@@ -41,7 +54,17 @@ build/collection passed:181 originalfiles/c48fbc5d,33source,575tools/10SDK/9libs
 unchanged,5COFF4PE/W4WXzero warnings/policy329/callback62+11/CLI30,
 native49+host7 allclosed. ROOT proof042786e0/release100c118daccepted. Source5c
 probe631808/2cef9cfa andfront440832/7b4e6b26 are actual native outputs. Fresh
-names05 pending; no repair replay. Seven DX8 commits are prepared on isolated trunk integration68f83e6;
+names05 failed at explicit-process-machine-APIs/win32=127 beforeKMT; its
+original38-file archive390a9fd7/1961779bytes, native2+host7 closure and removed
+limitedUSER task are ROOT-accepted (directproof9fa594fa). No repair replay.
+Native05 parser original20-file archive
+db35d28b, AST5/errors0/Add-Type and native2/host5 all0 are ROOT-accepted with
+released target229b3741. Names05 fresh03 packet18pins/11unchanged text inputs
+passes ROOT prepared reviewc62ac53c. ROOT admitted manifest85e6f71d changes
+onlyready/native_phase_parse/pending; names-only authorization42bb1b24 was
+consumed exactly once for the failed I386 names query/cleanup/collection.
+No PE/core/factory/GPU staging or enumeration follows from this authorization.
+Seven DX8 commits are merged to trunk5b51100 plus27controlfix274f429;
 latest SO/volume/CI30 bytes remainexact. Genuine system HAL enumeration,
 448offscreen/64Present remainpending; no names/admission follows from failure.
 
@@ -49,6 +72,30 @@ Corrected SO/Texture3D2489 actual native ARM64 and source618 CI allarchitectures
 PASS; source integrated, public terminal-mip mismatch observations retained.
 Ordinary Microsoft-runtime DX8-DX11 activation, production contract admission,
 registered driver replacement and Present/DWM remainopen. Goal staysactive.
+
+Readonly original guest DLL collection50418477/16files identifies the precise
+lookup: SysWOW64Kernel32 Directory2W/A absent; SysWOW64KernelBase exports the
+same exactDirectory2W API as executable RVA20ca80/ordinal834. Kernel32
+IsWow64Process2 forwards toWOW64APIcontract; nativeAPIsetv6/count973 routes
+WOW64l1-1-3 toKernelBase. ROOT direct boundedPE proof1cfbc585 joins actual
+native2/host8/static34/SYS/desktop and accepts release772fe285. No APIexecution,
+KMT/factory/core/GPU follows from the readonly evidence. EWDK prepares the
+narrow same-API provider repair and a fresh immutable nativeCPU packet locally.
+
+ROOT isolated cube checkpoint791006c (based on3d) implements legacy six-face
+resource/SRV/RTV/DSV translation and scopedGenerateMips. Fixture COFF compiles
+strictly for ARM64/x64/x86; native MSVC/WARP originals remain pending (168
+subresources/10380texels/336rawfiles). EWDK agent prepares its frozen native
+packet locally. DX11 checkpoint1f2ffde adds typed10.1/11 cube-SRV all-remaining
+mips, preserving finiteNumCubes/public admission. DX10 checkpoint7669c3a adds
+typed10.1 cube-array resource creation, preserving base10single6. ROOT
+checkpointb5b863b adds CubeARRAY scopedGenerateMips and typed11 readbacks.
+All four production/fixture checkpoints are committed locally and strict
+x64/x86 original-header COFF checked; newROOT fixture also ARM64COFF passes.
+NativeARM64 production MSVC/reference originals remain pending; LLVM ARM64
+production fails in unchanged officialintrin.h __prefetch. ROOT prepares one
+isolated combined candidate with all Meson/CI fixture/raw-readback collection,
+then one native reference build and one production push/soleCI after acceptance.
 
 Published d7e5c7d46b8ce889e993bfab66a3b78b076c49d1 / automatic push
 CI37648387721 now PASS all six jobs. Root collector04 exits0 and retains five

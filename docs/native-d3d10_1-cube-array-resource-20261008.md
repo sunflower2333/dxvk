@@ -55,3 +55,12 @@ The previously accepted d7 real-KMT1792-pixel probe is separate old source
 evidence; this new production resource path still requires its own native and
 hardware validation. Ordinary Microsoft runtime and production admission stay
 closed.
+
+The separate scripts/verify-native-cube-array-resource-originals.py reader
+recomputes every word from face/mip/coordinate arithmetic and the two literal
+transfer rectangles. It verifies all 180 subresources, 3540 texels and 540 raw
+files, then checks saved expected bytes against that independent oracle. Its
+required --stdout input also checks the actual 7-case/56-failure summary.
+Invoke it with the fixture output directory, --stdout pointing to the original
+fixture stdout, and --output naming a new JSON proof. The reader imports no
+fixture data arrays, DDI code or fixture helper.

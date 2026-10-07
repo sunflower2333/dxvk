@@ -3872,3 +3872,38 @@ committed test-only; local strictx64/x86 and GCC/Clang159292checks/154752bits
 PASS, independent reader1positive/7negative PASS. DX10 independently reviews
 probe locally. DX11 f96 SO/volume probe nativeCPU packet prepared locally;
 separate moderncube RTV/DSV implementation proceeds from frozen8528. No push.
+
+
+## 2026-10-08 current continuation: cube02 owned native gate
+
+ROOT CPU07 original review9bba9ea8 accepted archivee30e4914/75files and
+release591a31a5. Actual strict2I386COFF/1PE,4CLI64,12native and7host+outer
+closed,source15/compilerreceipt575/SDK13/libs9/statebeforeafter exact. Three
+alreadyloaded I386 system modules report logicalSystem32 but BOTH logical and
+Directory2W(I386) SysWOW64 handles resolve to exact mapped NT SyChpe32, same
+fileIDs/headers/bytes/hash;7pairedcloses. ARM64 management SysWOW64 originals
+remain distinct and are not relabeled. EWDK now LOCAL-only identity repair;
+existing guards stayed byte-identical inCPU07 and no runtime was admitted.
+
+ROOT cube02 prepared50b5e5d directly joined160Git+398package member originals,
+including original UUID15080838/f0b2efac from unchanged SDKe0d6e5e0. All6
+nativehelpers normalize to01 after only freshnames/pins/eighthlibcount; old
+7libs/source/oracles/strictflags/static34 unchanged. Exclusiveauth3493b4ac
+hands target to DX10 one native02 attempt,23AA64COFF/8PE/8WARP references/
+29buildstages/2086cube rawfiles; original perchild exit/drain/state and explicit
+release required. ROOT/EWDK/DX11 target calls suspended.
+
+ROOT combined local branch work/dxvk-device-integration-20261008 at9241eca
+contains exact8528 production+7a47cubeKMT+f96SO/volumeKMT. Merge conflicts only
+Meson/build insertions; every target retained. ARM cases38 include new cube/
+SO/volume portable oracles. Actual Meson parser/registration/source-byte joins
+PASS proof02808784/1756bytes,14probe/shared/oracle files unchanged. Independent
+DX10 review bdf5d045/28767bytes found no blocking defect; original x64/x86 COFFs,
+GCC/Clang159292/154752 and753synthetic files independently joined. NativeARM64/
+actual shader/core/token/KMT/hardware remain open. DX11 freshCPU02 adds same
+UUID after all4original optimized COFFs independently prove DEFAULTLIB; old
+CPU01 preserved, compiler provenance explicitly scoped4tools/22headers/8libs.
+Local cube-array RTV/DSV follow-on remains separate,4strictCOFF passed.
+
+GitHub live:37689715890 stillsuccess at3d397608; fourredundant workflows remain
+disabled_manually and sole matching backend active. No push or dispatch yet.

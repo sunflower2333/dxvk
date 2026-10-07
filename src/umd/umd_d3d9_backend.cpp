@@ -94,7 +94,11 @@ HRESULT D3D9Backend::createBuffer(const D3D9BufferDesc& desc,
   auto buffer = std::make_unique<D3D9BufferResource>();
   buffer->m_state->desc = desc;
   const auto pool = desc.systemMemory ? D3DPOOL_SYSTEMMEM : D3DPOOL_DEFAULT;
-  const DWORD usage = (desc.dynamic ? D3DUSAGE_DYNAMIC : 0) | (desc.writeOnly ? D3DUSAGE_WRITEONLY : 0);
+  // A borrowed MightDrawFromLocked VB stays in CPU storage. DXVK's dynamic
+  // SYSTEMMEM path copies it into owned per-draw storage without unlocking
+  // the runtime's buffer, including when its native Dynamic hint is absent.
+  const DWORD usage = ((desc.dynamic || desc.mightDrawFromLocked) ? D3DUSAGE_DYNAMIC : 0)
+    | (desc.writeOnly ? D3DUSAGE_WRITEONLY : 0);
   const HRESULT hr = desc.index
     ? m_state->d3d->CreateIndexBuffer(desc.bytes, usage, desc.format, pool, &buffer->m_state->index, nullptr)
     : m_state->d3d->CreateVertexBuffer(desc.bytes, usage, desc.fvf, pool, &buffer->m_state->vertex, nullptr);
@@ -136,6 +140,27 @@ HRESULT D3D9Backend::unlockBuffer(D3D9BufferResource& buffer, const void* upload
   const HRESULT hr = state.index ? state.index->Unlock() : state.vertex->Unlock();
   if (hr == S_OK) state.mapping = nullptr;
   return hr;
+}
+HRESULT D3D9Backend::syncBufferForDraw(D3D9BufferResource& buffer, const void* snapshot, UINT bytes) {
+  const auto& state = *buffer.m_state;
+  if (!snapshot || bytes != state.desc.bytes || !state.desc.mightDrawFromLocked
+      || !state.desc.systemMemory || !state.desc.systemData || state.desc.index || !state.vertex)
+    return E_INVALIDARG;
+  auto lock = m_state->d3d->LockDevice();
+  auto* common = static_cast<D3D9VertexBuffer*>(state.vertex.ptr())->GetCommonBuffer();
+  const auto storage = common->GetMappedSlice();
+  if (!common->DoPerDrawUpload() || !storage || !storage->mapPtr()) return E_FAIL;
+  // The caller captured these bytes before any runtime callback. Never
+  // dereference its borrowed memory from the renderer worker or release its
+  // outstanding lock. Draw captures this CPU storage before queuing GPU work.
+  std::memcpy(storage->mapPtr(), snapshot, bytes);
+  common->DirtyRange().Conjoin(D3D9Range(0, bytes));
+  // Mixed or unused bound streams can make DXVK take its regular GPU-buffer
+  // path instead of per-draw SYSTEMMEM uploads. Queue this owned copy every
+  // time, even after the first draw cleared its stream-upload tracking bit.
+  // FlushBuffer preserves the runtime/private lock and orders the copy ahead
+  // of Draw; it never calls Unlock on the borrowed buffer.
+  return m_state->d3d->FlushBuffer(common);
 }
 HRESULT D3D9Backend::copyBuffer(D3D9BufferResource& destination, UINT destinationOffset,
     D3D9BufferResource& source, UINT sourceOffset, UINT bytes, const void* upload) {

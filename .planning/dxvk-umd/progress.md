@@ -2584,3 +2584,85 @@ CPU verifier release. New root7c2 portableSM5/legacy/SM1 passed93/2800/47;
 DX8 original302source/311validation root review passes202Git+92pinned+8SDK/
 33COFF+6PE. Future build/package/native control lists now include allthree new
 SM5/legacy/SM1 fixtures,20native cases; no additional CI push or dispatch.
+
+
+Before actual runtime dispatch, root found helperfamily01 start-time guard used
+100ns ticks reconstructed from JSON Unix milliseconds. That could reject a valid
+unchanged process due to lost submillisecond precision. Family01 was parsed but
+unexecuted; preserved. Freshfamily02 checks PID and DateTimeOffset Unix milliseconds
+exactly matching original baseline precision. No fixture/source/oracle/deadline
+changes; actual runtime remains pending candidate artifact verification.
+
+Fresh helper02 preparation first draft changed historical original template path
+to nonexistent02; failed before output. Original draft retained, restored old01
+source path, new02 output/guard precision remains. No target execution occurred.
+
+
+Root soleaffe CI original collector PASS five ZIP/threearchitecture/17native,
+proof31f9105d. Candidate3files staged core952118bc/probe4d0aa194/STATUS20cda9b2,
+rawCI ARM64 ZIPd8e5ba44. Actual lifecycle03 helper02 stops in baseline/restored
+KMT preflight before any API/probe call due historicalLUID6e6c vs currentec6b.
+Original20member archivea48c940f preserved; collector removes bothownedtasks.
+Native queries all S_OK, Source0, three identical original UMD names, close/release
+balanced, exactLimited USERsession1. Result incorrectly retains historicalCIrun
+37573265151 and restoration_failure from repeated same preflight; no restoration
+success inferred from that result. Separate after-readinessfa901e50 joins exact
+SYS/desktop/PnP and58critical fields; original34registration unchanged. Root
+independent reviewdc47a7b1 scopes verification to failedpreflight andzeroAPIcalls.
+Fresh helper03 archivea33d5c9e corrects LUID guard andactualCI37580729947 metadata
+only, joins originalfailureproof before execution, keeps512oracle/deadlines.
+Originalhelper01/02 andallfailedarchivebytes unchanged; nativeparse/lifecycle04next.
+Root read-only lookup unmatchedglob and absentselector trace lookuperrors retained;
+no production input changes. Fresh x86 packet7c2 frozen bybuildverifier, target
+root-exclusive while actualgenuine lifecycle continues. No newCIpush.
+
+
+2026-10-07 continuation: Genuine family03/lifecycle04 completed. Original42-member
+archive03bd63362010a975402a8dc7578564c3919a168b63b3c5dfed635a41cfbb6704
+and independent reviewb15d5cfc68bceae8cc06b2793ed51ca514ff6c9fbfa0622eac84c1e02c8c65ed
+join Limited USER/currentec6b, two accepted1081 backbuffers, two rejected
+SYSTEMMEM65536-byte VB02080004 creations, public9/9Ex80070057 and zero API pixels.
+34registration/58critical fields, desktop/SYS/owned tasks restore. Secondary
+first-flush88760868/Mesa-4 remains unresolved; no evidence of successful submit.
+
+Root merges DX10formatbcbde4f asc2c4d14 and DX11query/IAffb418f asf4bf37f cleanly.
+New root MightDrawFromLocked implementation snapshots borrowed bytes before
+callbacks and forces owned draw-time SYSTEMMEM backing. Independent DX11 review
+found two issues corrected: require Lock's own0x100 rather than creation-only
+flag, and explicitly FlushBuffer after DirtyRange so mixed/unused streams queue
+updated bytes before every draw. Locked state/count stays held through draws.
+Reviewer also found upstream UploadPerDrawData subtracts vboOffset instead of
+srcOffset in the partial-tail branch, permitting logical over-read for60-byte
+VB/first1/count3/stride16/extent12; root owns bounded planner repair/control.
+Agent owns isolated actual renderer repeated mixed/unused/16/32-index controls.
+
+Local failed controls retained: integratedportable01 missing shared DXGI header
+after private4029PASS; portable02 input41PASS then Clang dependency unused-private
+reserved field under strict flags. Fresh03 uses original GCC SM5 command without
+suppression and adds portableMSAA. LocalCOFF01 retained missing build-policy
+flags/ARM64 Clang builtin-vs-official intrinsics mismatch;02 device/fixture4PASS
+but baseline winternlOBJ_CASE_INSENSITIVE conflict in both backends. Fresh03 uses
+Windows-only harness prelude and unchanged project warning policy, no source-wide
+suppression. Actual ARM64 native execution remains mandatory.
+
+Build agent exclusively owns target after root lifecycle04. Official EWDK14.50
+Hostarm64/x86 owned tree575inputs/17recovered originals/61Microsoft ranges READY;
+source ISO/mount unchanged. Exact7c2 CPU packet now running. User authorizes
+passwordless Administrator. Root continues local development; no new CI push.
+
+
+Root vertex-copy production helper and independent scalar-byte oracle pass
+4050438 checks under GCC+Clang ASan/UBSan. LocalCOFF04 passes8UMD/backend/fixture
+objects, but core warns on three preexisting unused captures. Removed those
+captures; fresh05 strictly compiles both production cores with zero diagnostics.
+Root local proof joins8+2 objects, exact input bytes and SPDX-only provenance.
+Portablequery/IA/format03 completes SM5351/MSAA269, joining4029/41 prior originals.
+Consolidated Linux script passes old controls plus planner/private/MSAA; original
+malformed-token diagnostic retained. Future Meson/build/package/native lists
+now cover25 ARM64 cases. Existing sole CI37580729947 refreshed all6SUCCESS.
+Build verifier first x86 attempt tar-list fails PS5.1 nullExitCode before any
+compile; original retained, explicit ProcessStartInfo runner/freshroot next.
+LocalCOFF03 Windows-only prelude requires NTSTATUS for DDI units; fresh04 uses
+original winternl for those units and Windows-only for private core/backend.
+Read-only guessed native result/workflow/tools paths failed, no inputs modified.
+New native-device and actual renderer controls remain mandatory; no new push.

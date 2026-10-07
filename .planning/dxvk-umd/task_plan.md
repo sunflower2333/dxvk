@@ -8,45 +8,57 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Continue the genuine Microsoft D3D9/9Ex resource lifecycle, then ordinary
-presentation. Exact production affe7d43161a6a270e8779e9957de150e156617c is now
-pushed once; sole automatic CI37580729947 is in progress. Four unused workflows
-remain disabled, offline/system controls manual. Standalone2851 remains local.
-Native9 target-only DiscardRenderTarget1000 fixes observed back-buffer flags1081
-without broader admission. Earlier exact4e native43067/554085 and adapter93976
-original proofs remain accepted; fresh affe native9 and2851 frontend CPU checks
-are now exclusively owned by port_dx10 against a recorded new desktop baseline.
+Continue genuine Microsoft D3D9/9Ex offscreen lifecycle, then ordinary
+presentation and DX8/DX10/DX11 runtime acceptance. Published exact production
+`affe7d43161a6a270e8779e9957de150e156617c` sole consolidated CI37580729947
+passes all six jobs. Root original verification joins five raw ZIPs, three
+architecture builds,17 actual ARM64 controls, fresh native9 fixtures43067/554085
+and frontend2851 CPU. Process-local affe candidate is staged from original CI;
+installed driver58624/oem17 remains unchanged. Four unused workflows disabled;
+offline/system controls manual.
 
-Root original affe nine-control review03 passes71 exact Git/dependency inputs,
+Lifecycle03 stopped before any public device/API call: the wrapper retained
+historical adapter LUID6e6c while two successful Limited USER KMT queries return
+currentec6b/source0. Original20-member archivea48c940f and root reviewdc47a7b1
+preserve this failure, three raw UMD names, balanced query handles,34registration/
+58critical fields and independent after-run driver/desktop continuity. Its
+historical CI-result metadata is also explicitly incorrect and retained. Fresh
+helperfamily03 corrects only these guards/metadata from independent evidence;
+512pixel oracle and100000ms/115s deadlines unchanged. Family03 native parse
+passes. Actual lifecycle04 accepts both1081 backbuffers, then both public9/9Ex
+device creations fail80070057 on the runtime's SYSTEMMEM65536-byte vertex buffer
+flags02080004 (Dynamic|VertexBuffer|MightDrawFromLocked). Original42-member archive
+03bd6336 and independent root reviewb15d5cfc preserve this failure and successful
+registry/critical-field/task restoration. Cleanup first flush returns88760868;
+Mesa reports queue submit-4 before first fence, separate unresolved failure.
+Root implements the documented paired Create/Lock MightDrawFromLocked semantics,
+owned pre-callback snapshots and draw-ordered uploads without unlocking. Native
+execution and actual mixed/unused-stream repeated rendering controls follow.
+No accepted genuine API device/rendering yet.
+
+Root affe WARP original review03 passes71 exact Git/dependency inputs,
 202 original members,25 ARM64 COFFs/nine PEs and all22 execution stages. Native
 D3D11 device308/compute35/entry2637/lifetime10834/rotation1428/MRT6404/texture1D1629/
-transfer1144/runtime852 checks pass. UMD/fixtures have zero strict compiler
-warnings; pinned unchanged dxbc W3 dependency retains61. This is controlled
-backend/WARP evidence; ordinary runtime/hardware rendering remains unaccepted.
+transfer1144/runtime852 checks pass. UMD/fixtures strict compilerwarnings0;
+pinned unchanged dxbc W3 dependency retains61. Controlled backend/WARP evidence
+does not satisfy ordinary system-runtime hardware rendering.
 
-WARP retained historicalDWM1552/Explorer6464 during its own run. Fresh snapshots02/
-03 both showDWM1864(start1791378029900)/Explorer4464(start1791352985381), same signed
-SYSd48e/oem17/58624/service4/PnPStarted/USERconsole1. System41/6008 records an
-unexpected restart, cause unresolved. Root froze new desktop baseline01; no
-shell restoration or VM start was attempted. Failed native9affe01 stopped before
-compilation on Explorer enumeration; all original failures remain preserved.
+Frozen fresh desktop DWM1864(start1791378029900)/Explorer4464(start1791352985381),
+SYSd48e/oem17/58624/service4/PnPStarted/USERconsole1 remains. Prior System41/6008
+unexpected restart cause unresolved; no shell restoration or VM restart.
 
-Actual genuine lifecycle02 atc7 passes Vista99 table validation, reaches two
-back-buffer requests flags1081/format22/pool3/16x16/mips0, then returns80070057.
-Original42-member archive5c8740b3/root proof20d7a234 preserves balanced cleanup,
-registry34/critical58/SYS/desktop/KMT-name restoration, with zero accepted API
-render pixels. Fresh affe CI/core plus2851 frontend and native-parsed helper
-family are required before unchanged512-pixel lifecycle03 is dispatched.
-Previous typed9 dynamic45/47 each retain5824 pixels/1056 bytes; raw present41–44
-remain rejected. Visible presentation and ordinary DX8–DX11 remain open gates.
-
-DX10/11 first replacements integrate as85ca8eb/0d4ff1d. DX11 metadata134c061
-integrates550d336 and root ASan/UBSan71 passes. Functional SM5 stage/SO/tessellation/
-class slice1f20d7c is ready for local integration; agent continues separate
-query/IA work. DX8 firstb61 integrates5cff890, root543caps/4235imports and original
-13inputs/15COFF/9PE proof accepted; second498d2e6 identity/backend/SM1 slice is
-ready for local integration and exact packet handoff. Native x86 and genuine
-system8 offscreen acceptance remain required. No production admission opened.
+Local rootf4bf37f integrates functional DX11 graphics stages/tessellation/SO/
+class instances, query/owned-child/packedIA, DX10 format/MSAA policy and immutable
+DX8 identity/private DXVK9 backend. Integrated portable legacyAPI2800 and actual
+pinned SM1 compiler47 pass; new private-child4029/input41 pass and SM5metadata351/
+MSAA269 verification continues. Future sole workflow fixture lists are being
+extended; newer source not pushed. DX11 agent owns new repeated locked-buffer
+renderer controls; root fixes a newly exposed per-draw source bounds defect.
+DX10 agent owns isolated probe-only runtime callback pre/post diagnostics, with
+SM4.1 compiler omissions still open. Build verifier owns target official EWDK
+x86 CPU execution of frozen7c2, then releases the target for the frozen f4 packet.
+Native execution of integrated future source and genuine runtime8/10/11 remain
+required. No production admission opened.
 
 ## Parallel replacement work (user requested, 2026-10-07)
 

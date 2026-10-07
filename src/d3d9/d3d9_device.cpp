@@ -8,6 +8,7 @@
 #include "d3d9_util.h"
 #include "d3d9_texture.h"
 #include "d3d9_buffer.h"
+#include "d3d9_buffer_copy.h"
 #include "d3d9_vertex_declaration.h"
 #include "d3d9_shader.h"
 #include "d3d9_shader_code.h"
@@ -3097,7 +3098,7 @@ namespace dxvk {
     }
 
     EmitCsCmd<VkDrawIndirectCommand>(D3D9CmdType::Draw, 1u,
-      [this] (DxvkContext* ctx, const VkDrawIndirectCommand* drawArgs, uint32_t drawCount) {
+      [] (DxvkContext* ctx, const VkDrawIndirectCommand* drawArgs, uint32_t drawCount) {
         ctx->draw(drawCount, drawArgs);
       });
 
@@ -3195,9 +3196,8 @@ namespace dxvk {
     auto upSlice = AllocUPBuffer(bufferSize);
     FillUPVertexBuffer(upSlice.mapPtr, pVertexStreamZeroData, dataSize, bufferSize);
 
-    EmitCs([this,
+    EmitCs([
       cBufferSlice  = std::move(upSlice.slice),
-      cPrimType     = PrimitiveType,
       cStride       = VertexStreamZeroStride,
       cVertexCount  = vertexCount
     ](DxvkContext* ctx) mutable {
@@ -5790,30 +5790,15 @@ namespace dxvk {
         elementCount = GetInstanceCount();
       }
       const uint32_t vboOffset = m_state.vertexBuffers[i].offset;
-      const uint32_t vertexOffset = (FirstVertexIndex + BaseVertexIndex) * srcStride;
       const uint32_t vertexBufferSize = vbo->Desc()->Size;
-      const uint32_t srcOffset = vboOffset + vertexOffset;
+      const auto range = computeD3D9BufferCopyRange(vertexBufferSize, vboOffset,
+        int64_t(FirstVertexIndex) + BaseVertexIndex, elementCount, srcStride, vertexSize);
 
-      if (unlikely(srcOffset > vertexBufferSize)) {
-        // All vertices are out of bounds
-        vboCopies[i].copyBufferLength = 0;
-      } else if (unlikely(srcOffset + elementCount * srcStride > vertexBufferSize)) {
-        // Some vertices are (partially) out of bounds
-        uint32_t boundVertexBufferRange = vertexBufferSize - vboOffset;
-        elementCount = boundVertexBufferRange / srcStride;
-        // Copy all complete vertices
-        vboCopies[i].copyBufferLength = elementCount * dstStride;
-        // Copy the remaining partial vertex
-        vboCopies[i].copyBufferLength += std::min(dstStride, boundVertexBufferRange % srcStride);
-      } else {
-        // No vertices are out of bounds
-        vboCopies[i].copyBufferLength = elementCount * dstStride;
-      }
-
-      vboCopies[i].copyElementCount = elementCount;
+      vboCopies[i].copyBufferLength = range.bytes;
+      vboCopies[i].copyElementCount = range.fullElements;
       vboCopies[i].copyElementStride = srcStride;
       vboCopies[i].copyElementSize = dstStride;
-      vboCopies[i].srcOffset = srcOffset;
+      vboCopies[i].srcOffset = range.sourceOffset;
       vboCopies[i].dstOffset = totalUpBufferSize;
       totalUpBufferSize += vboCopies[i].copyBufferLength;
     }

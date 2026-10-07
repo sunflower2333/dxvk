@@ -44,6 +44,7 @@ struct Resource {
   std::unique_ptr<dxvk::umd::D3D9BufferResource> buffer;
   bool bufferLocked = false;
   bool bufferReadOnly = false;
+  bool bufferLockDrawFromLocked = false;
   UINT bufferLockOffset = 0, bufferLockBytes = 0;
   // Member order releases mip surfaces before their owning texture.
   std::unique_ptr<dxvk::umd::D3D9TextureResource> texture;
@@ -226,9 +227,14 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   if (!args || !args->hResource || !args->pSurfList || !args->SurfCount) return E_INVALIDARG;
   const auto input = *args;
   const bool buffer = input.Flags.VertexBuffer || input.Flags.IndexBuffer;
-  if (input.Flags.Value & ~(buffer ? UINT(0x1800cc) : UINT(0x11087))) return E_INVALIDARG;
+  if (input.Flags.Value & ~(buffer ? UINT(0x21800cc) : UINT(0x11087))) return E_INVALIDARG;
   if (buffer && (bool(input.Flags.VertexBuffer) == bool(input.Flags.IndexBuffer) || input.SurfCount != 1))
     return E_INVALIDARG;
+  // The documented locked-draw contract needs CPU storage. Implement the
+  // runtime-owned SYSTEMMEM VB path; index, GPU-only and owned buffers retain
+  // their existing locking contract.
+  if (input.Flags.MightDrawFromLocked && (!input.Flags.VertexBuffer
+      || input.Pool != D3DDDIPOOL_SYSTEMMEM || input.Flags.NotLockable)) return E_INVALIDARG;
   const bool target = input.Flags.RenderTarget != 0;
   const bool depth = input.Flags.ZBuffer != 0;
   const bool texture = input.Flags.Texture != 0;
@@ -268,12 +274,14 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       const auto info = input.pSurfList[0];
       if (!info.Width || info.Width > UINT_MAX - 255
           || (info.pSysMem && input.Pool != D3DDDIPOOL_SYSTEMMEM)) return E_INVALIDARG;
+      if (input.Flags.MightDrawFromLocked && !info.pSysMem) return E_INVALIDARG;
       if (input.Flags.IndexBuffer && info.Width % (format == D3DFMT_INDEX16 ? 2 : 4)) return E_INVALIDARG;
       bufferDesc.bytes = info.Width; bufferDesc.format = format;
       bufferDesc.fvf = input.Flags.VertexBuffer ? input.Fvf : 0;
       bufferDesc.index = input.Flags.IndexBuffer != 0; bufferDesc.dynamic = input.Flags.Dynamic != 0;
       bufferDesc.writeOnly = input.Flags.WriteOnly != 0; bufferDesc.lockable = !input.Flags.NotLockable;
       bufferDesc.systemMemory = input.Pool == D3DDDIPOOL_SYSTEMMEM;
+      bufferDesc.mightDrawFromLocked = input.Flags.MightDrawFromLocked != 0;
       bufferDesc.systemData = const_cast<void*>(info.pSysMem);
       if (info.pSysMem) {
         if (bufferDesc.bytes > UINTPTR_MAX - reinterpret_cast<uintptr_t>(info.pSysMem)) return E_INVALIDARG;
@@ -563,7 +571,8 @@ HRESULT APIENTRY lockResource(HANDLE handle, D3DDDIARG_LOCK* args) {
     const auto resource = device.resources.find(input.hResource);
     if (resource != device.resources.end() && resource->second->buffer) {
       auto& item = *resource->second;
-      if (input.SubResourceIndex || input.Flags.Value & ~UINT(0x29f) || item.bufferLocked
+      if (input.SubResourceIndex || input.Flags.Value & ~UINT(0x39f) || item.bufferLocked
+          || (input.Flags.MightDrawFromLocked && !item.bufferDesc.mightDrawFromLocked)
           || bool(input.Flags.NotifyOnly) != bool(item.bufferDesc.systemData)
           || !item.bufferDesc.lockable || (input.Flags.ReadOnly && item.bufferDesc.writeOnly)
           || (input.Flags.NoOverwrite && input.Flags.Discard) || (input.Flags.Discard && input.Flags.ReadOnly)
@@ -579,6 +588,7 @@ HRESULT APIENTRY lockResource(HANDLE handle, D3DDDIARG_LOCK* args) {
       if (FAILED(hr)) return hr;
       item.bufferLocked = true;
       item.bufferReadOnly = input.Flags.ReadOnly != 0;
+      item.bufferLockDrawFromLocked = input.Flags.MightDrawFromLocked != 0;
       item.bufferLockOffset = offset; item.bufferLockBytes = bytes;
       if (!data) {
         if (result(device.backend->unlockBuffer(*item.buffer)) == S_OK) item.bufferLocked = false;
@@ -1289,7 +1299,8 @@ HRESULT APIENTRY setStreamSource(HANDLE handle, const D3DDDIARG_SETSTREAMSOURCE*
   return operation(handle, [&](Device& device) {
     const auto entry = device.resources.find(input.hVertexBuffer);
     if (input.hVertexBuffer && (entry == device.resources.end() || !entry->second->buffer
-        || entry->second->bufferDesc.index || entry->second->bufferLocked
+        || entry->second->bufferDesc.index
+        || (entry->second->bufferLocked && !entry->second->bufferLockDrawFromLocked)
         || input.Offset >= entry->second->bufferDesc.bytes)) return E_INVALIDARG;
     const HRESULT hr = result(device.backend->setStreamSource(input.Stream,
       input.hVertexBuffer ? entry->second->buffer.get() : nullptr,
@@ -1355,13 +1366,41 @@ bool drawBindings(Device& device, const Declaration& declaration, uint64_t first
     if (!(declaration.streams & (UINT(1) << i))) continue;
     const auto& stream = device.streams[i];
     const auto entry = device.resources.find(stream.buffer);
-    if (entry == device.resources.end() || !entry->second->buffer || entry->second->bufferLocked
+    if (entry == device.resources.end() || !entry->second->buffer
+        || (entry->second->bufferLocked && !entry->second->bufferLockDrawFromLocked)
         || stream.stride < declaration.streamSizes[i]) return false;
     // Count complete declarations, rather than requiring unused final stride padding.
     if (count && uint64_t(stream.offset) + (first + count - 1) * stream.stride
         + declaration.streamSizes[i] > entry->second->bufferDesc.bytes) return false;
   }
   return true;
+}
+
+struct BufferDrawSnapshot {
+  Resource* resource;
+  std::vector<uint8_t> bytes;
+};
+
+void snapshotDrawBuffers(Device& device, const Declaration& declaration,
+    std::vector<BufferDrawSnapshot>& snapshots) {
+  for (UINT i = 0; i < device.streams.size(); ++i) {
+    if (!(declaration.streams & (UINT(1) << i))) continue;
+    auto* resource = device.resources.at(device.streams[i].buffer).get();
+    if (!resource->bufferDesc.mightDrawFromLocked
+        || std::any_of(snapshots.begin(), snapshots.end(),
+          [&](const BufferDrawSnapshot& existing) { return existing.resource == resource; })) continue;
+    const auto* data = static_cast<const uint8_t*>(resource->bufferDesc.systemData);
+    snapshots.push_back({resource, std::vector<uint8_t>(data, data + resource->bufferDesc.bytes)});
+  }
+}
+
+HRESULT syncDrawBuffers(Device& device, const std::vector<BufferDrawSnapshot>& snapshots) {
+  for (const auto& snapshot : snapshots) {
+    const HRESULT hr = result(device.backend->syncBufferForDraw(*snapshot.resource->buffer,
+      snapshot.bytes.data(), UINT(snapshot.bytes.size())));
+    if (FAILED(hr)) return hr;
+  }
+  return S_OK;
 }
 
 bool drawTarget(Device& device) {
@@ -1387,12 +1426,16 @@ HRESULT APIENTRY drawPrimitive(HANDLE handle, const D3DDDIARG_DRAWPRIMITIVE* arg
   uint64_t count = 0;
   if (!primitiveVertices(input.PrimitiveType, input.PrimitiveCount, count)) return E_INVALIDARG;
   std::vector<uint8_t> vertices;
+  std::vector<BufferDrawSnapshot> snapshots;
   UINT stride = 0;
   return preparedOperation(handle, [&](Device& device) {
     const auto declaration = device.declarations.find(device.declaration);
     if (declaration == device.declarations.end() || !drawTarget(device)) return E_INVALIDARG;
-    if (!device.userVertices)
-      return drawBindings(device, *declaration->second, input.VStart, count) ? S_OK : E_INVALIDARG;
+    if (!device.userVertices) {
+      if (!drawBindings(device, *declaration->second, input.VStart, count)) return E_INVALIDARG;
+      if (count) snapshotDrawBuffers(device, *declaration->second, snapshots);
+      return S_OK;
+    }
     if (!device.userStride) return E_INVALIDARG;
     if (declaration->second->streams != 1
         || declaration->second->streamZeroSize > device.userStride) return E_INVALIDARG;
@@ -1415,6 +1458,8 @@ HRESULT APIENTRY drawPrimitive(HANDLE handle, const D3DDDIARG_DRAWPRIMITIVE* arg
     return S_OK;
   }, [&](Device& device) {
     if (!count) return S_OK;
+    const HRESULT hr = syncDrawBuffers(device, snapshots);
+    if (FAILED(hr)) return hr;
     return device.userVertices
       ? device.backend->drawPrimitive(input.PrimitiveType,input.PrimitiveCount,vertices.data(),stride)
       : device.backend->drawPrimitiveBuffers(input.PrimitiveType,input.VStart,input.PrimitiveCount);
@@ -1426,6 +1471,7 @@ HRESULT APIENTRY drawIndexedPrimitive(HANDLE handle, const D3DDDIARG_DRAWINDEXED
   const auto input = *args;
   uint64_t count = 0;
   if (!primitiveVertices(input.PrimitiveType, input.PrimitiveCount, count)) return E_INVALIDARG;
+  std::vector<BufferDrawSnapshot> snapshots;
   return preparedOperation(handle, [&](Device& device) {
     const auto declaration = device.declarations.find(device.declaration);
     const auto indices = device.resources.find(device.indices);
@@ -1439,8 +1485,11 @@ HRESULT APIENTRY drawIndexedPrimitive(HANDLE handle, const D3DDDIARG_DRAWINDEXED
     // Negative base indices are valid when the referenced vertex range stays nonnegative.
     if (first < 0 || uint64_t(first) + input.NumVertices > uint64_t(UINT_MAX) + 1
         || !drawBindings(device, *declaration->second, uint64_t(first), input.NumVertices)) return E_INVALIDARG;
+    if (count) snapshotDrawBuffers(device, *declaration->second, snapshots);
     return S_OK;
   }, [&](Device& device) {
+    const HRESULT hr = syncDrawBuffers(device, snapshots);
+    if (FAILED(hr)) return hr;
     return count ? device.backend->drawIndexedPrimitive(input.PrimitiveType,input.BaseVertexIndex,
       input.MinIndex,input.NumVertices,input.StartIndex,input.PrimitiveCount) : S_OK;
   });

@@ -21,7 +21,7 @@ struct D3D9BufferDesc {
   UINT bytes = 0, fvf = 0;
   D3DFORMAT format = D3DFMT_VERTEXDATA;
   bool index = false, dynamic = false, writeOnly = false, lockable = true;
-  bool systemMemory = false;
+  bool systemMemory = false, mightDrawFromLocked = false;
   void* systemData = nullptr;
 };
 
@@ -120,6 +120,7 @@ public:
                        const void* initialData = nullptr);
   HRESULT lockBuffer(D3D9BufferResource& buffer, UINT offset, UINT bytes, DWORD flags, void*& data);
   HRESULT unlockBuffer(D3D9BufferResource& buffer, const void* upload = nullptr);
+  HRESULT syncBufferForDraw(D3D9BufferResource& buffer, const void* snapshot, UINT bytes);
   HRESULT copyBuffer(D3D9BufferResource& destination, UINT destinationOffset,
                      D3D9BufferResource& source, UINT sourceOffset, UINT bytes,
                      const void* upload = nullptr);

@@ -135,6 +135,8 @@ struct Fixture {
   unsigned bufferCreates = 0, bufferCloses = 0, bufferLocks = 0, bufferUnlocks = 0;
   HRESULT bufferResult = S_OK, bufferUnlockResult = S_OK;
   HRESULT bufferCopyResult = S_OK;
+  HRESULT bufferDrawResult = S_OK;
+  std::vector<std::vector<uint8_t>> bufferDrawUploads;
   unsigned bufferCopies = 0;
   UINT bufferDestinationOffset = 0, bufferSourceOffset = 0, bufferCopyBytes = 0;
   std::vector<uint8_t> bufferCopiedData;
@@ -421,6 +423,17 @@ HRESULT dxvk::umd::D3D9Backend::unlockBuffer(D3D9BufferResource& buffer, const v
   if (buffer.m_state->desc.systemData && !upload && !buffer.m_state->readOnly)
     f->teardownDiscard = true;
   buffer.m_state->locked = false; return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::syncBufferForDraw(D3D9BufferResource& buffer,
+    const void* snapshot, UINT bytes) {
+  CHECK(GetCurrentThreadId() != f->caller && snapshot && bytes == buffer.m_state->desc.bytes);
+  CHECK(buffer.m_state->desc.mightDrawFromLocked && buffer.m_state->desc.systemMemory
+    && buffer.m_state->desc.systemData && !buffer.m_state->desc.index);
+  if (f->bufferDrawResult != S_OK) return f->bufferDrawResult;
+  const auto* data = static_cast<const uint8_t*>(snapshot);
+  f->bufferDrawUploads.emplace_back(data, data + bytes);
+  std::memcpy(buffer.m_state->bytes.data(), data, bytes);
+  return S_OK;
 }
 HRESULT dxvk::umd::D3D9Backend::copyBuffer(D3D9BufferResource& destination, UINT destinationOffset,
     D3D9BufferResource& source, UINT sourceOffset, UINT bytes, const void* upload) {
@@ -2252,6 +2265,129 @@ static D3DDDIARG_CREATERESOURCE bufferArgs(HANDLE cookie, D3DDDI_SURFACEINFO* in
   return args;
 }
 
+static void lockedDrawBufferContracts() {
+  for (const bool dynamic : {false, true}) {
+    Fixture fixture; initialize(fixture); createDevice();
+    char vertexCookie, indexCookie, targetCookie, ordinaryCookie;
+    std::array<uint8_t, 64> external;
+    for (UINT i = 0; i < external.size(); ++i) external[i] = uint8_t(0x20 + i);
+    D3DDDI_SURFACEINFO info = {64,1,0,external.data(),64,0};
+    auto args = bufferArgs(&vertexCookie, &info);
+    args.Flags.Dynamic = dynamic; args.Flags.MightDrawFromLocked = 1;
+    args.Pool = D3DDDIPOOL_SYSTEMMEM; args.MipLevels = args.Fvf = 0;
+    const auto valid = args;
+    // Narrow admission cannot silently extend locked rendering to an IB,
+    // video-memory allocation, non-lockable resource, or owned CPU buffer.
+    for (UINT field = 0; field < 6; ++field) {
+      args = valid;
+      if (field == 0) args.Pool = D3DDDIPOOL_VIDEOMEMORY;
+      if (field == 1) args.Flags.NotLockable = 1;
+      if (field == 2) { args.Flags.VertexBuffer = 0; args.Flags.IndexBuffer = 1; args.Format = D3DDDIFMT_INDEX16; }
+      if (field == 3) info.pSysMem = nullptr;
+      if (field == 4) args.Flags.SharedResource = 1;
+      if (field == 5) args.Flags.Primary = 1;
+      const auto before = snapshot(args); const auto creates = f->bufferCreates;
+      CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG
+        && snapshot(args) == before && f->bufferCreates == creates);
+      info.pSysMem = external.data();
+    }
+    args = valid;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE vertex = args.hResource;
+    CHECK(f->bufferDescriptions.back().mightDrawFromLocked
+      && f->bufferDescriptions.back().dynamic == dynamic
+      && f->bufferDescriptions.back().systemData == external.data());
+    args = valid; args.hResource = &ordinaryCookie; args.Flags.MightDrawFromLocked = 0;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    D3DDDIARG_LOCK rejected = {}; rejected.hResource = args.hResource;
+    rejected.Flags.NotifyOnly = rejected.Flags.MightDrawFromLocked = 1;
+    const auto rejectedBefore = snapshot(rejected);
+    const auto rejectedLocks = f->bufferLocks;
+    CHECK(f->table.pfnLock(f->device, &rejected) == E_INVALIDARG
+      && snapshot(rejected) == rejectedBefore && f->bufferLocks == rejectedLocks);
+    CHECK(f->table.pfnDestroyResource(f->device, args.hResource) == S_OK);
+    D3DDDI_SURFACEINFO indexInfo = {6,0,0,nullptr,0,0};
+    args = bufferArgs(&indexCookie, &indexInfo, D3DFMT_INDEX16);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    D3DDDIARG_SETINDICES indices = {args.hResource, 2};
+    CHECK(f->table.pfnSetIndices(f->device, &indices) == S_OK);
+    rejected = {}; rejected.hResource = args.hResource; rejected.Flags.MightDrawFromLocked = 1;
+    CHECK(f->table.pfnLock(f->device, &rejected) == E_INVALIDARG && f->bufferLocks == rejectedLocks);
+    D3DDDI_SURFACEINFO targetInfo = {8,8,0,nullptr,0,0};
+    args = resourceArgs(&targetCookie, &targetInfo, 1, true);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    D3DDDIARG_SETRENDERTARGET target = {0,args.hResource,0};
+    CHECK(f->table.pfnSetRenderTarget(f->device, &target) == S_OK);
+    D3DDDIVERTEXELEMENT elements[] = {{0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0},
+      {1,12,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
+    D3DDDIARG_CREATEVERTEXSHADERDECL declaration = {2,nullptr};
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device, &declaration, elements) == S_OK);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device, declaration.ShaderHandle) == S_OK);
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = vertex; mapping.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && mapping.pSurfData == external.data());
+    D3DDDIARG_SETSTREAMSOURCE normalLockStream = {0,vertex,0,16};
+    CHECK(f->table.pfnSetStreamSource(f->device, &normalLockStream) == E_INVALIDARG);
+    D3DDDIARG_UNLOCK ordinaryUnlock = {}; ordinaryUnlock.hResource = vertex; ordinaryUnlock.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnUnlock(f->device, &ordinaryUnlock) == S_OK);
+    mapping.Flags.MightDrawFromLocked = mapping.Flags.RangeValid = 1; mapping.Range = {16,32};
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && mapping.pSurfData == external.data() + 16);
+    for (UINT streamIndex = 0; streamIndex < 2; ++streamIndex) {
+      D3DDDIARG_SETSTREAMSOURCE stream = {streamIndex,vertex,0,16};
+      CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    }
+    const auto locks = f->bufferLocks, unlocks = f->bufferUnlocks;
+    auto verifyUpload = [&](const std::array<uint8_t,64>& expected, size_t previous) {
+      // Two bindings of one buffer create one immutable upload, without
+      // releasing either native or private buffer locking state.
+      CHECK(f->bufferDrawUploads.size() == previous + 1);
+      CHECK(f->bufferDrawUploads.back() == std::vector<uint8_t>(expected.begin(), expected.end()));
+      CHECK(f->bufferLocks == locks && f->bufferUnlocks == unlocks);
+    };
+    D3DDDIARG_DRAWPRIMITIVE draw = {D3DPT_TRIANGLELIST,1,1};
+    external.fill(0x51); auto expected = external;
+    f->queryHook = [&] {
+      auto nested = draw;
+      CHECK(f->table.pfnDrawPrimitive(f->device, &nested, nullptr) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnDestroyResource(f->device, vertex) == D3DERR_WASSTILLDRAWING);
+      external.fill(0xd1); draw.VStart = UINT_MAX;
+    };
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK && f->drawStart == 1);
+    verifyUpload(expected, 0);
+    D3DDDIARG_DRAWINDEXEDPRIMITIVE indexed = {D3DPT_TRIANGLELIST,-3,4,3,0,1};
+    external.fill(0x62); expected = external;
+    f->queryHook = [&] { external.fill(0xe2); indexed.NumVertices = UINT_MAX; };
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == S_OK && f->drawVertexCount == 3);
+    verifyUpload(expected, 1);
+    CHECK(f->table.pfnDestroyResource(f->device, vertex) == E_INVALIDARG);
+    draw = {D3DPT_TRIANGLELIST,1,1}; indexed = {D3DPT_TRIANGLELIST,-3,4,3,0,1};
+    for (const HRESULT failure : {S_FALSE,E_FAIL,E_OUTOFMEMORY,DXGI_ERROR_WAS_STILL_DRAWING}) {
+      f->bufferDrawResult = failure;
+      const auto before = f->draws; const auto uploads = f->bufferDrawUploads.size();
+      const auto hr = failure == S_FALSE ? E_FAIL
+        : failure == DXGI_ERROR_WAS_STILL_DRAWING ? D3DERR_WASSTILLDRAWING : failure;
+      CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == hr);
+      CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == hr);
+      CHECK(f->draws == before && f->bufferDrawUploads.size() == uploads
+        && f->bufferLocks == locks && f->bufferUnlocks == unlocks);
+    }
+    f->bufferDrawResult = S_OK;
+    draw.PrimitiveCount = 0;
+    const auto uploads = f->bufferDrawUploads.size(), before = size_t(f->draws);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK
+      && f->bufferDrawUploads.size() == uploads && f->draws == before);
+    D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = vertex; unmap.Flags.NotifyOnly = 1;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+    // Borrowed SYSTEMMEM can change while unlocked, too; draw consumes the
+    // latest caller snapshot rather than the previous lock's private copy.
+    external.fill(0x73); expected = external; draw.PrimitiveCount = 1;
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK);
+    CHECK(f->bufferDrawUploads.back() == std::vector<uint8_t>(expected.begin(), expected.end()));
+    CHECK(f->table.pfnDestroyResource(f->device, vertex) == S_OK);
+    closeDevice(); closeAdapter();
+    CHECK(f->bufferCreates == f->bufferCloses && f->bufferLocks == f->bufferUnlocks);
+  }
+}
+
 static void bufferTransferContracts() {
   {
     Fixture fixture; initialize(fixture); createDevice();
@@ -3478,6 +3614,7 @@ int main() {
   fixedFunctionContracts();
   depthContracts();
   bufferContracts();
+  lockedDrawBufferContracts();
   textureContracts();
   dynamicTextureContracts();
   shaderContracts();

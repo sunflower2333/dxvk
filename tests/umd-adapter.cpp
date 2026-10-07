@@ -315,8 +315,10 @@ static void creationFixture(UINT interfaceVersion, UINT version, UINT flags, Cre
   const SIZE_T kernelBytes = offsetof(D3DDDI_DEVICECALLBACKS, pfnDestroyContextCb)
     + sizeof(expectedKernel.pfnDestroyContextCb);
   // All eight callbacks read by this adapter are in the historical prefix.
-  CHECK(offsetof(D3DDDI_DEVICECALLBACKS, pfnRenderCb) < kernelBytes);
-  CHECK(offsetof(D3DDDI_DEVICECALLBACKS, pfnEscapeCb) < kernelBytes);
+  static_assert(offsetof(D3DDDI_DEVICECALLBACKS, pfnRenderCb) < kernelBytes,
+    "RenderCb must fit the historical callback prefix");
+  static_assert(offsetof(D3DDDI_DEVICECALLBACKS, pfnEscapeCb) < kernelBytes,
+    "EscapeCb must fit the historical callback prefix");
   GuardedBytes kernelStorage(kernelBytes);
   std::memcpy(kernelStorage.data(), &expectedKernel, kernelBytes);
   create->Interface = expectedInterface = interfaceVersion;

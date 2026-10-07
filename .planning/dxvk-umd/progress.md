@@ -2487,3 +2487,11 @@ Integrated callback fixes/ports source8d7a2ea is frozen for exclusive port_dx10
 native CPU verification. New consolidated build/package/execution lists include
 DX11 and compute fixtures, making17 future native ARM64 cases; no second workflow
 or push dispatched. Root will send new exact discard source packet next.
+
+
+2026-10-07: Actual native adapter8d7 attempt01 /W4 /WX /MT fails fixture C4127
+at two constant offsetof CHECKs; three production adapter/query/contract AA64
+objects compile cleanly. Agent original failed tar84fa1254e0610376494e0dc4c1d72d017381fc91e28837ed6782347383fc7284
+retains source12/SDK21/libs5/RSP/logs and SYS/System32/desktop checks; root review
+pending. Convert only these compile-time ABI bounds to static_assert, preserving
+runtime guard-page semantics. Native rerun and discard-source packet pending.

@@ -24,10 +24,16 @@ static_assert(UINT(D3D10_1_DDI_SUPPORTED) == (D3D10_1_DDI_BUILD_VERSION << 16));
 static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_0_DDI_INTERFACE_VERSION, UINT(D3D10_0_DDI_SUPPORTED)));
 static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_1_DDI_INTERFACE_VERSION, UINT(D3D10_1_DDI_SUPPORTED)));
 constexpr UINT DxgiRevision11 = VISTA_GOLD_PRODUCT_VER | DXGI_RESOLVE_SHARED_RESOURCE;
-static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_0_DDI_INTERFACE_VERSION, (D3D10_0_DDI_BUILD_VERSION << 16) | (DxgiRevision11 - 1)));
-static_assert(IS_DXGI1_1_BASE_FUNCTIONS(D3D10_0_DDI_INTERFACE_VERSION, (D3D10_0_DDI_BUILD_VERSION << 16) | DxgiRevision11));
-static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_1_DDI_INTERFACE_VERSION, (D3D10_1_DDI_BUILD_VERSION << 16) | (DxgiRevision11 - 1)));
-static_assert(IS_DXGI1_1_BASE_FUNCTIONS(D3D10_1_DDI_INTERFACE_VERSION, (D3D10_1_DDI_BUILD_VERSION << 16) | DxgiRevision11));
+// The original macro does not fully parenthesize its Version parameter.
+// Pass named values so the build/revision expression cannot change its mask.
+constexpr UINT Dxgi10Before11 = (D3D10_0_DDI_BUILD_VERSION << 16) | (DxgiRevision11 - 1);
+constexpr UINT Dxgi10At11 = (D3D10_0_DDI_BUILD_VERSION << 16) | DxgiRevision11;
+constexpr UINT Dxgi10_1Before11 = (D3D10_1_DDI_BUILD_VERSION << 16) | (DxgiRevision11 - 1);
+constexpr UINT Dxgi10_1At11 = (D3D10_1_DDI_BUILD_VERSION << 16) | DxgiRevision11;
+static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_0_DDI_INTERFACE_VERSION, Dxgi10Before11));
+static_assert(IS_DXGI1_1_BASE_FUNCTIONS(D3D10_0_DDI_INTERFACE_VERSION, Dxgi10At11));
+static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_1_DDI_INTERFACE_VERSION, Dxgi10_1Before11));
+static_assert(IS_DXGI1_1_BASE_FUNCTIONS(D3D10_1_DDI_INTERFACE_VERSION, Dxgi10_1At11));
 struct Failure { const char* stage; HRESULT hr; };
 void require(bool value, const char* stage, HRESULT hr = E_FAIL) {
   if (!value) throw Failure{stage, hr};

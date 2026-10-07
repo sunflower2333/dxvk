@@ -11,6 +11,8 @@ static unsigned checks;
 int main() {
   using namespace dxvk::umd;
   QueryInfo info;
+  unsigned unexpectedQueryCalls = 0;
+  auto unexpectedQuery = [&](void*, UINT, UINT) { ++unexpectedQueryCalls; return S_OK; };
   CHECK(queryInfo(D3D10DDI_QUERY_EVENT, 0, info) && info.size == sizeof(BOOL) && !info.beginRequired);
   CHECK(queryInfo(D3D10DDI_QUERY_OCCLUSION, 0, info) && info.size == sizeof(UINT64) && info.beginRequired);
   CHECK(queryInfo(D3D10DDI_QUERY_TIMESTAMP, 0, info) && info.type == D3D11_QUERY_TIMESTAMP && !info.beginRequired);
@@ -46,8 +48,8 @@ int main() {
       == (result == S_FALSE ? DXGI_DDI_ERR_WASSTILLDRAWING : result == DXGI_ERROR_DEVICE_REMOVED ? D3DDDIERR_DEVICEREMOVED : result));
     CHECK(!std::memcmp(&full, &savedFull, sizeof(full)));
   }
-  CHECK(readQueryData(info, &full.data, sizeof(guarded.counters), 0,
-    [](void*, UINT, UINT) { std::abort(); return S_OK; }) == E_INVALIDARG);
+  CHECK(readQueryData(info, &full.data, sizeof(guarded.counters), 0, unexpectedQuery)
+    == E_INVALIDARG && !unexpectedQueryCalls);
   CHECK(!std::memcmp(&full, &savedFull, sizeof(full)));
   const D3D10DDI_QUERY nativeStats[] = {D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM0,
     D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM1, D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM2, D3D11DDI_QUERY_STREAMOUTPUTSTATS_STREAM3};
@@ -85,7 +87,7 @@ int main() {
   CHECK(queryInfo(D3D10DDI_QUERY_OCCLUSIONPREDICATE, D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info));
   CHECK(info.predicate && info.hint && info.type == D3D11_QUERY_OCCLUSION_PREDICATE);
   CHECK(queryUsesPublicPredicate(info));
-  CHECK(readQueryData(info, nullptr, 0, 0, [](void*, UINT, UINT) { std::abort(); return S_OK; }) == E_INVALIDARG);
+  CHECK(readQueryData(info, nullptr, 0, 0, unexpectedQuery) == E_INVALIDARG && !unexpectedQueryCalls);
   CHECK(!queryInfo(D3D10DDI_QUERY_OCCLUSIONPREDICATE, 2, info));
   CHECK(queryInfo(D3D10DDI_QUERY_TIMESTAMP, 0, info));
   const UINT64 original = 0xaaaaaaaa55555555ull;

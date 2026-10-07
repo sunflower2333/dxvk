@@ -188,6 +188,11 @@ umd_texturecube_test = executable('dxvk-umd-texturecube-test',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies)
 
+umd_cube_array_mips_test = executable('dxvk-umd-cube-array-mips-test',
+  ['../../tests/umd-cube-array-mips.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
 umd_d3d11_device_test = executable('dxvk-umd-d3d11-device-test',
   ['../../tests/umd-d3d11-device.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],

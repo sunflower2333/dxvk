@@ -9,9 +9,12 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 parser.add_argument("--llvm", type=Path, required=True)
 parser.add_argument("--sdk-shared", type=Path, required=True)
+parser.add_argument("--wdk-um", type=Path, help="Original WDK um directory containing d3dumddi.h")
 parser.add_argument("--out", type=Path, required=True)
 parser.add_argument("--original-mapped", type=Path)
 args = parser.parse_args()
+wdk_um = args.wdk_um or args.sdk_shared.parent / 'um'
+assert (wdk_um / 'd3dumddi.h').is_file(), 'Pass the original WDK um directory with --wdk-um'
 root = Path(__file__).resolve().parents[1]
 args.out.mkdir(parents=True, exist_ok=False)
 commands = []
@@ -43,25 +46,27 @@ legacy = args.llvm / "generic-w64-mingw32/include"
 for name in ("d3d8.h", "d3d8caps.h", "d3d8types.h"):
     headers.append({"path": str(legacy / name), "sha256": sha(legacy / name), "provenance": "Wine/MinGW legacy header"})
 headers.append({"path": str(args.sdk_shared / "d3dkmthk.h"), "sha256": sha(args.sdk_shared / "d3dkmthk.h")})
+headers.append({"path": str(wdk_um / "d3dumddi.h"), "sha256": sha(wdk_um / "d3dumddi.h")})
 sources = ["tests/umd-d3d8-runtime-probe.cpp", "tests/umd-runtime-imports.cpp",
            "tests/umd-d3d8-compat.cpp", "tests/umd-d3d8-sdk.cpp", "src/umd/umd_d3d8_compat.cpp",
-           "tests/umd-d3d8-api.h", "src/umd/umd_d3d8_compat.h", "src/umd/umd_runtime_imports.h"]
+           "tests/umd-d3d8-runtime-guard.cpp", "tests/umd-d3d8-api.h", "src/umd/umd_d3d8_compat.h",
+           "src/umd/umd_runtime_imports.h", "tests/umd-d3d8-runtime-guard.h", "tests/umd-d3d8-runtime-policy.h"]
 before = {name: sha(root / name) for name in sources}
 outputs = []
 for target, machine in (("i686", "IMAGE_FILE_MACHINE_I386"), ("x86_64", "IMAGE_FILE_MACHINE_AMD64"),
                         ("aarch64", "IMAGE_FILE_MACHINE_ARM64")):
     compiler = args.llvm / "bin" / f"{target}-w64-mingw32-clang++"
     common = [compiler, "-std=c++17", "-O1", "-Wall", "-Wextra", "-Werror", "-fms-extensions",
-              "-idirafter", args.sdk_shared]
+              "-isystem", wdk_um, "-idirafter", args.sdk_shared]
     objects = {}
-    for source in sources[:5]:
+    for source in sources[:6]:
         obj = args.out / f"{target}-{Path(source).stem}.obj"
         # The original SDK header contains nested comments. Treat unmodified
         # vendor headers as system includes; source warnings remain fatal.
         extra = ["-isystem", sdk_copy] if source in ("tests/umd-d3d8-sdk.cpp", "src/umd/umd_d3d8_compat.cpp") else []
         run(obj.stem, common + extra + ["-c", root / source, "-o", obj])
         objects[source] = obj
-    for label, members in (("caps", sources[2:5]), ("imports", [sources[1]]), ("runtime", [sources[0]])):
+    for label, members in (("caps", sources[2:5]), ("imports", [sources[1]]), ("runtime", [sources[0], sources[5]])):
         exe = args.out / f"{target}-{label}.exe"
         flags = ["-municode", "-luser32"] if label == "runtime" else []
         run(f"{target}-{label}-link", [compiler, "-static", *[objects[name] for name in members], *flags, "-o", exe])
@@ -96,9 +101,9 @@ after = {name: sha(root / name) for name in sources}
 assert before == after
 proof = {"scope": "local GCC/Clang sanitizer and MinGW cross compile/link, not native EWDK or hardware acceptance",
          "source_before": before, "source_after": after, "headers": headers, "outputs": outputs,
-         "pe_executions": 0, "target_operations": 0, "cross_objects": 15, "cross_exes": 9,
+         "pe_executions": 0, "target_operations": 0, "cross_objects": 18, "cross_exes": 9,
          "semantic_negative_controls": 2, "compiler_versions": {
              "cross": run("cross-compiler-version", [args.llvm / "bin/i686-w64-mingw32-clang++", "--version"])}}
 (args.out / "verified.json").write_text(json.dumps(proof, indent=2) + "\n")
-print(json.dumps({"proof": str(args.out / "verified.json"), "cross_objects": 15, "cross_exes": 9,
+print(json.dumps({"proof": str(args.out / "verified.json"), "cross_objects": 18, "cross_exes": 9,
                   "target_operations": 0, "status": "PASS"}))

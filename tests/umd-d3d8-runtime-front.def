@@ -1,0 +1,3 @@
+LIBRARY viogpu-d3d8-runtime-front
+EXPORTS
+    OpenAdapter

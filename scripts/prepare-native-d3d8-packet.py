@@ -20,6 +20,7 @@ args.out.mkdir(parents=True, exist_ok=False)
 files = ["src/umd/umd_d3d8_compat.h", "src/umd/umd_d3d8_compat.cpp", "src/umd/umd_runtime_imports.h",
          "tests/umd-d3d8-api.h", "tests/umd-d3d8-compat.cpp", "tests/umd-d3d8-sdk.cpp",
          "tests/umd-d3d8-runtime-probe.cpp", "tests/umd-runtime-imports.cpp",
+         "tests/umd-d3d8-runtime-guard.cpp", "tests/umd-d3d8-runtime-guard.h", "tests/umd-d3d8-runtime-policy.h",
          "scripts/build-native-d3d8-cpu.ps1", "scripts/verify-native-d3d8-offscreen.py"]
 members = {}
 rows = []
@@ -44,7 +45,7 @@ packet = gzip.compress(stream.getvalue(), mtime=0)
 (args.out / "native-d3d8-x86-cpu-source-01.tar.gz").write_bytes(packet)
 manifest = {"source_commit": commit, "archive_sha256": hashlib.sha256(packet).hexdigest(),
             "primary_git_inputs": len(files), "legacy_dependencies": 3, "inputs": rows,
-            "target_execution": "deferred", "target_arch": "x86", "fixture_objects": 5, "fixture_exes": 3,
+            "target_execution": "deferred", "target_arch": "x86", "fixture_objects": 6, "fixture_exes": 3,
             "hardware_payload_requirement": "matching x86 core plus Vulkan loader and Mesa ICD; ARM64 candidates cannot be loaded by system8"}
 (args.out / "native-d3d8-x86-cpu-source-01.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print(json.dumps({"packet": str(args.out), "sha256": manifest["archive_sha256"], "inputs": len(rows), "target_execution": "deferred"}))

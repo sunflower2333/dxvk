@@ -95,12 +95,12 @@ try {
   $env:LIB=(Join-Path $CompilerRoot 'lib\x86') + ';' + (Join-Path $KitRoot ('Lib\' + $KitVersion + '\um\x86')) + ';' + (Join-Path $KitRoot ('Lib\' + $KitVersion + '\ucrt\x86'))
   $env:PATH=$bin + ';' + $env:PATH
   $receipt.kit_root=$KitRoot; $receipt.kit_version=$KitVersion
-  $receipt.sdk=@('shared\d3d9.h','shared\d3d9caps.h','shared\d3d9types.h','shared\d3dkmthk.h','um\Windows.h' | ForEach-Object { File-Row (Join-Path $sdkInclude $_) })
+  $receipt.sdk=@('shared\d3d9.h','shared\d3d9caps.h','shared\d3d9types.h','shared\d3dkmthk.h','um\d3dumddi.h','um\Windows.h' | ForEach-Object { File-Row (Join-Path $sdkInclude $_) })
   $receipt.libraries=@((Join-Path $CompilerRoot 'lib\x86\libcmt.lib'),(Join-Path $CompilerRoot 'lib\x86\libcpmt.lib'),
     (Join-Path $CompilerRoot 'lib\x86\libvcruntime.lib'),(Join-Path $KitRoot ('Lib\' + $KitVersion + '\ucrt\x86\libucrt.lib')),
     (Join-Path $KitRoot ('Lib\' + $KitVersion + '\um\x86\kernel32.lib')),(Join-Path $KitRoot ('Lib\' + $KitVersion + '\um\x86\user32.lib')) | ForEach-Object { File-Row $_ })
   $source=Join-Path $Root 'source'; $legacy=Join-Path $source 'dependencies\legacy-d3d8'
-  $units=@('tests\umd-d3d8-runtime-probe.cpp','tests\umd-runtime-imports.cpp','tests\umd-d3d8-compat.cpp','tests\umd-d3d8-sdk.cpp','src\umd\umd_d3d8_compat.cpp')
+  $units=@('tests\umd-d3d8-runtime-probe.cpp','tests\umd-runtime-imports.cpp','tests\umd-d3d8-compat.cpp','tests\umd-d3d8-sdk.cpp','src\umd\umd_d3d8_compat.cpp','tests\umd-d3d8-runtime-guard.cpp')
   $objects=@{}
   foreach ($unit in $units) {
     $name=[IO.Path]::GetFileNameWithoutExtension($unit); $object=Join-Path $Root ($name + '.obj'); $rsp=Join-Path $Root ($name + '.compile.rsp')
@@ -111,7 +111,7 @@ try {
   $groups=@(
     @{name='caps';units=@('tests\umd-d3d8-compat.cpp','tests\umd-d3d8-sdk.cpp','src\umd\umd_d3d8_compat.cpp')},
     @{name='imports';units=@('tests\umd-runtime-imports.cpp')},
-    @{name='runtime';units=@('tests\umd-d3d8-runtime-probe.cpp')}
+    @{name='runtime';units=@('tests\umd-d3d8-runtime-probe.cpp','tests\umd-d3d8-runtime-guard.cpp')}
   )
   foreach ($group in $groups) {
     $exe=Join-Path $Root ($group.name + '.exe'); $rsp=Join-Path $Root ($group.name + '.link.rsp')

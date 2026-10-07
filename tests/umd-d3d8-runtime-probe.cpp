@@ -1,5 +1,7 @@
 // Genuine Windows D3D8 runtime probe. No DXVK d3d8.dll or D3D9 delegation.
 #include "umd-d3d8-api.h"
+#include "umd-d3d8-runtime-policy.h"
+#include "umd-d3d8-runtime-guard.h"
 #include "../src/umd/umd_runtime_imports.h"
 #include <d3dkmthk.h>
 #include <psapi.h>
@@ -10,10 +12,13 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 
 namespace {
+namespace policy = dxvk::test::runtime8;
 bool traceFailed = false;
 void trace(const char* format, ...) {
   char line[4096];
@@ -77,15 +82,32 @@ void auditModules(const std::wstring& directory) {
   require(!GetModuleHandleW(L"d3d10warp.dll"), "no-WARP-module");
 }
 struct Permission {
-  static constexpr const wchar_t* name = L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC";
-  ~Permission() { if (active) SetEnvironmentVariableW(name, nullptr); }
-  bool active = false;
-  void enable() {
-    SetLastError(ERROR_SUCCESS);
-    require(GetEnvironmentVariableW(name, nullptr, 0) == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND,
-            "diagnostic-gate-originally-absent");
-    require(SetEnvironmentVariableW(name, L"read-only-legacy-fog-478eca2") != FALSE, "set-read-only-gate");
-    active = true;
+  ~Permission() { restore(); }
+  size_t active = 0;
+  std::array<std::wstring, 4> values;
+  static bool absent() {
+    for (const auto* name : policy::diagnosticNames) {
+      SetLastError(ERROR_SUCCESS);
+      if (GetEnvironmentVariableW(name, nullptr, 0) || GetLastError() != ERROR_ENVVAR_NOT_FOUND) return false;
+    }
+    return true;
+  }
+  void enable(const wchar_t* corePath, const wchar_t* coreSha256, const wchar_t* coreCommit) {
+    require(absent(), "diagnostic-pins-originally-absent");
+    values = {policy::permissionValue, corePath, coreSha256, coreCommit};
+    for (size_t i = 0; i < policy::diagnosticNames.size(); ++i) {
+      require(SetEnvironmentVariableW(policy::diagnosticNames[i], values[i].c_str()) != FALSE,
+              "set-read-only-pin");
+      ++active;
+    }
+  }
+  bool restore() noexcept {
+    bool restored = true;
+    while (active) {
+      --active;
+      restored = SetEnvironmentVariableW(policy::diagnosticNames[active], nullptr) != FALSE && restored;
+    }
+    return restored && absent();
   }
 };
 
@@ -94,29 +116,51 @@ struct Permission {
 // supplied by the caller's independently verified installed package receipt.
 class Selector {
   using Query = decltype(&D3DKMTQueryAdapterInfo);
-  static std::atomic<Selector*> current;
-  Query original = nullptr;
+  static_assert(uint32_t(KMTQAITYPE_UMDRIVERNAME) == policy::umdNameQuery);
+  static_assert(uint32_t(KMTUMDVERSION_DX9) == policy::dx9DriverNameVersion);
+  struct State {
+    Query original = nullptr;
+    const std::wstring expected, replacement;
+    std::mutex publicationMutex;
+    bool active = true;
+    std::atomic<unsigned> substitutions{0}, queries{0};
+    State(const wchar_t* installed, const wchar_t* frontend)
+      : expected(installed), replacement(frontend) { }
+  };
+  static std::mutex currentMutex;
+  static std::shared_ptr<State> current;
+  static std::atomic<Query> originalFallback;
+  std::shared_ptr<State> owner;
   void** slot = nullptr;
-  std::wstring expected, replacement;
-  std::atomic<unsigned> substitutions{0};
+  DWORD originalProtection = 0;
   static NTSTATUS APIENTRY query(const D3DKMT_QUERYADAPTERINFO* input) {
-    auto* self = current.load();
-    if (!self) return NTSTATUS(0xc0000001u);
+    std::shared_ptr<State> self;
+    { std::lock_guard<std::mutex> lock(currentMutex); self = current; }
+    // A callback already dispatched before restoration can arrive afterward.
+    // Preserve the real query/status even when its publication owner is gone.
+    if (!self) {
+      const Query original = originalFallback.load();
+      return original ? original(input) : NTSTATUS(0xc0000001u);
+    }
     const auto request = input ? *input : D3DKMT_QUERYADAPTERINFO{};
     const NTSTATUS status = self->original(input);
-    if (status < 0 || !input || request.Type != KMTQAITYPE_UMDRIVERNAME
-        || request.PrivateDriverDataSize != sizeof(D3DKMT_UMDFILENAMEINFO) || !request.pPrivateDriverData)
-      return status;
-    auto* info = static_cast<D3DKMT_UMDFILENAMEINFO*>(request.pPrivateDriverData);
-    if (info->Version != KMTUMDVERSION_DX9) return status;
-    const auto* end = std::find(info->UmdFileName, info->UmdFileName + std::size(info->UmdFileName), wchar_t(0));
-    if (end == info->UmdFileName + std::size(info->UmdFileName)
-        || _wcsicmp(info->UmdFileName, self->expected.c_str())) return status;
-    std::fill(std::begin(info->UmdFileName), std::end(info->UmdFileName), wchar_t(0));
-    std::copy(self->replacement.begin(), self->replacement.end(), info->UmdFileName);
-    const unsigned count = ++self->substitutions;
-    trace("D3D8_SELECTOR_QUERY version=DX9 status=%08lx exact-name=1 substitutions=%u",
-          static_cast<unsigned long>(status), count);
+    const unsigned queryCount = ++self->queries;
+    std::lock_guard<std::mutex> lock(self->publicationMutex);
+    bool selected = false;
+    if (self->active && input && request.pPrivateDriverData
+        && request.Type == KMTQAITYPE_UMDRIVERNAME
+        && request.PrivateDriverDataSize == sizeof(D3DKMT_UMDFILENAMEINFO)) {
+      auto* info = static_cast<D3DKMT_UMDFILENAMEINFO*>(request.pPrivateDriverData);
+      if (status == 0)
+        selected = policy::selectDriverName(int32_t(status), uint32_t(request.Type), request.PrivateDriverDataSize,
+          sizeof(*info), uint32_t(info->Version), info->UmdFileName,
+          std::wstring_view(self->expected), std::wstring_view(self->replacement));
+    }
+    if (selected) ++self->substitutions;
+    if (queryCount <= 256)
+      trace("D3D8_SELECTOR_QUERY index=%u type=%u bytes=%u kernel_adapter=%u original_status=%08lx selected=%u substitutions=%u",
+        queryCount, unsigned(request.Type), request.PrivateDriverDataSize, request.hAdapter,
+        static_cast<unsigned long>(status), unsigned(selected), self->substitutions.load());
     return status;
   }
   static void* address(Query function) {
@@ -126,13 +170,11 @@ class Selector {
 public:
   ~Selector() { if (slot) restore(); }
   void install(HMODULE module, const wchar_t* front, const wchar_t* installed) {
-    replacement = front; expected = installed;
-    const std::wstring prefix = L"C:\\Users\\Public\\DxvkD3D8Runtime-";
-    const std::wstring suffix = L"\\viogpu-d3d9-runtime-front.dll";
-    require(replacement.size() < 260 && replacement.size() > prefix.size() + suffix.size()
-        && !_wcsnicmp(replacement.c_str(), prefix.c_str(), prefix.size())
-        && !_wcsicmp(replacement.c_str() + replacement.size() - suffix.size(), suffix.c_str())
-        && replacement.find(L"..") == std::wstring::npos && expected.size() && expected.size() < 260,
+    require(sizeof(void*) == 4 && moduleMachine(module) == IMAGE_FILE_MACHINE_I386,
+            "genuine-I386-system8-selector");
+    owner = std::make_shared<State>(installed, front);
+    require(policy::ownedFrontPath(std::wstring_view(owner->replacement))
+        && owner->expected.size() > 3 && owner->expected.size() < 260 && owner->expected[1] == L':',
         "owned-frontend/exact-installed-name");
     require(GetFileAttributesW(front) != INVALID_FILE_ATTRIBUTES, "frontend-file-present");
     std::vector<dxvk::umd::diagnostic::RuntimeImport> imports;
@@ -147,33 +189,47 @@ public:
     std::memcpy(&exportedAddress, &exported, sizeof(exportedAddress));
     require(gdi && old == exportedAddress,
             "original-system-KMT-import");
-    std::memcpy(&original, &old, sizeof(original));
-    Selector* absent = nullptr;
-    require(current.compare_exchange_strong(absent, this), "single-owned-selector");
+    std::memcpy(&owner->original, &old, sizeof(owner->original));
+    originalFallback.store(owner->original);
+    {
+      std::lock_guard<std::mutex> lock(currentMutex);
+      require(!current, "single-owned-selector"); current = owner;
+    }
     DWORD protection = 0, ignored = 0;
     if (!VirtualProtect(target, sizeof(void*), PAGE_READWRITE, &protection)) {
-      current.store(nullptr); require(false, "selector-write-protection");
+      std::lock_guard<std::mutex> lock(currentMutex);
+      current.reset(); require(false, "selector-write-protection");
     }
+    originalProtection = protection;
     const bool replaced = InterlockedCompareExchangePointer(target, address(&query), old) == old;
     const bool protectedAgain = VirtualProtect(target, sizeof(void*), protection, &ignored) != FALSE;
     if (replaced) slot = target;
+    else { std::lock_guard<std::mutex> lock(currentMutex); current.reset(); }
     require(replaced && protectedAgain, "selector-install-and-protection");
     trace("D3D8_SELECTOR installed=1 machine=%04x pointer_bytes=%zu slot_rva=%zx registry_writes=0",
           unsigned(imports[0].machine), sizeof(void*), imports[0].offset);
   }
   bool restore() noexcept {
-    DWORD protection = 0, ignored = 0;
-    if (!slot || !VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &protection)) return false;
-    const bool restored = InterlockedCompareExchangePointer(slot, address(original), address(&query)) == address(&query);
-    const bool protectedAgain = VirtualProtect(slot, sizeof(void*), protection, &ignored) != FALSE;
-    slot = nullptr; current.store(nullptr);
-    trace("D3D8_SELECTOR restored=%u protection_restored=%u substitutions=%u", unsigned(restored),
-          unsigned(protectedAgain), substitutions.load());
-    return restored && protectedAgain;
+    try {
+      if (!slot) return true;
+      { std::lock_guard<std::mutex> lock(owner->publicationMutex); owner->active = false; }
+      DWORD protection = 0, ignored = 0;
+      if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &protection)) return false;
+      void* previous = InterlockedCompareExchangePointer(slot, address(owner->original), address(&query));
+      const bool restored = previous == address(&query) || previous == address(owner->original);
+      const bool protectedAgain = VirtualProtect(slot, sizeof(void*), originalProtection, &ignored) != FALSE;
+      if (restored && protectedAgain) slot = nullptr;
+      { std::lock_guard<std::mutex> lock(currentMutex); if (current == owner) current.reset(); }
+      trace("D3D8_SELECTOR restored=%u protection_restored=%u substitutions=%u queries=%u",
+        unsigned(restored), unsigned(protectedAgain), owner->substitutions.load(), owner->queries.load());
+      return restored && protectedAgain;
+    } catch (...) { return false; }
   }
-  unsigned count() const { return substitutions.load(); }
+  unsigned count() const { return owner ? owner->substitutions.load() : 0; }
 };
-std::atomic<Selector*> Selector::current{nullptr};
+std::mutex Selector::currentMutex;
+std::shared_ptr<Selector::State> Selector::current;
+std::atomic<Selector::Query> Selector::originalFallback{nullptr};
 
 struct Window {
   HWND value = nullptr;
@@ -309,14 +365,20 @@ void offscreen(IDirect3D8* api, UINT adapter, HWND window) {
 }
 
 int wmain(int argc, wchar_t** argv) {
+  const bool guard = argc == 3 && !std::wcscmp(argv[1], L"--front-guard");
   const bool enumerate = argc == 2 && !std::wcscmp(argv[1], L"--enumerate");
   const bool hardware = argc == 2 && !std::wcscmp(argv[1], L"--offscreen");
-  const bool selected = argc == 4 && !std::wcscmp(argv[1], L"--front-enumerate");
-  if (!enumerate && !hardware && !selected) return 64;
+  const bool selected = argc == 7 && !std::wcscmp(argv[1], L"--front-enumerate")
+    && policy::ownedFrontPath(std::wstring_view(argv[2]))
+    && policy::ownedCorePath(std::wstring_view(argv[4]), std::wstring_view(argv[6]))
+    && policy::hexIdentity(std::wstring_view(argv[5]), 64);
+  if (!enumerate && !hardware && !selected && !guard) return 64;
+  if (guard) return d3d8RuntimeFrontGuard(argv[2]);
+  if constexpr (sizeof(void*) != 4) {
+    trace("D3D8_UNAVAILABLE required_machine=014c pointer_bytes=%zu exit=77", sizeof(void*)); return 77;
+  }
   try {
-    SetLastError(ERROR_SUCCESS);
-    require(GetEnvironmentVariableW(Permission::name, nullptr, 0) == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND,
-            "diagnostic-gate-originally-absent");
+    require(Permission::absent(), "diagnostic-pins-originally-absent");
     const auto directory = systemDirectory(); const auto expected = directory + L"\\d3d8.dll";
     if (GetFileAttributesW(expected.c_str()) == INVALID_FILE_ATTRIBUTES) {
       trace("D3D8_UNAVAILABLE path=%ls pointer_bytes=%zu exit=77", expected.c_str(), sizeof(void*)); return 77;
@@ -327,8 +389,12 @@ int wmain(int argc, wchar_t** argv) {
     auditModules(directory);
     trace("D3D8_RUNTIME path=%ls machine=%04x pointer_bytes=%zu sdk_version=%u caps_bytes=%zu",
           expected.c_str(), unsigned(moduleMachine(runtime.value)), sizeof(void*), D3D_SDK_VERSION, sizeof(D3DCAPS8));
+    require(moduleMachine(runtime.value) == IMAGE_FILE_MACHINE_I386, "genuine-I386-system-d3d8");
     Permission permission; Selector selector;
-    if (selected) { permission.enable(); selector.install(runtime.value, argv[2], argv[3]); }
+    if (selected) {
+      permission.enable(argv[4], argv[5], argv[6]);
+      selector.install(runtime.value, argv[2], argv[3]);
+    }
     using Create = IDirect3D8* (WINAPI*)(UINT);
     const FARPROC symbol = GetProcAddress(runtime.value, "Direct3DCreate8");
     require(symbol != nullptr, "Direct3DCreate8-export");
@@ -361,6 +427,7 @@ int wmain(int argc, wchar_t** argv) {
     if (selected) {
       const unsigned substitutions = selector.count(); require(selector.restore(), "selector-restoration");
       require(substitutions > 0, "actual-system8-exact-name-selection");
+      require(permission.restore(), "diagnostic-pin-restoration");
     }
     trace("D3D8_COMPLETE mode=%s adapters=%u create_device=%u presents=0 registry_writes=0",
           hardware ? "offscreen" : (selected ? "front-enumerate" : "enumerate"), count, unsigned(hardware));

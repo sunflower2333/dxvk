@@ -2483,3 +2483,46 @@ receipts; no new fixture/nativePS/GPU execution is claimed. Root's precise
 one-pattern change leaves all actual fixture and runtime exit checks intact.
 Large original API archives timed out at120s in retention01; truncated bytes
 are preserved and excluded, and readonly fresh02 retries300s host downloads.
+
+Fresh02 original retention completesactual0/receipt185f39c4. Independent
+failed-run backend proof8599d2e8 verifies all5 APIoriginals,835 canonicalGit
+rows per architecture/12 beforeafter configs/generated5/private3/3matching
+PE-PDB identities,56 genuine marker outputs/56 bounded children. ARM64
+originals have8 output pairs/7accepted hashes; failed marker exit0 and20
+unrun remain distinct from accepted CI. Root publishes marker-onlye781175,
+sole automaticCI37640080344; six-job success is still required.
+
+Native frozen computeUSER helper02 passes PS5.1.26100.1591 ParseFile6 and
+original d8cf Add-Type;15source/10prepared joins,23-file archivea3504520,
+review1f25602c/release628cd196/3transports0 finalize. No helperbody orGPU.
+DX10 source05ffdc2 is local strict4COFF/4141sanitizers/2positive4negative
+narrowing-control PASS. Rootfrozen06 review623f066b joins source15/current
+common10/9prepared bytes and442-file originals. Native06 preflight passes
+unchangedflags/RSP/liveSCRunning4; single strict compiler/CPU attempt now
+owns target. Hardware/ordinary runtime pins remain null.
+
+
+ARM64 e781 timeout is distinct from the fixed marker: original41-file ZIP,
+20 output pairs/19 accepted hashes and source/runtime prefix proofc4ba9a0e
+retain the actual failure. Last SetViewports checkpoint does not establish
+fprintf return or typed/backend entry. Identical native source passes18draw/
+4608pixels in0.227s; CI crosscompiled release differs in toolchain/runtime.
+The old ARM Start-Process harness lacks original per-case retained-handle
+raw drain receipts. New exact d8cf migration keeps28markers and30s gate;
+actual nativePS5.1 AST/Add-Type PASS9b313596, fixture execution still pending.
+This strengthens capture evidence without claiming production stall fixed.
+
+DX10 native07 now actually passes strictARM64 2COFF2PE/warnings0, CLI5,
+CPU4141 and original import parser2positive14negative. Root2c4518cd joins
+98original archive bytes/source15Git after agent811332a4; all14retention,
+14native stages/8transports finalized. Earlier06 failure is a header filename
+false positive; only module parser/record/path changes, no oracle weakening.
+
+Actual System32 five payloads/raw15-file archive rejoin native5AA64PEs,
+compiler4b68/beforeafter via root0dfdc7be. BCrypt remains a DX10 original
+input requirement. Mesa8443 unsigned loader3001 differs from accepted mixed
+signed51d9. Historical direct3e50 original3665 matches a signing-normalized
+prefix only; signed parent API archives now NotFound. Preserve frozen02 and
+all originals; fresh runtime03 with genuine matched8443 components needs new
+native process-local validation before filling GPUready inputs. Never relabel
+unsigned/signed full-file hashes or distinct loader/ICD/source/run identities.

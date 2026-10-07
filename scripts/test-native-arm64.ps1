@@ -1,13 +1,32 @@
 param([Parameter(Mandatory)][string]$Directory)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath $Directory).Path
-if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') {
+if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
+    [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
     throw 'These executables require a native ARM64 Windows runner'
 }
 $status = Get-Content -LiteralPath (Join-Path $root 'STATUS.txt') -Raw
 if ($status -notmatch "(?m)^DXVK_COMMIT=$($env:GITHUB_SHA)\r?$" -or $status -notmatch '(?m)^ARCH=arm64\r?$') {
     throw 'Artifact source or architecture does not match this CI run'
 }
+# Match the native target and x86/x64 harness: own the original process handle
+# and drain both raw pipes concurrently before inspecting exit or markers.
+$runnerSource = Join-Path $PSScriptRoot 'owned-raw-process-f4bf37f-02.cs'
+$runnerHash = 'd8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad'
+$retainedRunnerSource = Join-Path $root 'arm64-owned-raw-process-original.cs.txt'
+if (Test-Path -LiteralPath $retainedRunnerSource) { throw 'ARM64 runner originals already exist' }
+Copy-Item -LiteralPath $runnerSource -Destination $retainedRunnerSource
+if ((Get-FileHash -LiteralPath $retainedRunnerSource -Algorithm SHA256).Hash.ToLowerInvariant() -cne $runnerHash) {
+    throw 'ARM64 fixture runner differs from the native-tested original source'
+}
+$runnerReceipt = [ordered]@{source='scripts/owned-raw-process-f4bf37f-02.cs';sha256=$runnerHash;
+    retained_member='arm64-owned-raw-process-original.cs.txt';type_compiled=$false;
+    deadline_ms=30000;kill_wait_ms=5000;combined_pipe_drain_ms=20000;
+    powershell_version=$PSVersionTable.PSVersion.ToString();clr_version=[Environment]::Version.ToString()}
+$runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'arm64-fixture-runner-source.json') -Encoding UTF8
+Add-Type -TypeDefinition ([IO.File]::ReadAllText($retainedRunnerSource))
+$runnerReceipt.type_compiled = $true
+$runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'arm64-fixture-runner-source.json') -Encoding UTF8
 $cases = [ordered]@{
     'dxvk-umd-vertex-input-test.exe' = 'vertex input equality PASS checks=\d+; colliding layouts retained, no GPU runtime'
     'dxvk-umd-runtime-backend-test.exe' = 'runtime backend ownership PASS checks=\d+; CPU descriptor and lifetime contracts'
@@ -49,15 +68,27 @@ foreach ($name in $cases.Keys) {
     }
     $out = Join-Path $root "arm64-$name.stdout.txt"
     $err = Join-Path $root "arm64-$name.stderr.txt"
-    $process = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
-    $null = $process.Handle
-    if (!$process.WaitForExit(30000)) {
-        $process.Kill(); $process.WaitForExit()
+    $process = [DxvkRawProcessF4_02]::Run($exe, '', $PWD.ProviderPath, $out, $err, 30000)
+    [ordered]@{name=$name;executable=$exe;arguments='';working_directory=$PWD.ProviderPath;
+        runner_sha256=$runnerHash;stdout_member="arm64-$name.stdout.txt";stderr_member="arm64-$name.stderr.txt";
+        deadline_ms=30000;expected_exit=0;pid=$process.Pid;start_utc=$process.StartUtc;
+        retained_process_handle=$process.ProcessHandle;exited=$process.Exited;
+        exit_code_available=$process.ExitCodeAvailable;
+        exit_code=$(if ($process.ExitCodeAvailable) { $process.ExitCode } else { $null });
+        timed_out=$process.TimedOut;child_still_running=$process.ChildStillRunning;
+        pipes_drained=$process.PipesDrained;stdout_bytes=$process.StdoutBytes;stderr_bytes=$process.StderrBytes;
+        seconds=$process.Seconds;capture_failure=$process.Failure
+    } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root "arm64-$name.process.json") -Encoding UTF8
+    if ($process.TimedOut) {
         throw "$name exceeded its 30-second functional deadline"
+    }
+    if ($process.Failure -or !$process.Exited -or !$process.ExitCodeAvailable -or
+        !$process.PipesDrained -or $process.ChildStillRunning -or !$process.ProcessHandle) {
+        throw "$name lost its process exit or output capture: $($process.Failure)"
     }
     $text = Get-Content -LiteralPath $out -Raw
     Write-Host $text
-    if ($null -eq $process.ExitCode -or $process.ExitCode -ne 0 -or $text -notmatch $cases[$name]) {
+    if ($process.ExitCode -ne 0 -or $text -notmatch $cases[$name]) {
         throw "$name failed: exit=$($process.ExitCode) $(Get-Content -LiteralPath $err -Raw)"
     }
     Get-FileHash -Algorithm SHA256 -LiteralPath $exe | Format-List | Out-File -Append (Join-Path $root 'arm64-hashes.txt')

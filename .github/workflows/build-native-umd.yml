@@ -141,4 +141,6 @@ jobs:
         if: always()
         with:
           name: dxvk-native-runtime-arm64-validation-${{ github.sha }}
-          path: candidate/arm64-*.txt
+          path: |
+            candidate/arm64-*.txt
+            candidate/arm64-*.json

@@ -8,8 +8,16 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Published candidate is now42cf765c63e300b8ec058676e4243408a89741d6.
-Exactly one corrected push-triggered CI37635552675 completed: identity,
+Published candidate is nowe7811754fc0c9640f57d0bb36843ebb2c35d0017.
+Exactly one automatic marker-corrected push CI37640080344 completed:
+identity/shader-cpu and all three backend builds PASS; ARM64 runtime fails
+at the twentieth fixture after nineteen accepted cases. The typed D3D11
+marker now passes. Original D3D10 shader output ends at program21 ps_lod's
+SetViewports checkpoint; checkpoint fprintf completion or backend entry is
+not established. Independent original proofc4ba9a0e joins the failed ZIP
+and byte-identical fast native0.227s source/output prefix; cause unresolved.
+No manual dispatch or usable hardware candidate.
+Previous42cf765 CI37635552675 completed: identity,
 shader-cpu and all three backend builds PASS; ARM64 runtime stops after
 the typed D3D11 fixture exits0 because its expanded SM5 success message
 does not match the older harness expression. Original archives/logs are
@@ -31,16 +39,47 @@ PASS. Strict native ARM64 probe compile/link and CPUoracle12482 now PASS;
 original89-file archive and agent/root reviews finalized, release0a39d778.
 Candidate930d7f7 failed CI; original job logs/two original ZIPs are retained.
 Verify corrected-source CI/original artifacts before setting any hardware pins.
-Publish the one-line marker correction as one automatic push CI; native
-ARM64 execution must still complete all28 cases. No exit/deadline/oracle
-or fixture/decoder change is part of this correction.
+Marker correctione781175 is committed/pushedactual0 and changes exactly one
+runtime expression plus three plans. Native ARM64 CI must still complete
+all28 cases; exit/deadline/oracles/fixture/decoder remain unchanged.
+Independent proof8599d2e8 verifies all5 original42 ZIPs/three835row canonical
+source receipts/source12 beforeafter/generated5/private3/DLL-PDB pairs,
+56 raw artifact markers and56 retained/exited/drained bounded children.
+Partial native ARM8 outputs/7accepted hashes remain distinctly failed run
+evidence; later20 unrun. Whole candidate/hardware acceptance stays false.
 DX10 native05 passes PS5.1 preflight but strict MSVC rejects five unmasked
 full64-supported-version constant narrowings (C4310/C2220). Original57-file
 archivec1b09fa3 and proof58c27a2a are finalized, all three owned stages and
 eight host transports exit/drain, releasef9ba9e4b returns target to root.
-Probe-only low32 correction05ffdc2 is local; fresh strict controls/packet
-review precede another native attempt. DX11 now owns a short CPU-only
-ParseFile6/Add-Type slot for the frozen USER compute helper02 packet.
+Probe-only low32 correction05ffdc2 passes four strict official-header x64/x86
+COFFs, GCC/Clang4141 and2positive/4negative narrowing controls. Root06 review
+623f066b rejoins nine frozen prepared inputs/source15/Git/common10 and442-file
+original archive. DX11 native ParseFile6/Add-Type now PASS, original23-file
+archivea3504520/review1f25602c/release628cd196 finalized with3transports0.
+DX10 native06 compiled/linked without warnings and passed CLI5, then a
+whole-dumpbin filename regex wrongly rejected its KERNEL32-only CPU oracle.
+Original06 partial evidence/release retained. Frozen07 corrects only the
+bounded module parser/record and fresh paths: actual nativePS5.1 parses2,
+original import positives2/rejection negatives14, strict ARM64 2BigObj COFF/
+2PE with warnings/errors0, CPU4141 and CLI5 PASS. Original98-file archive
+a72f56c9, agentproof811332a4/rootproof2c4518cd, all14 retained/exited/drained
+native stages and8 transports finalized; release560c9fed returns target to
+root. Core/GPU/ordinary-runtime/hardware execution remains pending.
+
+Next root revision migrates all28 ARM64 CI cases to unchanged native-tested
+d8cf raw concurrent pipe runner, keeping exactly the same markers,30s,
+exit0, PE/source checks, hash log and child working directory. Retains actual
+per-case process JSON before any failure plus original C#/compile metadata;
+workflow uploads those original JSONs as well as original text on failure.
+Independent local proofcbe55ab8 and nativeARM64 PS5.1 AST/Add-Type original
+proof9b313596 PASS (28 cases/one6argument Run/30000/no Start-Process).
+Native19-file archive4322f363/three owned native stages/three transports0;
+this is parser/compile evidence, not main ARM fixture execution or a timeout
+cause/fix claim. Fresh six-job CI and exact crosscompiled shader replay are
+next. Root currently owns target CPU; peer DX10/11 prepare local GPU runners.
+Five actual System32 original payloads nativeAA64/PE32+ and15-file archive
+1206cc2b rejoin rootproof0dfdc7be; native copies and beforeafter pass. DX10
+also needs BCrypt original. GPU core/source/CI/hash pins stay null.
 
 Root integrated compute096e024, stable stream-outputd153e81, per-stream
 query2c1b0e2, hull fork/join220b4c0, returning query sentinels7db692d,

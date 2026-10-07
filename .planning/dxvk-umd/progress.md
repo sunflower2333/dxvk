@@ -3202,3 +3202,85 @@ Original5 retention01 kept two complete tiny ZIPs but three large ZIPs timed
 out at120s and remain excluded. Fresh02 first retains all6 rawjoblogs then
 retries only those3 readonly downloads with300s transport bounds; tiny
 originals are byte-copied with original API/exit0 receipts, never relabeled.
+
+### Corrected marker revision and native06
+
+Root commit/push e7811754fc0c9640f57d0bb36843ebb2c35d0017 actual0 changes
+one ARM runtime marker plus three plans. Exactly one automatic push run
+37640080344 starts; identity/shader PASS, backend3 running. No manual dispatch
+or duplicate workflow activation. Original42 retention02 completes actual0,
+receipt185f39c4; all5 API ZIP size/digest/CRC and six raw logs retained.
+Independent failed-backend proof8599d2e8 PASS source835 per arch/12 exact
+configuration files beforeafter/generated5/private3/three DLL-PDB pairs,
+all28 corrected x64/x86 artifact markers and56 handled/exited/drained bounded
+receipts. Partial native ARM has eight output pairs, seven accepted original
+binary hashes; later20 unrun. Whole CI42/candidate/hardware remains failure.
+
+DX11 frozen helper02 actual native ARM64 PS5.1.26100.1591 ParseFile6/errors0
+and unchanged d8cf Add-Type PASS. Archivea3504520/70016bytes/23files,
+review1f25602c and release628cd196 retain15source/10prepared joins and three
+host transports exited0/closed. No helper body/core/GPU/task/workload ran.
+Root handed CPU to DX10 after frozen06 direct proof623f066b joins9prepared
+files/source15/Git/common10, source05ffdc2-only mask correction and4COFF/
+4141GCC-Clang/2positive4negative original controls. Local442-file archive
+08694e15 and native05 failure originals remain separate. Actual06 native
+preflight passes parsers2/RSP14-16-8-16-3/d8cf/live serviceRunning4;
+strict ARM64 compile/link/oracle4141/CLI5 once is running. No hardware pins.
+
+### ARM64 actual timeout, bounded runner migration and native07
+
+Marker-corrected e781 CI37640080344 finishes five jobs SUCCESS and actual
+ARM64 runtime failure. TypedSM5 fixture exits0 and marker passes; shader
+fixture20 times out30s after19 accepted cases. Original ZIP379a9e72 has41
+members/20 output pairs/19 accepted hashes. Shader stdout retains21FXC
+programs/five completed scenes; stderr ends at SetViewports checkpoint for
+ps_lod. Independentc4ba9a0e proves exact original raw bytes and123 normalized
+stderr prefix lines/26 stdout prefix lines match accepted native d2f
+7483checks/18draws/4608pixels in0.2271555s. All boundary source bytes match;
+no concrete RuntimeService race, checkpoint return or backend entry/cause
+is established. Do not extend the functional deadline or accept this run.
+
+Root changes only ARM64 harness and its JSON upload: exact d8cf raw owned
+handle/concurrent BaseStream drains, per-case original receipt before gates,
+unchanged28case expressions/30s/exit0/PE/source/hash/CWD. Native PS5.1 AST
+and unchanged C# Add-Type PASS with original19-file archive4322f363,
+root9b313596; extract/audit/tar children each retained/exited/drained0 and
+all3 host transports actual0/finalized. Main harness/fixtures/GPU unrun in
+that audit. Local independent source/mock controls cbe55ab8 retain1positive/
+11negative contract cases; source/current-root script/workflow byte joined.
+All production, decoder, fixture and raw C# source remain unchanged.
+
+DX10 native06 source05ff actual strict compile/link2COFF2PE and CLI5 PASS,
+then whole import stdout filename d3d10 caused helper false positive before
+CPU oracle. Full partial originals finalized/released. Frozen07 parser
+reads exact DLL module lines in one unique import/summary section; ignores
+filename header, rejects forbidden/unknown/empty/ambiguous imports and
+requires only KERNEL32.dll. Actual native2parse/2positive14negative PASS;
+strict nativeARM64 build warnings/errors0 and actual4141 CPU oracle/CLI5
+PASS. Archivea72f56c9/1244494bytes/98members, agent811332a4/root2c4518cd
+rejoin all98original byte rows/source15Git;14owned native stages/8host
+transports finalized, all14retention true, SYS/service/binding/DWM/Explorer
+unchanged. Release560c9fed returns exclusive target CPU to root. Hardware
+10_0/10_1 helpers are now local preparation, with all real core/CI/LUIDpins
+unset and a pending original BCrypt dependency.
+
+Five-System32 original copies gdi32/kernel32/d3dcompiler47/advapi32/cfgmgr32
+PASS nativeAA64/PE32+, compiler4b68 unchanged, beforeafter exact. Archive
+1206cc2b/4931940bytes/15files, agent577ea178/root0dfdc7be; three host
+transports and ownedtar exit0/drained, release83a7bd. Matched Mesa8443 ICD
+original11408122116 and loader11408838487 genuine API ZIPs retained, but
+new unsigned loader3001217 does not equal historical signed51d9. Historical
+parent archives11358925550/11357811721 now return actual NotFound. Direct
+Mesa3e50 artifact11348022580 remains available: ZIPebc42f59/28299564,
+unsigned loader3665eeb3 matches only signed-loader diagnostic prefix after
+checksum/security normalization. Original bytes never transformed or
+relabelled. Peer prepares fresh truthful process-local Mesa8443 runtime03
+with genuine unsigned3001, separate actual loader/ICD runs and mandatory
+new native validation; frozen47 helper02 and mixed receipts remain intact.
+
+Current e781 retention01 all6logs/tiny2ZIPs complete; three large original
+API downloads reach24428544/22937600/25444352 bytes at300s, incomplete and
+excluded. Fresh readonly retention02 has450s host transport bounds and
+reuses only exact complete tiny originals with API digest and actualexit0
+receipts. Native functional deadlines remain30s. Whole six-job acceptance,
+current GPU candidate, public runtime admission and hardware remain false.

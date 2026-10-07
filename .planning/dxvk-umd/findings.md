@@ -2978,3 +2978,59 @@ PASS and ARM64fixture strictLLVM COFF PASS. NativeMSVC/reference/hardware are
 pending; unchangedofficial ARM64intrin.h prefetch incompatibility is retained.
 CurrentCI3d37689715890 stillsuccess; liveGitHub confirmsfourredundant workflows
 remain disabled and solematchingautomaticbackend active. No newpush/dispatch.
+
+
+2026-10-08: Combined cube candidate frozen8528d91357255fe8f31138d5438e7313e2367fec
+in reference/codes/dxvk-umd-cube-integration-20261008. Four production slices
+merged with only Meson insertion conflict (both targets retained). Added modern
+SRV target; fivefixtures build/ship/run under unchanged d8cf/30s and independent
+four raw oracles on eacharchitecture, ARM64cases35. Resource oracle2e0da92
+independently checks180subresources/3540texels/540files; all cube originals total
+2086files. Combinedproduction strictactual2623291/x64 and2623292/x86 exit0,
+emptydiagnostics/inputsbeforeafterequal; proof5f4e028d/19745bytes. PythonAST/
+bashsyntax/35CIregistrations pass; actualnativeMSVC/reference/PS5.1AST pending.
+DX10 prepares common160-source/23COFF/8PE packet locally, with oldview/1D/3D
+regressions and unchanged immutablevolume readerb0c46399 (public108 observations
+retained separately). Frozenold791/1f/7669/b5 packets remain exact. No push.
+
+DX8 provider repairdb0e183 committed/frozen; ROOTdirectpreparedreview6419035c
+(2540bytes) joins sourcearchive047375c5/105543bytes/33inputs/30Git+3licensed,
+manifestbf1083f1/13614,13pins,886actual localinputscopies/beforeafter/4I386COFF/
+2PE/12commands0,16actualsource mockselector cases eachGCC/Clang. Native CPU06
+may execute exact Directory2W from alreadyloadedKernelBase only whenKernel32
+exporterror127, preserving IsWow64Process2/effectiveI386/pointer4/canonical
+providerandowner guards. Originalreadonly release772 andROOTexportproof1cf
+accepted. Exclusiveauth5250125b/1840 hands target to EWDK for one fresh native
+build/read-only processAPI observation thencollection; expected51nativebuild
+children+collector,575tool/SDK11/lib9/provider3 unchanged,32malformedCLI,
+policy329/callbackforwarded11. No repair replay/KMT/factory/core/GPU/install/
+registry/VM changes. ROOT/DX10/DX11 remote suspended until reviewed release.
+
+ROOT local Microsoft docs/header review establishes separate remaining cube
+array RTV/DSV follow-on: D3D11DDIARG_CREATEDEPTHSTENCILVIEW explicitly contains
+TexCube and independently preserved read-onlyFlags; RTV/DSV FirstArraySlice/
+ArraySize use individualface slices, so validranges may crosscubes. CommonRTV
+andlegacyDSV currentlystrictsingle6; modernDSV currently noCUBEbranch. DX11
+records isolatedfollow-on, preserving8528. LocalrealKMT SO/volume probe work
+continues; expected legitimate error/pending callbacks must be retained and
+exactly joined, not reset or suppressed. Default transportbalanced() remains0.
+
+## CPU06 failure originals directly accepted by ROOT
+
+Source db0e183 native MSVC produced five I386 COFF objects and four PE files
+with strict W4/WX and no diagnostics. The exact Directory2 resolver reached
+KernelBase successfully, Process2 returned I386/AA64, and the readonly
+observation then failed at canonical-I386-Kernel32-provider. Original stdout
+3642 reports logical System32 names with I386 mapped headers; physical image
+identity is not established by those names. Existing guards remain unchanged.
+
+ROOT reader review-dx8-cpu06-failure-root.py directly rejoins original TAR
+4a153ecf (31180717 bytes/118 files), Git30+licensed3, compiler575/SDK11/lib9,
+postfailure hashes and all provider/SYS/desktop state. Actual16 build children
+plus collector and postfailure hash worker (18), and10 host transports closed.
+Policy/callback/32CLI were not executed. Explicitrelease831ea2c and ROOT proof
+a1445895 (955 bytes) accepted; no KMT/factory/core/GPU or target mutation.
+EWDK develops a focused two-object/one-PE mapped-image diagnostic locally.
+
+Live GitHub recheck still shows latest37689715890/3d39760 completed success;
+four redundant workflows remain disabled. No new push or CI dispatch.

@@ -26,7 +26,14 @@ static34/SYS/desktop retained,ten native+nine host children closed,taskremoved.
 Explicit releaseee3c23b6 independently accepted. DX10 fresh02 dual-profile d7
 USER05 is now ROOT-accepted. Names05 failed beforeKMT; failure/release90252e9d
 and subsequent readonly-provider release772fe285 are ROOT-accepted. Target is
-ROOT-owned/idle pending a fresh locally reviewed repair/build handoff.
+released to ROOT after nativeDX8CPU06, source db0e183, authorization5250125b.
+ROOT direct failure reviewa1445895 accepts explicitrelease831ea2c: actual
+5I386COFF/4PE compiled with zero diagnostics, then readonlyAPI observation
+failed at canonical-I386-Kernel32-provider. All18 native/10host owners closed;
+source33/compiler575/SDK11/lib9/provider3/SYS/desktop unchanged. Policy,
+callback and32CLI guards remained unrun. EWDK develops a separate local-only
+mapped-image identity observation; existing runtime guards stay exact. DX10
+prepares one combined8528 native reference packet; no remote without handoff.
 Failed01 stopped before any graphics task at the cross-privilege DWMStartTime
 comparison. ROOT accepted retained101-file archive/releasebc6a7b and verified
 same-attempt management continuity. Fresh02 separates the management baseline
@@ -80,7 +87,18 @@ IsWow64Process2 forwards toWOW64APIcontract; nativeAPIsetv6/count973 routes
 WOW64l1-1-3 toKernelBase. ROOT direct boundedPE proof1cfbc585 joins actual
 native2/host8/static34/SYS/desktop and accepts release772fe285. No APIexecution,
 KMT/factory/core/GPU follows from the readonly evidence. EWDK prepares the
-narrow same-API provider repair and a fresh immutable nativeCPU packet locally.
+narrow same-API provider repair db0e183 and immutable nativeCPU06 packet.
+ROOT prepared proof6419035c independently joins33 source/30Git+3licensed,
+13frozenrefs,886 actual localinputs/copies/beforeafter,4COFF/2PE/12commands0
+and16 actual-selector mockcontrols eachGCC/Clang. CPU06 source/TAR047375c5
+and manifestbf1083f1 remain frozen. Actual archive4a153ecf/118files retains
+strict native5COFF4PE and failed readonlyAPI stdout3642. Kernel32 Process2
+and exact KernelBase Directory2 resolve; actualI386/AA64 machine query passes.
+Loaded I386 providers report logicalSystem32 paths and the canonical guard
+fails. Physical mapped-file identity remains unproven; no guard weakening.
+ROOT reviewa1445895 joins same-attempt postfailure hashes and release831ea2c;
+planned policy329/callbackforwarded11/32CLI were unrun after actual16 children.
+NoKMT/core/factory/GPU; failed originals preserved with no replay.
 
 ROOT isolated cube checkpoint791006c (based on3d) implements legacy six-face
 resource/SRV/RTV/DSV translation and scopedGenerateMips. Fixture COFF compiles
@@ -96,6 +114,12 @@ NativeARM64 production MSVC/reference originals remain pending; LLVM ARM64
 production fails in unchanged officialintrin.h __prefetch. ROOT prepares one
 isolated combined candidate with all Meson/CI fixture/raw-readback collection,
 then one native reference build and one production push/soleCI after acceptance.
+Combined isolated candidate is now frozen8528d91 (fivecube Meson targets,
+ARM64CI35fixtures/four fresh raw directories/independent oracles, oldd8cf/30s
+unchanged). ROOT strictcombined production x64/x86 actual2623291/2623292 both0
+with emptydiagnostics/proof5f4e028d. DX10 prepares common native packet locally:
+160 exact inputs/23COFF/8PE, fivecube and oldview/Texture1D/Texture3D references,
+2086 raw cube files expected; nativePS5.1 CI AST prerequisite. No push yet.
 
 Published d7e5c7d46b8ce889e993bfab66a3b78b076c49d1 / automatic push
 CI37648387721 now PASS all six jobs. Root collector04 exits0 and retains five

@@ -8,6 +8,57 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
+Latest delta: actual d7 real viogpu DX11 compute GPU08 PASS/root directreview:
+all384captured words; callback tuple[108,1,1,6,6,5,5,1,24,6,6], balanced teardown;
+126 originalfiles/47payload/19Git, exact limitedUSER/session1 and static34.
+Corrected SO/Texture3D2489 nativeARM64 PASS, now integrated into active trunk:
+SO1252, typed3733/callback280/nullGS72/domain1024, policy385547,
+volume12025/all27cases/9138voxels/945sampled; independent309production rawfiles
+PASS, separate108public observations retained. Root archive611/source93,
+all11retentionpairs equal, native13/host7 actual0 finalized. Failed terminal-mip
+native01 and missing-newline02 preflight remain unchanged; fresh03 LF correction
+only. ROOT released target1b1e4942 to EWDK agent for fresh corrected6ae2 DX8 CPU04;
+newauth0129b236, no repair replay. DX10 USER05 local descriptor eb5e70/72roles
+readyfalse; native8-helper prefix/rootreview and real1792dualprofilepixels next.
+Tested SO/volume plus two new CI fixtures merged; one consolidated push pending.
+Historical published d7/CI37648387721 allsixsuccess remains original evidence.
+Latest source hardware compute/render/ordinary Microsoft-runtime DX8-DX11,
+Present/DWM gates remain open; this goal is active.
+
+Published d7e5c7d46b8ce889e993bfab66a3b78b076c49d1 / automatic push
+CI37648387721 now PASS all six jobs. Root collector04 exits0 and retains five
+genuine API ZIPs, six job logs, three architecture/source/config/PDB chains,
+56 owned x64/x86 plus28 owned ARM64 fixture runs, and88 ARM runtime originals.
+Independent frozen a780 ACTUAL verifier also exits0 (proof fcc99f9a), with all
+474 originals unchanged. Root admission217ee6e9 authorizes candidate preparation;
+fresh four-file ARM64 original packet50224855 is prepared without transforms.
+The raw-runner d8cf, canonical835 restoration1c7, markers and30s gates stayed exact.
+Do not execute old frozen793 success collectors on this run or alter failed archives.
+DX10 native PS8 preflight finalized: original111/source15/common10, five native
+children/seven host transports exit0, observed SYS/service/desktop unchanged;
+root original rejoin804357a2 PASS. DX11 helper03 native Parse11/Add-Type2 also
+finalized: original39/source21/four native+three host exit0, proof1ae91827 and
+release9ebd27ef. Both parsing gates are CPU evidence; hardware remains unrun.
+Fresh limited USER/session1 identity now PASS (rootproofeed7b7ce/original18d461fc):
+LUIDec6b/source0/three524-byte KMT UMD-name queries, adapter/DC cleanup,
+child0/1.069s, nativecollector0, taskremoved andfivehost0. Management-after
+confirms unchanged DWM1864 start time; limitedUSER original DWMStartTime isnull.
+Fresh original core/probes50224855 are now actually staged on Windows; root
+stageproof5ff88170 rejoins all four native files and retained owned tar process.
+Runtime03 readyCPU0f3 keeps all47 preview payloads exact. Root proof2d691375
+rejoins60 CPU05 tar members/nine unchanged native helpers and bounds the new
+stage/controller/task-cleanup scripts. Exclusive CPU05 authorizationfd5acd14
+has been handed to DX11. Native stage PASS; Prepare controller exits1 before
+task registration/module load, and owned failure cleanup confirms task absent.
+Preserve/collect this failure and diagnose the original input guard; no Start
+or GPU action follows. DX10 follow-on03 binds69/72 originals with corrected
+schema/default RunLevel, and separate private160 read-only task prep is local.
+Next complete limited USER module-load feasibility from the actual input failure,
+then DX11 actual384-word compute or DX10 10_0/10_1 pixels on real KMT. No driver
+installation or ordinary runtime admission follows from CI alone. DX10 prepared
+schema mismatch is being corrected locally in a fresh helper packet. DX8 agent
+prepares the ordinary SysWOW64 D3D8 rendering gate from current x86 originals.
+
 Published source793b7ca9c9861021480972c38d362a0d80313285 completed
 exactly one automatic push CI37644615059: identity/shader-cpu and all three
 backend builds PASS; ARM64 runtime fails before Add-Type or any fixture.
@@ -1012,3 +1063,33 @@ SSH actual0/drain and priorSYS/binding/DWM1864/Explorer4464 preserved.
 One strict native compiler/CPU4141+CLI5attempt running; target exclusivelyDX10.
 Fresh42CI identity/shader PASS and all3canonicalrestore steps success;
 backend builds stillrunning. No new core/hardware acceptance.
+
+### Current owned work after native CPU06 failure (2026-10-08)
+
+- [x] Preserve CPU05 source-array failure and all actual diagnostics/releases.
+- [x] Verify fresh CPU06 native configuration with genuine12/12rows and all47inputs.
+- [x] Collect CPU06 typed-variable failure before module load and release owned task.
+- [x] Run fresh narrow CPU07; actual limited USER module load/query/unload verified.
+- [x] Finalize private160 native02 readonly query; raw-query scope passes, full-registry task guard failure preserved.
+- [ ] Rejoin actual private160 with source/currentCI/system/Mesa/USER and prepare
+      GPU-only manifest; run384 actual compute words, then DX10 dual1792pixels.
+- [x] Repair verified mounted EWDK library once; all575 match. Fresh02 actual C3493 failure preserved.
+- [ ] Finish corrected DX8 native CPU build; fresh03 probe compiles but strict callback compilation fails, originals collecting.
+- [ ] Run null-GS SO native WARP/readback, complete SM5 path and integrate tested
+      source with DX10 Texture3D port in one push/one CI workflow.
+- [ ] Complete DX8/9 ordinary device/render/Present and actual USER DWM gates.
+
+Target currently /root/port_dx11-owned currentd7 GPU08 real384compute; root/DX10/EWDK target-idle.
+Current pushed source d7/all6 originalCI success; new source work remains isolated.
+
+### Actual combined native SO/volume regression (2026-10-08)
+
+- [x] Root independently join actual private16002:134 original files,37 source rows,17native/15host processes,18 raw queries/canaries; gen2/caps0/WDDM2200/query LUIDec6b passes. Full-registry guard still failed, raw telemetry changes retained.
+- [x] Run exactd821 native ARM64 four-fixture attempt; legacy SO1252, SM5 VS/DS SO4193 and volume-policy385547 pass.
+- [ ] Correct Texture3D scoped3D mip failure: originalprofile0/readback6/mip3 onevoxel comparison failed; last17 saved records independently match1875words. Preserve original245-memberarchiveaf6b6e8c and failureexit-1073741819.
+- [x] Parse exact updated twoCI scripts on native ARM64 PowerShell5.1.26100.1591; twoASTs/errors0, no builder execution.
+- [ ] Run corrected native Texture3D all27cases/9138voxels/945pixels and retain309 originals before sourceintegration/push.
+- [x] Root review boundGPU08 47actualfiles/19Git/16ZIPs/5ARM64PEs; ready282df90a/rootf62421ef, frozenrecipe d312/rootc3796bb1.
+- [ ] Run actual384compute on currentd7 core; exclusiveauthorization09f12ba9, nativeprefix actualPASS, taskphases running.
+
+Single matching automaticCI remains active; currentd7 run37648387721 all6success directly rechecked. No newpush; public admission and overallgoal remain open.

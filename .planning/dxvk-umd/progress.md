@@ -1,5 +1,17 @@
 # Progress
 
+2026-10-08 runtime03 continuation: root current native GPU staging PASS with
+original50224855 tar/coreb0fcbc3a/compute8efb72c1/probe54ed0539/statusae8c823d;
+rootstageproof5ff88170. Root review2d691375 admits only the frozen CPU05
+module feasibility attempt (descriptorc5757fd5/payload06590733/helpers95f96982),
+authorizationfd5acd14, exclusive target ownerDX11. Uploads and native stage0;
+Prepare controller1 before registration/load with all helpers unchanged,
+fresh guard0 and failure cleanup0/taskabsent. Collect original failure and
+diagnose exact input guard; no success/GPU claim. DX10 frozen follow-on03 and
+private160 local packets received; agent prepares a separate bounded USER
+read-only query task. DX8 isolated currentd7 slice prepares actual Interface8
+CreateDevice forwarding and genuine SysWOW64 offscreen/Present gates.
+
 ## Native D3D9 resource continuation
 
 Previous goal turn is progress: production Mesa/DXVK commits, verified CI
@@ -3354,3 +3366,243 @@ a fresh88-member collector/verifier will bind the next exact source/run.
 Hardware core/CI/source/hash/LUID pins remain null. Root owns target CPU;
 DX10/11 finish local USER runner packets. Administrator management is allowed,
 and graphics acceptance continues in the established limited USER desktop.
+
+
+### Published canonical ARM runtime checkout correction
+
+Root committed/pushed d7e5c7d46b8ce889e993bfab66a3b78b076c49d1 with
+actual commit/push0 and clean worktree at publication. Exact four files are
+workflow plus three authoritative plans; code delta is only six runtime-job
+lines. Root narrow review and independent be21e650 pin workflow86deaa0d and
+unchanged31cf/d8cf/1c7 sources,835 regular Git inputs,28fixtures/30s gates.
+Exact raw REST list confirms one push event/run37648387721 for the new source
+and sole build-native-umd workflow; no manual dispatch. Current run is pending;
+no CI-success/core/hardware admission. Fresh88-member originals tooling binds
+this source/run while frozen793 tools are preserved. Failed793 originals
+retention continues separately. Root owns target; DX10/11 local USER packets.
+
+### 2026-10-08: successful d7e5 exact CI and native USER runner readiness
+
+Current d7e5/source CI37648387721 completes all6SUCCESS; root collector04 actual0
+retains all5 original API ZIPs/six logs/three architecture canonical835/config12/
+generated5/private3/CodeView-PDB identities and56 nonARM+28 ARM owned fixtures.
+Runtime88 includes exact835-row canonical source receipt. Independent a780 ACTUAL
+PID2347144 exit0 in3.146s, empty stderr; prooffcc99f9a and actual-process00e08c82
+join all474 unchanged original CI files. Root collectorproof08d3fccd/admission217ee6e9
+and fresh ARM64 candidatearchive50224855 authorize original candidate preparation
+only; GPU and ordinary admission remain false. One push workflow remains enabled.
+DX10 nativePS8 original archivea369745f/111 members: source15/common10, native5/
+host7 exit0/drained, pending-readyfalse rejection, d8cf Add-Type and serviceRunning4
+PASS; installed SYSd48/411040 and DWM1864/Explorer4464 remained unchanged. Root
+original rejoin804357a2 PASS. DX11 native helper03 Parse11/Add-Type2 original
+archivec11a6069/39 members/source21: native4/host3 actual0/drained, review1ae91827
+and release9ebd27ef return target to root. Neither parser executes core or GPU.
+A real ready-path incompatibility exists in frozen DX10 inputs schema versus
+template/reader. Agent preserves frozen originals and narrowly corrects that helper
+string in a fresh packet, without production changes or a needless new CI push.
+Root stages fresh read-only limited USER/session1 identity capture with native30s
+child/KMT desktop names/owned adapter/DC cleanup/SYS/service/desktop snapshots.
+Runtime03 binding and actual process-local private module-load check are next;
+DX8 ordinary runtime preparation continues locally. Hardware pins await originals.
+
+### Current USER identity gate finalized
+
+Fresh native limited USER read-only KMT identity PASS: original19-file archive,
+six input bytes/sourcebeforeafter, native child PID9444/handle2312 exit0/drained
+in1.069s and native tar collector8736 exit0. Five owned SSH/SCP phases exit0.
+Actual USER SID1000/session1/non-elevated/elevation3/integrity8192 selects
+LUIDec6b000000000000/source0, three original524-byte UMD-name queries with
+zero open/query/close statuses and released desktopDC. Actual SYSd48/411040,
+oem17/58624/PnPStarted/serviceRunning and Explorer4464 are unchanged. Limited
+USER cannot read DWMStartTime (originalnull retained); separate management-after
+original confirms DWM1864 and its prior exact start time unchanged. Root proof
+eed7b7ce joins raw originals/selected identity18d461fc. Root owns target; DX11
+locally binds all47 roles for the upcoming separately scoped module-load attempt.
+Native ScheduledTasks omits optional default RunLevel in exported XML despite
+explicit Limited and actual token3. Narrow follow-on offline readers accept that
+valid default, reject explicitHighest/empty/duplicate, retain real token guards.
+Official Microsoft task schema/security-context docs corroborate optional/default
+low privileges; frozen readers and native helpers remain preserved. Root's first
+offline comparisons assumed literal XML/default and observable limited-USER DWM
+starttime; only review adapters changed, not native inputs or results.
+
+### Runtime03 CPU-load originals fully bound for the first live attempt
+
+Agent binds accepted d7/CI37648387721/artifact11495898065 with actual identity
+18d461fc/LUIDec6b/source0 and all47 original roles. Readyfalse preview manifest
+9227bc7b preserves unchanged native helpers; source19/config12/PE/PDB/original
+archives/genuine unsigned3001 loader/1b0c ICD/5843 z reader PASS. Root invokes
+the reader offline using only an ephemeral ready copy, rejoins all47 bytes and
+19 raw Git blobs, proof42aa22f6 authorizes a fresh ready CPU manifest. No module
+or GPU has run yet. Agent freezes d8cf-owned Prepare/Start/Result/cleanup and
+collection wrapper before the separate root exclusive CPU-load handoff.
+Narrow offline reader1c9c847e differs from frozen8bead only in optional default
+RunLevel handling; wrapper9a912050 imports unchanged501/c239. Original controls
+8e87a7ee: full original13125 self-test plus32 targeted checks pass, highest/empty/
+duplicate and actual token mismatches still reject; original PT1M task remains
+rejected by the compute PT2M deadline. All nativePS/C# inputs remain exact.
+DX10 corrected schema/reader fresh preparation binds67/72 actualroles; fresh
+160-byte privatecapability reply and runtimeCPUload originals remain pending.
+A source-only owned30s read-only capability capture helper is being frozen;
+it may not invent generation/WDDM/software/render fields from old data.
+DX8 fresh isolatedd7 checkout prepares a separately gated I386 API8 device
+forwarding frontend and real SysWOW64 D3D8 hardware workload. Strict I386
+frontend local compile passes; actual WOW KMT slot/native build/device/render
+readback and presentation are pending. Old readonly API8/CAPS12 remain preserved.
+
+### 2026-10-08: native runtime helper corrections and continued porting
+
+CPU05 retains genuine failed Prepare/diagnostic originals and release700f0183.
+Actual nativePS5.1 wrapped genuine12-row CI JSON in an extra array; source data
+remains correct. Fresh CPU06 fixes only explicit object-array casts/scalar guards
+and early Prepare error output, preserving all47 original payloads/ready0f3/currentd7.
+Root direct reviewae2ed2f7 rejoins25 refs/14 tar members/seven unchanged helpers.
+Actual native source/config preflight child8380 exits0/drained and sees12/12rows.
+Prepare/Start pass; limitedUSER12176/session1/token3/8192 fails in controller Run
+before module probe because typed string Authorization collides with local JSON
+variable. Original51-file archive89e89c53/review54564b56 and releasec150fd97 retain
+failure/9native children/8host transports and removed task. No module/GPU acceptance.
+DX11 prepares narrow fresh07 rename locally.
+
+DX8 actual EWDK parser passes; native build stops before compilation on copied
+libcpmtd.lib original pin. Read-only comparison3ff02bbf retains both genuine
+18,463,504-byte originals: exactly one flipped bit at offset10770273, owned018f4c11
+versus mounted14.50.35717 original48108e70. Other574 tool rows match original575
+and before/after are stable. Failure46-file archive87203502 is preserved, no copy
+or retry yet, explicit releaseb6bb221e. Agent prepares one original-library repair
+and fresh02 build locally. User permits passwordless Administrator for management.
+
+Root null-GS SO worktree reference/codes/dxvk-umd-null-gs-stream-output-20261008
+implements bounded D3D10 passthrough via real prior VS DXBC and exact rebinding,
+with three72-word raw-bit draws/canaries/missing-output rejection added to fixture.
+Strict originalMS SDK/WDK/MSVC-header x64/x86 production+fixture4COFFs pass actual0
+with zero diagnostics in local-strict-coff-02 (joins unchanged production01).
+Native WARP/readback and DX11 null-GS remain pending; ordinary masks stay closed.
+DX10 isolated Texture3D source port reports six original-header COFFs pass.
+
+Root private160 query-only directreview38fea902 rejoins57 raw prepared members/
+56source pairs/38 native payload members/actual100 local controls. It uses fresh
+separate180s InteractiveLimited USER task and three read-only adapter queries
+(4/160/4bytes), with no core/device/context/resources/GPU. Authorizationb6fc9d1f
+hands target exclusively to DX10 after CPU06release; actual native queries pending.
+Other agents and root remain target-idle during this owned attempt.
+
+### CPU07 acceptance and merged SO/volume source, 2026-10-08
+
+CPU07 limited USER private module load now PASS: root direct4740d980 rejoins
+all119 original members/archivebc47fc02, actual PID11724/handle2324/exit0/drained
+22.85s, six guarded HRESULTs, four owned module loads/reverse releases/absence,
+all10 native children finalized and exact task removed. Explicit releasea1b5bc1c
+returns target. Original180s SCP-9/50MBpartial preserved; separate complete
+original transfer byte-joins native archive but interrupted host exit is unknown.
+Zero VK/KMT/D3D/GPU counters describe explicit probe scope, not DllMain instrumentation.
+No hardware acceptance or GPU-ready manifest follows from CPU loading.
+
+Root reviewed frozen EWDK single-library recoveryf8ee4420 and authorizesa72350e3
+after CPU07release. Actual repair575 PASS: original-readyc633 unchanged,
+drifted018f backup and same-version mounted/staged48108e retained/rejoined.
+Fresh unchanged33-source DX8 CPU02 native build fails probe line428 C3493
+(color lambda capture), after genuine frontend I386 COFF/DLL success. Original
+81-file/23582715-byte archive7d2ba781 and all raw failure receipts preserved.
+Agent finalizes release then fixes exact compiler issue locally; repair is not repeated.
+
+DX10 private16001 failed actual native PS5.1 DSC parse before Initialize/task/query;
+original58-file archive56745a85/review63dd22f0/release4f6f5e94 preserved. Fresh02
+Get-Private160Configuration and owned PreInitialize native AST/Add-Type gate are
+root-reviewed073258eb:53 local refs/38 payload/48 fullpacket/37 master rows,
+only3 changed control helpers/134 actual local checks exit0. Actual native prefix
+and4/160/4 queries remain pending; target goes DX10 next after EWDK release.
+
+Null-GS SO production commit21cdb35 now supports actual prior legacyVS and SM5
+VS/DS bytecode with atomic native linking, genuine cache rebinding, retirement
+owner and strict nonnullS_OK. Final current originalMS x86/x64 eight COFFs PASS
+local-strict-coff-05. Fixtures add72-word raw/canary controls and1024-word public
+DS comparison; native run pending. Texture3D agentcommit56d44ba adds bounded
+10/10.1/11 resource/view/Map/XYZ transfer/mip behavior, local385547 policy and
+six originalMS COFFs PASS, native27cases/9138voxels/945pixels still unrun.
+
+Both commits cleanly integrate in isolatedworktree
+reference/codes/dxvk-umd-so-volume-integration-20261008 HEADd821fc0; main/current
+acceptedCI remain exactd7/all6success, no newpush. Root freezes combined93 rawGit
+inputs and4 nativefixtures under artifacts/dxvk-so-volume-integration-20261008/
+native-warp-d821fc0-01, descriptorae941b02/sourcearchivec02bd21d. Actual native
+AST/build/30s fixture/309volume originals/readback are pending after private query.
+Public admission masks remain unchanged. Real384 compute words/dual1792graphics/
+ordinaryDX8-DX11 rendering and Present/DWM still required before completion.
+
+### Actual adapter query, combined native failure and next target owner
+
+ROOT private16002 directreviewbfb541eb hashes all134archive files/133collector rows/37sources+master/17native+15host exits and18raw queries/canaries. Genuine LimitedUSER7580/session1/8192 opens/closes ownedadapter/DC, queries4/160/4 pass and report LUIDec6b/source0/gen2/caps0/WDDM2200/rendertrue/softwarefalse. Fullnativeattempt remains failed Result1/Finalize1: liveNative telemetry44management/36limited changed, while SYS/binding/package/registration/service/desktop equal. No originals rewritten, query-only acceptance does not imply hardware.
+
+Actuald821 combinednative packet passes nativePS5.1 AST/Add-Type,15production/dependency units and4ARM64fixture builds. LegacySO1252/SM5nullGS4193/domain1024 andvolume-policy385547 pass actualownedexit0. Texture3D profile0 initial/XYZ/dynamic/W-slice cases pass, but scopedmip readback6/mip3 exactword comparison fails; originalownedexit-1073741819 retained. First17savedrecords independently calculate1875matchingwords; failingword was not saved by originalCHECK-before-write. Agent prepares GPU-only scoped3D normalization and fail-first original retention, expected27/9138/945 unchanged.
+
+All245archive originalsaf6b6e8c and93Git source originals join root00e716dd. All13native/9host children finalized, source/tool/21SDK/7libraries/5system/candidates/SYS/binding/desktop unchanged, no task created. ExactCIvolume additions(twofixtures/309originalretention) parse nativePS5.1 errors0, sourcecopies unchanged; noCItest execution or push. Rootreleased63ee07a toEWDK withfresh03authorization7e8a5187. Corrected171 probe nowcompiles, latercallback CPP strictMSVC fails; originals collecting, no repairreplay/validruntime/GPU. Root/DX10/DX11 target-idle.
+
+DX11 locallybinds actualprivate160/rootproof plusCPU07/currentd7/Mesa47members to readyfalsemanifest52078756; real384words remains nexthardwaregate. GitHub run37648387721 exactd7 all6success andfourduplicateworkflows disabled verifiedlive. OrdinaryDX8-DX11 rendering/Present/DWM acceptance remains pending.
+
+### GPU08 exclusive handoff and reviewed corrected source packets
+
+ROOT ready GPU282df90a changes only readyfalse→true in boundmanifest52078756.
+Rootf62421ef independently joins47 actualCPU07 payloadfiles/19rawGit/16genuine
+ZIPmembers and5ARM64PEs; CPU07/rootprivate-query scope stays distinct from
+actualGPU output. Frozen d312 hostrecipe/native8/helpers are reviewedc3796bb1
+and authorized09f12ba9 against latestDX8CPU03releasebd943617/rootreviewe4e9b08c.
+Native GPU08 prefix actualexit0 now parses7/helpers47/config12/12 and verifies
+source/inputs unchanged; originalnativeowner PID11268/child9828/handle2532/exit0
+drains1.172s. Separate LimitedUSER Prepare/Start/Result/Collect remain owned
+byDX11; ROOT and peers target-idle.
+
+DX8CPU03 failed actualC2872 ambiguouslog in callback fixture after4I386COFF/
+3PE builds;107files/archive500b88c5 and13native+collector finalized, lastSCP255
+retained and onlymissing-sidecars recovered by freshactual0. Roote4e9b08c
+independently joins originals/closure/failure and SYS/stateunchanged. Exactfive
+callbackTrace renamecommit6ae2f61 passesfocusedlocal609originalinputs/I386
+compile-link; frozenCPU04 ec0967ba/archive73058ed0 rootprepared6eecd850 joins
+33/30Git/3licensed and4unchangednativehelpers; actualCPU04 pending,no repairreplay.
+PhasedgenuineI386 names/12CAPS/448offscreen/64screen preparationb21f724 remains
+readyfalse pending actualnativeCPU04 outputpins; no targetcalls/installation.
+
+Volume terminalmip proposedcorrection27df15d integrates2489b0f abovefa66393
+CI changes; production normalized3D scratchchain and fail-first original
+retention add108public observations withoutchanging27/9138/945 or309volume
+originals. BothmergedcommonDDI originalMSx86/x64COFFs localstrict02pass0/
+zerodiagnostics; rootprepared47f07bfe freezes93Git/newarchiveb1fb20a3/
+descriptor68018da4. Actualcorrectednative02 pending afterGPUrelease; no newpush.
+
+
+## 2026-10-08 actual real GPU08 compute accepted; corrected volume02 owns target
+
+GPU08 originals archive93c1d6f8 (85,340,690 bytes/126files) is fully joined. Root
+`review-gpu08-originals-root.py` independently checks all384 rawuints against
+workgroup arithmetic and original384 trace lines; payload47 and Git19 match.
+Actual limitedUSER/session1 controller11724 owns nativeprobe12144/handle2440,
+exit0/drained24.363s. Callback tuple[108,1,1,6,6,5,5,1,24,6,6] is balanced, all
+wrong-thread/cookie/error/leak/paging counters0. Native9/host9 finalizedactual0;
+task absent. Root actual proof and release review are in
+`artifacts/dxvk-native-dx10-dx11-20261007/guest-compute-gpu-d7e5c7d-08/`.
+Ordinary-runtime admission and presentation remainfalse. Previous whole-registry
+private16002 attempt remainsfailed; accepted rawquery5add/private rootbfb stays
+query-only evidence. Fresh native02 descriptor68018da4/source2489b0f is authorized
+against GPUrelease2a53b6b4; ROOT preflight running. No driver/registry/VM changes.
+
+
+ROOT native02 preflight stopped at a PS parser missing newline `)if`; hostupload0/
+preflight1 bothfinalized, no script body/source upload/build. Fresh native03 fixes
+one LF in preflight, keeps source93/all8 payloads/build/parser/collector/d8cf exact,
+and uses new original receipts. NativeARM64 PS5.1 preflight andAST2/Add-Type PASS;
+actual strict-MSVC four-fixture build nowrunning. MainCI37648387721 liveall6PASS;
+four redundant workflows remain disabled. Targetowner ROOT; peers local-only.
+
+
+2026-10-08 ROOT actual corrected2489 native03 closed and integrated: archive
+4,356,406 SHA d5fc7539/611files,93 rawGitinputs, native12+collector1 andhost7 exit0,
+all11retentionpairs equal. FirstpartyW4WXwarnings0; pinneddependencyW3 retains65.
+SO1252, typed3733/callback280/nullGS72+domain1024, policy385547, Texture3D12025/
+27cases/9138voxels/945sampled; independent production309 wordsPASS, public108
+36miprecords mismatchcounts30x0+3x1+3x8. SDKsupplement directraw21headers/2private
+libs, all21header+7library receipt valuesmatch; five sharedlibs hashes native.
+Main source ff5d77824 bytejoins all firstparty native compiled inputs. Added
+volume fixtures to existing single matchingCI, allold28markers/deadlines/d8cf
+unchanged. Target release1b1e4942/EWDKauth0129b236; CPU04 actualbuild running,
+575 tool originals must remainexact/no repair replay. Ordinary runtime/Present
+notaccepted. Consolidated push next; no newcore/probe may inherit d7 acceptance.

@@ -2065,3 +2065,56 @@ quad/scissor/colour-mask run next; no target draw acceptance yet.
   Screen oracle parser self-check01 passes a synthetic full16384pixel record and
   rejects six damaged variants; explicitly no GPU evidence. Frozen query proof,
   wrappers and candidate remain unchanged. Production architecture CI is next.
+
+- Presentation061ee8f4523b0b9732f7c02349bad9e3e84d40f0 committed/pushed once;
+  only consolidatedCI37549764498 starts. Identity/shader and all three production
+  backends pass; nativeARM64 runtime job is still running. Six semantic controls
+  compile strictly then fail at the intended assertion: callback2153/2914,
+  argument2153/2914,row4007/345,kernel4006/343,postepoch176610/3074,
+  failedrelease143764/3057. Root independently joins all six archives, unchanged
+  55positive inputs/control, 42originalAA64COFFs, actual fixture outputs and
+  candidate/compiler/SYS/desktop continuity without changing original proofs.
+  root-present-controls-verified-01.json links all57positive inputs to061ee8f.
+  Fresh committed87-input CPU rebuild passes466831 with six actual fixture TUs,
+  seven originalAA64COFFs and strict probe compile, no warnings: archive355c51ff,
+  evidence5b36e7b9,exe6f2861eb,compile8.8227984s/run0.1154459s. Root independently
+  verifies72Git+15pinnedVulkan inputs and all archive/build/after-run bytes in
+  root-present-committed-source-verified-02.json. Root review01 incorrectly
+  requested a wrapper built_sources field; build-result.sources contains the
+  actual87 build hashes and fresh02 uses them, preserving original evidence.
+
+- Three active presentation wrappers01 native parse/hash PASS; their frozen
+  probe65s/result77s limits exposed the inherited scheduled-task55s cap before
+  any GPU run. Old parser receipt01 also carried stale query deadline summary;
+  separate agent receipt02 records all actual old limits without modifying01.
+  Root freezes wrappers02 with present-only scheduled cap75s, leaving previous
+  mode55s caps intact. All three generic wrappers are native-parsed/hash-joined
+  after staging; previous query wrappers copied into the owned staging backup.
+  Fresh local-present-verifiers-03 freezes corrected wrapper paths and unchanged
+  screen/query/clip/transfer oracles. Earlier helper freeze01 failed on guessed
+  clip-oracle.py; complete02 uses the actual clip-plane-oracle.py and is retained.
+  No actual presentation GPU run or ordinary runtime admission is claimed yet.
+
+- Exact061ee8f CI37549764498 all6SUCCESS and five original ZIPs verify;
+  root-present-ci-verified-01.json independently rejoins every ZIP member,
+  15native execution binary/stdout/stderr hashes and delegated subproof digests.
+  All architectures compile the actual embedded core/backend and allocation
+  fixture linkage, typed466831/comparator342. Exact ARMZIP11452103360 is
+  23820458bytes/a909b9fe; DLL6021120/f08c8885,probe229376/489178f0,
+  STATUS5056/7a411806. Process-local candidate staged, no installation.
+
+- Actualpresent41 diagnostics1 FAIL at first D3DKMTPresent: rawc01e0342,
+  HRESULTd01e0342 (STATUS_GRAPHICS_VIDPN_SOURCE_IN_USE). All prior5056pixels
+  and1056bytes/queries pass internally. Owned source allocation/resource,
+  separateGDIcontext and paging/residency succeed before rejection; no captured
+  screen pixels or presentation PASS. Source/context release succeed, residency
+  20references/20evictions/remaining0; owned task removedexit1, original evidence
+  archive9b0c2af1/12members retained. SignedSYS/desktop and58readiness fields
+  remain unchanged. Microsoft local source-owner docs identify shared ownership
+  registration as a missing raw-runtime harness step; causality is unproven.
+  Probe-only diagnostic adds windowHDC/source/LUID lookup, shared owner acquire
+  and device-scoped release, preserving every pixel oracle and all UMD bytes.
+  No exclusive/display-mode operation is added. A separately identified native
+  executable build is delegated before another GPU attempt. Original CI ZIP
+  contains no import LIB; diagnostic derivation from the exact committed DEF
+  will be verified against the actual CI DLL exports and recorded explicitly.

@@ -1501,3 +1501,19 @@ That semanticpath remains separately proven by nativepositive/compiledcontrols.
 Nine unissued/begun pendingresults retainguards; sixquerylifetimes closecleanly.
 Full5056pixel/1056byte acceptance retainsall earliercompactclipgates. This is
 typedoffscreen hardware acceptance; ordinarysystemruntime/Present remains open.
+
+Presentation061ee8f uses separately owned GDI-context identity for linear80-byte
+allocation metadata (A8 wireformat1, X8 wireformat2), preserving the private
+renderer native context. The completed readback copies tightly packed rows into
+the owned source, then calls typed PresentCb with the kernel allocation handle.
+The target harness maps that callback to real D3DKMTPresent/windowed blit and
+reads the actual64x64screen client area; fallback WM_PAINT fills only black.
+Four distinct quadrant frames and two consecutive full matching captures per
+frame prevent stale image or callback-success-only acceptance. CPU publication
+is the first correctness path; it does not fulfill the separate zero-copy goal.
+Native466831checks and six compiled semantic controls verify publication,
+snapshots/kernel ownership/post-callback epochs/retryable failed deallocation.
+Full ordinary runtime remains closed: current GetCaps still reports empty
+format/query lists and zero D3DCAPS9, and production entry admission is unchanged.
+The presentation helper review corrected an inherited55s scheduled-task cap to
+present-only75s before any GPU run, preserving65s probe and77s polling bounds.

@@ -142,6 +142,7 @@ public:
     std::printf("KMT_OPEN hr=%08lx\n", static_cast<unsigned long>(hr));
     if (FAILED(hr)) return hr;
     m_adapter = adapter.hAdapter;
+    m_luid = luid;
     std::printf("KMT_ADAPTER luid=");
     printLuid(luid);
     std::printf("\n");
@@ -206,7 +207,7 @@ public:
     // rendering-workload oracle, not evidence required for balanced lifetime.
     return contexts == 1 && contextCloses == 1 && allocations && allocations == deallocations
       && locks == unlocks && !m_context && !m_presentContext && m_resources.empty()
-      && presentContexts == presentContextCloses && !wrongThreads ? S_OK : E_FAIL;
+      && presentContexts == presentContextCloses && !m_sourceOwned && !wrongThreads ? S_OK : E_FAIL;
   }
   HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false,
                           bool buffers = false, bool depthStencil = false, bool fixedFunction = false,
@@ -1563,6 +1564,8 @@ public:
     HRESULT hr = m_window.create();
     std::printf("D3D9_PRESENT_WINDOW hr=%08lx client=64x64\n",static_cast<unsigned long>(hr));
     if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    hr = acquirePresentationSource();
+    if (hr != S_OK) return hr;
     const UINT colors[4][4] = {
       {0xff2748ad,0xffd1376b,0xff42b87c,0xffeab325},
       {0xff6f32c5,0xff198bd4,0xffbaed43,0xffe56139},
@@ -1634,7 +1637,7 @@ public:
     }
     if (presents != 4 || presentAllocations != 2 || presentDeallocations != 2 || presentContexts != 1) return E_FAIL;
     std::printf("D3D9_PRESENT_READBACK PASS pixels=%u checksum=%08x submissions=4 allocations=2/2 context=1 formats=A8/X8 frames=updated/reused source=owned capture=screen-rgb\n",checked,checksum);
-    return S_OK;
+    return releasePresentationSource();
   }
   HRESULT close() {
     HRESULT hr = S_OK;
@@ -1660,6 +1663,8 @@ public:
       m_presentContext = 0;
     }
     if (m_device) {
+      const HRESULT released = releasePresentationSource();
+      if (FAILED(released)) hr = released;
       if (m_pagingQueue) {
         D3DDDI_DESTROYPAGINGQUEUE paging = {}; paging.hPagingQueue = m_pagingQueue;
         const HRESULT cleanup = result(D3DKMTDestroyPagingQueue(&paging));
@@ -1685,6 +1690,47 @@ public:
   }
 
 private:
+  HRESULT acquirePresentationSource() {
+    if (!m_device || !m_window.handle() || m_sourceOwned) return E_INVALIDARG;
+    const HDC dc = GetDC(m_window.handle());
+    if (!dc) return E_FAIL;
+    D3DKMT_OPENADAPTERFROMHDC adapter = {}; adapter.hDc = dc;
+    const NTSTATUS opened = D3DKMTOpenAdapterFromHdc(&adapter);
+    ReleaseDC(m_window.handle(),dc);
+    if (opened != 0) return opened < 0 ? result(opened) : E_FAIL;
+    if (!adapter.hAdapter) return E_FAIL;
+    D3DKMT_CLOSEADAPTER close = {}; close.hAdapter = adapter.hAdapter;
+    const NTSTATUS closed = D3DKMTCloseAdapter(&close);
+    std::printf("D3D9_PRESENT_SOURCE_OPEN status=%08lx close_status=%08lx source=%u luid=",
+      static_cast<unsigned long>(opened),static_cast<unsigned long>(closed),adapter.VidPnSourceId);
+    printLuid(adapter.AdapterLuid); std::printf("\n");
+    if (closed != 0) return closed < 0 ? result(closed) : E_FAIL;
+    if (std::memcmp(&adapter.AdapterLuid,&m_luid,sizeof(m_luid))) return E_FAIL;
+    // This raw KMT harness supplies the runtime's source-owner service. Shared
+    // ownership yields to the desktop's exclusive owner; never request an
+    // exclusive mode or release another device's source ownership.
+    const D3DKMT_VIDPNSOURCEOWNER_TYPE type = D3DKMT_VIDPNSOURCEOWNER_SHARED;
+    D3DKMT_SETVIDPNSOURCEOWNER owner = {};
+    owner.hDevice = m_device; owner.pType = &type;
+    owner.pVidPnSourceId = &adapter.VidPnSourceId; owner.VidPnSourceCount = 1;
+    const NTSTATUS status = D3DKMTSetVidPnSourceOwner(&owner);
+    std::printf("D3D9_PRESENT_SOURCE_ACQUIRE status=%08lx source=%u type=shared\n",
+      static_cast<unsigned long>(status),adapter.VidPnSourceId);
+    if (status != 0) return status < 0 ? result(status) : E_FAIL;
+    m_sourceOwned = true;
+    return S_OK;
+  }
+  HRESULT releasePresentationSource() {
+    if (!m_sourceOwned) return S_OK;
+    if (!m_device) return E_FAIL;
+    // A zero-count request releases only this owned device's source handles.
+    D3DKMT_SETVIDPNSOURCEOWNER owner = {}; owner.hDevice = m_device;
+    const NTSTATUS status = D3DKMTSetVidPnSourceOwner(&owner);
+    std::printf("D3D9_PRESENT_SOURCE_RELEASE status=%08lx\n",static_cast<unsigned long>(status));
+    if (status != 0) return status < 0 ? result(status) : E_FAIL;
+    m_sourceOwned = false;
+    return S_OK;
+  }
   struct Owner { KmtRuntime9* runtime; };
   static KmtRuntime9* self(HANDLE handle) {
     if (!handle) return nullptr;
@@ -1937,6 +1983,8 @@ private:
   struct ResourceAllocation { D3DKMT_HANDLE kernel = 0; std::vector<D3DKMT_HANDLE> allocations; };
   Owner m_adapterOwner{this}, m_deviceOwner{this}, m_contextOwner{this}, m_presentContextOwner{this};
   DWORD m_thread = GetCurrentThreadId();
+  LUID m_luid = {};
+  bool m_sourceOwned = false;
   D3DKMT_HANDLE m_adapter = 0, m_device = 0, m_context = 0, m_presentContext = 0;
   D3DKMT_HANDLE m_pagingQueue = 0, m_pagingSync = 0;
   UINT64 m_pendingPaging = 0;

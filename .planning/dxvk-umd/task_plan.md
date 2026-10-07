@@ -27,12 +27,12 @@ Acceptance docs/native-d3d9-queries-20261007.md and root-query-checkpoint-
 verified-02.json. Original failed local review attempts remain separate evidence.
 Four unused workflows stay disabled; offline/runtime controls are manual-only.
 
-Continue typed D3D9 presentation. Local Microsoft Present/PresentCb docs and the
+Verify typed D3D9 presentation. Local Microsoft Present/PresentCb docs and the
 actual SDK require real kernel allocation handles and an owned created context.
-Existing DXGI presentation ABI cannot be cast to typed9. Current surfaces own
-private renderer backing and pfnPresent is absent. Implement owned presentation
-allocation/pixel publication and typed callback with serialized snapshots,
-reset/reentry/retirement/cleanup verification, followed by target display proof.
+Existing DXGI presentation ABI cannot be cast to typed9. Surfaces now own private
+renderer backing plus a completed pixel publication into a real kernel source
+allocation. Typed pfnPresent uses its copied native PresentCb and a separate
+created GDI context. Verify exact builds and target screen pixels next.
 
 Presentation implementation is now local: completed private renderer readback,
 owned standard linear source allocation, a separate created GDI context and the
@@ -44,10 +44,22 @@ Behavior preflight02 archive233efc63 compiled but failed first positive check215
 the adapter callback snapshot omitted PresentCb. Fresh preflight03 e5242c24 adds
 that exact field and the separate screen probe; unchanged full fixture now passes
 466831checks, zero warnings, all57inputs/sevenCOFFs/native continuity verified.
-Six compiled semantic controls and native wrapper parsing are pending. Target
+Exact committed061ee8f native87-input rebuild passes466831; root independently
+joins72Git+15pinnedVulkan inputs and seven originalAA64COFFs. Six compiled
+semantic controls pass at their intended assertions; root verifies all original
+source/archive/build/after-run and native evidence without rewriting it. Single
+automaticCI37549764498 all six jobs pass, full artifact provenance review pending.
+Three native-parsed wrappers02 fix the inherited scheduled-task deadline to75s
+for the65s presentation probe, with77s result polling. Generic wrappers are
+hash-joined and prior query wrappers copied into the owned staging backup. Target
 probe --present renders four64x64screen frames across A8/X8 with owned/reused
 kernel allocation and GDI context; independent16384RGB oracle73b9e1c5 is frozen.
-The existing5056pixels+1056bytes remain required. No presentation GPU PASS yet.
+The existing5056pixels+1056bytes remain required. First actualpresent41 passes
+those earlier gates then rawKMT rejects stage1 withc01e0342/source ownership in
+use. Source/context and20residency references close, driver/desktop58fields
+retain; no presentation GPU PASS. A separately built probe-only diagnostic adds
+shared source ownership registration/release; all UMD and pixel oracle bytes
+remain unchanged, and causal acceptance awaits the fresh target run.
 
 Previous ae61dde compact clip37/38 acceptance remains unchanged. Production
 caps/exports, registration and paired package pins stay closed. Complete remaining
@@ -700,6 +712,6 @@ gates and native fixture/semantic controls remain required.
 ## Typed D3D9 presentation continuation
 - [complete] Accept exact0a60564 query CPU/CI/GPU checkpoints and freeze evidence.
 - [complete] Audit typed Present/PresentCb ABI and existing runtime allocation ownership.
-- [in_progress] Implement owned presentable allocation/pixel publication and typed callback.
-- [pending] Verify native callback/pixel/lifetime/reset/reentry controls and exact architecture builds.
+- [complete] Implement owned presentable allocation/pixel publication and typed callback.
+- [in_progress] Verify native callback/pixel/lifetime/reset/reentry controls and exact architecture builds.
 - [pending] Verify actual target presentation and continue ordinary system-runtime admission.

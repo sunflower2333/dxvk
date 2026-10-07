@@ -1,5 +1,25 @@
 # Findings
 
+2026-10-08 release-library closure: inspecting first-party COFF alone misses
+release CRT archive-member dependencies. Actual libcmt defaults request
+RuntimeObject; libcpmt defaults request AdvApi32/Synchronization/UUID. ROOT
+full-member scan2438269a and original RuntimeObject inspectionfce6200a retain
+raw originals. Cube02 fails LNK1104 runtimeobject.lib after16AA64COFF, with
+no PE/fixture run; ROOTf1b472e9 accepts original archive3f55140a/release4021b90e.
+Fresh cube03 andf96CPU03 use11 original release libraries; no compiler/source/
+oracle relaxation. ROOT CPU03 review99d9b777 joins library and localCOFF
+directives, with oldnames explicitly excluded. Native selected-member link
+resolution and full compiler backend/include attestation are still pending.
+
+DX8 CPU07 physical evidence joins logicalSystem32 and explicitSysWOW64 to
+the same SyChpe32 file identities in the actual I386 process. Shared repair
+66bfbdf requires exact I386/AA64/pointer4, exact documented APIs/named owners,
+mappedNT equal to both finalNT paths, matching full IDs/size/SHA/selectedPE,
+read-only unchanged handles and successful closure. No suffix whitelist or
+logical-path relabeling. Private core/permissions/callback guards stay exact.
+Local4COFF/2PE zero diagnostics and included91 predicate controls pass;
+native shared-helper API observation and genuine D3D8 runtime remainpending.
+
 2026-10-08 continuation: root independently rejoined all60 raw CPU05 archive
 members (47 original payloads/13 helpers) and nine native03 helper source bytes;
 proof2d691375 and CPU-only ownershipfd5acd14. Native staging exits0. Actual

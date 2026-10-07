@@ -8,6 +8,34 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
+Latest checkpoint (2026-10-08): target is released to ROOT after combined
+cube native02 failed at missing runtimeobject.lib, before any reference fixture.
+ROOT proof f1b472e9 directly joins the254 original files,160 Git inputs,
+398 package members,16AA64COFF,11 closed native children and13 absent host
+owners; release4021b90e is accepted. Actual first-party diagnostics remain0.
+The full release-library scan also found AdvApi32 and Synchronization defaults;
+DX10 prepares fresh03 with all11 original libraries, unchanged8528 source,
+strict flags and oracles. Previous failed originals remain immutable.
+
+ROOT local integration branch3213fda combines8528 cube production with7a47
+cube andf96 SO/volume real-KMT probes. Meson/build/shipping and38 ARM cases
+pass local registration checks. DX11 CPU03 prepared-input review99d9b777
+joins25 Git sources,37 package members,17 bundle members and actual11-library
+plus4localCOFF directive streams; native linking remains pending. Owned
+CPU03 handoff review1bbb7e5a is accepted for preparation only, queued after
+cube03. DX8 physical-identity repair66bfbdf is frozen locally with4I386COFF/
+2PE zero diagnostics and91 GCC/Clang controls; CPU08/native names remain
+pending. ROOT will integrate its single added fixture while preserving38.
+
+Live CI37689715890 on published3d397608 remains PASS. Four redundant push
+workflows remain disabled. No new push or target hardware admission. User
+authorizes passwordless Administrator for build operations; actual graphics
+must retain limitedUSER/session1. Next: corrected cube03 native references,
+CPU03 SO/volume build, DX8 CPU08 identity, then matching single-push CI and
+real viogpu probes. Ordinary Microsoft-runtime DX8-DX11/Present/DWM remainopen.
+
+### Retained prior checkpoints
+
 Current trunk3d39760 pushed once with integrated DX8 and typedDX10 probes;
 soleautomaticCI37689715890 PASS allsix and ROOT direct original review PASS.
 Five genuine ZIPs/1721 original files, source881 blobs+5gitlinks/four canonical

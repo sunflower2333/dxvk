@@ -1040,6 +1040,16 @@ for(uint l=0;l<4;++l){o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
   CHECK(over2.result<BOOL>() == TRUE && over3.result<BOOL>() == FALSE && aggregate.result<BOOL>() == TRUE);
   const auto overflowStatistics = stats2.result<D3D10_DDI_QUERY_DATA_SO_STATISTICS>();
   CHECK(overflowStatistics.NumPrimitivesWritten == 1 && overflowStatistics.PrimitivesStorageNeeded == 9);
+  // Stream-specific BOOL query objects also implement the native predicate
+  // contract. Suppression must produce a real zero-primitive statistics window.
+  f.output.table.pfnSetPredication(f.device,over2.handle,TRUE); ok();
+  stats2.begin(); f.output.table.pfnDraw(f.device,3,0); ok(); stats2.end();
+  const auto suppressedStatistics = stats2.result<D3D10_DDI_QUERY_DATA_SO_STATISTICS>();
+  CHECK(!suppressedStatistics.NumPrimitivesWritten && !suppressedStatistics.PrimitivesStorageNeeded);
+  f.output.table.pfnQueryEnd(f.device,over2.handle); failure(E_INVALIDARG);
+  f.output.table.pfnDestroyQuery(f.device,over2.handle); failure(E_INVALIDARG);
+  CHECK(over2.result<BOOL>() == TRUE);
+  f.output.table.pfnSetPredication(f.device,{},FALSE); ok();
   // Predication consumes the aggregate just read, and a bound predicate
   // cannot be ended or destroyed until it is unbound.
   f.output.table.pfnSetPredication(f.device,aggregate.handle,TRUE); ok();

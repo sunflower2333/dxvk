@@ -17,6 +17,7 @@ int main() {
   CHECK(queryInfo(D3D10DDI_QUERY_TIMESTAMPDISJOINT, 0, info) && info.size == sizeof(D3D10_DDI_QUERY_DATA_TIMESTAMP_DISJOINT));
   CHECK(queryInfo(D3D10DDI_QUERY_STREAMOUTPUTSTATS, 0, info) && info.size == 2*sizeof(UINT64) && info.beginRequired);
   CHECK(queryInfo(D3D10DDI_QUERY_STREAMOVERFLOWPREDICATE, 0, info) && info.predicate && !info.hint);
+  CHECK(queryUsesPublicPredicate(info));
   CHECK(!queryInfo(D3D10DDI_QUERY_STREAMOVERFLOWPREDICATE, D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info));
   CHECK(queryInfo(D3D10DDI_QUERY_PIPELINESTATS, 0, info) && info.size == 8*sizeof(UINT64)
     && info.backendSize == 11*sizeof(UINT64));
@@ -59,8 +60,10 @@ int main() {
   for (unsigned stream = 0; stream < 4; ++stream) {
     CHECK(queryInfo11(nativeStats[stream], 0, info) && info.type == publicStats[stream]
       && info.size == 16 && info.beginRequired && !info.predicate);
+    CHECK(!queryUsesPublicPredicate(info));
     CHECK(queryInfo11(nativeOverflow[stream], 0, info) && info.type == publicOverflow[stream]
       && info.size == sizeof(BOOL) && info.beginRequired && info.predicate);
+    CHECK(!queryUsesPublicPredicate(info));
     CHECK(!queryInfo11(nativeStats[stream], D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info) && !info.size);
     CHECK(!queryInfo11(nativeOverflow[stream], D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info) && !info.size);
   }
@@ -78,8 +81,10 @@ int main() {
   CHECK(!queryInfo(static_cast<D3D10DDI_QUERY>(0x7fffffff), 0, info));
   CHECK(queryInfo(D3D10DDI_QUERY_OCCLUSIONPREDICATE, 0, info));
   CHECK(info.predicate && info.beginRequired && !info.hint && info.size == sizeof(BOOL));
+  CHECK(queryUsesPublicPredicate(info));
   CHECK(queryInfo(D3D10DDI_QUERY_OCCLUSIONPREDICATE, D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT, info));
   CHECK(info.predicate && info.hint && info.type == D3D11_QUERY_OCCLUSION_PREDICATE);
+  CHECK(queryUsesPublicPredicate(info));
   CHECK(readQueryData(info, nullptr, 0, 0, [](void*, UINT, UINT) { std::abort(); return S_OK; }) == E_INVALIDARG);
   CHECK(!queryInfo(D3D10DDI_QUERY_OCCLUSIONPREDICATE, 2, info));
   CHECK(queryInfo(D3D10DDI_QUERY_TIMESTAMP, 0, info));

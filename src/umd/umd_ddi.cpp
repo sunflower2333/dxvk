@@ -504,20 +504,20 @@ void APIENTRY createQuery(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEQUERY* arg
     if (device->nativeTable11 && device->featureLevel >= D3D_FEATURE_LEVEL_11_0
         && args->Query == D3D10DDI_QUERY_STREAMOVERFLOWPREDICATE) {
       // DXVK's legacy overflow predicate observes only stream zero. Native
-      // D3D11 defines it over every stream; aggregate four real predicates.
+      // D3D11 defines it over every stream; aggregate four real BOOL queries.
       constexpr D3D11_QUERY types[] = {D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM0,
         D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM1, D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM2,
         D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM3};
       for (UINT i = 0; i < 4; ++i) {
         desc.Query = types[i];
-        ComPtr<ID3D11Predicate> predicate;
-        const HRESULT hr = device->backend->CreatePredicate(&desc, &predicate);
-        if (hr != S_OK || !predicate) return hr == S_OK ? E_FAIL : hr;
-        (i ? query.additionalStreams[i-1] : query.backend) = predicate;
+        ComPtr<ID3D11Query> stream;
+        const HRESULT hr = device->backend->CreateQuery(&desc, &stream);
+        if (hr != S_OK || !stream) return hr == S_OK ? E_FAIL : hr;
+        (i ? query.additionalStreams[i-1] : query.backend) = stream;
       }
       return S_OK;
     }
-    if (query.info.predicate) {
+    if (dxvk::umd::queryUsesPublicPredicate(query.info)) {
       ComPtr<ID3D11Predicate> predicate;
       const HRESULT hr = device->backend->CreatePredicate(&desc, &predicate);
       if (hr == S_OK) query.backend = predicate;

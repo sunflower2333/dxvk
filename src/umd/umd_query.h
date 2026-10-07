@@ -19,6 +19,13 @@ struct QueryInfo {
   UINT backendSize = 0;
 };
 
+inline bool queryUsesPublicPredicate(const QueryInfo& info) {
+  // Stream-specific SO overflow queries return BOOL and support native
+  // predication, but the public CreatePredicate accepts only these two types.
+  return info.predicate && (info.type == D3D11_QUERY_OCCLUSION_PREDICATE
+    || info.type == D3D11_QUERY_SO_OVERFLOW_PREDICATE);
+}
+
 inline bool queryInfo(D3D10DDI_QUERY type, UINT miscFlags, QueryInfo& result) {
   result = {};
   if (miscFlags & ~D3D10DDI_QUERY_MISCFLAG_PREDICATEHINT) return false;

@@ -43,9 +43,9 @@ must include `verified=true`, exact `source_commit`6ae2f61 and the original
 `archive_sha256`. The preparer reopens that archive/result and both original
 I386 outputs, checks five COFF/four PE, native policy 329, callback positive,
 30 CLI guards, unchanged source/state and zero runtime/selector/GPU calls.
-It fills real output hashes rather than inventing them. Root independently
-reviews this ready manifest, native parser receipt and stage originals before
-authorizing any USER phase.
+It fills real output hashes and keeps `ready=false`. Root independently reviews
+the populated manifest, native parser receipt and stage originals before
+enabling a fresh reviewed manifest for a separately authorized USER phase.
 
 Transfer the frozen helper directory with SCP, preserving original bytes.
 First invoke `parse-native-d3d8-system-phase.ps1 -Manifest <manifest>

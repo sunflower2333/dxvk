@@ -19,10 +19,16 @@ using namespace dxvk::umd::probe10;
 // Both legacy profiles therefore use the exact DXGI 1.0 output structure.
 static_assert(D3D10_0_DDI_INTERFACE_VERSION == 0x000a0001);
 static_assert(D3D10_1_DDI_INTERFACE_VERSION == 0x000a0002);
-static_assert(UINT(D3D10_0_DDI_SUPPORTED) == (D3D10_0_DDI_BUILD_VERSION << 16));
-static_assert(UINT(D3D10_1_DDI_SUPPORTED) == (D3D10_1_DDI_BUILD_VERSION << 16));
-static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_0_DDI_INTERFACE_VERSION, UINT(D3D10_0_DDI_SUPPORTED)));
-static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_1_DDI_INTERFACE_VERSION, UINT(D3D10_1_DDI_SUPPORTED)));
+// SUPPORTED packs the interface into high32 and the runtime version into low32.
+// Select the version word before narrowing the original UINT64 SDK constant.
+constexpr UINT Version10 = UINT(D3D10_0_DDI_SUPPORTED & 0xffffffffull);
+constexpr UINT Version10_1 = UINT(D3D10_1_DDI_SUPPORTED & 0xffffffffull);
+static_assert(Version10 == 0x00040000u && Version10 == (D3D10_0_DDI_BUILD_VERSION << 16));
+static_assert(Version10_1 == 0x00010000u && Version10_1 == (D3D10_1_DDI_BUILD_VERSION << 16));
+static_assert(D3D10_0_DDI_SUPPORTED == ((UINT64(D3D10_0_DDI_INTERFACE_VERSION) << 32) | Version10));
+static_assert(D3D10_1_DDI_SUPPORTED == ((UINT64(D3D10_1_DDI_INTERFACE_VERSION) << 32) | Version10_1));
+static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_0_DDI_INTERFACE_VERSION, Version10));
+static_assert(!IS_DXGI1_1_BASE_FUNCTIONS(D3D10_1_DDI_INTERFACE_VERSION, Version10_1));
 constexpr UINT DxgiRevision11 = VISTA_GOLD_PRODUCT_VER | DXGI_RESOLVE_SHARED_RESOURCE;
 // The original macro does not fully parenthesize its Version parameter.
 // Pass named values so the build/revision expression cannot change its mask.
@@ -295,7 +301,7 @@ public:
     capsArgs.Type = D3D11DDICAPS_3DPIPELINESUPPORT; capsArgs.pData = &caps.value; capsArgs.DataSize = sizeof(caps.value);
     require(adapter.pfnGetCaps(m_adapter, &capsArgs) == S_OK && caps.intact() && !caps.value.Caps, "closed-runtime-pipeline-caps");
     D3D10DDIARG_CALCPRIVATEDEVICESIZE size{};
-    size.Interface = UINT(required >> 32); size.Version = UINT(required);
+    size.Interface = UINT(required >> 32); size.Version = UINT(required & 0xffffffffull);
     require(!IS_DXGI1_1_BASE_FUNCTIONS(size.Interface, size.Version), "exact-dxgi-1-0-table");
     m_deviceStorage.allocate(adapter.pfnCalcPrivateDeviceSize(m_adapter, &size)); m_device.pDrvPrivate = m_deviceStorage.data();
     D3D10DDIARG_CREATEDEVICE args{};

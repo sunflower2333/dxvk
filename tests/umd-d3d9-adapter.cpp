@@ -248,7 +248,8 @@ int main() {
   CHECK(caps.value.PixelShaderVersion == D3DPS_VERSION(2, 0));
   CHECK(caps.value.NumSimultaneousRTs == 1 && caps.value.MaxTextureWidth >= 2048);
   CHECK(!(caps.value.TextureCaps & (D3DPTEXTURECAPS_CUBEMAP | D3DPTEXTURECAPS_VOLUMEMAP)));
-  CHECK(!(caps.value.Caps2 & (D3DCAPS2_DYNAMICTEXTURES | D3DCAPS2_CANAUTOGENMIPMAP | D3DCAPS2_CANSHARERESOURCE)));
+  CHECK(caps.value.Caps2 & D3DCAPS2_DYNAMICTEXTURES);
+  CHECK(!(caps.value.Caps2 & (D3DCAPS2_CANAUTOGENMIPMAP | D3DCAPS2_CANSHARERESOURCE)));
   CHECK(!caps.value.CubeTextureFilterCaps && !caps.value.VolumeTextureFilterCaps
     && !caps.value.VertexTextureFilterCaps && !caps.value.StretchRectFilterCaps);
   caps.intact();

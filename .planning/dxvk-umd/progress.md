@@ -2277,3 +2277,18 @@ unsupported cube/volume/MSAA/autogen limits. Separate diagnostic frontend adds
 only Caps2.DYNAMICTEXTURES to the exact478 profile, logs before/after, uses a
 distinct permission and always blocks core device creation. This measures the
 single-bit cause and genuine blocked runtime contract, not GPU acceptance.
+
+## 2026-10-07 dynamic2D implementation and targeted verification preparation
+Native resource descriptions capture Dynamic independently of mutable callback
+metadata; renderer texture creation receives D3DUSAGE_DYNAMIC. Default-pool
+dynamic2D mip surfaces are lockable. Discard requires an unmapped whole top level
+and cannot invalidate another mapped mip; invalid surface flags/ReadOnly/partial
+discard/lower-level discard reject without backend calls. Native Caps2 now
+declares the implemented feature for pending verification. New meaningful
+fixtures cover2formats/4pools, usage snapshots, data retention, lock/unlock
+failures, retry and teardown. New target --dynamic-textures mode adds768 raw
+pixels for3mips/2updates/A8-X8 while retaining all old5056pixels+1056bytes.
+No native fixture, GPU or ordinary acceptance is claimed before actual results.
+Separate diagnostic777 strict native build/guards/SSH baseline passes original
+49member root review01; its exact478 candidate/SYS/desktop retain. Session1
+single-bit blocked contract trace is next while production CPU verification runs.

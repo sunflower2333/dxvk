@@ -11,6 +11,7 @@ struct D3D9SurfaceDesc {
   UINT width = 0, height = 0;
   D3DFORMAT format = D3DFMT_UNKNOWN;
   bool renderTarget = false, depthStencil = false, systemMemory = false, lockable = true;
+  bool dynamic = false;
   void* systemData = nullptr;
   UINT systemPitch = 0;
 };

@@ -74,7 +74,7 @@ HRESULT current(const std::shared_ptr<Adapter>& adapter) noexcept {
 
 // This is the subset implemented by the native DDI, rather than the larger
 // private DXVK renderer's caps. Normal OpenAdapter admission is still closed.
-// In particular: one RT, static 2D mip chains, no cube/volume/MSAA/instancing,
+// In particular: one RT, static/dynamic 2D mip chains, no cube/volume/MSAA/instancing,
 // no stretched/color-fill plain surfaces, autogen, shared resources or gamma.
 constexpr FORMATOP formats[] = {
   {D3DDDIFMT_X8R8G8B8, FORMATOP_TEXTURE | FORMATOP_OFFSCREEN_RENDERTARGET
@@ -91,6 +91,7 @@ constexpr D3DDDIQUERYTYPE queries[] = {
 D3DCAPS9 nativeCaps() {
   D3DCAPS9 caps = {};
   caps.DeviceType = D3DDEVTYPE_HAL;
+  caps.Caps2 = D3DCAPS2_DYNAMICTEXTURES;
   caps.Caps3 = D3DCAPS3_COPY_TO_VIDMEM | D3DCAPS3_COPY_TO_SYSTEMMEM;
   caps.PresentationIntervals = D3DPRESENT_INTERVAL_IMMEDIATE;
   caps.DevCaps = D3DDEVCAPS_TLVERTEXSYSTEMMEMORY | D3DDEVCAPS_TLVERTEXVIDEOMEMORY

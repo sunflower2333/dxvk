@@ -288,7 +288,8 @@ HRESULT D3D9Backend::createTexture(const D3D9SurfaceDesc* levels, UINT count,
   auto texture = std::make_unique<D3D9TextureResource>();
   const auto& desc = levels[0];
   HRESULT hr = m_state->d3d->CreateTexture(desc.width, desc.height, count,
-    desc.renderTarget ? D3DUSAGE_RENDERTARGET : 0, desc.format,
+    (desc.renderTarget ? D3DUSAGE_RENDERTARGET : 0)
+      | (desc.dynamic ? D3DUSAGE_DYNAMIC : 0), desc.format,
     desc.systemMemory ? D3DPOOL_SYSTEMMEM : D3DPOOL_DEFAULT,
     &texture->m_state->texture, nullptr);
   if (hr != S_OK || !texture->m_state->texture) return FAILED(hr) ? hr : E_FAIL;

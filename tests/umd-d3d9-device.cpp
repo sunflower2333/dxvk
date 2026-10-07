@@ -64,6 +64,8 @@ struct Fixture {
   unsigned surfaceCreates = 0, surfaceCloses = 0, surfaceLocks = 0, surfaceUnlocks = 0;
   unsigned surfaceAttempts = 0, failSurfaceAttempt = 0, clears = 0, copies = 0;
   HRESULT surfaceResult = S_OK, surfaceUnlockResult = S_OK;
+  HRESULT surfaceLockResult = S_OK;
+  std::vector<DWORD> surfaceLockFlags;
   bool nullSurface = false, badMapping = false;
   bool lastComputeRects = false, teardownDiscard = false;
   HRESULT depthResult = S_OK, clearResult = S_OK;
@@ -873,10 +875,12 @@ HRESULT dxvk::umd::D3D9Backend::setSamplerState(UINT stage, D3DSAMPLERSTATETYPE 
   return f->stateResult;
 }
 HRESULT dxvk::umd::D3D9Backend::lockSurface(D3D9SurfaceResource& resource, const RECT* area,
-    DWORD, D3DLOCKED_RECT& output) {
+    DWORD flags, D3DLOCKED_RECT& output) {
   CHECK(GetCurrentThreadId() != f->caller);
   auto& state = *resource.m_state;
   CHECK(!state.locked);
+  f->surfaceLockFlags.push_back(flags);
+  if (f->surfaceLockResult != S_OK) return f->surfaceLockResult;
   state.locked = true;
   state.area = area ? *area : RECT{0, 0, LONG(state.desc.width), LONG(state.desc.height)};
   ++f->surfaceLocks;
@@ -1798,7 +1802,7 @@ static void textureContracts() {
       CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG && snapshot(args) == prior);
     }
     args.MipLevels = 3;
-    for (const UINT flag : {4u,0x10u,0x800u,0x20000u,0x40000u}) {
+    for (const UINT flag : {0x10u,0x800u,0x20000u,0x40000u}) {
       args.Flags.Value = 0x10000 | flag; prior = snapshot(args);
       CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG && snapshot(args) == prior);
     }
@@ -1971,6 +1975,109 @@ static void textureContracts() {
     f->stateResult = D3DERR_DEVICELOST;
     CHECK(a.table.pfnDestroyResource(a.device, args.hResource) == S_OK);
     closeDevice(); closeAdapter();
+  }
+}
+
+static void dynamicTextureContracts() {
+  for (const D3DFORMAT format : {D3DFMT_A8R8G8B8, D3DFMT_X8R8G8B8}) {
+    for (const D3DDDIPOOL pool : {D3DDDIPOOL_VIDEOMEMORY, D3DDDIPOOL_LOCALVIDMEM,
+        D3DDDIPOOL_NONLOCALVIDMEM, D3DDDIPOOL_SYSTEMMEM}) {
+      Fixture fixture; initialize(fixture); createDevice();
+      char cookie;
+      D3DDDI_SURFACEINFO levels[3] = {{4,4,0,nullptr,0,0}, {2,2,0,nullptr,0,0}, {1,1,0,nullptr,0,0}};
+      auto args = textureArgs(&cookie, levels, 3);
+      args.Format = static_cast<D3DDDIFORMAT>(format); args.Pool = pool; args.Flags.Dynamic = 1;
+      const auto valid = args;
+      for (unsigned invalid = 0; invalid < 3; ++invalid) {
+        args = valid;
+        if (invalid == 0) args.Flags.Texture = 0;
+        if (invalid == 1) args.Flags.RenderTarget = 1;
+        if (invalid == 2) { args.Flags.Texture = 0; args.Flags.ZBuffer = 1; }
+        const auto before = snapshot(args); const auto attempts = f->surfaceAttempts;
+        CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG);
+        CHECK(snapshot(args) == before && f->surfaceAttempts == attempts);
+      }
+      args = valid;
+      // The private identity callback cannot rewrite dynamic usage or the
+      // already captured mip dimensions before construction on the worker.
+      f->queryHook = [&] { args.Flags.Dynamic = 0; args.MipLevels = UINT_MAX; levels[1].Width = 99; };
+      CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+      const HANDLE texture = args.hResource;
+      CHECK(f->descriptions.size() == 3);
+      for (UINT level = 0; level < 3; ++level) {
+        CHECK(f->descriptions[level].dynamic && f->descriptions[level].lockable);
+        CHECK(f->descriptions[level].format == format && f->descriptions[level].width == (4u >> level));
+      }
+      D3DDDIARG_LOCK mapping = {}; mapping.hResource = texture;
+      mapping.Flags.Discard = 1;
+      const auto whole = mapping;
+      auto rejected = [&](D3DDDIARG_LOCK bad) {
+        bad.pSurfData = reinterpret_cast<void*>(UINT_PTR(1)); bad.Pitch = 73; bad.SlicePitch = 91;
+        const auto before = snapshot(bad); const auto calls = f->surfaceLockFlags.size();
+        CHECK(f->table.pfnLock(f->device, &bad) == E_INVALIDARG);
+        CHECK(snapshot(bad) == before && f->surfaceLockFlags.size() == calls);
+      };
+      for (unsigned invalid = 0; invalid < 8; ++invalid) {
+        auto bad = whole;
+        if (invalid == 0) bad.Flags.ReadOnly = 1;
+        if (invalid == 1) { bad.Flags.AreaValid = 1; bad.Area = {0,0,4,4}; }
+        if (invalid == 2) bad.Flags.NoOverwrite = 1;
+        if (invalid == 3) bad.Flags.RangeValid = 1;
+        if (invalid == 4) bad.Flags.BoxValid = 1;
+        if (invalid == 5) bad.Flags.NotifyOnly = 1;
+        if (invalid == 6) bad.SubResourceIndex = 1;
+        if (invalid == 7) bad.SubResourceIndex = 3;
+        rejected(bad);
+      }
+      mapping = whole; mapping.Flags.DoNotWait = 1;
+      CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+      CHECK(mapping.pSurfData && mapping.Pitch == 16 && !mapping.SlicePitch);
+      CHECK(f->surfaceLockFlags.back() == (D3DLOCK_DISCARD | D3DLOCK_DONOTWAIT));
+      std::array<uint8_t,64> expected;
+      for (UINT i = 0; i < expected.size(); ++i)
+        expected[i] = static_cast<uint8_t*>(mapping.pSurfData)[i] = uint8_t(i + 0x30);
+      rejected(whole);
+      CHECK(f->table.pfnDestroyResource(f->device, texture) == E_INVALIDARG);
+      D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = texture;
+      f->surfaceUnlockResult = E_OUTOFMEMORY;
+      CHECK(f->table.pfnUnlock(f->device, &unmap) == E_OUTOFMEMORY);
+      rejected(whole);
+      f->surfaceUnlockResult = S_OK;
+      CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+      mapping = {}; mapping.hResource = texture; mapping.Flags.ReadOnly = 1;
+      CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+      CHECK(f->surfaceLockFlags.back() == D3DLOCK_READONLY);
+      CHECK(!std::memcmp(mapping.pSurfData, expected.data(), expected.size()));
+      CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+      // Discard of level zero cannot invalidate an outstanding lower map.
+      mapping = {}; mapping.hResource = texture; mapping.SubResourceIndex = 1;
+      CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && mapping.Pitch == 8);
+      rejected(whole);
+      unmap.SubResourceIndex = 1;
+      CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+      for (const HRESULT failure : {S_FALSE, E_OUTOFMEMORY, DXGI_ERROR_WAS_STILL_DRAWING}) {
+        f->surfaceLockResult = failure; mapping = whole;
+        const auto before = snapshot(mapping);
+        CHECK(f->table.pfnLock(f->device, &mapping) == (failure == S_FALSE ? E_FAIL
+          : failure == DXGI_ERROR_WAS_STILL_DRAWING ? D3DERR_WASSTILLDRAWING : failure));
+        CHECK(snapshot(mapping) == before && f->surfaceLockFlags.back() == D3DLOCK_DISCARD);
+      }
+      f->surfaceLockResult = S_OK; mapping = whole;
+      CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+      unmap.SubResourceIndex = 0;
+      CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+      CHECK(f->table.pfnSetTexture(f->device, 0, texture) == S_OK);
+      CHECK(f->table.pfnDestroyResource(f->device, texture) == S_OK);
+      CHECK(f->textureCreates == f->textureCloses && f->surfaceCreates == f->surfaceCloses);
+      // Static SYSTEMMEM still rejects DISCARD without invoking the backend.
+      levels[1].Width = 2; args = textureArgs(&cookie, levels, 3, true);
+      CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+      auto bad = whole; bad.hResource = args.hResource; rejected(bad);
+      mapping = {}; mapping.hResource = args.hResource; mapping.SubResourceIndex = 2;
+      CHECK(f->table.pfnLock(f->device, &mapping) == S_OK);
+      closeDevice(); CHECK(f->teardownDiscard); closeAdapter();
+      CHECK(f->surfaceLocks == f->surfaceUnlocks && f->surfaceCreates == f->surfaceCloses);
+    }
   }
 }
 
@@ -3102,6 +3209,7 @@ int main() {
   depthContracts();
   bufferContracts();
   textureContracts();
+  dynamicTextureContracts();
   shaderContracts();
   ownedServiceStartup();
   resourceContracts();

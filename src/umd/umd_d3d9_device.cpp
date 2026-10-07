@@ -224,12 +224,14 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   if (!args || !args->hResource || !args->pSurfList || !args->SurfCount) return E_INVALIDARG;
   const auto input = *args;
   const bool buffer = input.Flags.VertexBuffer || input.Flags.IndexBuffer;
-  if (input.Flags.Value & ~(buffer ? UINT(0x1800cc) : UINT(0x10083))) return E_INVALIDARG;
+  if (input.Flags.Value & ~(buffer ? UINT(0x1800cc) : UINT(0x10087))) return E_INVALIDARG;
   if (buffer && (bool(input.Flags.VertexBuffer) == bool(input.Flags.IndexBuffer) || input.SurfCount != 1))
     return E_INVALIDARG;
   const bool target = input.Flags.RenderTarget != 0;
   const bool depth = input.Flags.ZBuffer != 0;
   const bool texture = input.Flags.Texture != 0;
+  const bool dynamic = input.Flags.Dynamic != 0;
+  if (!buffer && dynamic && (!texture || target || depth)) return E_INVALIDARG;
   if (depth && (target || texture || input.SurfCount != 1)) return E_INVALIDARG;
   if (input.Flags.NotLockable && !target && !texture && !buffer && !depth) return E_INVALIDARG;
   if ((target || depth) && (input.MultisampleType != D3DDDIMULTISAMPLE_NONE || input.MultisampleQuality))
@@ -282,7 +284,8 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       desc.width = info.Width; desc.height = info.Height; desc.format = format;
       desc.renderTarget = target; desc.systemMemory = input.Pool == D3DDDIPOOL_SYSTEMMEM;
       desc.depthStencil = depth;
-      desc.lockable = !depth && !input.Flags.NotLockable && (!texture || desc.systemMemory);
+      desc.dynamic = dynamic;
+      desc.lockable = !depth && !input.Flags.NotLockable && (!texture || desc.systemMemory || dynamic);
       if (!desc.width || !desc.height || desc.width > UINT(INT_MAX / 4) || desc.height > UINT(INT_MAX))
         return E_INVALIDARG;
       if (texture && i) {
@@ -578,12 +581,20 @@ HRESULT APIENTRY lockResource(HANDLE handle, D3DDDIARG_LOCK* args) {
       args->pSurfData = data; args->Pitch = 0; args->SlicePitch = 0;
       return S_OK;
     }
-    if (input.Flags.Value & ~UINT(0x2a3)) return E_INVALIDARG;
+    if (input.Flags.Value & ~UINT(0x2ab)) return E_INVALIDARG;
     auto item = surface(device, input.hResource, input.SubResourceIndex);
     if (!item || !item->desc.lockable || item->locked
         || bool(input.Flags.NotifyOnly) != bool(item->desc.systemData)) return E_INVALIDARG;
+    // A top-level DISCARD may replace the backing of the whole mip chain.
+    // Reject it while any level is mapped, and never pass a partial/read-only
+    // or lower-level discard to the renderer. NOOVERWRITE remains buffer-only.
+    if (input.Flags.Discard && (!item->desc.dynamic || input.SubResourceIndex
+        || input.Flags.AreaValid || input.Flags.ReadOnly
+        || std::any_of(resource->second->surfaces.begin(), resource->second->surfaces.end(),
+          [](const Surface& level) { return level.locked; }))) return E_INVALIDARG;
     if (input.Flags.AreaValid && !validArea(input.Area, item->desc)) return E_INVALIDARG;
     const DWORD flags = (input.Flags.ReadOnly ? D3DLOCK_READONLY : 0)
+      | (input.Flags.Discard ? D3DLOCK_DISCARD : 0)
       | (input.Flags.DoNotWait ? D3DLOCK_DONOTWAIT : 0);
     D3DLOCKED_RECT mapping = {};
     const HRESULT hr = result(device.backend->lockSurface(*item->backend,

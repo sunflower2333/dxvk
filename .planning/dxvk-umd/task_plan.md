@@ -70,6 +70,15 @@ the bit. A separate blocked frontend changes only this bit on the exact478
 profile to causally verify rejection and capture genuine device inputs while
 core CreateDevice remains unconditionally blocked. No GPU admission claim.
 
+Dynamic2D native implementation is ready for verification: usage reaches the
+private renderer, default-pool mip surfaces are lockable, top-level whole-chain
+Discard is validated and forwarded, conflicting mappings/invalid flags reject
+without backend calls, and failures retain caller outputs. Meaningful fixtures
+cover A8/X8/four native pools/snapshots/retries/lifetime. New --dynamic-textures
+GPU mode retains all5056prior pixels/1056bytes and adds768 raw mip/update pixels.
+Native fixtures, one consolidated CI and independent target pixels are required;
+normal OpenAdapter export and ordinary rendering acceptance remain closed.
+
 ## Presentation and query checkpoint details (historical)
 
 Owned typed D3D9 queries are accepted at exact source

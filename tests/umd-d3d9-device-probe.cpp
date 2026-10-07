@@ -212,7 +212,7 @@ public:
   HRESULT verifyRendering(bool drawing = false, bool shaders = false, bool textures = false,
                           bool buffers = false, bool depthStencil = false, bool fixedFunction = false,
                           bool bufferTransfer = false, bool clipPlanes = false, bool gpuQueries = false,
-                          bool presentation = false) {
+                          bool presentation = false, bool dynamicTextures = false) {
     const auto& api = m_deviceFuncs;
     if (!api.pfnCreateResource || !api.pfnDestroyResource || !api.pfnSetRenderTarget
         || !api.pfnClear || !api.pfnBlt || !api.pfnLock || !api.pfnUnlock) return E_FAIL;
@@ -284,6 +284,13 @@ public:
           std::printf("D3D9_QUERY_PIXEL stage=%u x=%u y=%u value=%08x\n",stage,x,y,actual);
         }
       }
+      if (stage >= 86 && stage <= 97 && SUCCEEDED(status)) {
+        for (UINT y = 0; y < 8; ++y) for (UINT x = 0; x < 8; ++x) {
+          UINT actual;
+          std::memcpy(&actual,backing.data() + 16 + size_t(y) * pitch + x * 4,4);
+          std::printf("D3D9_DYNAMIC_PIXEL stage=%u x=%u y=%u value=%08x\n",stage,x,y,actual);
+        }
+      }
       for (UINT y = 0; y < 8 && SUCCEEDED(status); ++y) {
         for (UINT x = 0; x < 8; ++x) {
           UINT actual;
@@ -344,6 +351,11 @@ public:
             const UINT queryColors[] = {0xffbd5c83,0xff43a6c2,0xff73b248};
             const bool visible = stage == 77 || (stage == 78 && x >= 1 && x < 5 && y >= 2 && y < 6);
             expected = visible ? queryColors[stage-77] : 0xff091725;
+          }
+          if (stage >= 86 && stage <= 97) {
+            const UINT dynamicColors[] = {0x70426db1,0x90be5729,0xb064a83d,0x50a359d2,0x80dca132,0xa03987c5};
+            expected = dynamicColors[(stage-86) % 6];
+            if (stage >= 92) expected |= 0xff000000;
           }
           if (actual != expected) {
             std::printf("D3D9_PIXEL_MISMATCH stage=%u x=%u y=%u actual=%08x expected=%08x\n",
@@ -670,10 +682,65 @@ public:
           hr = api.pfnDestroyResource(m_driverDevice,resource); if (FAILED(hr)) return hr;
           if (api.pfnSetTexture(m_driverDevice,0,resource) != E_INVALIDARG) return E_FAIL;
         }
+        std::printf("D3D9_TEXTURE_READBACK PASS pixels=%u checksum=%08x padding=retained levels=3/2 filters=point/linear address=border/clamp/wrap\n",checked,checksum);
+        if (dynamicTextures) {
+          checked = 0; checksum = 2166136261u;
+          const UINT colors[] = {0x70426db1,0x90be5729,0xb064a83d,0x50a359d2,0x80dca132,0xa03987c5};
+          for (UINT format = 0; format < 2; ++format) {
+            char owner;
+            D3DDDI_SURFACEINFO dynamicLevels[] = {{4,4,0,nullptr,0,0},{2,2,0,nullptr,0,0},{1,1,0,nullptr,0,0}};
+            D3DDDIARG_CREATERESOURCE dynamic = {};
+            dynamic.hResource = &owner;
+            dynamic.Format = format ? D3DDDIFMT_X8R8G8B8 : D3DDDIFMT_A8R8G8B8;
+            dynamic.Pool = D3DDDIPOOL_VIDEOMEMORY;
+            dynamic.Flags.Texture = dynamic.Flags.Dynamic = 1;
+            dynamic.pSurfList = dynamicLevels; dynamic.SurfCount = dynamic.MipLevels = 3;
+            hr = api.pfnCreateResource(m_driverDevice,&dynamic);
+            std::printf("D3D9_DYNAMIC_CREATE format=%u levels=3 hr=%08lx\n",unsigned(dynamic.Format),static_cast<unsigned long>(hr));
+            if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+            for (UINT pass = 0; pass < 2; ++pass) {
+              for (UINT level = 0; level < 3; ++level) {
+                D3DDDIARG_LOCK mapping = {};
+                mapping.hResource = dynamic.hResource; mapping.SubResourceIndex = level;
+                mapping.Flags.Discard = level == 0;
+                hr = api.pfnLock(m_driverDevice,&mapping);
+                std::printf("D3D9_DYNAMIC_LOCK format=%u pass=%u level=%u discard=%u hr=%08lx\n",
+                  format,pass,level,unsigned(mapping.Flags.Discard),static_cast<unsigned long>(hr));
+                if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+                HRESULT valid = S_OK;
+                const UINT width = 4u >> level;
+                if (!mapping.pSurfData || mapping.Pitch < width * 4 || mapping.SlicePitch) valid = E_FAIL;
+                if (valid == S_OK) for (UINT y = 0; y < width; ++y) for (UINT x = 0; x < width; ++x)
+                  std::memcpy(static_cast<uint8_t*>(mapping.pSurfData) + size_t(y) * mapping.Pitch + x * 4,&colors[pass*3+level],4);
+                D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = dynamic.hResource; unmap.SubResourceIndex = level;
+                hr = api.pfnUnlock(m_driverDevice,&unmap);
+                if (valid != S_OK || hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+              }
+              hr = api.pfnSetTexture(m_driverDevice,0,dynamic.hResource); if (FAILED(hr)) return hr;
+              for (auto& vertex : verticesWithUv) vertex.u = vertex.v = 0.25f;
+              for (const auto state : {D3DDDITSS_ADDRESSU,D3DDDITSS_ADDRESSV}) {
+                hr = sampler(state,D3DTADDRESS_CLAMP); if (FAILED(hr)) return hr;
+              }
+              for (const auto state : {D3DDDITSS_MINFILTER,D3DDDITSS_MAGFILTER}) {
+                hr = sampler(state,D3DTEXF_POINT); if (FAILED(hr)) return hr;
+              }
+              for (UINT level = 0; level < 3; ++level) {
+                hr = sampler(D3DDDITSS_MAXMIPLEVEL,level); if (FAILED(hr)) return hr;
+                fill.FillColor = 0xff091725;
+                hr = api.pfnClear(m_driverDevice,&fill,1,&full); if (FAILED(hr)) return hr;
+                const UINT stage = 86 + format*6 + pass*3 + level;
+                std::printf("D3D9_DYNAMIC_DRAW stage=%u format=%u pass=%u level=%u\n",stage,format,pass,level);
+                hr = draw(stage); if (FAILED(hr)) return hr;
+              }
+            }
+            hr = api.pfnDestroyResource(m_driverDevice,dynamic.hResource); if (FAILED(hr)) return hr;
+            if (api.pfnSetTexture(m_driverDevice,0,dynamic.hResource) != E_INVALIDARG) return E_FAIL;
+          }
+          std::printf("D3D9_DYNAMIC_READBACK PASS pixels=%u checksum=%08x padding=retained formats=A8/X8 levels=3 passes=2 discard=top-mip updates=visible\n",checked,checksum);
+        }
         hr = api.pfnDeleteVertexShaderFunc(m_driverDevice,textureVertex.ShaderHandle); if (FAILED(hr)) return hr;
         hr = api.pfnDeletePixelShader(m_driverDevice,texturePixel.ShaderHandle); if (FAILED(hr)) return hr;
         hr = api.pfnDeleteVertexShaderDecl(m_driverDevice,declaration.ShaderHandle); if (FAILED(hr)) return hr;
-        std::printf("D3D9_TEXTURE_READBACK PASS pixels=%u checksum=%08x padding=retained levels=3/2 filters=point/linear address=border/clamp/wrap\n",checked,checksum);
       }
       if (buffers) {
         if (!api.pfnSetStreamSource || !api.pfnSetIndices || !api.pfnDrawIndexedPrimitive) return E_FAIL;
@@ -2013,7 +2080,8 @@ int wmain(int argc, WCHAR** argv) {
   }
   LUID luid = {};
   const bool presentation = argc == 3 && !wcscmp(argv[2], L"--present");
-  const bool gpuQueries = presentation || (argc == 3 && !wcscmp(argv[2], L"--queries"));
+  const bool dynamicTextures = argc == 3 && !wcscmp(argv[2], L"--dynamic-textures");
+  const bool gpuQueries = presentation || dynamicTextures || (argc == 3 && !wcscmp(argv[2], L"--queries"));
   const bool clipPlanes = gpuQueries || (argc == 3 && !wcscmp(argv[2], L"--clip-planes"));
   const bool bufferTransfer = clipPlanes || (argc == 3 && !wcscmp(argv[2], L"--buffer-transfer"));
   const bool fixedFunction = bufferTransfer || (argc == 3 && !wcscmp(argv[2], L"--fixed-function"));
@@ -2024,17 +2092,17 @@ int wmain(int argc, WCHAR** argv) {
   const bool drawing = shaders || (argc == 3 && !wcscmp(argv[2], L"--draw"));
   const bool rendering = drawing || (argc == 3 && !wcscmp(argv[2], L"--render"));
   if ((argc != 2 && !rendering) || !parseLuid(argv[1], luid)) {
-    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer|--clip-planes|--queries|--present]|--list-adapters\n");
+    std::fprintf(stderr, "usage: dxvk-umd-d3d9-device-probe <16 hex LUID bytes> [--render|--draw|--shader|--texture|--buffer|--depth|--fixed-function|--buffer-transfer|--clip-planes|--queries|--dynamic-textures|--present]|--list-adapters\n");
     return 2;
   }
   KmtRuntime9 runtime;
   HRESULT hr = runtime.open(luid);
   if (SUCCEEDED(hr)) hr = runtime.create();
-  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer,clipPlanes,gpuQueries,presentation) : runtime.verify();
+  if (SUCCEEDED(hr)) hr = rendering ? runtime.verifyRendering(drawing,shaders,textures,buffers,depthStencil,fixedFunction,bufferTransfer,clipPlanes,gpuQueries,presentation,dynamicTextures) : runtime.verify();
   const HRESULT closed = runtime.close();
   if (FAILED(closed)) hr = closed;
   std::printf("D3D9_KMT_%s %s hr=%08lx; %s, no ordinary runtime admission\n",
-    presentation ? "PRESENT" : gpuQueries ? "QUERY" : clipPlanes ? "CLIP" : bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
-    presentation ? "typed kernel blit and actual screen pixels" : gpuQueries ? "typed GPU query completion/occlusion/timestamp/readback" : clipPlanes ? "typed homogeneous clip-plane draw/readback pixels" : bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
+    presentation ? "PRESENT" : dynamicTextures ? "DYNAMIC" : gpuQueries ? "QUERY" : clipPlanes ? "CLIP" : bufferTransfer ? "BUFFER_TRANSFER" : fixedFunction ? "FIXED" : depthStencil ? "DEPTH" : buffers ? "BUFFER" : textures ? "TEXTURE" : shaders ? "SHADER" : drawing ? "DRAW" : rendering ? "RENDER" : "DEVICE", SUCCEEDED(hr) ? "PASS" : "FAIL", static_cast<unsigned long>(hr),
+    presentation ? "typed kernel blit and actual screen pixels" : dynamicTextures ? "typed dynamic texture discard/update/mip draw/readback pixels" : gpuQueries ? "typed GPU query completion/occlusion/timestamp/readback" : clipPlanes ? "typed homogeneous clip-plane draw/readback pixels" : bufferTransfer ? "typed system-memory/buffer-transfer draw/readback pixels" : fixedFunction ? "typed fixed-function transform/light draw/readback pixels" : depthStencil ? "typed depth/stencil clear/draw/readback pixels" : buffers ? "typed vertex/index/range-lock draw/readback pixels" : textures ? "typed texture/mip/sampler draw/readback pixels" : shaders ? "typed SM1-3 shader draw/readback pixels" : drawing ? "typed offscreen draw/readback pixels" : rendering ? "typed offscreen clear/readback pixels" : "offscreen lifecycle only, no pixel rendering");
   return FAILED(hr) ? 1 : 0;
 }

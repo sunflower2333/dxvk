@@ -1213,23 +1213,23 @@ void APIENTRY resolveResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT d
 
 void APIENTRY checkFormat(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT* output) {
   auto device = get(h);
-  if (!output) { device->error(E_INVALIDARG); return; }
-  *output = 0;
   try {
-    UINT support = 0;
-    const HRESULT hr = device->backend->CheckFormatSupport(format, &support);
-    if (FAILED(hr)) { device->error(hr == E_INVALIDARG ? E_FAIL : hr); return; }
-    *output = dxvk::umd::nativeFormatCaps(support);
+    const HRESULT hr = dxvk::umd::queryNativeFormatCaps(format, output,
+      [&](DXGI_FORMAT queried, UINT* support) { return device->backend->CheckFormatSupport(queried, support); });
+    device->error(hr);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }
 
 void APIENTRY checkMultisample(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT count, UINT* output) {
   auto device = get(h);
-  if (!output) { device->error(E_INVALIDARG); return; }
-  *output = 0;
-  if (!count || count > D3D11_MAX_MULTISAMPLE_SAMPLE_COUNT) return;
-  try { device->error(device->backend->CheckMultisampleQualityLevels(format, count, output)); }
+  try {
+    const HRESULT hr = dxvk::umd::queryNativeMultisampleLevels(format, count, output,
+      [&](DXGI_FORMAT queried, UINT samples, UINT* levels) {
+        return device->backend->CheckMultisampleQualityLevels(queried, samples, levels);
+      });
+    device->error(hr);
+  }
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
   catch (...) { device->error(E_FAIL); }
 }

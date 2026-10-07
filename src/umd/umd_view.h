@@ -1,5 +1,6 @@
 #pragma once
 #include "umd_ddi.h"
+#include "umd_format.h"
 #include <d3d11.h>
 #include <algorithm>
 
@@ -120,19 +121,6 @@ inline bool resolveSubresources(const D3D11_TEXTURE2D_DESC& destination, UINT ds
   if (mip >= D3D11_REQ_MIP_LEVELS) return false;
   return std::max(1u, destination.Width >> mip) == source.Width
       && std::max(1u, destination.Height >> mip) == source.Height;
-}
-
-inline UINT nativeFormatCaps(UINT api) {
-  UINT result = 0;
-  if (api & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE) result |= D3D10_DDI_FORMAT_SUPPORT_SHADER_SAMPLE;
-  if (api & D3D11_FORMAT_SUPPORT_RENDER_TARGET) {
-    result |= D3D10_DDI_FORMAT_SUPPORT_RENDERTARGET;
-    if (api & D3D11_FORMAT_SUPPORT_BLENDABLE) result |= D3D10_DDI_FORMAT_SUPPORT_BLENDABLE;
-    if (api & D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET)
-      result |= D3D10_DDI_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET;
-  }
-  if (api & D3D11_FORMAT_SUPPORT_MULTISAMPLE_LOAD) result |= D3D10_DDI_FORMAT_SUPPORT_MULTISAMPLE_LOAD;
-  return result;
 }
 
 }

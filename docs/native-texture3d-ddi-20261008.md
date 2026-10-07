@@ -27,7 +27,10 @@ view and transfer behavior; the production admission masks remain unchanged.
   volume copies reject self-copy, differing dimensions/mip counts/formats and an
   immutable destination. Empty update/copy boxes remain no-ops.
 - GenerateMips validates the actual resource flags and selected Texture3D SRV
-  before delegating the selected mip range to the backend.
+  before copying its source mip into a temporary volume whose first mip is
+  zero. The backend generates that temporary chain; ordered GPU copies write
+  only the selected lower levels into the original volume. The source mip and
+  excluded tail remain untouched. A one-level view records no generation.
 
 The existing owners, retirement paths and live D3D10/11 core callback pointers
 are reused. There are no DDI table casts and no changes to shader translation,
@@ -65,8 +68,34 @@ The sampling shader uses public reference VS/PS creation to isolate resource
 and SRV behavior. It does not establish production shader decoder support.
 The fixture preserves HLSL and DXBC, and every successful readback preserves
 the actual words, independently calculated expected words and original mapped
-dimensions/pitches. A complete pass produces 309 such files: 234 files from
+dimensions/pitches. Capture and unmap precede the exact word comparison, so a
+rejected mip is retained too. A complete pass produces 309 such files: 234 files from
 78 mapped volume-mip records, 63 from 21 sampled slices, and 12 shader inputs.
+
+The first combined native attempt at `d821fc0` passed initialization, XYZ
+transfers, dynamic discard and W-slice output controls, then rejected the
+terminal mip of the first selected GenerateMips range. Its original 8-cube,
+4-cube source and generated 2-cube words matched the independent oracle. The
+old fixture compared the terminal 1-cube before saving it, so its rejected
+word is unavailable. The failure archive and access-violation exit are retained.
+The corrected fixture unwinds its resource owners on a failed comparison.
+
+A separate public-API observation creates the same padded 8-cube/four-mip
+volume and directly invokes `ID3D11DeviceContext::GenerateMips` for each of the
+three original view ranges. It saves all four levels before the production
+comparison, including the 1-cube. Its 108 files use `public-volume-*` names
+and do not change the 309-file production closure. `PUBLIC_MIP_OBSERVATION`
+reports actual mismatches; those words never become the production expected
+values or its 27/9,138/945 pass gates. This observation is needed to distinguish
+the backend's view-offset behavior from a terminal-level generation failure;
+the normalized-chain correction remains pending a fresh native run.
+
+The required selected-range semantics follow
+[GenerateMips](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-generatemips):
+generation starts with the view's largest mip and ends at its smallest mip.
+The local `PFND3D10DDI_GENMIPS` and
+`D3D10DDIARG_TEX3D_SHADERRESOURCEVIEW` documents define the corresponding DDI
+and all-remaining range. No CPU mip calculation replaces backend rendering.
 
 Local optimized Clang COFF checks with original Microsoft SDK/WDK/MSVC headers
 passed for x64 and x86: production `umd_ddi.cpp`, the portable policy fixture
@@ -112,13 +141,15 @@ Run the portable fixture expecting `PASS volume policy: 385547 checks`, then
 the volume fixture in an empty owned output directory. Require actual exit 0,
 the three profile markers, `PASS Texture3D`, `profiles=3`, `cases=27`,
 `voxels=9138`, `sampled=945`, and all original files. Verify word comparisons
-independently after collection. The observed runtime check count is recorded
+independently after collection, preserving public observations separately.
+The observed runtime check count is recorded
 from stdout; it is not guessed from local compilation.
 
 ## Remaining gates
 
-Native ARM64 MSVC build and the complete WARP volume run are pending a root
-CPU handoff. Real-KMT embedded-renderer execution and ordinary Microsoft
+The first native ARM64 MSVC build passed, but its complete WARP volume run
+failed the terminal selected mip. A fresh corrected native build and WARP
+run are pending root coordination. Real-KMT embedded-renderer execution and ordinary Microsoft
 runtime-loaded DX10/10.1/11 acceptance remain pending. This bounded slice does
 not complete compressed/video/depth volume formats, shared volume resources,
 all resource/view aliasing rules or the complete resource-family admission

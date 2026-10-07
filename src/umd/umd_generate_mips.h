@@ -1,9 +1,66 @@
 #pragma once
 // SPDX-License-Identifier: MIT
 #include "umd_texture1d.h"
+#include "umd_texture3d.h"
 #include <wrl/client.h>
 
 namespace dxvk::umd {
+
+// Normalize a volume SRV's source mip to level zero before generation. Only
+// generated levels are copied back, so the source and excluded tail stay intact.
+inline HRESULT generateVolumeViewMips(
+    ID3D11Device* device,
+    ID3D11DeviceContext* context,
+    ID3D11Resource* resource,
+    ID3D11ShaderResourceView* view) {
+  using Microsoft::WRL::ComPtr;
+  ComPtr<ID3D11Texture3D> texture;
+  HRESULT hr = resource->QueryInterface(IID_PPV_ARGS(&texture));
+  if (FAILED(hr)) return hr;
+  if (!texture) return E_FAIL;
+  D3D11_TEXTURE3D_DESC desc{}; texture->GetDesc(&desc);
+  D3D11_SHADER_RESOURCE_VIEW_DESC vd{}; view->GetDesc(&vd);
+  hr = mipGenerationStatus(desc, vd);
+  if (FAILED(hr)) return hr;
+  const UINT firstMip = vd.Texture3D.MostDetailedMip;
+  const UINT mipCount = vd.Texture3D.MipLevels;
+  if (!desc.Width || !desc.Height || !desc.Depth
+      || desc.MipLevels > D3D11_REQ_MIP_LEVELS
+      || firstMip >= D3D11_REQ_MIP_LEVELS) return E_INVALIDARG;
+  if (mipCount == 1) return S_OK;
+
+  D3D11_TEXTURE3D_DESC scratchDesc{};
+  scratchDesc.Width = std::max(1u, desc.Width >> firstMip);
+  scratchDesc.Height = std::max(1u, desc.Height >> firstMip);
+  scratchDesc.Depth = std::max(1u, desc.Depth >> firstMip);
+  scratchDesc.MipLevels = mipCount;
+  scratchDesc.Format = vd.Format;
+  scratchDesc.Usage = D3D11_USAGE_DEFAULT;
+  scratchDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+  scratchDesc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+  ComPtr<ID3D11Texture3D> scratch;
+  hr = device->CreateTexture3D(&scratchDesc, nullptr, &scratch);
+  if (FAILED(hr)) return hr;
+  if (!scratch) return E_FAIL;
+  D3D11_SHADER_RESOURCE_VIEW_DESC scratchViewDesc{};
+  scratchViewDesc.Format = vd.Format;
+  scratchViewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE3D;
+  scratchViewDesc.Texture3D.MipLevels = mipCount;
+  ComPtr<ID3D11ShaderResourceView> scratchView;
+  hr = device->CreateShaderResourceView(scratch.Get(), &scratchViewDesc, &scratchView);
+  if (FAILED(hr)) return hr;
+  if (!scratchView) return E_FAIL;
+
+  // Allocate both owners before recording. Backend command retention keeps
+  // these GPU-only copies/blits alive without CPU texels or a global idle.
+  context->CopySubresourceRegion(scratch.Get(), 0, 0, 0, 0,
+    texture.Get(), firstMip, nullptr);
+  context->GenerateMips(scratchView.Get());
+  for (UINT mip = 1; mip < mipCount; ++mip)
+    context->CopySubresourceRegion(texture.Get(), firstMip + mip, 0, 0, 0,
+      scratch.Get(), mip, nullptr);
+  return S_OK;
+}
 
 // Generate exactly the validated SRV mip/slice range with GPU-only operations.
 // Some D3D11 implementations mishandle a nonzero first mip on 1D array SRVs.
@@ -20,6 +77,8 @@ inline HRESULT generateViewMips(
   if (!resource) return E_INVALIDARG;
   D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
   resource->GetType(&dimension);
+  if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D)
+    return generateVolumeViewMips(device, context, resource.Get(), view);
   if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE1D) {
     context->GenerateMips(view);
     return S_OK;

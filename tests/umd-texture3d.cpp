@@ -21,10 +21,11 @@ static DWORD caller;
 static HRESULT lastError = S_OK;
 static ComPtr<ID3D11Device> createdDevice;
 static ComPtr<ID3D11DeviceContext> createdContext;
+struct FixtureFailure {};
 static void check(bool value, unsigned line) {
   ++checks;
   if (!value) { std::fprintf(stderr,"FAIL Texture3D line=%u error=%08lx\n",line,
-    static_cast<unsigned long>(lastError)); std::exit(1); }
+    static_cast<unsigned long>(lastError)); throw FixtureFailure{}; }
 }
 #define CHECK(x) check(!!(x), __LINE__)
 static void ok() { CHECK(lastError == S_OK); }
@@ -179,14 +180,23 @@ static void readVolume(Fixture& f,Resource& resource,const Description& d,const 
     for (UINT z=0;z<m.TexelDepth;++z) for (UINT y=0;y<m.TexelHeight;++y) for (UINT x=0;x<m.TexelWidth;++x) {
       UINT v; std::memcpy(&v,static_cast<const char*>(map.pData)+size_t(z)*map.DepthPitch+y*map.RowPitch+x*4,4);
       observed[offset(m,x,y,z)]=v;
-      ++voxels; CHECK(v==expected[mip][offset(m,x,y,z)]);
     }
     const std::string name="readback-"+std::to_string(readback)+"-mip-"+std::to_string(mip);
+    const UINT metadata[]={readback,mip,m.TexelWidth,m.TexelHeight,m.TexelDepth,map.RowPitch,map.DepthPitch};
+    f.call([&](auto& t){t.pfnStagingResourceUnmap(f.device,staging.handle,mip);}); ok();
     saveShader(f.profile,(name+".actual.u32.bin").c_str(),observed.data(),observed.size()*sizeof(UINT));
     saveShader(f.profile,(name+".expected.u32.bin").c_str(),expected[mip].data(),expected[mip].size()*sizeof(UINT));
-    const UINT metadata[]={readback,mip,m.TexelWidth,m.TexelHeight,m.TexelDepth,map.RowPitch,map.DepthPitch};
     saveShader(f.profile,(name+".dimensions-pitches.u32.bin").c_str(),metadata,sizeof(metadata));
-    f.call([&](auto& t){t.pfnStagingResourceUnmap(f.device,staging.handle,mip);}); ok();
+    for (size_t i=0;i<observed.size();++i) {
+      ++voxels;
+      if (observed[i]!=expected[mip][i]) {
+        const size_t x=i%m.TexelWidth,y=(i/m.TexelWidth)%m.TexelHeight;
+        const size_t z=i/(size_t(m.TexelWidth)*m.TexelHeight);
+        std::fprintf(stderr,"VOLUME_MISMATCH profile=%u readback=%u mip=%u xyz=%zu,%zu,%zu actual=%08x expected=%08x\n",
+          f.profile,readback,mip,x,y,z,observed[i],expected[mip][i]);
+      }
+      CHECK(observed[i]==expected[mip][i]);
+    }
   }
 }
 struct ShaderView {
@@ -221,11 +231,80 @@ struct Target {
   ~Target() { owner.call([&](auto& t){t.pfnDestroyRenderTargetView(owner.device,handle);}); ok(); }
 };
 
-static void saveShader(UINT profile,const char* name,const void* data,size_t bytes) {
-  const std::string path="volume-"+std::to_string(profile)+"-"+name;
+static void saveBytes(const std::string& path,const void* data,size_t bytes) {
   std::ofstream output(path,std::ios::binary); CHECK(output.is_open());
   output.write(static_cast<const char*>(data),static_cast<std::streamsize>(bytes));
   output.close(); CHECK(!output.fail());
+}
+static void saveShader(UINT profile,const char* name,const void* data,size_t bytes) {
+  saveBytes("volume-"+std::to_string(profile)+"-"+name,data,bytes);
+}
+
+// Observe the backend's direct public API on an independently created volume.
+// These words never become the production oracle. Save every original level,
+// including the terminal 1x1x1 level, before the production comparison runs.
+static void observePublicMips(Fixture& f,const Description& d,const Pitched& initial,
+    UINT count,const Volume& expected) {
+  D3D11_TEXTURE3D_DESC desc{};
+  desc.Width=d.mips[0].TexelWidth; desc.Height=d.mips[0].TexelHeight;
+  desc.Depth=d.mips[0].TexelDepth; desc.MipLevels=d.args.MipLevels;
+  desc.Format=d.args.Format; desc.Usage=D3D11_USAGE_DEFAULT;
+  desc.BindFlags=D3D11_BIND_RENDER_TARGET|D3D11_BIND_SHADER_RESOURCE;
+  desc.MiscFlags=D3D11_RESOURCE_MISC_GENERATE_MIPS;
+  std::vector<D3D11_SUBRESOURCE_DATA> data(initial.rows.size());
+  for (size_t i=0;i<data.size();++i)
+    data[i]={initial.rows[i].pSysMem,initial.rows[i].SysMemPitch,initial.rows[i].SysMemSlicePitch};
+  ComPtr<ID3D11Texture3D> texture;
+  CHECK(f.backend->CreateTexture3D(&desc,data.data(),&texture)==S_OK && texture);
+  D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc{};
+  viewDesc.Format=desc.Format; viewDesc.ViewDimension=D3D11_SRV_DIMENSION_TEXTURE3D;
+  viewDesc.Texture3D={1,count};
+  ComPtr<ID3D11ShaderResourceView> view;
+  CHECK(f.backend->CreateShaderResourceView(texture.Get(),&viewDesc,&view)==S_OK && view);
+  D3D11_SHADER_RESOURCE_VIEW_DESC actualView{}; view->GetDesc(&actualView);
+  CHECK(actualView.ViewDimension==D3D11_SRV_DIMENSION_TEXTURE3D);
+  CHECK(actualView.Texture3D.MostDetailedMip==1);
+  CHECK(actualView.Texture3D.MipLevels==(count==UINT32_MAX ? desc.MipLevels-1 : count));
+  f.context->GenerateMips(view.Get());
+  desc.Usage=D3D11_USAGE_STAGING; desc.BindFlags=desc.MiscFlags=0;
+  desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+  ComPtr<ID3D11Texture3D> staging;
+  CHECK(f.backend->CreateTexture3D(&desc,nullptr,&staging)==S_OK && staging);
+  f.context->CopyResource(staging.Get(),texture.Get());
+  for (UINT mip=0;mip<desc.MipLevels;++mip) {
+    D3D11_MAPPED_SUBRESOURCE map{};
+    CHECK(f.context->Map(staging.Get(),mip,D3D11_MAP_READ,0,&map)==S_OK && map.pData);
+    const auto& shape=d.mips[mip];
+    CHECK(map.RowPitch>=shape.TexelWidth*4);
+    if (shape.TexelDepth>1)
+      CHECK(map.DepthPitch>=uint64_t(shape.TexelHeight-1)*map.RowPitch+shape.TexelWidth*4);
+    std::vector<UINT> observed(expected[mip].size());
+    for (UINT z=0;z<shape.TexelDepth;++z) for (UINT y=0;y<shape.TexelHeight;++y)
+      for (UINT x=0;x<shape.TexelWidth;++x)
+        std::memcpy(&observed[offset(shape,x,y,z)],static_cast<const char*>(map.pData)
+          +size_t(z)*map.DepthPitch+y*map.RowPitch+x*4,4);
+    const UINT metadata[]={count,mip,shape.TexelWidth,shape.TexelHeight,shape.TexelDepth,
+      map.RowPitch,map.DepthPitch,actualView.Texture3D.MostDetailedMip,actualView.Texture3D.MipLevels};
+    f.context->Unmap(staging.Get(),mip);
+    const std::string name="public-volume-"+std::to_string(f.profile)+"-range-"
+      +std::to_string(count)+"-mip-"+std::to_string(mip);
+    saveBytes(name+".actual.u32.bin",observed.data(),observed.size()*sizeof(UINT));
+    saveBytes(name+".expected.u32.bin",expected[mip].data(),expected[mip].size()*sizeof(UINT));
+    saveBytes(name+".dimensions-pitches.u32.bin",metadata,sizeof(metadata));
+    size_t mismatches=0;
+    for (size_t i=0;i<observed.size();++i) {
+      if (observed[i]==expected[mip][i]) continue;
+      if (!mismatches) {
+        const size_t x=i%shape.TexelWidth,y=(i/shape.TexelWidth)%shape.TexelHeight;
+        const size_t z=i/(size_t(shape.TexelWidth)*shape.TexelHeight);
+        std::printf("PUBLIC_MIP_OBSERVATION profile=%u count=%u mip=%u first_xyz=%zu,%zu,%zu actual=%08x expected=%08x\n",
+          f.profile,count,mip,x,y,z,observed[i],expected[mip][i]);
+      }
+      ++mismatches;
+    }
+    std::printf("PUBLIC_MIP_OBSERVATION profile=%u count=%u mip=%u mismatches=%zu words=%zu\n",
+      f.profile,count,mip,mismatches,observed.size()); std::fflush(stdout);
+  }
 }
 
 // Public reference shaders independently sample the production-created and
@@ -268,14 +347,14 @@ static void sampling(Fixture& f) {
     for (UINT y=0;y<5;++y) for (UINT x=0;x<9;++x) {
       UINT v; std::memcpy(&v,static_cast<const char*>(map.pData)+y*map.RowPitch+x*4,4);
       observed[y*9+x]=v; reference[y*9+x]=expected[0][offset(d.mips[0],x,y,z)];
-      ++sampled; CHECK(v==reference[y*9+x]);
     }
     const std::string name="sampled-slice-"+std::to_string(z);
+    const UINT metadata[]={z,9,5,map.RowPitch};
+    f.context->Unmap(readback.Get(),0);
     saveShader(f.profile,(name+".actual.u32.bin").c_str(),observed.data(),observed.size()*sizeof(UINT));
     saveShader(f.profile,(name+".expected.u32.bin").c_str(),reference.data(),reference.size()*sizeof(UINT));
-    const UINT metadata[]={z,9,5,map.RowPitch};
     saveShader(f.profile,(name+".dimensions-pitches.u32.bin").c_str(),metadata,sizeof(metadata));
-    f.context->Unmap(readback.Get(),0);
+    for (size_t i=0;i<observed.size();++i) { ++sampled; CHECK(observed[i]==reference[i]); }
   }
   f.context->ClearState(); ++cases;
 }
@@ -376,6 +455,7 @@ static void mips(Fixture& f) {
     ShaderView view(f,r,1,count); f.call([&](auto& t){t.pfnGenMips(f.device,view.handle);}); ok();
     const UINT end=count==UINT32_MAX ? 4 : 1+count;
     for (UINT mip=2;mip<end;++mip) std::fill(expected[mip].begin(),expected[mip].end(),0xff00ffffu);
+    observePublicMips(f,d,data,count,expected);
     readVolume(f,r,d,expected); ++cases;
   }
 }
@@ -418,6 +498,7 @@ static void failures(Fixture& f) {
 int main() {
   caller=GetCurrentThreadId();
   std::puts("BACKEND=WARP\nproduction_volume_DDI=true\nVIOGPU=false\nregistration=false");
+  try {
   for (UINT profile=0;profile<3;++profile) {
     Fixture f(profile);
     const struct {const char* name;void (*run)(Fixture&);} tests[]={
@@ -430,4 +511,5 @@ int main() {
   }
   CHECK(cases==27 && voxels==9138 && sampled==945);
   std::printf("PASS Texture3D\nprofiles=3\ncases=%u\nchecks=%u\nvoxels=%u\nsampled=%u\n",cases,checks,voxels,sampled);
+  } catch (const FixtureFailure&) { return 1; }
 }

@@ -1706,15 +1706,14 @@ private:
     printLuid(adapter.AdapterLuid); std::printf("\n");
     if (closed != 0) return closed < 0 ? result(closed) : E_FAIL;
     if (std::memcmp(&adapter.AdapterLuid,&m_luid,sizeof(m_luid))) return E_FAIL;
-    // This raw KMT harness supplies the runtime's source-owner service. Shared
-    // ownership yields to the desktop's exclusive owner; never request an
-    // exclusive mode or release another device's source ownership.
-    const D3DKMT_VIDPNSOURCEOWNER_TYPE type = D3DKMT_VIDPNSOURCEOWNER_SHARED;
+    // Emulated ownership has no real primary ownership. This diagnostic must
+    // leave the desktop's display owner intact and never change its mode.
+    const D3DKMT_VIDPNSOURCEOWNER_TYPE type = D3DKMT_VIDPNSOURCEOWNER_EMULATED;
     D3DKMT_SETVIDPNSOURCEOWNER owner = {};
     owner.hDevice = m_device; owner.pType = &type;
     owner.pVidPnSourceId = &adapter.VidPnSourceId; owner.VidPnSourceCount = 1;
     const NTSTATUS status = D3DKMTSetVidPnSourceOwner(&owner);
-    std::printf("D3D9_PRESENT_SOURCE_ACQUIRE status=%08lx source=%u type=shared\n",
+    std::printf("D3D9_PRESENT_SOURCE_ACQUIRE status=%08lx source=%u type=emulated\n",
       static_cast<unsigned long>(status),adapter.VidPnSourceId);
     if (status != 0) return status < 0 ? result(status) : E_FAIL;
     m_sourceOwned = true;

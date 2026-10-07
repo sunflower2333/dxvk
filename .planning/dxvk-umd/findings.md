@@ -1517,3 +1517,23 @@ Full ordinary runtime remains closed: current GetCaps still reports empty
 format/query lists and zero D3DCAPS9, and production entry admission is unchanged.
 The presentation helper review corrected an inherited55s scheduled-task cap to
 present-only75s before any GPU run, preserving65s probe and77s polling bounds.
+
+## 2026-10-07 shared source ownership diagnostic
+Native probe8d9e196 is warning-free; root-present-diagnostic-probe-ready-01.json
+independently joins57Git/archive/build/after-run sources, originalAA64COFF and
+PE, exact source-derived import library and SDK libraries/headers. No native
+fixture rerun claimed; unchanged466831 fixture evidence remains source linked.
+Present42 actual HDC lookup returns nativeLUID6e6c/source0, closing its extra
+adapter successfully. Shared acquisition returnsc01e0342 before allocation or
+present. No release was required because acquisition failed. All prior GPU
+slices pass, residency19/19remaining0, signedSYS/DWM/Explorer and58readiness
+fields retained. Failure archiveb22c15177e2e226199e8ed7d203bb4c883d86f01c2e889b44f1e466a61013ae7
+retains12originalmembers. Root failure review recomputes832query/clip pixels,
+checks8inputs/3scripts/token and task removal; presentation_accepted=false.
+Emulated owner probe-only diagnostic is prepared next: SDK defines type4 as
+no real primary ownership. It may expose whether legacy raw KMT presentation
+can coexist with DWM; this is a hypothesis, not successful redirection evidence.
+UMD061ee8f, all frame colors and strict screen oracles remain byte-identical.
+Full061ee8f CI37549764498 is independently complete, all six jobs, five ZIPs,
+three actual architecture links and15actual native executions. No duplicate
+automatic run was triggered by the shared probe-only [skip ci] commit.

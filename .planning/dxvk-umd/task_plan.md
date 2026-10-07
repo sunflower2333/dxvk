@@ -48,7 +48,8 @@ Exact committed061ee8f native87-input rebuild passes466831; root independently
 joins72Git+15pinnedVulkan inputs and seven originalAA64COFFs. Six compiled
 semantic controls pass at their intended assertions; root verifies all original
 source/archive/build/after-run and native evidence without rewriting it. Single
-automaticCI37549764498 all six jobs pass, full artifact provenance review pending.
+automaticCI37549764498 all six jobs pass; root independently verifies all five
+raw ZIPs, architecture core/backend logs and15nativeARM64 execution payloads.
 Three native-parsed wrappers02 fix the inherited scheduled-task deadline to75s
 for the65s presentation probe, with77s result polling. Generic wrappers are
 hash-joined and prior query wrappers copied into the owned staging backup. Target
@@ -59,7 +60,14 @@ those earlier gates then rawKMT rejects stage1 withc01e0342/source ownership in
 use. Source/context and20residency references close, driver/desktop58fields
 retain; no presentation GPU PASS. A separately built probe-only diagnostic adds
 shared source ownership registration/release; all UMD and pixel oracle bytes
-remain unchanged, and causal acceptance awaits the fresh target run.
+remain unchanged. Native probe8d9e196 strictly compiles without warnings and
+root independently verifies57source links, originalCOFF/PE/imports/libraries.
+Targetpresent42 matches nativeLUID6e6c/source0 but shared ownership itself is
+rejected c01e0342 before any present submission. All earlier rendering remains
+verified;19residency references/evictions close, signedSYS/desktop58fields retain.
+No screen or ordinary-runtime acceptance. Next probe-only causal diagnostic
+uses documented EMULATED type4 (no real primary ownership); no exclusive
+request, mode change or altered UMD/fixture/screen oracle is introduced.
 
 Previous ae61dde compact clip37/38 acceptance remains unchanged. Production
 caps/exports, registration and paired package pins stay closed. Complete remaining

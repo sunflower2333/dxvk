@@ -47,15 +47,15 @@ Frozen fresh desktop DWM1864(start1791378029900)/Explorer4464(start1791352985381
 SYSd48e/oem17/58624/service4/PnPStarted/USERconsole1 remains. Prior System41/6008
 unexpected restart cause unresolved; no shell restoration or VM restart.
 
-Local rootf4bf37f integrates functional DX11 graphics stages/tessellation/SO/
+Local rootb75d6d5 integrates functional DX11 graphics stages/tessellation/SO/
 class instances, query/owned-child/packedIA, DX10 format/MSAA policy and immutable
 DX8 identity/private DXVK9 backend. Integrated portable legacyAPI2800 and actual
-pinned SM1 compiler47 pass; new private-child4029/input41 pass and SM5metadata351/
-MSAA269 verification continues. Future sole workflow fixture lists are being
-extended; newer source not pushed. DX11 agent owns new repeated locked-buffer
-renderer controls; root fixes a newly exposed per-draw source bounds defect.
-DX10 agent owns isolated probe-only runtime callback pre/post diagnostics, with
-SM4.1 compiler omissions still open. Build verifier owns target official EWDK
+pinned SM1 compiler47 pass; private-child4029/input41/SM5metadata351/MSAA269 all pass. Future sole workflow builds/packages26 native cases; newer source not pushed.
+Root integrates18 locked-buffer rendering stages and bounded per-buffer/combined
+copy sizes. Actual x86 strict device584971 passes the locked/teardown/FVF cases.
+DX11 agent prepares native f4 WARP15 execution; root ARM64 CPU4 is frozen328inputs.
+Final probe-only diagnostics use owned original callback snapshots, with25-call
+CPU controls; DX10 agent resumes common SM4.1 compiler omissions. Build verifier owns target official EWDK
 x86 CPU execution of frozen7c2, then releases the target for the frozen f4 packet.
 Native execution of integrated future source and genuine runtime8/10/11 remain
 required. No production admission opened.

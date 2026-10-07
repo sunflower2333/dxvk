@@ -2703,3 +2703,15 @@ explicit-handle/raw-stream helper is prepared byDX11 before target handoff.
 Native locked-buffer source preparer02 now resolves pinned submodule Git origins
 for conditional Vulkan includes, and uses explicit ProcessStartInfo/raw streams.
 First failed empty root archive-preparation01 preserved separately.
+
+
+Root native ARM64 CPU4 packetb75-02 locally joins328 exactGit/submodule inputs,
+sourcearchive4bd8b8a8fcadc7f24bff90177fbd1ed8ff8de3bc3a7d118dffee2115a86c650d;
+no target parse/build/run yet. Actual EWDK x86b75 firstparty strict passes
+544/2800/45802/584971, with observed unbound80070057/noDraw/0bytes and bound
+S_OK/oneDraw/60bytes/stride20. Pinned dxbc vendor build first failed blanketW4/WX
+(empty-macro/unused/shadow diagnostics); documented Meson vendor policyW3 and
+conforming preprocessor now selected in a fresh helper, originalsource unchanged.
+Root consolidated bounded fixture runner now rejects a missing ExitCode instead
+of treating it as success, and drains stdout after wait. ARM64 runner already
+compares explicit nonzero exit. Source/current driver goal remains active.

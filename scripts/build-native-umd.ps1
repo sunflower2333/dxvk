@@ -70,8 +70,11 @@ function Invoke-BoundedFixture([string]$Executable, [string]$Name) {
         $process.Kill(); $process.WaitForExit()
         throw "$Name exceeded its 30-second deadline"
     }
+    $process.WaitForExit()
     Get-Content -LiteralPath $out
-    if ($process.ExitCode) { throw "$Name failed: $(Get-Content -LiteralPath $err -Raw)" }
+    if ($null -eq $process.ExitCode -or $process.ExitCode -ne 0) {
+        throw "$Name failed or lost its exit status: $(Get-Content -LiteralPath $err -Raw)"
+    }
 }
 if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-runtime-backend-test.exe runtime-backend-test

@@ -17,3 +17,14 @@ ARM64 PowerShell5.1.26100.1591 parses both exactCI scripts withzeroerrors.
 No newCI workflow or sourcepush; activeproductioncurrentd7/all6CIpass.
 NativeWARP evidence validates DDI fixture scope; realhardware/ordinaryruntime
 and public admission masks remain separate unfinished gates.
+
+
+2026-10-08 corrected2489 nativePASS/root-originals accepted: native03 archive
+4,356,406 SHA d5fc7539/611 files, source93, header21/lib7, all11retentionequal;
+SO1252, typed3733/callback280 with nullGS72/domain1024, policy385547,
+Texture3D12025/all27/9138/945. Independent production309PASS/public108 retained;
+direct public mismatches30x0+3x1+3x8; no expected substitution. Native13/host7
+finalized0, rootrelease1b1e4942 hands target to EWDKCPU04. First-partyW4WXwarnings0,
+unchangedpinneddependencyW3warninglines65. Missing-newline02preflight failure
+retained; fresh03 changesoneLF only, source8 payloads unchanged. Merge/push once
+next; real volume/ordinary runtime/Present acceptance remainsfalse.

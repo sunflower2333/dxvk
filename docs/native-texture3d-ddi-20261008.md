@@ -88,7 +88,7 @@ and do not change the 309-file production closure. `PUBLIC_MIP_OBSERVATION`
 reports actual mismatches; those words never become the production expected
 values or its 27/9,138/945 pass gates. This observation is needed to distinguish
 the backend's view-offset behavior from a terminal-level generation failure;
-the normalized-chain correction remains pending a fresh native run.
+the normalized-chain correction passed the fresh native ARM64 run below.
 
 The required selected-range semantics follow
 [GenerateMips](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-generatemips):
@@ -102,7 +102,44 @@ passed for x64 and x86: production `umd_ddi.cpp`, the portable policy fixture
 and the native volume fixture. The first two local attempts and diagnostics
 are preserved. The final fixture-only output-retention compile is separate;
 production and portable bytes join the earlier successful compile. These are
-local original-header checks, not a native MSVC or WARP result.
+local original-header checks. The fresh native MSVC and WARP results are recorded below.
+
+## Actual native ARM64 result
+
+The combined `2489b0f` source passed all four fixtures on the target Windows VM:
+legacy stream output 1,252 checks; typed D3D10.1/D3D11 3,733 checks and 280
+callbacks; volume policy 385,547 checks; Texture3D 12,025 checks over all three
+profiles, 27 cases, 9,138 mapped voxels and 945 sampled pixels. The typed fixture
+retains its 72-word null-GS and 1,024-word domain stream-output comparisons.
+Query polling makes its total check/callback counts vary between runs.
+
+The original archive `d5fc7539` contains 611 files. Root directly joined all
+93 compiled Git inputs, 21 SDK inputs and seven library inputs; all 11 input,
+installed driver, service, candidate and desktop before/after pairs matched.
+All 12 build/fixture children plus the owned collector exited zero with drained
+pipes. First-party compilation used `/W4 /WX` without diagnostics. The pinned
+DXBC dependency kept its existing `/W3` policy and 65 original warning lines.
+
+An independent integer oracle verified all 309 production files, including
+78 mapped volume records and every terminal mip, with all 9,138 voxel and 945
+sampled-pixel values exact. The separate 108 public observation files retain
+36 direct API mip records. Thirty matched their semantic expectation; each
+profile retained one terminal-mip mismatch for the full view and eight lower
+mip mismatches for the two-level view. The one-level view remained unchanged.
+Those observed mismatches remain separate from the successful production
+readbacks; no observed value replaced an expected value.
+
+The first new preflight failed before source upload because its script omitted
+a statement newline. Its original failure is retained. A fresh preflight packet
+fixed that newline and used the same source, build, parser and collector bytes.
+The earlier terminal-mip failure remains retained too. These results establish
+native WARP resource and stream-output regressions; real viogpu volume rendering,
+ordinary Microsoft-runtime admission and presentation remain unverified.
+
+Evidence is under the workspace directory
+`artifacts/dxvk-so-volume-integration-20261008/native-warp-2489b0f-03/`, including
+`root-native03-originals-direct-review.json` and
+`root-complete-volume-original-words-verified-03.json`.
 
 ## Exact native build inclusion
 

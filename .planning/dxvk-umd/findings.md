@@ -1609,3 +1609,29 @@ All other adapter/version/private/caps queries remain original. Import pointer
 and page protection restore; system DLL files/registry remain original. The
 frontend still always blocks CreateDevice. This is callback tracing, not
 ordinary runtime rendering/admission or presentation acceptance.
+
+## 2026-10-07 real Microsoft D3D9 adapter contract and caps continuation
+Exact5214397 native build independently passes original42members/60source
+links/twoCOFF/twoPE/SDK and null guards. Session1 selector01 original32member
+archive736d3fc7 independently verifies seven process-local exact DX9 redirects,
+two real System32 d3d9 OpenAdapter calls Interface9/Version69632, successful
+private identity negotiation and 18GetCaps calls. Type13/304-byte caps, type3
+format count4-byte and type6query count4-byte return success/zeros. Type34
+DDIGAMMACAPS4-byte returns8876086a. Type4format data receives0-byte empty list.
+Both adapter handles close0; Ex now returns actual6e6cLUID matching physical
+KMT. HAL still returns8876086a. No CreateDevice call; selector restored and all
+three LimitedUSER tasks removed. SYS/desktop/candidate,34registration and58
+critical fields unchanged, physical KMT paths unchanged in all phases.
+Root proof root-system-runtime-selector-01-verified-03.json; source/archives
+retain and no ordinary rendering/presentation acceptance is inferred.
+
+Typed9 caps now implement a bounded profile for the native DDI's implemented
+four formats/six queries, SM2 and one RT. X8 is the sole display format; alpha
+formats never report display mode. No cube/volume/MSAA/autogen/dynamic textures,
+instancing, gamma, shared resources, or stretched/color-fill plain-surface
+operations are advertised. Caps/list outputs require exact size and valid data;
+all metadata is copied before the identity callback. New adapter fixture checks
+canaries, list bounds, absent unsupported features, callback-free malformed
+requests and a callback mutating the original output pointer/type/size. Only
+original snapshotted destination changes. Actual native fixtures/CI and system
+runtime caps are next gates; normal OpenAdapter export is still absent.

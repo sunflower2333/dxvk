@@ -87,7 +87,7 @@ try {
         schema=1; source=$env:GITHUB_SHA; architecture=$Architecture
         executed=(!$CompileOnly); backend='WARP test-only injection into actual native DDI'
         viogpu_gpu_test=$false; native_runtime_admission=$false; installation=$false
-        d3d9_backend='controlled backend; actual typed lifecycle/dispatch/cleanup; zero caps and ordinary runtime admission closed'
+        d3d9_backend='controlled backend; actual typed lifecycle/dispatch/cleanup; limited native caps; ordinary runtime admission closed'
         d3d9_hardware_probe='compile only; explicit adapter LUID and KMT enumeration; no GPU execution'
     } | ConvertTo-Json | Set-Content -Encoding utf8 receipt.json
 }

@@ -8,6 +8,39 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
+Obtain the actual Microsoft System32 D3D9 OpenAdapter/GetCaps contract, then
+implement ordinary runtime admission and runtime-managed resource/presentation.
+Typed harness rendering/query checkpoints pass, but ordinary runtime DX8-DX11
+hardware rendering and visible presentation remain unaccepted. Full goal active.
+
+Production061ee8f has one consolidated automatic CI37549764498, all six jobs
+passing. Root independently verifies five raw ZIPs, three architecture builds,
+15 native ARM64 executions, fixture466831 and six semantic controls. Four
+unused workflows are disabled; offline/runtime controls remain manual-only.
+
+All four raw present diagnostics41-44 retain prior5056pixels+1056bytes and
+original SYS/desktop/58readiness fields, but reject before accepted screen
+pixels (source ownership c01e0342 or bitmap c000000d). Stop guessing raw flags.
+
+Read-only native frontenda84fef4 is independently verified (60inputs,
+42original members, two ARM64 COFFs/two PEs/eight official headers). Session1
+baseline sees VirtIO1af4/1050, HAL caps8876086a. Temporary DX9-only registration
+bind01 still returns the installed UMD path and logs no frontend calls; it is
+fully restored. Registry34registration/58critical fields, SYS and desktop retain.
+
+Diagnostic5214397 adds an exact process-local DX9 name selector to genuine
+system d3d9.dll; frontend always blocks CreateDevice and production caps/exports
+remain unchanged. Frozen60input packet03 SHA05f24f70 is built natively with
+zero warnings; root original42member evidence review02 passes.
+Fresh helperfamily04 uses read-only registry access, exact LimitedUSER/session1,
+owned task cleanup and before/after physical KMT names. Native parser/ABI and selector01 trace verify two successful real adapter opens,
+18caps calls, ExLUID6e6c and exact restoration/cleanup. HAL remains rejected by
+zero caps/empty formats. Implemented limited typed caps/list/gamma responses and
+adversarial metadata/output tests now require native fixtures, one consolidated
+CI and another read-only system runtime trace. No GPU admission claim.
+
+## Presentation and query checkpoint details (historical)
+
 Owned typed D3D9 queries are accepted at exact source
 `0a605643a78306a101350ec88fca51cd0974cbc2`. Single automatic consolidated
 CI37544531323 passes six jobs, five raw ZIPs, three architecture builds and

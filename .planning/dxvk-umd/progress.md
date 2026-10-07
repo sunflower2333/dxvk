@@ -2206,3 +2206,25 @@ Only an exact original-package DX9 response changes; original function, other
 queries/versions and normal baseline are preserved. Native strict build and
 null-guard verification are delegated before session1 execution. No production
 UMD code, caps, normal exports or workflow configuration change.
+
+## 2026-10-07 exact process-local selector packet and target build
+Committed/pushed diagnostic5214397 with skip-ci; latest automatic production
+run remains37549764498SUCCESS. New immutable60input packet03 SHA05f24f70,
+59unchanged inputs versus a84 and only probe.cpp changed. Build subagent reports
+strict native ARM64 two-unit build zero warnings, six invalidCLI64, original
+null guards and SSHbaseline count0/Ex8876086a. Root review pending original42
+member archive b736777a. Fresh scripts04/worker02 read registry only, invoke
+selector exclusively inside the owned probe and retain LimitedUSER/session1
+and task/physical-name continuity. Collector02 explicitly checks selector task
+removal. Next root original build review, native parser/ABI validation and actual
+session1 callback trace. No production caps/device/resource or GPU claim.
+
+## 2026-10-07 actual system callback trace and typed caps implementation
+Root native build review02 PASS. Native parser/ABI/hash joins for scripts04
+PASS. Selector01 executes genuine System32 D3D9 under original LimitedUSER
+session1, observes two successful OpenAdapter/18caps and actual ExLUID6e6c;
+zero caps/empty formats still reject HAL. Root32member archive736d3fc7 proof03
+passes no registry writes/selector restoration/task cleanup/SYS/desktop/34+58
+fields. Typed caps implementation and meaningful adapter fixture bounds/snapshot
+checks are ready for native target CPU verification, followed by one automatic
+consolidated CI. No new UMD has been installed or ordinary rendering claimed.

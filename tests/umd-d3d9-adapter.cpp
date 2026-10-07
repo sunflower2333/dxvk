@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
@@ -40,7 +41,7 @@ template<typename T> std::array<uint8_t, sizeof(T)> snapshot(const T& value) {
 }
 
 enum class Action { None, NestedCaps, NestedCreate, NestedOpen, Close, CloseReopen,
-  Block, ThrowAllocation, ThrowOther };
+  Block, ReplaceCapsOutput, ThrowAllocation, ThrowOther };
 struct Runtime {
   std::array<uint8_t, 160> reply;
   HRESULT result = S_OK;
@@ -61,6 +62,8 @@ struct Runtime {
 };
 static Runtime first, second;
 static unsigned wrongCalls;
+static D3DDDIARG_GETCAPS* changingCaps = nullptr;
+static UINT replacedOutput = 0x11223344;
 static std::mutex callbackMutex;
 static std::condition_variable callbackChanged;
 static bool callbackEntered, callbackReleased;
@@ -113,7 +116,7 @@ static void countCaps(Runtime& owner) {
     const D3DDDIARG_GETCAPS args = {type, nullptr, &count.value, sizeof(UINT)};
     const auto input = snapshot(args);
     CHECK(owner.functions.pfnGetCaps(owner.driver, &args) == S_OK);
-    CHECK(count.value == 0 && snapshot(args) == input);
+    CHECK(count.value == (type == D3DDDICAPS_GETFORMATCOUNT ? 4u : 6u) && snapshot(args) == input);
     count.intact();
   }
 }
@@ -165,6 +168,13 @@ static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* a
       callbackEntered = true; callbackChanged.notify_one();
       CHECK(callbackChanged.wait_for(lock, std::chrono::seconds(10), [] { return callbackReleased; }));
     } break;
+    case Action::ReplaceCapsOutput:
+      CHECK(changingCaps);
+      changingCaps->Type = D3DDDICAPS_DDRAW;
+      changingCaps->pData = &replacedOutput;
+      changingCaps->DataSize = UINT_MAX;
+      changingCaps->pInfo = &owner;
+      break;
     case Action::ThrowAllocation: throw std::bad_alloc();
     case Action::ThrowOther: throw 1;
     case Action::None: break;
@@ -233,7 +243,14 @@ int main() {
   D3DDDIARG_GETCAPS get = {D3DDDICAPS_GETD3D9CAPS, nullptr, &caps.value, sizeof(D3DCAPS9)};
   const auto input = snapshot(get);
   CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK && snapshot(get) == input);
-  for (auto byte : snapshot(caps.value)) CHECK(byte == 0);
+  CHECK(caps.value.DeviceType == D3DDEVTYPE_HAL);
+  CHECK(caps.value.VertexShaderVersion == D3DVS_VERSION(2, 0));
+  CHECK(caps.value.PixelShaderVersion == D3DPS_VERSION(2, 0));
+  CHECK(caps.value.NumSimultaneousRTs == 1 && caps.value.MaxTextureWidth >= 2048);
+  CHECK(!(caps.value.TextureCaps & (D3DPTEXTURECAPS_CUBEMAP | D3DPTEXTURECAPS_VOLUMEMAP)));
+  CHECK(!(caps.value.Caps2 & (D3DCAPS2_DYNAMICTEXTURES | D3DCAPS2_CANAUTOGENMIPMAP | D3DCAPS2_CANSHARERESOURCE)));
+  CHECK(!caps.value.CubeTextureFilterCaps && !caps.value.VolumeTextureFilterCaps
+    && !caps.value.VertexTextureFilterCaps && !caps.value.StretchRectFilterCaps);
   caps.intact();
   for (const UINT size : {0u, UINT(sizeof(D3DCAPS9)-1), UINT(sizeof(D3DCAPS9)+1), 0xffffffffu}) {
     Guarded<D3DCAPS9> output; get.pData = &output.value; get.DataSize = size;
@@ -257,14 +274,65 @@ int main() {
     CHECK(first.functions.pfnGetCaps(first.driver, &get) == D3DERR_NOTAVAILABLE);
     CHECK(snapshot(count) == countBefore && first.calls == callsBefore);
   }
+  Guarded<std::array<FORMATOP, 4>> formatData;
+  Guarded<std::array<D3DDDIQUERYTYPE, 6>> queryData;
   for (const auto type : {D3DDDICAPS_GETFORMATDATA, D3DDDICAPS_GETD3DQUERYDATA}) {
-    get = {type, nullptr, nullptr, 0};
-    CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK);
-    get.pData = &count.value;
-    CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK && snapshot(count) == countBefore);
-    get.DataSize = sizeof(UINT);
-    CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG && snapshot(count) == countBefore);
+    void* data = type == D3DDDICAPS_GETFORMATDATA ? static_cast<void*>(&formatData.value)
+      : static_cast<void*>(&queryData.value);
+    const UINT bytes = type == D3DDDICAPS_GETFORMATDATA ? sizeof(formatData.value) : sizeof(queryData.value);
+    get = {type, nullptr, data, bytes};
+    const auto requestBytes = snapshot(get);
+    CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK && snapshot(get) == requestBytes);
+    for (const UINT size : {0u, bytes-1, bytes+1, UINT_MAX}) {
+      get.DataSize = size;
+      const auto beforeFormats = snapshot(formatData); const auto beforeQueries = snapshot(queryData);
+      const auto inputBytes = snapshot(get); const auto calls = first.calls;
+      CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG);
+      CHECK(snapshot(formatData) == beforeFormats && snapshot(queryData) == beforeQueries
+        && snapshot(get) == inputBytes && first.calls == calls);
+    }
+    get = {type, nullptr, nullptr, bytes};
+    const auto calls = first.calls;
+    CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG && first.calls == calls);
   }
+  formatData.intact(); queryData.intact();
+  const std::array<D3DDDIFORMAT, 4> supportedFormats = {
+    D3DDDIFMT_X8R8G8B8, D3DDDIFMT_A8R8G8B8, D3DDDIFMT_D16, D3DDDIFMT_D24S8};
+  for (size_t i = 0; i < supportedFormats.size(); ++i) {
+    const auto& format = formatData.value[i];
+    CHECK(format.Format == supportedFormats[i]);
+    CHECK(!format.FlipMsTypes && !format.BltMsTypes && !format.PrivateFormatBitCount);
+    CHECK(!(format.Operations & (FORMATOP_CUBETEXTURE | FORMATOP_VOLUMETEXTURE | FORMATOP_OFFSCREENPLAIN
+      | FORMATOP_AUTOGENMIPMAP | FORMATOP_VERTEXTEXTURE | FORMATOP_OVERLAY | FORMATOP_CONVERT_TO_ARGB)));
+    if (i < 2) CHECK(format.Operations & FORMATOP_TEXTURE);
+    else CHECK(format.Operations & FORMATOP_ZSTENCIL_WITH_ARBITRARY_COLOR_DEPTH);
+    CHECK(bool(format.Operations & FORMATOP_DISPLAYMODE) == (i == 0));
+    CHECK(bool(format.Operations & FORMATOP_3DACCELERATION) == (i == 0));
+  }
+  const std::array<D3DDDIQUERYTYPE, 6> supportedQueries = {D3DDDIQUERYTYPE_VCACHE, D3DDDIQUERYTYPE_EVENT,
+    D3DDDIQUERYTYPE_OCCLUSION, D3DDDIQUERYTYPE_TIMESTAMP, D3DDDIQUERYTYPE_TIMESTAMPDISJOINT, D3DDDIQUERYTYPE_TIMESTAMPFREQ};
+  CHECK(queryData.value == supportedQueries);
+  Guarded<DDIGAMMACAPS> gamma;
+  get = {D3DDDICAPS_GETGAMMARAMPCAPS, nullptr, &gamma.value, sizeof(gamma.value)};
+  const auto gammaRequest = snapshot(get);
+  CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK && !gamma.value.GammaCaps
+    && snapshot(get) == gammaRequest);
+  gamma.intact();
+  for (const UINT size : {0u, UINT(sizeof(gamma.value)-1), UINT(sizeof(gamma.value)+1), UINT_MAX}) {
+    get.DataSize = size;
+    const auto original = snapshot(gamma); const auto calls = first.calls;
+    CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG
+      && snapshot(gamma) == original && first.calls == calls);
+  }
+  Guarded<UINT> originalOutput;
+  get = {D3DDDICAPS_GETFORMATCOUNT, nullptr, &originalOutput.value, sizeof(UINT)};
+  changingCaps = &get; first.action = Action::ReplaceCapsOutput;
+  CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK);
+  changingCaps = nullptr;
+  CHECK(originalOutput.value == 4 && replacedOutput == 0x11223344);
+  CHECK(get.Type == D3DDDICAPS_DDRAW && get.DataSize == UINT_MAX
+    && get.pData == &replacedOutput && get.pInfo == &first);
+  originalOutput.intact();
 
   D3DDDI_DEVICECALLBACKS deviceCallbacks = {};
   Guarded<D3DDDI_DEVICEFUNCS> deviceTable;

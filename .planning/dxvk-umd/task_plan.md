@@ -89,6 +89,19 @@ GPU mode retains all5056prior pixels/1056bytes and adds768 raw mip/update pixels
 Native fixtures, one consolidated CI and independent target pixels are required;
 normal OpenAdapter export and ordinary rendering acceptance remain closed.
 
+## Parallel replacement work (user requested, 2026-10-07)
+
+- [in_progress] DX10/10.1 native interface negotiation and adapter contract:
+  agentport_dx10, isolated worktree reference/codes/dxvk-umd-dx10-port-20261007.
+- [in_progress] DX11 device/table/callback and compute/UAV/structured-resource
+  port: agentport_dx11, isolated worktree reference/codes/dxvk-umd-dx11-port-20261007.
+  Coordinate typed10.1/DX11 factories with DX10; no interface table casts.
+- [in_progress] Build verifier completes exactc7 Vista-table CPU evidence first,
+  then takes DX8 system-runtime compatibility in an isolated worktree.
+- Root keeps the genuine DX9 lifecycle/presentation gate, original target
+  evidence and shared-file integration. Target CPU/GPU ownership is exclusive;
+  all branches integrate here, with one consolidated CI per production push.
+
 ## Presentation and query checkpoint details (historical)
 
 Owned typed D3D9 queries are accepted at exact source

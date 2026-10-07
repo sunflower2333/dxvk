@@ -2414,3 +2414,25 @@ d3dukmdt.h defines Vista000c and original d3dumddi.h DEVICEFUNCS has99 pointers
 through Rename. New local fix negotiates000c and bounds both outer/inner table
 publication to that prefix; native guard-page/canary fixtures remain required.
 No production OpenAdapter export, registration change or GPU acceptance.
+
+
+## User requested parallel DX8/DX10/DX11 replacement
+
+DX10 and DX11 agents now own isolated categorized worktrees and coordinate
+typed table/creation boundaries. Existing build verifier finishes frozen c7
+CPU evidence before taking DX8; root keeps actual DX9 lifecycle, native original
+proofs and shared integration. No independent CI pushes or target concurrency.
+Root lifecycle01 original42-member restoration/source/payload review passes as
+root-system-runtime-device-lifecycle-01-verified-01.json SHA7153de91fcd769323a030a3fea2e7490a39fbb3a13b8dc30f3cf548e2f080085.
+Both genuine APIs remain rejected, with zero accepted render pixels. New
+standalone frontend/probe pins c7 and reads only the99-pointer Vista table;
+compile/guard verification and actual runtime rerun remain required.
+
+
+Matching raw System32/public PDB GUID/sections/native table validation proof
+now verifies as system-runtime-symbols/native-device-function-validation-verified-01.json
+SHA39a5aca29bb616dd5167de504cfdd13b3c43fe57b3fe8e7b495f5de82bf1624e.
+Image CodeView age1 and stripped public PDB age3 are explicitly distinct.
+Agent reports exactc7 strict native43067/538869, both protected table paths
+executed, zero compiler diagnostics and exactc8/478/061/SYS/desktop continuity;
+original archive collection and root independent verification remain pending.

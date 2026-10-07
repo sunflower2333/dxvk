@@ -6,6 +6,7 @@
 #include <d3dumddi.h>
 #include <intrin.h>
 #include <climits>
+#include <cstddef>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -17,9 +18,12 @@ namespace {
 constexpr WCHAR permission[] = L"read-only-legacy-fog-478eca2";
 constexpr WCHAR candidate[] =
   L"C:\\Users\\Public\\DxvkD3D9CapsCandidate-478eca2\\viogpudxvk.dll";
-constexpr WCHAR lifecyclePermission[] = L"device-lifecycle-c8fbd55";
+constexpr WCHAR lifecyclePermission[] = L"device-lifecycle-c7e8953";
 constexpr WCHAR lifecycleCandidate[] =
-  L"C:\\Users\\Public\\DxvkD3D9DeviceFlagsCandidate-c8fbd55-37569563644\\viogpudxvk.dll";
+  L"C:\\Users\\Public\\DxvkD3D9DeviceInterfaceCandidate-c7e8953\\viogpudxvk.dll";
+constexpr size_t lifecycleFunctionBytes =
+  offsetof(D3DDDI_DEVICEFUNCS, pfnRename) + sizeof(PFND3DDDI_RENAME);
+static_assert(lifecycleFunctionBytes == 99 * sizeof(void*));
 struct Adapter { D3DDDI_ADAPTERFUNCS functions; bool lifecycle; };
 std::mutex adaptersMutex;
 std::unordered_map<HANDLE, Adapter> adapters;
@@ -197,7 +201,14 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
     trace("SYSTEM_D3D9_CREATE_RETURN runtime=%p driver=%p hr=%08lx\n",
       runtime, args->hDevice, static_cast<unsigned long>(hr));
     if (hr != S_OK) return hr;
-    const auto functions = *args->pDeviceFuncs;
+    D3DDDI_DEVICEFUNCS functions = {};
+    std::memcpy(&functions, args->pDeviceFuncs, lifecycleFunctionBytes);
+    trace("SYSTEM_D3D9_DEVICE_FUNCTIONS interface=%u bytes=%u resource=%u state=%u validate=%u update_w=%u stream_frequency=%u palette=%u color_fill=%u display_mode=%u\n",
+      D3D_UMD_INTERFACE_VERSION_VISTA, unsigned(lifecycleFunctionBytes),
+      unsigned(functions.pfnCreateResource != nullptr), unsigned(functions.pfnSetRenderState != nullptr),
+      unsigned(functions.pfnValidateDevice != nullptr), unsigned(functions.pfnUpdateWInfo != nullptr),
+      unsigned(functions.pfnSetStreamSourceFreq != nullptr), unsigned(functions.pfnSetPalette != nullptr),
+      unsigned(functions.pfnColorFill != nullptr), unsigned(functions.pfnSetDisplayMode != nullptr));
     if (!functions.pfnCreateResource || !functions.pfnDestroyResource
         || !functions.pfnSetRenderState || !functions.pfnDestroyDevice) {
       if (functions.pfnDestroyDevice) functions.pfnDestroyDevice(args->hDevice);
@@ -284,6 +295,12 @@ extern "C" HRESULT APIENTRY OpenAdapter(D3DDDIARG_OPENADAPTER* args) {
   if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
   if (!original.pfnGetCaps || !original.pfnCreateDevice || !original.pfnCloseAdapter)
     return E_FAIL;
+  if (lifecycle && local.DriverVersion != D3D_UMD_INTERFACE_VERSION_VISTA) {
+    original.pfnCloseAdapter(local.hAdapter);
+    trace("SYSTEM_D3D9_VERSION_REJECT observed=%u expected=%u\n",
+      local.DriverVersion, D3D_UMD_INTERFACE_VERSION_VISTA);
+    return D3DERR_NOTAVAILABLE;
+  }
   try {
     bool inserted;
     {

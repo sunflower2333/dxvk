@@ -2386,6 +2386,30 @@ static void lockedDrawBufferContracts() {
     closeDevice(); closeAdapter();
     CHECK(f->bufferCreates == f->bufferCloses && f->bufferLocks == f->bufferUnlocks);
   }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    auto* external = static_cast<uint8_t*>(VirtualAlloc(nullptr, 4096,
+      MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    CHECK(external);
+    std::memset(external, 0x59, 64);
+    char cookie; D3DDDI_SURFACEINFO info = {64,1,0,external,64,0};
+    auto args = bufferArgs(&cookie, &info);
+    args.Pool = D3DDDIPOOL_SYSTEMMEM;
+    args.Flags.MightDrawFromLocked = 1;
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = args.hResource;
+    mapping.Flags.NotifyOnly = mapping.Flags.MightDrawFromLocked = 1;
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && mapping.pSurfData == external);
+    DWORD prior = 0;
+    CHECK(VirtualProtect(external, 4096, PAGE_NOACCESS, &prior));
+    // Runtime-owned bytes may already be inaccessible during device teardown.
+    // Retire the held private lock without snapshotting or uploading them.
+    f->teardownDiscard = false;
+    closeDevice(); closeAdapter();
+    CHECK(f->teardownDiscard && f->bufferCreates == f->bufferCloses
+      && f->bufferLocks == f->bufferUnlocks && f->bufferDrawUploads.empty());
+    CHECK(VirtualFree(external, 0, MEM_RELEASE));
+  }
 }
 
 static void bufferTransferContracts() {

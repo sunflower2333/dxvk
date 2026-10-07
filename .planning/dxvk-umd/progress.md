@@ -2679,3 +2679,15 @@ Agent probe6054985 adds18 real mixed/unused/perdraw repeated locked-buffer stage
 98-115, expected1152newpixels/6d390bc5. Root review of callback414a flags borrowed
 D3D9 table rereads after CreateDevice; agent asked to retain owned originals to
 preserve production snapshot behavior before integration/native execution.
+
+
+Protected teardown control added for a still-locked flagged borrowed VB after
+PAGE_NOACCESS: DestroyDevice must discard the held lock without reading/uploading
+borrowed bytes. Both local x64/x86 strict fixture COFF compile; native execution
+pending. Native x867c2 caps544/API2800/adapter45802 pass, device7919 assertion fails.
+Source audit identifies missing RT setup, not a capture switch (root initial
+capture inference corrected to agent). Agent37e306e adds unbound rejection then
+owned8x8 RT/bounded20-byte-stride60-byte FVF forwarding and exact cleanup.
+Diagnostic4285518 corrects414 borrowed-table lifetime risk with owned22-slot
+originals and protected/retired-table controls. Integrate both final slices and
+freeze fresh root CPU source; original failed/native/local archives retained.

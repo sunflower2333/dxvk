@@ -3856,3 +3856,19 @@ for mapped-image diagnostics, DX11 for SO/volume probes; DX10 finishes the
 combined8528 native packet (160 source inputs,23COFF/8PE,8 WARP references).
 This packet also parses the two exact new CI scripts with native PS5.1 before
 compilation. Ordinary runtime and real hardware gates remain open.
+
+
+2026-10-08 current target ownership: EWDK exclusive native mapped-image CPU07.
+ROOT prepared proof26c96adb joins15inputs (12Git+3licensed),721actual compiled
+inputs,2I386COFF/1PE/emptydiagnostics,3unchanged guard extents and oldfrontend.
+Latest combinedcube native01 failed only firstlink LNK1104 uuid.lib after16
+AA64COFF; archive253files/d04087fb and releasea5628043 independently accepted
+by ROOT775db22e. Freshcube02 keeps source8528 unchanged and adds originalSDK
+uuid.lib only; packet remains local pending review. CPU07 authorizes one
+readonly observation of4modules/7filehandles and4malformedCLI; no KMT/factory/
+core/GPU/repair/install/registry/VM. ROOT/DX10/DX11 remote suspended until
+originals and explicit EWDK release reviewed. ROOT cube KMT probe7a47d03 is
+committed test-only; local strictx64/x86 and GCC/Clang159292checks/154752bits
+PASS, independent reader1positive/7negative PASS. DX10 independently reviews
+probe locally. DX11 f96 SO/volume probe nativeCPU packet prepared locally;
+separate moderncube RTV/DSV implementation proceeds from frozen8528. No push.

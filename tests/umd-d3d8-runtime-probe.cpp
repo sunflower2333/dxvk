@@ -425,7 +425,9 @@ void screen(IDirect3DDevice8* device, HWND window) {
     require(BitBlt(capture.memory, 0, 0, 8, 8, capture.desktop, origin.x, origin.y, SRCCOPY | CAPTUREBLT)
         && GdiFlush(), "actual-screen-capture");
     std::memcpy(actual.data(), pixels, sizeof(actual)); ++polls;
-    exact = std::all_of(actual.begin(), actual.end(), [](uint32_t pixel) { return (pixel & 0xffffff) == (color & 0xffffff); });
+    exact = std::all_of(actual.begin(), actual.end(), [expectedRgb = color & 0xffffffu](uint32_t pixel) {
+      return (pixel & 0xffffffu) == expectedRgb;
+    });
     if (!exact) Sleep(16);
   } while (!exact && GetTickCount64() < until);
   for (unsigned y = 0; y < 8; ++y) for (unsigned x = 0; x < 8; ++x)

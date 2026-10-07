@@ -16,18 +16,26 @@ using dxvk::umd::ShaderStage;
 static unsigned checks, callbacks, replacementCallbacks, backendCalls, draws, pixels, shaderPrograms;
 static DWORD caller;
 static HRESULT lastError = S_OK;
+static const char* operation = "initialization";
 static const LUID expectedLuid{0x410041, -41};
 static ComPtr<ID3D11Device> createdBackend;
 #define CHECK(value) do { ++checks; if (!(value)) { std::fprintf(stderr, \
   "D3D10 shader failure line %d: %s error=%08lx\n", __LINE__, #value, \
   static_cast<unsigned long>(lastError)); std::abort(); } } while (0)
 static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
+  std::fprintf(stderr, "D3D10_SHADER_CALLBACK operation=%s hr=%08lx thread=%lu runtime=%p\n",
+    operation, static_cast<unsigned long>(hr), static_cast<unsigned long>(GetCurrentThreadId()), runtime.handle);
   CHECK(runtime.handle && GetCurrentThreadId() == caller && FAILED(hr)); ++callbacks; lastError = hr;
 }
 static void APIENTRY replacementError(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
   ++replacementCallbacks; error(runtime, hr);
 }
 static void expect(HRESULT hr = S_OK) { CHECK(lastError == dxvk::umd::ddiResult(hr)); lastError = S_OK; }
+static void checkpoint(const char* label, uint32_t version = 0) {
+  operation = label;
+  std::fprintf(stderr, "D3D10_SHADER_CHECKPOINT operation=%s version=%08x last_error=%08lx thread=%lu\n",
+    operation, version, static_cast<unsigned long>(lastError), static_cast<unsigned long>(GetCurrentThreadId()));
+}
 HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL logical,
     ID3D11Device** device, ID3D11DeviceContext** context, const RuntimeBackend* runtime) noexcept {
   CHECK(!std::memcmp(&luid, &expectedLuid, sizeof(luid)) && !runtime);
@@ -140,6 +148,7 @@ template<typename Table> struct Fixture {
   Fixture() {
     core.pfnSetErrorCb = error;
     HRESULT hr = E_FAIL;
+    checkpoint("CreateDdiTestDevice");
     if constexpr (std::is_same_v<Table, D3D10DDI_DEVICEFUNCS>)
       hr = VioGpuDxvkCreateDdiTestDevice(&expectedLuid, device, {&core}, &core, &table);
     else hr = VioGpuDxvkCreateDdiTestDevice10_1(&expectedLuid, device, {&core}, &core, &table);
@@ -148,9 +157,12 @@ template<typename Table> struct Fixture {
   }
   ~Fixture() { context->ClearState(); context.Reset(); backend.Reset(); table.pfnDestroyDevice(device); CHECK(canary == 0x41abcdef12345678ull); }
   void create(const Compiled& c, D3D10DDI_HSHADER shader) {
+    checkpoint(c.stage == ShaderStage::Vertex ? "CreateVertexShader"
+      : c.stage == ShaderStage::Geometry ? "CreateGeometryShader" : "CreatePixelShader", c.code[0]);
     if (c.stage == ShaderStage::Vertex) table.pfnCreateVertexShader(device, c.code.data(), shader, {}, &c.signature);
     else if (c.stage == ShaderStage::Geometry) table.pfnCreateGeometryShader(device, c.code.data(), shader, {}, &c.signature);
     else table.pfnCreatePixelShader(device, c.code.data(), shader, {}, &c.signature);
+    checkpoint("CreateShaderReturned", c.code[0]);
   }
   void reject41() {
     core.pfnSetErrorCb = replacementError;
@@ -235,9 +247,11 @@ template<typename Table> void scene(Fixture<Table>& f, const char* pixelEntry, b
   auto setup = [&] { inputs.bind(f.context.Get()); f.context->OMSetRenderTargets(1, views, nullptr);
     f.context->ClearRenderTargetView(view.Get(), clear); };
   setup();
-  f.table.pfnVsSetShader(f.device, vertex.handle); f.table.pfnPsSetShader(f.device, pixel.handle);
+  checkpoint("VsSetShader", vs.code[0]); f.table.pfnVsSetShader(f.device, vertex.handle);
+  checkpoint("PsSetShader", ps.code[0]); f.table.pfnPsSetShader(f.device, pixel.handle);
+  checkpoint("GsSetShader", gs.code[0]);
   f.table.pfnGsSetShader(f.device, geometry ? geom.handle : D3D10DDI_HSHADER{}); expect();
-  f.table.pfnDraw(f.device, 3, 0); expect(); ++draws;
+  checkpoint("Draw"); f.table.pfnDraw(f.device, 3, 0); expect(); ++draws;
   const auto actual = readback(f.backend.Get(), f.context.Get(), target.Get(), samples);
   f.table.pfnVsSetShader(f.device, {}); f.table.pfnPsSetShader(f.device, {}); f.table.pfnGsSetShader(f.device, {}); expect();
   ComPtr<ID3D11VertexShader> refVs; ComPtr<ID3D11PixelShader> refPs; ComPtr<ID3D11GeometryShader> refGs;
@@ -257,6 +271,7 @@ template<typename Table> void scene(Fixture<Table>& f, const char* pixelEntry, b
     pixelEntry, model41 ? "4.1" : "4.0", unsigned(geometry), samples);
 }
 int main() {
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
   caller = GetCurrentThreadId();
   retain("sm41-original.hlsl", source, sizeof(source) - 1);
   CHECK(dxvk::umd::runtimeMissingD3D10Requirements() && dxvk::umd::runtimeMissingD3D10_1Requirements());

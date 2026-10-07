@@ -99,3 +99,26 @@ SDK header and official ARM64 import-library inputs are pinned to their
 original receipts and checked before/after by the owned build helper.
 Frozen local preparation, PowerShell parsing and runner controls are distinct
 from native compiler/shader execution; root owns all target/CI/publish work.
+
+## Retained first native attempt and causal logging
+
+The frozen c9 first native ARM64 attempt compiled18 original COFF objects and
+two PE executables under the strict policies above. First-party compilation
+emitted zero warnings; the unchanged pinned parser emitted65 retained warnings.
+Native container568 passed. The typed shader fixture rejected an expected
+success with E_INVALIDARG before its first draw. Seven owned native children
+exited and drained, collection/transfer completed, and all12 input/system/
+driver/desktop retention checks passed. Its167-member original archive,
+SHA7301d4bd22d223c09113c6f1927ebea6826d76021d74758d58460ad6b69040a4,
+retains three genuine4.0 FXC VS/GS/PS blobs/token payloads and the HLSL.
+It establishes neither the18-draw oracle nor native4.1 acceptance.
+
+Local replay accepts those three exact original token/signature programs
+through the unchanged c9 compiler/resolvers. Buffered stdout did not retain
+the callback/stage boundary on abort. The fixture therefore now disables
+stdout buffering and records create/bind/draw checkpoints plus the live
+callback's original HRESULT, thread and runtime handle. These diagnostics
+change no shader bytes, HLSL, production code, callback ownership, expected
+results, program counts, draw counts or pixel comparisons. A new frozen
+native attempt is required to identify the rejection and verify the complete
+shader suite; root controls the next target handoff.

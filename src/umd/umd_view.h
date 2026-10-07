@@ -111,6 +111,17 @@ inline HRESULT mipGenerationStatus(const D3D11_TEXTURE2D_DESC& resource,
   if (!(resource.MiscFlags & D3D11_RESOURCE_MISC_GENERATE_MIPS)
       || (resource.BindFlags & required) != required) return E_FAIL;
   if (resource.SampleDesc.Count != 1) return E_INVALIDARG;
+  if (view.ViewDimension == D3D11_SRV_DIMENSION_TEXTURECUBEARRAY) {
+    if (!(resource.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE)
+        || !resource.ArraySize || resource.ArraySize % 6
+        || !resource.Width || resource.Width != resource.Height || resource.SampleDesc.Quality
+        || view.TextureCubeArray.First2DArrayFace % 6
+        || !viewRange(view.TextureCubeArray.First2DArrayFace / 6,
+                      view.TextureCubeArray.NumCubes, resource.ArraySize / 6)
+        || !viewRange(view.TextureCubeArray.MostDetailedMip,
+                      view.TextureCubeArray.MipLevels, resource.MipLevels)) return E_INVALIDARG;
+    return S_OK;
+  }
   if (view.ViewDimension == D3D11_SRV_DIMENSION_TEXTURECUBE)
     return textureCubeShape(resource)
       && viewRange(view.TextureCube.MostDetailedMip, view.TextureCube.MipLevels,

@@ -240,6 +240,12 @@ bool shader11StreamOutput(const ShaderCode11& shader,
     staged.strides[i] = strides[i];
   }
   staged.strideCount = std::max(staged.strideCount, uint32_t(strideCount));
+  // The public GS/SO API requires each stream's declaration to be grouped.
+  // Native declarations can interleave independent streams; preserve the
+  // element and gap order within each stream while canonicalizing the groups.
+  std::stable_sort(staged.entries.begin(), staged.entries.end(), [](const auto& a, const auto& b) {
+    return a.stream < b.stream;
+  });
   output = std::move(staged); return true;
 }
 

@@ -934,7 +934,8 @@ O o;o.p=v[0].p;o.value=uint2(v[0].id,900);s0.Append(o);
 for(uint j=0;j<2;++j){o.value=uint2(v[0].id+100,901+j);s1.Append(o);}
 for(uint k=0;k<3;++k){o.value=uint2(v[0].id+200,902+k);s2.Append(o);}
 for(uint l=0;l<4;++l){o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
-  auto tokens = compile(geometry,"gs_5_0"); dxvk::umd::ShaderCode11 decoded;
+  ComPtr<ID3DBlob> originalGeometry;
+  auto tokens = compile(geometry,"gs_5_0",&originalGeometry); dxvk::umd::ShaderCode11 decoded;
   CHECK(dxvk::umd::decodeShader11(ShaderStage::Geometry,tokens.data(),tokens.size(),decoded));
   std::array<D3D11DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY,5> entries{};
   for (UINT stream = 0; stream < 4; ++stream) {
@@ -949,6 +950,35 @@ for(uint l=0;l<4;++l){o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
   D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT args{}; args.pOutputStreamDecl = entries.data(); args.NumEntries = UINT(entries.size());
   args.BufferStridesInBytes = strides; args.NumStrides = 4; args.RasterizedStream = D3D11_SO_NO_RASTERIZED_STREAM;
   GraphicsShader shader(f,ShaderStage::Geometry,geometry,&args); vertex.bind(); shader.bind();
+  ComPtr<ID3D11Device> backend; f.context->GetDevice(&backend); CHECK(backend);
+  dxbc_spv::dxbc::Container originalContainer(originalGeometry->GetBufferPointer(),originalGeometry->GetBufferSize()); CHECK(originalContainer);
+  auto inputs = nativeSignature(originalContainer.getInputSignatureChunk());
+  auto outputs = nativeSignature(originalContainer.getOutputSignatureChunk());
+  const D3D10DDIARG_STAGE_IO_SIGNATURES signature{inputs.data(),UINT(inputs.size()),outputs.data(),UINT(outputs.size())};
+  auto reject = [&](D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT invalid) {
+    invalid.pShaderCode = tokens.data();
+    Storage unused(f.output.table.pfnCalcPrivateShaderSize(f.device,nullptr,nullptr));
+    ComPtr<ID3D11GeometryShader> before,after; f.context->GSGetShader(&before,nullptr,nullptr); CHECK(before);
+    const UINT oldErrors = errors;
+    f.output.table.pfnCreateGeometryShaderWithStreamOutput(f.device,&invalid,{unused.data()},{},&signature);
+    failure(E_INVALIDARG); CHECK(errors == oldErrors+1); CHECK(unused.empty()); unused.check();
+    f.context->GSGetShader(&after,nullptr,nullptr); CHECK(after.Get() == before.Get());
+  };
+  auto malformed = entries;
+  auto invalid = args; invalid.pOutputStreamDecl = malformed.data();
+  malformed[0].Stream = 4; reject(invalid); malformed = entries;
+  malformed[0].OutputSlot = 4; reject(invalid); malformed = entries;
+  malformed[0].RegisterIndex = 32; reject(invalid); malformed = entries;
+  malformed[0].RegisterMask = 0; reject(invalid); malformed = entries;
+  malformed[0].RegisterMask = 4; reject(invalid); malformed = entries;
+  malformed[1].OutputSlot = 0; reject(invalid); malformed = entries;
+  const UINT shortStrides[] = {8,16,24,16}; invalid = args; invalid.BufferStridesInBytes = shortStrides; reject(invalid);
+  const UINT unalignedStrides[] = {31,16,24,16}; invalid.BufferStridesInBytes = unalignedStrides; reject(invalid);
+  invalid = args; invalid.RasterizedStream = 4; reject(invalid);
+  invalid = args; invalid.NumEntries = 513; reject(invalid);
+  invalid = args; invalid.pOutputStreamDecl = nullptr; reject(invalid);
+  invalid = args; invalid.NumStrides = 5; reject(invalid);
+  invalid = args; invalid.BufferStridesInBytes = nullptr; reject(invalid);
   std::array<UINT,64> poison; poison.fill(0xa5a55a5a);
   Buffer stream0(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
   Buffer stream1(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
@@ -981,6 +1011,25 @@ for(uint l=0;l<4;++l){o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
     CHECK(results[stream][index+3] == poison[0]);
   }
   for (UINT stream = 0; stream < 4; ++stream) CHECK(results[stream].back() == poison[0]);
+  // The original app bytecode and grouped public declarations provide an
+  // independent four-stream control for every written and skipped byte.
+  const D3D11_SO_DECLARATION_ENTRY publicStream[] = {{0,"DATA",0,0,2,0},{0,nullptr,0,0,1,0},
+    {1,"DATA",0,0,2,1},{2,"DATA",0,0,2,2},{3,"DATA",0,0,2,3}};
+  ComPtr<ID3D11VertexShader> referenceVertex; ComPtr<ID3D11GeometryShader> referenceGeometry;
+  CHECK(backend->CreateVertexShader(vertex.original->GetBufferPointer(),vertex.original->GetBufferSize(),nullptr,&referenceVertex) == S_OK);
+  CHECK(backend->CreateGeometryShaderWithStreamOutput(originalGeometry->GetBufferPointer(),originalGeometry->GetBufferSize(),
+    publicStream,UINT(std::size(publicStream)),strides,4,D3D11_SO_NO_RASTERIZED_STREAM,nullptr,&referenceGeometry) == S_OK);
+  Buffer control0(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  Buffer control1(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  Buffer control2(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  Buffer control3(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  const D3D10DDI_HRESOURCE controls[] = {control0.handle,control1.handle,control2.handle,control3.handle};
+  f.output.table.pfnSoSetTargets(f.device,4,0,controls,offsets); ok();
+  f.context->VSSetShader(referenceVertex.Get(),nullptr,0); f.context->GSSetShader(referenceGeometry.Get(),nullptr,0);
+  f.context->Draw(3,0);
+  CHECK(control0.read(64) == results[0]); CHECK(control1.read(64) == results[1]);
+  CHECK(control2.read(64) == results[2]); CHECK(control3.read(64) == results[3]);
+  vertex.bind(); shader.bind(); f.output.table.pfnSoSetTargets(f.device,4,0,buffers,offsets); ok();
   Buffer tiny(f,24,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
   const D3D10DDI_HRESOURCE overflowBuffers[] = {stream0.handle,stream1.handle,tiny.handle,stream3.handle};
   f.output.table.pfnSoSetTargets(f.device,4,0,overflowBuffers,offsets); ok();
@@ -1004,6 +1053,51 @@ for(uint l=0;l<4;++l){o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
   GraphicsShader pixel(f,ShaderStage::Pixel,"float4 main():SV_Target0{return float4(0,1,0,1);}"); rasterized.bind(); pixel.bind();
   f.output.table.pfnDraw(f.device,1,0); ok();
   CHECK(target.texture.pixel(7,7)[0] == 0xff00ff00 || target.texture.pixel(8,8)[0] == 0xff00ff00);
+  // Signed x/z masks split into separate public entries while gaps remain
+  // after both values. Interleave both streams at the native boundary.
+  const char* signedGeometry = R"(
+struct V{float4 p:SV_Position;uint id:DATA0;};struct O{float4 p:SV_Position;int4 value:DATA0;};
+[maxvertexcount(2)]void main(point V v[1],inout PointStream<O> a,inout PointStream<O> b){
+O o;o.p=v[0].p;o.value=int4(-1234-int(v[0].id),222,-17-int(v[0].id),444);a.Append(o);
+o.value-=100;b.Append(o);})";
+  auto signedTokens = compile(signedGeometry,"gs_5_0"); dxvk::umd::ShaderCode11 signedDecoded;
+  CHECK(dxvk::umd::decodeShader11(ShaderStage::Geometry,signedTokens.data(),signedTokens.size(),signedDecoded));
+  std::array<UINT,2> signedRegisters{};
+  for (UINT stream = 0; stream < 2; ++stream) {
+    bool found = false;
+    for (const auto& entry : signedDecoded.outputs) if (entry.stream == stream && !entry.systemValue) {
+      CHECK(!found && entry.mask == 15); found = true; signedRegisters[stream] = entry.registerIndex;
+    }
+    CHECK(found);
+  }
+  const D3D11DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY signedEntries[] = {{1,2,signedRegisters[1],5},
+    {0,0,signedRegisters[0],5},{1,2,D3D10_SO_DDI_REGISTER_INDEX_DENOTING_GAP,1},
+    {0,0,D3D10_SO_DDI_REGISTER_INDEX_DENOTING_GAP,1}};
+  const UINT signedStrides[] = {16,0,20};
+  args.pOutputStreamDecl = signedEntries; args.NumEntries = UINT(std::size(signedEntries));
+  args.BufferStridesInBytes = signedStrides; args.NumStrides = 3; args.RasterizedStream = D3D11_SO_NO_RASTERIZED_STREAM;
+  GraphicsShader signedShader(f,ShaderStage::Geometry,signedGeometry,&args);
+  Buffer signed0(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  Buffer signed1(f,256,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
+  const D3D10DDI_HRESOURCE signedBuffers[] = {signed0.handle,{},signed1.handle};
+  f.output.table.pfnSoSetTargets(f.device,3,1,signedBuffers,offsets); ok();
+  vertex.bind(); signedShader.bind(); f.output.table.pfnPsSetShader(f.device,{}); ok();
+  f.output.table.pfnDraw(f.device,3,0); ok();
+  const std::array<std::vector<UINT>,2> signedResults = {signed0.read(64),signed1.read(64)};
+  std::array<std::vector<UINT>,2> signedExpected = {std::vector<UINT>(poison.begin(),poison.end()),
+    std::vector<UINT>(poison.begin(),poison.end())};
+  const INT signedValues[2][6] = {{-1234,-17,-1235,-18,-1236,-19},{-1334,-117,-1335,-118,-1336,-119}};
+  for (UINT stream = 0; stream < 2; ++stream) for (UINT point = 0; point < 3; ++point) {
+    const UINT index = point*signedStrides[stream ? 2 : 0]/4;
+    signedExpected[stream][index] = UINT(signedValues[stream][2*point]);
+    signedExpected[stream][index+1] = UINT(signedValues[stream][2*point+1]);
+    CHECK(signedResults[stream][index] == UINT(-1234-INT(point)-100*INT(stream)));
+    CHECK(signedResults[stream][index+1] == UINT(-17-INT(point)-100*INT(stream)));
+    CHECK(signedResults[stream][index+2] == poison[0] && signedResults[stream][index+3] == poison[0]);
+  }
+  CHECK(signedResults == signedExpected);
+  CHECK(signedResults[0].back() == poison[0] && signedResults[1].back() == poison[0]);
+  f.output.table.pfnSoSetTargets(f.device,0,4,nullptr,nullptr); ok();
 }
 static void tessellation(Fixture& f) {
   using dxvk::umd::ShaderStage;

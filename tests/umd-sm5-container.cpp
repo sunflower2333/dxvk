@@ -192,6 +192,46 @@ int main() {
   CHECK(stream.entries[1].start == 2 && stream.entries[1].count == 1);
   CHECK(stream.entries[2].semantic.empty() && stream.entries[2].count == 2);
   CHECK(stream.entries[3].stream == 2 && stream.entries[3].slot == 2 && stream.strides[2] == 16);
+  // All ten interleavings preserve stream-local signed/masked elements and
+  // gaps. The public declaration groups must not reorder those bytes.
+  auto signedShader = shader;
+  signedShader.outputs[1].scalar = ShaderScalar::Sint32;
+  std::vector<unsigned char> signedBytes;
+  CHECK(buildShader11Container(signedShader,signedBytes));
+  dxbc::Container signedContainer(signedBytes.data(),signedBytes.size());
+  dxbc::Signature signedOutputs(signedContainer.getOutputSignatureChunk());
+  bool sawSigned = false;
+  for (const auto& entry : signedOutputs) if (!entry.getStreamIndex() && entry.getRegisterIndex() == 1) {
+    CHECK(entry.getScalarType() == ir::ScalarType::eI32 && uint8_t(entry.getComponentMask()) == 5);
+    sawSigned = true;
+  }
+  CHECK(sawSigned);
+  const ShaderStreamDeclaration11 stream0[] = {{0,0,1,5},{0,0,UINT32_MAX,3}};
+  const ShaderStreamDeclaration11 stream2[] = {{2,2,0,1},{2,2,UINT32_MAX,2},{2,2,0,2}};
+  const uint8_t starts[] = {0,2,0,0,0,1}, counts[] = {1,1,2,1,1,1};
+  unsigned permutations = 0;
+  for (size_t first = 0; first < 4; ++first) for (size_t second = first + 1; second < 5; ++second) {
+    std::array<ShaderStreamDeclaration11,5> interleaved{};
+    size_t next = 0;
+    for (size_t i = 0; i < interleaved.size(); ++i)
+      interleaved[i] = i == first ? stream0[0] : i == second ? stream0[1] : stream2[next++];
+    CHECK(shader11StreamOutput(signedShader,interleaved.data(),interleaved.size(),strides,3,2,stream));
+    CHECK(stream.entries.size() == 6 && stream.strides[0] == 32 && stream.strides[2] == 16);
+    CHECK(stream.strideCount == 3 && stream.rasterizedStream == 2);
+    for (size_t i = 0; i < stream.entries.size(); ++i) {
+      const auto& entry = stream.entries[i];
+      CHECK(entry.stream == (i < 3 ? 0u : 2u) && entry.slot == (i < 3 ? 0 : 2));
+      CHECK(entry.start == starts[i] && entry.count == counts[i]);
+      CHECK(entry.semantic == (i == 2 || i == 4 ? "" : varyingRegisterSemantic));
+      CHECK(entry.semanticIndex == (i < 2 ? 1u : 0u));
+    }
+    ++permutations;
+  }
+  CHECK(permutations == 10);
+  const ShaderStreamDeclaration11 invalidMask[] = {{2,2,0,1},{0,0,1,2}};
+  CHECK(!shader11StreamOutput(signedShader,invalidMask,2,strides,3,2,stream));
+  CHECK(stream.entries.empty() && stream.strides == (std::array<uint32_t,4>{})
+    && !stream.strideCount && stream.rasterizedStream == UINT32_MAX);
   declarations[2].slot = 0;
   CHECK(!shader11StreamOutput(shader,declarations,3,strides,3,2,stream));
   CHECK(stream.entries.empty()); declarations[2].slot = 2;

@@ -222,6 +222,9 @@ int main() {
   const ShaderSignatureEntry originalVarying{0, 0, 3};
   const ShaderSignatureEntry producer[]{position, {0, 1, 3}};
   CHECK(interpolationOriginal.size() == 46 && interpolationOriginal[1] == interpolationOriginal.size());
+  CHECK(interpolationOriginal[4] == 0x00101012 && interpolationOriginal[5] == 0
+    && interpolationOriginal[14] == 0x0010100a && interpolationOriginal[15] == 0
+    && interpolationOriginal[16] == 0x00004001);
   auto interpolationCode = interpolationOriginal;
   CHECK(build(ShaderStage::Pixel, interpolationCode, &originalVarying, 1, &bytes));
   CHECK(resolvePixelInputs(interpolationCode.data(), interpolationCode.size(), &originalVarying, 1, resolved)
@@ -230,7 +233,12 @@ int main() {
   // Synthetic compatible-register control; these two word changes are never
   // applied to the retained FXC binary. The new HLSL must generate its own
   // compatible register declarations during a later native execution.
-  interpolationCode[5] = interpolationCode[16] = 1;
+  interpolationCode[5] = interpolationCode[15] = 1;
+  CHECK(interpolationCode[5] == 1 && interpolationCode[15] == 1
+    && interpolationCode[14] == interpolationOriginal[14]
+    && interpolationCode[16] == interpolationOriginal[16]);
+  for (size_t word = 0; word < interpolationCode.size(); ++word)
+    CHECK(interpolationCode[word] == ((word == 5 || word == 15) ? 1u : interpolationOriginal[word]));
   const ShaderSignatureEntry compatible[]{position, {0, 1, 3}};
   CHECK(build(ShaderStage::Pixel, interpolationCode, compatible, 2));
   CHECK(resolvePixelInputs(interpolationCode.data(), interpolationCode.size(), compatible, 2, resolved)

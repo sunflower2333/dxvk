@@ -108,7 +108,7 @@ parser units; its Windows static assertions use the original10 token header.
 
 Expected native markers (actual check counts must come from execution):
 
-- `^SM4.0/4.1 containers verified checks=715 typed_models=2 new_opcodes=4 hardware_admission=0$`
+- `^SM4.0/4.1 containers verified checks=763 typed_models=2 new_opcodes=4 hardware_admission=0$`
 - `^native D3D10/10.1 shaders verified checks=[0-9]+ callbacks=3 draws=18 pixels=4608 hardware_admission=0$`
 
 The native packet uses D3DCompile through the original system
@@ -225,12 +225,15 @@ comparisons, independent MSAA oracle and three negative callback gates stay
 unchanged. A fresh packet must retain its own new HLSL/FXC bytes; none of the
 original a00 files are edited or reused as corrected outputs.
 
-The portable test extends to715 controls. It replays the exact46-word FXC33
+The portable test extends to763 controls. It replays the exact46-word FXC33
 payload, accepts and preserves its sample declaration, and rejects its
 original incompatible producer linkage. A separately identified synthetic
-control changes both input-register words to1 with a compatible signature;
+control changes input declaration word5 and input-use word15 to1 with a compatible signature;
 its container/resolver/linkage succeed, unused position drops from consumed
-inputs, and wrong register/system/mask/signature/4.0 cases fail. These
+inputs, and wrong register/system/mask/signature/4.0 cases fail. Explicit
+guards verify the original declaration/use operand tokens and their register
+immediates; literal operand word16 stays00004001. All46 control words are
+compared against the unchanged original, with only words5/15 differing. These
 synthetic words are never substituted for original native FXC output.
 Production compiler/linker sources, interface negotiation, live callback
 ownership and admission requirements are unchanged by this fixture correction.

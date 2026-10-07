@@ -2666,3 +2666,16 @@ LocalCOFF03 Windows-only prelude requires NTSTATUS for DDI units; fresh04 uses
 original winternl for those units and Windows-only for private core/backend.
 Read-only guessed native result/workflow/tools paths failed, no inputs modified.
 New native-device and actual renderer controls remain mandatory; no new push.
+
+
+Root follow-on bounds review identifies aggregate uint32 UP size can wrap across
+streams/IB. Checked append now rejects overflow before allocation and keeps the
+ordinary path; IB source/count products use uint64 clipping. Fresh portable02
+GCC+Clang ASan/UBSan4050444 checks each; freshCOFF06 four core/copy objects PASS
+zero diagnostics. First native packet closure incorrectly looked for conditional
+Vulkan submodule header in root Git, stopped locally before archive/transfer;
+failed empty01 retained, submodule-aware frozen-source preparation follows.
+Agent probe6054985 adds18 real mixed/unused/perdraw repeated locked-buffer stages
+98-115, expected1152newpixels/6d390bc5. Root review of callback414a flags borrowed
+D3D9 table rereads after CreateDevice; agent asked to retain owned originals to
+preserve production snapshot behavior before integration/native execution.

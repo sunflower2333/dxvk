@@ -5765,6 +5765,11 @@ namespace dxvk {
     };
     uint32_t totalUpBufferSize = 0;
     std::array<VBOCopy, caps::MaxStreams> vboCopies = {};
+    auto disablePerDrawUpload = [&] {
+      *pDynamicVBOs = false;
+      if (pDynamicIBO)
+        *pDynamicIBO = false;
+    };
 
     for (uint32_t i : bit::BitMask(vertexBuffersToUpload)) {
       auto* vbo = GetCommonBuffer(m_state.vertexBuffers[i].vertexBuffer);
@@ -5800,7 +5805,12 @@ namespace dxvk {
       vboCopies[i].copyElementSize = dstStride;
       vboCopies[i].srcOffset = range.sourceOffset;
       vboCopies[i].dstOffset = totalUpBufferSize;
-      totalUpBufferSize += vboCopies[i].copyBufferLength;
+      if (unlikely(!appendD3D9BufferCopySize(totalUpBufferSize, range.bytes))) {
+        // Keep the ordinary buffer path when a combined upload cannot be
+        // represented by this allocator. Never allocate a wrapped size.
+        disablePerDrawUpload();
+        return;
+      }
     }
 
     uint32_t iboUPBufferSize = 0;
@@ -5809,21 +5819,21 @@ namespace dxvk {
       auto* ibo = GetCommonBuffer(m_state.indices);
       if (likely(ibo != nullptr)) {
         uint32_t indexStride = ibo->Desc()->Format == D3D9Format::INDEX16 ? 2 : 4;
-        uint32_t offset = indexStride * FirstIndex;
+        uint64_t offset = uint64_t(indexStride) * FirstIndex;
         uint32_t indexBufferSize = ibo->Desc()->Size;
         if (offset < indexBufferSize) {
-          iboUPBufferSize = std::min(NumIndices * indexStride, indexBufferSize - offset);
+          iboUPBufferSize = uint32_t(std::min(uint64_t(NumIndices) * indexStride, indexBufferSize - offset));
           iboUPBufferOffset = totalUpBufferSize;
-          totalUpBufferSize += iboUPBufferSize;
+          if (unlikely(!appendD3D9BufferCopySize(totalUpBufferSize, iboUPBufferSize))) {
+            disablePerDrawUpload();
+            return;
+          }
         }
       }
     }
 
     if (unlikely(totalUpBufferSize == 0)) {
-      *pDynamicVBOs = false;
-      if (pDynamicIBO)
-        *pDynamicIBO = false;
-
+      disablePerDrawUpload();
       return;
     }
 

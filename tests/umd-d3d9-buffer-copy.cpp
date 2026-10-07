@@ -79,5 +79,13 @@ int main() {
   CHECK(wide.sourceOffset == 0 && wide.fullElements == maximum && wide.bytes == maximum);
   const auto tail = dxvk::computeD3D9BufferCopyRange(maximum, 0, 1, maximum, 16, 12);
   CHECK(tail.sourceOffset == 16 && tail.fullElements == 268435454u && tail.bytes == 3221225460u);
+  uint32_t total = 0;
+  CHECK(dxvk::appendD3D9BufferCopySize(total, maximum) && total == maximum);
+  CHECK(dxvk::appendD3D9BufferCopySize(total, 0) && total == maximum);
+  CHECK(!dxvk::appendD3D9BufferCopySize(total, 1) && total == maximum);
+  total = maximum - 15;
+  CHECK(dxvk::appendD3D9BufferCopySize(total, 8) && total == maximum - 7);
+  CHECK(!dxvk::appendD3D9BufferCopySize(total, 8) && total == maximum - 7);
+  CHECK(dxvk::appendD3D9BufferCopySize(total, 7) && total == maximum);
   std::printf("D3D9 vertex copy PASS checks=%u; bounded source offsets/partial tails/overflow, no GPU\n", checks);
 }

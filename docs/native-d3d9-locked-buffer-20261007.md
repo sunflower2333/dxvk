@@ -54,12 +54,14 @@ The shared production planner now accounts for binding and vertex offsets,
 bounds multiplication first, and caps complete/partial elements at the request
 and actual source extent. It supports the valid final declaration without
 requiring unused stride padding. Negative or overflowing source offsets produce
-an empty copy. Three unused lambda captures found by strict Clang compilation
+an empty copy. Combined VB/IB sizes are checked before UP allocation; an
+overflow uses the ordinary buffer path, and index byte offsets/counts are
+clipped with64-bit arithmetic. Three unused lambda captures found by strict Clang compilation
 were removed without changing their commands.
 
 ## Verification and remaining work
 
-The production copy planner passes4,050,438 scalar-byte, exact-allocation,
+The production copy planner passes4,050,444 scalar-byte, exact-allocation,
 destination-guard, partial-tail and overflow checks under GCC and Clang
 ASan/UBSan. Local x64/x86 cross compilation against official Windows headers
 passes the UMD device/backend, controlled device fixture, production D3D9

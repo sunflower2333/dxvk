@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 
 namespace dxvk {
 
@@ -11,6 +12,13 @@ namespace dxvk {
     uint32_t fullElements = 0;
     uint32_t bytes = 0;
   };
+
+  inline bool appendD3D9BufferCopySize(uint32_t& total, uint32_t bytes) {
+    if (bytes > std::numeric_limits<uint32_t>::max() - total)
+      return false;
+    total += bytes;
+    return true;
+  }
 
   inline D3D9BufferCopyRange computeD3D9BufferCopyRange(
           uint32_t bufferSize,

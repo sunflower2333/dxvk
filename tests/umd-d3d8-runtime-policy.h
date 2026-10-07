@@ -11,6 +11,7 @@ namespace dxvk::test::runtime8 {
 
 inline constexpr wchar_t permissionName[] = L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC";
 inline constexpr wchar_t permissionValue[] = L"read-only-d3d8-interface8-v1";
+inline constexpr wchar_t devicePermissionValue[] = L"device-render-d3d8-interface8-v1";
 inline constexpr wchar_t corePathName[] = L"VIOGPU_DXVK_D3D8_CORE_PATH";
 inline constexpr wchar_t coreSha256Name[] = L"VIOGPU_DXVK_D3D8_CORE_SHA256";
 inline constexpr wchar_t coreCommitName[] = L"VIOGPU_DXVK_D3D8_CORE_COMMIT";
@@ -19,6 +20,28 @@ inline constexpr std::array<const wchar_t*, 4> diagnosticNames{
 inline constexpr uint32_t umdNameQuery = 1; // Original SDK KMTQAITYPE_UMDRIVERNAME.
 inline constexpr uint32_t dx9DriverNameVersion = 0; // D3D8 uses the legacy DX9 slot.
 inline constexpr size_t capsBytes = 53 * sizeof(uint32_t);
+
+enum class Mode : uint32_t { Denied, ReadOnly, Device };
+
+template<typename Char>
+Mode permissionMode(std::basic_string_view<Char> value) {
+  const auto exact = [value](const wchar_t* expected) {
+    size_t count = 0;
+    while (expected[count]) ++count;
+    if (count != value.size()) return false;
+    for (size_t i = 0; i < count; ++i)
+      if (value[i] != Char(expected[i])) return false;
+    return true;
+  };
+  if (exact(permissionValue)) return Mode::ReadOnly;
+  if (exact(devicePermissionValue)) return Mode::Device;
+  return Mode::Denied;
+}
+
+// An adapter never gains device permission from later environment mutation.
+inline bool mayCreateDevice(Mode captured, Mode current, uint32_t api) {
+  return captured == Mode::Device && current == captured && api == 8;
+}
 
 template<typename Char> constexpr Char asciiFold(Char value) {
   return value >= Char('A') && value <= Char('Z') ? Char(value + Char('a' - 'A')) : value;

@@ -2,9 +2,11 @@
 #include "umd-d3d8-api.h"
 #include "umd-d3d8-runtime-policy.h"
 #include "umd-d3d8-runtime-guard.h"
+#include "umd-d3d8-runtime-hardware.h"
 #include "../src/umd/umd_runtime_imports.h"
 #include <d3dkmthk.h>
 #include <psapi.h>
+#include <sddl.h>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -92,12 +94,12 @@ struct Permission {
     }
     return true;
   }
-  void enable(const wchar_t* corePath, const wchar_t* coreSha256, const wchar_t* coreCommit) {
+  void enable(const wchar_t* corePath, const wchar_t* coreSha256, const wchar_t* coreCommit, bool device = false) {
     require(absent(), "diagnostic-pins-originally-absent");
-    values = {policy::permissionValue, corePath, coreSha256, coreCommit};
+    values = {device ? policy::devicePermissionValue : policy::permissionValue, corePath, coreSha256, coreCommit};
     for (size_t i = 0; i < policy::diagnosticNames.size(); ++i) {
       require(SetEnvironmentVariableW(policy::diagnosticNames[i], values[i].c_str()) != FALSE,
-              "set-read-only-pin");
+              "set-process-local-permission-pin");
       ++active;
     }
   }
@@ -231,12 +233,124 @@ std::mutex Selector::currentMutex;
 std::shared_ptr<Selector::State> Selector::current;
 std::atomic<Selector::Query> Selector::originalFallback{nullptr};
 
+bool parseLuid(const wchar_t* text, LUID& luid) {
+  if (!policy::hexIdentity(std::wstring_view(text), 16)) return false;
+  std::array<unsigned char, sizeof(LUID)> bytes{};
+  for (size_t i = 0; i < 16; ++i) {
+    const wchar_t c = policy::asciiFold(text[i]);
+    const unsigned digit = c >= L'0' && c <= L'9' ? unsigned(c - L'0') : unsigned(c - L'a' + 10);
+    if (i % 2) bytes[i / 2] |= static_cast<unsigned char>(digit);
+    else bytes[i / 2] = static_cast<unsigned char>(digit << 4);
+  }
+  std::memcpy(&luid, bytes.data(), sizeof(luid)); return luid.LowPart || luid.HighPart;
+}
+bool sourceId(const wchar_t* text, UINT& value) {
+  value = 0;
+  if (!*text) return false;
+  for (; *text; ++text) {
+    if (*text < L'0' || *text > L'9' || value > (UINT(-1) - unsigned(*text - L'0')) / 10) return false;
+    value = value * 10 + unsigned(*text - L'0');
+  }
+  return true;
+}
+void userGate() {
+  DWORD session = 0;
+  require(ProcessIdToSessionId(GetCurrentProcessId(), &session) && session == 1, "original-interactive-session1");
+  struct Token { HANDLE handle = nullptr; ~Token() { if (handle) CloseHandle(handle); } } token;
+  require(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token.handle) != FALSE, "OpenProcessToken");
+  TOKEN_ELEVATION elevation{}; TOKEN_ELEVATION_TYPE type{}; DWORD returned = 0;
+  require(GetTokenInformation(token.handle, TokenElevation, &elevation, sizeof(elevation), &returned)
+      && returned == sizeof(elevation) && !elevation.TokenIsElevated, "original-non-elevated-token");
+  require(GetTokenInformation(token.handle, TokenElevationType, &type, sizeof(type), &returned)
+      && returned == sizeof(type) && type == TokenElevationTypeLimited, "original-limited-token");
+  returned = 0; GetTokenInformation(token.handle, TokenUser, nullptr, 0, &returned);
+  require(returned >= sizeof(TOKEN_USER) && returned <= 65536, "token-user-size");
+  std::vector<unsigned char> user(returned);
+  require(GetTokenInformation(token.handle, TokenUser, user.data(), DWORD(user.size()), &returned), "token-user");
+  PSID expected = nullptr;
+  require(ConvertStringSidToSidW(policy::originalUserSid, &expected) != FALSE, "expected-USER-SID");
+  const bool matched = EqualSid(reinterpret_cast<TOKEN_USER*>(user.data())->User.Sid, expected) != FALSE;
+  LocalFree(expected); require(matched, "original-USER-SID");
+  returned = 0; GetTokenInformation(token.handle, TokenIntegrityLevel, nullptr, 0, &returned);
+  require(returned >= sizeof(TOKEN_MANDATORY_LABEL) && returned <= 65536, "token-integrity-size");
+  std::vector<unsigned char> integrity(returned);
+  require(GetTokenInformation(token.handle, TokenIntegrityLevel, integrity.data(), DWORD(integrity.size()), &returned), "token-integrity");
+  const auto sid = reinterpret_cast<TOKEN_MANDATORY_LABEL*>(integrity.data())->Label.Sid;
+  require(IsValidSid(sid) && *GetSidSubAuthorityCount(sid), "integrity-SID");
+  const DWORD rid = *GetSidSubAuthority(sid, DWORD(*GetSidSubAuthorityCount(sid) - 1));
+  require(rid == SECURITY_MANDATORY_MEDIUM_RID, "original-medium-integrity");
+  trace("D3D8_USER_GATE session=%lu elevation=0 elevation_type=%u integrity_rid=%lu sid=%ls",
+    session, unsigned(type), rid, policy::originalUserSid);
+}
+HMONITOR matchAdapter(IDirect3D8* api, UINT index, const LUID& expected, UINT expectedSource, bool names = false) {
+  const HMONITOR monitor = api ? api->GetAdapterMonitor(index)
+    : MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+  require(monitor != nullptr, "API8-selected-monitor");
+  MONITORINFOEXW info{}; info.cbSize = sizeof(info);
+  require(GetMonitorInfoW(monitor, &info) != FALSE, "selected-monitor-info");
+  struct Dc { HDC value = nullptr; ~Dc() { if (value) DeleteDC(value); } } dc;
+  dc.value = CreateDCW(L"DISPLAY", info.szDevice, nullptr, nullptr);
+  require(dc.value != nullptr, "selected-monitor-DC");
+  const HMODULE gdi = GetModuleHandleW(L"gdi32.dll");
+  require(gdi && !_wcsicmp(path(gdi).c_str(), (systemDirectory() + L"\\gdi32.dll").c_str()), "system-GDI32");
+  const auto function = [gdi](const char* name, auto& output) {
+    const FARPROC pointer = GetProcAddress(gdi, name);
+    static_assert(sizeof(output) == sizeof(pointer)); std::memcpy(&output, &pointer, sizeof(output));
+    require(output != nullptr, name);
+  };
+  decltype(&D3DKMTOpenAdapterFromHdc) open = nullptr; decltype(&D3DKMTCloseAdapter) close = nullptr;
+  decltype(&D3DKMTQueryAdapterInfo) query = nullptr;
+  function("D3DKMTOpenAdapterFromHdc", open); function("D3DKMTCloseAdapter", close); function("D3DKMTQueryAdapterInfo", query);
+  struct Adapter {
+    decltype(&D3DKMTCloseAdapter) close = nullptr; D3DKMT_HANDLE handle = 0;
+    ~Adapter() { if (handle) { D3DKMT_CLOSEADAPTER args{}; args.hAdapter = handle; close(&args); } }
+  } adapter{close};
+  D3DKMT_OPENADAPTERFROMHDC request{}; request.hDc = dc.value;
+  const NTSTATUS opened = open(&request); adapter.handle = request.hAdapter;
+  require(opened == 0 && adapter.handle, "KMT-open-selected-monitor");
+  require(!std::memcmp(&request.AdapterLuid, &expected, sizeof(LUID)) && request.VidPnSourceId == expectedSource,
+    "actual-current-LUID-source");
+  D3DKMT_ADAPTERTYPE type{}; D3DKMT_QUERYADAPTERINFO properties{};
+  properties.hAdapter = adapter.handle; properties.Type = KMTQAITYPE_ADAPTERTYPE;
+  properties.pPrivateDriverData = &type; properties.PrivateDriverDataSize = sizeof(type);
+  require(query(&properties) == 0 && !type.SoftwareDevice && type.RenderSupported, "actual-KMT-hardware-adapter");
+  const auto* raw = reinterpret_cast<const unsigned char*>(&request.AdapterLuid);
+  trace("D3D8_KMT_MATCH adapter=%u source=%u luid=%02x%02x%02x%02x%02x%02x%02x%02x software=0 render=1 no_device=1",
+    adapter.handle, request.VidPnSourceId, unsigned(raw[0]), unsigned(raw[1]), unsigned(raw[2]), unsigned(raw[3]),
+    unsigned(raw[4]), unsigned(raw[5]), unsigned(raw[6]), unsigned(raw[7]));
+  if (names) {
+    D3DKMT_UMDFILENAMEINFO name{}; name.Version = KMTUMDVERSION_DX9;
+    properties.Type = KMTQAITYPE_UMDRIVERNAME;
+    properties.pPrivateDriverData = &name; properties.PrivateDriverDataSize = sizeof(name);
+    const NTSTATUS status = query(&properties);
+    const bool terminated = std::find(std::begin(name.UmdFileName), std::end(name.UmdFileName), wchar_t(0)) != std::end(name.UmdFileName);
+    trace("D3D8_KMT_NAME version=%u status=%08lx terminated=%u name=%ls pointer_bytes=%zu raw_bytes=%zu",
+      unsigned(name.Version), static_cast<unsigned long>(status), unsigned(terminated),
+      terminated ? name.UmdFileName : L"<unterminated>", sizeof(void*), sizeof(name));
+    for (unsigned i = 0; i < std::size(name.UmdFileName); ++i)
+      trace("D3D8_KMT_NAME_WORD index=%u value=%04x", i, unsigned(name.UmdFileName[i]));
+    require(status == 0 && terminated, "actual-I386-legacy-KMT-name");
+  }
+  D3DKMT_CLOSEADAPTER release{}; release.hAdapter = adapter.handle;
+  const NTSTATUS closed = close(&release); if (!closed) adapter.handle = 0;
+  require(closed == 0, "KMT-close-selected-monitor");
+  trace("D3D8_KMT_CLOSED status=00000000");
+  require(DeleteDC(dc.value) != FALSE, "selected-monitor-DC-release"); dc.value = nullptr;
+  return monitor;
+}
+
 struct Window {
   HWND value = nullptr;
   ~Window() { if (value) DestroyWindow(value); }
-  void create() {
-    value = CreateWindowExW(0, L"STATIC", L"VioGPU genuine DX8 offscreen", WS_POPUP,
-                           0, 0, 8, 8, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+  void create(HMONITOR monitor = nullptr, bool visible = false) {
+    int x = 0, y = 0;
+    if (monitor) {
+      MONITORINFO info{}; info.cbSize = sizeof(info);
+      require(GetMonitorInfoW(monitor, &info) != FALSE, "owned-window-monitor");
+      x = info.rcWork.left + 32; y = info.rcWork.top + 32;
+    }
+    value = CreateWindowExW(visible ? WS_EX_TOPMOST | WS_EX_TOOLWINDOW : 0, L"STATIC", L"VioGPU genuine DX8 offscreen", WS_POPUP | (visible ? WS_VISIBLE : 0),
+                           x, y, 8, 8, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     require(value != nullptr, "owned-hidden-window");
   }
 };
@@ -278,7 +392,49 @@ void fvf(IDirect3DDevice8* device, uint32_t color) {
   call(device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(Vertex)), "DrawPrimitiveUP-FVF");
   call(device->EndScene(), "EndScene");
 }
-void offscreen(IDirect3D8* api, UINT adapter, HWND window) {
+void screen(IDirect3DDevice8* device, HWND window) {
+  constexpr uint32_t color = 0xff193e72;
+  call(device->Clear(0, nullptr, D3DCLEAR_TARGET, color, 1, 0), "Clear-before-Present");
+  call(device->Present(nullptr, nullptr, window, nullptr), "Present-owned-window");
+  RECT client{}; POINT origin{};
+  require(GetClientRect(window, &client) && client.right == 8 && client.bottom == 8
+      && ClientToScreen(window, &origin), "exact-present-client");
+  struct Capture {
+    HDC desktop = nullptr, memory = nullptr; HBITMAP bitmap = nullptr; HGDIOBJ old = nullptr;
+    ~Capture() {
+      if (memory && old) SelectObject(memory, old);
+      if (bitmap) DeleteObject(bitmap);
+      if (memory) DeleteDC(memory);
+      if (desktop) ReleaseDC(nullptr, desktop);
+    }
+  } capture;
+  capture.desktop = GetDC(nullptr); capture.memory = CreateCompatibleDC(capture.desktop);
+  require(capture.desktop && capture.memory, "owned-screen-DC");
+  BITMAPINFO info{}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth = 8; info.bmiHeader.biHeight = -8;
+  info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32; info.bmiHeader.biCompression = BI_RGB;
+  void* pixels = nullptr;
+  capture.bitmap = CreateDIBSection(capture.desktop, &info, DIB_RGB_COLORS, &pixels, nullptr, 0);
+  require(capture.bitmap && pixels, "owned-screen-DIB");
+  capture.old = SelectObject(capture.memory, capture.bitmap); require(capture.old && capture.old != HGDI_ERROR, "screen-select-DIB");
+  std::array<uint32_t, 64> actual{}; bool exact = false; unsigned polls = 0;
+  const ULONGLONG until = GetTickCount64() + 2500;
+  do {
+    MSG message{};
+    while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) { TranslateMessage(&message); DispatchMessageW(&message); }
+    require(BitBlt(capture.memory, 0, 0, 8, 8, capture.desktop, origin.x, origin.y, SRCCOPY | CAPTUREBLT)
+        && GdiFlush(), "actual-screen-capture");
+    std::memcpy(actual.data(), pixels, sizeof(actual)); ++polls;
+    exact = std::all_of(actual.begin(), actual.end(), [](uint32_t pixel) { return (pixel & 0xffffff) == (color & 0xffffff); });
+    if (!exact) Sleep(16);
+  } while (!exact && GetTickCount64() < until);
+  for (unsigned y = 0; y < 8; ++y) for (unsigned x = 0; x < 8; ++x)
+    trace("D3D8_SCREEN_PIXEL x=%u y=%u rgb=%06x", x, y, actual[y * 8 + x] & 0xffffff);
+  require(exact, "independent-Present-screen-oracle");
+  trace("D3D8_PRESENT PASS calls=1 pixels=64 rgb=193e72 polls=%u source=actual-screen", polls);
+}
+void offscreen(IDirect3D8* api, UINT adapter, HWND window, bool selected = false,
+               bool present = false, const policy::D3d8HardwarePins* pins = nullptr) {
   for (const D3DFORMAT color : {D3DFMT_X8R8G8B8, D3DFMT_A8R8G8B8}) {
     call(api->CheckDeviceFormat(adapter, D3DDEVTYPE_HAL, D3DFMT_X8R8G8B8,
         D3DUSAGE_RENDERTARGET, D3DRTYPE_SURFACE, color), "CheckDeviceFormat-RT");
@@ -296,6 +452,7 @@ void offscreen(IDirect3D8* api, UINT adapter, HWND window) {
   call(api->CreateDevice(adapter, D3DDEVTYPE_HAL, window,
        D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_MULTITHREADED, &parameters, &device.ptr), "CreateDevice-HAL-hardwareVP");
   require(device.ptr != nullptr, "genuine-HAL-device");
+  if (selected) require(pins && pins->loaded(), "actual-matched-private-I386-payloads");
   Com<IDirect3DSurface8> original, target;
   call(device->GetRenderTarget(&original.ptr), "GetRenderTarget");
   const auto createTarget = [&] {
@@ -358,27 +515,57 @@ void offscreen(IDirect3D8* api, UINT adapter, HWND window) {
   call(device->Clear(0, nullptr, D3DCLEAR_TARGET, 0xff623a81, 1, 0), "Clear-after-reset");
   capture(device.ptr, target.ptr, 5, 0xff623a81);
   fvf(device.ptr, 0xff91b742); capture(device.ptr, target.ptr, 6, 0xff91b742);
+  if (selected) {
+    const DWORD shader14[] = {D3DPS_VERSION(1,4), D3DSIO_MOV, 0x80000000u | D3DSP_WRITEMASK_ALL,
+      0x80000000u | DWORD(D3DSPR_INPUT) | D3DSP_NOSWIZZLE, D3DSIO_END};
+    DWORD handle14 = 0;
+    call(device->CreatePixelShader(shader14, &handle14), "CreatePixelShader-1.4");
+    call(device->SetPixelShader(handle14), "SetPixelShader-1.4");
+    fvf(device.ptr, 0xffa362d1); capture(device.ptr, target.ptr, 7, 0xffa362d1);
+    call(device->SetPixelShader(0), "UnbindPixelShader-1.4");
+    call(device->DeletePixelShader(handle14), "DeletePixelShader-1.4");
+  }
   call(device->SetRenderTarget(original.ptr, nullptr), "RestoreRenderTarget-final");
-  target.reset(); original.reset(); device.reset();
-  trace("D3D8_OFFSCREEN PASS stages=6 pixels=384 shader=VS1.1/PS1.1 dynamic_texture=1 resets=1 presents=0");
+  target.reset();
+  if (present) screen(device.ptr, window);
+  if (selected) require(pins && pins->loaded(), "private-payloads-through-teardown");
+  original.reset(); device.reset();
+  if (selected) trace("D3D8_SELECTED_OFFSCREEN PASS stages=7 pixels=448 shader=VS1.1/PS1.1+PS1.4 dynamic_texture=1 resets=1 presents=%u", unsigned(present));
+  else trace("D3D8_OFFSCREEN PASS stages=6 pixels=384 shader=VS1.1/PS1.1 dynamic_texture=1 resets=1 presents=0");
 }
 }
 
 int wmain(int argc, wchar_t** argv) {
   const bool guard = argc == 3 && !std::wcscmp(argv[1], L"--front-guard");
   const bool enumerate = argc == 2 && !std::wcscmp(argv[1], L"--enumerate");
-  const bool hardware = argc == 2 && !std::wcscmp(argv[1], L"--offscreen");
-  const bool selected = argc == 7 && !std::wcscmp(argv[1], L"--front-enumerate")
-    && policy::ownedFrontPath(std::wstring_view(argv[2]))
-    && policy::ownedCorePath(std::wstring_view(argv[4]), std::wstring_view(argv[6]))
-    && policy::hexIdentity(std::wstring_view(argv[5]), 64);
-  if (!enumerate && !hardware && !selected && !guard) return 64;
+  const bool installedOffscreen = argc == 2 && !std::wcscmp(argv[1], L"--offscreen");
+  const bool selectedEnumerate = argc == 7 && !std::wcscmp(argv[1], L"--front-enumerate");
+  const bool selectedOffscreen = argc == 9 && !std::wcscmp(argv[1], L"--front-offscreen");
+  const bool selectedPresent = argc == 9 && !std::wcscmp(argv[1], L"--front-present");
+  const bool selectedHardware = selectedOffscreen || selectedPresent;
+  const bool kmtNames = argc == 4 && !std::wcscmp(argv[1], L"--kmt-names");
+  const bool selected = selectedEnumerate || selectedHardware;
+  const bool hardware = installedOffscreen || selectedHardware;
+  LUID expectedLuid{}; UINT expectedSource = 0;
+  if (selected && (!policy::ownedFrontPath(std::wstring_view(argv[2]))
+      || !policy::ownedCorePath(std::wstring_view(argv[4]), std::wstring_view(argv[6]))
+      || !policy::hexIdentity(std::wstring_view(argv[5]), 64))) return 64;
+  if (selectedHardware && (!parseLuid(argv[7], expectedLuid) || !sourceId(argv[8], expectedSource))) return 64;
+  if (kmtNames && (!parseLuid(argv[2], expectedLuid) || !sourceId(argv[3], expectedSource))) return 64;
+  if (!enumerate && !hardware && !selected && !guard && !kmtNames) return 64;
   if (guard) return d3d8RuntimeFrontGuard(argv[2]);
   if constexpr (sizeof(void*) != 4) {
     trace("D3D8_UNAVAILABLE required_machine=014c pointer_bytes=%zu exit=77", sizeof(void*)); return 77;
   }
   try {
     require(Permission::absent(), "diagnostic-pins-originally-absent");
+    if (kmtNames) {
+      userGate();
+      require(!GetModuleHandleW(L"d3d8.dll") && !GetModuleHandleW(L"viogpudxvk.dll"), "KMT-name-no-graphics-factory");
+      matchAdapter(nullptr, 0, expectedLuid, expectedSource, true);
+      trace("D3D8_KMT_NAMES_COMPLETE system_runtime_calls=0 create_device=0 core_loads=0 registry_writes=0");
+      return traceFailed ? 1 : 0;
+    }
     const auto directory = systemDirectory(); const auto expected = directory + L"\\d3d8.dll";
     if (GetFileAttributesW(expected.c_str()) == INVALID_FILE_ATTRIBUTES) {
       trace("D3D8_UNAVAILABLE path=%ls pointer_bytes=%zu exit=77", expected.c_str(), sizeof(void*)); return 77;
@@ -390,9 +577,13 @@ int wmain(int argc, wchar_t** argv) {
     trace("D3D8_RUNTIME path=%ls machine=%04x pointer_bytes=%zu sdk_version=%u caps_bytes=%zu",
           expected.c_str(), unsigned(moduleMachine(runtime.value)), sizeof(void*), D3D_SDK_VERSION, sizeof(D3DCAPS8));
     require(moduleMachine(runtime.value) == IMAGE_FILE_MACHINE_I386, "genuine-I386-system-d3d8");
-    Permission permission; Selector selector;
+    Permission permission; Selector selector; policy::D3d8HardwarePins pins(trace);
+    if (selectedHardware) {
+      userGate();
+      require(pins.open(argv[4], argv[5], argv[6]), "exact-original-I386-hardware-inputs");
+    }
     if (selected) {
-      permission.enable(argv[4], argv[5], argv[6]);
+      permission.enable(argv[4], argv[5], argv[6], selectedHardware);
       selector.install(runtime.value, argv[2], argv[3]);
     }
     using Create = IDirect3D8* (WINAPI*)(UINT);
@@ -421,7 +612,9 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (hardware) {
       require(virtio != UINT(-1) && hal, "VirtIO-HAL-hardware-caps");
-      Window window; window.create(); offscreen(api.ptr, virtio, window.value);
+      HMONITOR monitor = selectedHardware ? matchAdapter(api.ptr, virtio, expectedLuid, expectedSource) : nullptr;
+      Window window; window.create(monitor, selectedPresent);
+      offscreen(api.ptr, virtio, window.value, selectedHardware, selectedPresent, &pins);
     }
     api.reset(); auditModules(directory);
     if (selected) {
@@ -429,8 +622,10 @@ int wmain(int argc, wchar_t** argv) {
       require(substitutions > 0, "actual-system8-exact-name-selection");
       require(permission.restore(), "diagnostic-pin-restoration");
     }
-    trace("D3D8_COMPLETE mode=%s adapters=%u create_device=%u presents=0 registry_writes=0",
-          hardware ? "offscreen" : (selected ? "front-enumerate" : "enumerate"), count, unsigned(hardware));
+    require(pins.restore(), "private-driver-environment-restoration");
+    trace("D3D8_COMPLETE mode=%s adapters=%u create_device=%u presents=%u registry_writes=0",
+      selectedPresent ? "front-present" : selectedOffscreen ? "front-offscreen" : installedOffscreen ? "offscreen"
+        : selected ? "front-enumerate" : "enumerate", count, unsigned(hardware), unsigned(selectedPresent));
     return traceFailed ? 1 : 0;
   } catch (const std::exception& error) { trace("D3D8_FAILED reason=%s", error.what()); return 1; }
 }

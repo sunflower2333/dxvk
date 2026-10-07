@@ -2691,3 +2691,15 @@ owned8x8 RT/bounded20-byte-stride60-byte FVF forwarding and exact cleanup.
 Diagnostic4285518 corrects414 borrowed-table lifetime risk with owned22-slot
 originals and protected/retired-table controls. Integrate both final slices and
 freeze fresh root CPU source; original failed/native/local archives retained.
+
+
+Integrated final probe605 as1124a52, protected teardown ase8120ad, DX8RT fixture
+37e306e as36696a1 and diagnostics414/428 asc762aab/e7e1711. Original snapshots
+retained; final forwarding uses owned22-slot original callback prefix throughout
+lifetime. Callback CPU marker calls25/Vista22/function99/admission0; added to
+sole consolidated build/package/ARM64 lists, now26 cases. Native execution not
+yet claimed. Frozen f4 WARP88-input packet sources remain unchanged; fresh PS5.1
+explicit-handle/raw-stream helper is prepared byDX11 before target handoff.
+Native locked-buffer source preparer02 now resolves pinned submodule Git origins
+for conditional Vulkan includes, and uses explicit ProcessStartInfo/raw streams.
+First failed empty root archive-preparation01 preserved separately.

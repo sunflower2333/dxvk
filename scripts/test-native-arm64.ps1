@@ -26,6 +26,7 @@ $cases = [ordered]@{
     'dxvk-umd-d3d10-formats-test.exe' = 'native D3D10/10\.1 format queries verified checks=\d+ callbacks=12 backend_calls=2 hardware_admission=0'
     'dxvk-umd-multisample-policy-test.exe' = 'native multisample output policy verified checks=\d+'
     'dxvk-umd-d3d9-buffer-copy-test.exe' = 'D3D9 vertex copy PASS checks=\d+; bounded source offsets/partial tails/overflow, no GPU'
+    'dxvk-umd-d3d9-runtime-callbacks-test.exe' = 'probe D3D9 typed runtime callbacks verified checks=\d+ calls=25 vista_callbacks=22 vista_functions=99 hardware_admission=0'
     'dxvk-umd-runtime-gpu-test.exe' = 'PASS \d+ runtime GPU checks'
     'dxvk-umd-native-entry-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=0 backend-calls=0'
     'dxvk-umd-native-lifetime-test.exe' = 'native production entry/lifetime PASS .*complete-contract-fixture=1'

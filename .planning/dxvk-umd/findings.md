@@ -2389,3 +2389,46 @@ Fresh GitHub API snapshot root-ci-current-state-da0a4ed-01 confirms publishedb6 
 Exact23d native helper02 PASS and explicit release0a39d778 finalize all seven host transports0 and all eight native retained/exited/drained children0. Original archive4f495a3eb926da4bf2dcf055d3bd043542d72742ab48234737499fb51cf48c10 has1130775bytes/89files. Agent original review4ee76335 joins19Git/source/beforeafter/collected inputs,21SDK/7libraries/4tools against original Microsoft packages and all13 retention flags. Root independent413315b7 reopens all89 originals, current19 inputs, actual raw process exits/pipe lengths,2AA64COFF+2PE, required modernadapter/KMT/D3DCompile imports and CPUoracle12482 output. Strict /W4 /WX /MT /O1 /std:c++17 /EHsc /Zc:preprocessor retained; actual optimized compute workload remains present. Probe/core/GPU unexecuted, ordinary runtime admission and future hardware pins remain unset.
 
 Root-publication-native-gates-da0a4ed-01.json verifies current88 WARP compilation inputs unchanged and78/79 SM4.1 source inputs unchanged; the sole difference is Meson metadata for the new separate probe, with all compiled SM4.1 units/oracles unchanged. Full native WARP15 and SM4.1 57program/18draw/4608pixel/3negative proofs remain accepted. Both final CI scripts still match nativePS5.1-tested55a23df/cd3914. Root commits this checkpoint and publishes one consolidated candidate; actual successful six-job CI, original five archives/private loader joins and target GPU/runtime acceptance follow. Target CPU is released to root; DX11 prepares the USER compute GPU runner locally and DX10 finalizes isolated typed10 probe locally.
+
+
+## 2026-10-07 single consolidated candidate published
+
+Root commits checkpoint930d7f7552d1a087ab12e6a2a3756e9556e2398a and pushes the existing work/native-dxgi-rotation-20261005 branch, actual push0 with preserved raw receipt. No manual workflow dispatch. Fresh GitHub exact-commit list confirms exactly one push-triggered native UMD run37630945784 (2026-10-07T13:44:41Z); shader-cpu succeeds, other backend/identity/runtime jobs pending. Four unused workflows remain disabled. Actual successful CI/current artifact/private loader/hardware pins are still pending; root retains exclusive target CPU.
+
+DX10 isolated6b4cad7 followsf88 with named atomic SDK version constants because the SDK macro does not parenthesize its argument. Original local proof53c3c9b3/archive5c11e6bb retain15 Git inputs, original four optimized x64/x86 COFFs,4141 sanitizer oracle checks and unchanged peer transport33bec601/common implementation/completed57/18/4608 suite. Independent review continues. Root catches scalar-array response-file grouping in its prepared helper02 before any target execution; owner prepares helper03 with explicit scalar grouping/path cardinality checks. DX11 prepares interactive USER compute runner and independent384-word raw validator locally; both peers keep future core/run/hash pins unset until successful original CI artifacts are verified.
+
+###930d7f7 CI failure and corrective work
+
+CI37630945784 was the sole automatic push run. Identity/shader-cpu pass;
+ARM64/x86 raw workflow blob identity rejects before Meson. x64 builds core
+and passes26 owned native fixtures, then D3D9 backend rejection process
+exits0xc0000005 with retained handle/exit/raw pipe drain. ARM64 runtime is
+skipped. Original API state, all3 job logs, contracts ZIP13da0c3b and failed
+x64 ZIP55fe9cf7 (47179bytes/92members) are retained under central
+root-consolidated-930d7f7-01. Root original review9ba39f68 joins original
+API source/run/digest/size/CRC plus all27 process receipts and raw streams.
+No successful candidate or new hardware pin follows this failed run.
+
+Root fixes null LibraryLoader::sym before LibraryFn member initializers,
+retaining strict module-local private loader/no fallback policy. Actual
+GCC/Clang sanitizer original-source negative controls each reproduce the
+null call; fixed originals pass16checks. Full native identity PASS under
+root-ci-repair-loader-02. Initial attempt01 retained19 pre-existing Unix
+Win32 compatibility unused-parameter errors; only this diagnostic is
+suppressed for the host regression, Windows warning policies unchanged.
+
+Independent Git2.43/non-racy and official Git-for-Windows2.55 source
+confirm stat-clean checkout-index returns before testing force; initial
+racy control rewritesLF and remains separately retained. Explicit raw
+ls-tree/cat-file helper bypasses this cache and conversion/archive attrs;
+source12 includes this helper and existing byte/hash checks remain strict.
+Independent raw-source helper proofc1923023 PASS:835 actual root regular
+blobs plus synthetic export-subst, three text/auto/export-attribute controls,
+12strictGitchecks/fivegitlinks retained/wrongCI-SHA-cwd/mutation rejection.
+One corrected consolidated push follows; genuinehardware pins stay null.
+
+Root reviewed DX10 helper03 source15/archive and9 prepared inputs,
+root handoff9b02834e. Before any target call DX10 found undefined service
+variables under StrictMode; root held the known-defective invocation and
+requests fresh04/local audit rather than a knowingly failed native run.
+DX10 still exclusively reserves CPU; DX11 GPU runner remains local-only.

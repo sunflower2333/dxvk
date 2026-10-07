@@ -119,7 +119,9 @@ namespace dxvk::vk {
   }
 
   PFN_vkVoidFunction LibraryLoader::sym(VkInstance instance, const char* name) const {
-    return m_getInstanceProcAddr(instance, name);
+    // LibraryFn resolves its members before the caller can check whether
+    // loading the configured library succeeded.
+    return m_getInstanceProcAddr ? m_getInstanceProcAddr(instance, name) : nullptr;
   }
 
   PFN_vkVoidFunction LibraryLoader::sym(const char* name) const {

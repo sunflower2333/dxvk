@@ -35,6 +35,7 @@ New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 # Snapshot the configuration inputs before Meson. A later checkout or source
 # edit must not give an already-built DLL a new source/configuration identity.
 $configurationInputs = @('.github/workflows/build-native-umd.yml', 'scripts/build-native-umd.ps1',
+    'scripts/restore-native-ci-source.py',
     'meson.build', 'meson_options.txt', 'src/vulkan/meson.build', 'src/vulkan/vulkan_loader.cpp',
     'src/vulkan/vulkan_loader.h', 'src/umd/meson.build', 'src/umd/umd_vulkan_loader.cpp', 'src/umd/viogpudxvk.def',
     'scripts/owned-raw-process-f4bf37f-02.cs')

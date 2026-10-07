@@ -63,7 +63,7 @@ jobs:
       - name: Preserve exact Git build input bytes
         shell: pwsh
         run: |
-          git -c core.autocrlf=false checkout-index --all --force
+          python scripts/restore-native-ci-source.py
           if ($LASTEXITCODE) { throw 'Exact Git source checkout failed' }
       - uses: ilammy/msvc-dev-cmd@v1
         with:

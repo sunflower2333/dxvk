@@ -8,8 +8,12 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Published production remains b6cda5fde6534d3f86d4f6564902f8fd15b55af8.
-Sole consolidated CI37593963656 fails the D3D11 fixture on x64/x86; ARM64
+Published candidate is now930d7f7552d1a087ab12e6a2a3756e9556e2398a.
+Exactly one push-triggered CI37630945784 completed: identity/shader-cpu PASS,
+all three backend jobs fail, ARM64 runtime skipped; no usable candidate.
+Root repairs canonical checkout bytes and missing-private-loader rejection,
+then publishes one corrected consolidated push after local controls pass.
+Preceding b6 CI37593963656 fails the D3D11 fixture on x64/x86; ARM64
 production and identity/shader CPU pass, ARM64 native runtime is skipped.
 Keep failed originals. Complete native WARP15 and merged-source SM4.1
 18draw/4608pixel suites now both PASS. Compute probe eb3/23d is integrated
@@ -17,7 +21,8 @@ as7b32aaf/da0a4ed, all7 independently reviewed inputs match current Git.
 Final native PowerShell5.1 CI AST27-to28 and four locked GPU runner parses
 PASS. Strict native ARM64 probe compile/link and CPUoracle12482 now PASS;
 original89-file archive and agent/root reviews finalized, release0a39d778.
-Publish one consolidated candidate and verify its actual CI/artifacts next.
+Candidate930d7f7 failed CI; original job logs/two original ZIPs are retained.
+Verify corrected-source CI/original artifacts before setting any hardware pins.
 
 Root integrated compute096e024, stable stream-outputd153e81, per-stream
 query2c1b0e2, hull fork/join220b4c0, returning query sentinels7db692d,
@@ -892,3 +897,30 @@ gates and native fixture/semantic controls remain required.
 - [in_progress] Verify device-permission sourcec8f on all architectures in sole consolidated37569563644.
 - [in_progress] Verify exact889 lifecycle diagnostic native build/guards; then run actual Microsoft runtime resource/clear/readback contracts.
 - [pending] Complete ordinary DX8-DX11 hardware rendering and visible presentation; broader GPU program remains active.
+
+## CI correction after930d7f7
+
+Actual x64 has26 exited/drained zero-exit fixtures before D3D9 backend
+access violation0xc0000005. Typed DX10.1/D3D11, SM4.1 compiler763/18draw
+fixture and compute oracle12482 all pass in that original failed build.
+Root original review9ba39f68 joins API run/source/size/digest/CRC and all27
+owned children; ARM64/x86 reject workflow rawblob before Meson.
+Missing private loader leaves the LibraryFn constructor calling a null
+resolver before DxvkInstance admission. Root guards LibraryLoader::sym;
+GCC/Clang ASan/UBSan each reproduce the original930 crash and pass all16
+new regression checks. Full native identity suite PASS. Unix shim unused
+parameters are the only suppressed diagnostic; Windows flags unchanged.
+Git checkout-index can return for a stat-clean CRLF file before applying
+--force; independent racy/non-racy control reproduces both behaviors.
+New CI helper restores every regular tracked root file from raw ls-tree/
+cat-file Git objects, verifies object identity, bypasses filters/archive
+attributes, preserves submodules and emits an original source receipt.
+Existing rawblob checks stay strict; source configuration includes helper12.
+All28 owned fixture calls and C#d8cf remain unchanged.
+DX10 helper03 was held before target calls after finding stale undefined
+ServiceController result fields; isolated helper04 is being prepared.
+DX10 retains exclusive target CPU; actual04nativePSpreflight parsed2/RSP/
+C#Add-Type before failing ServiceController assembly unavailable in
+NoProfile host. No compiler/builder/fixture/core/GPU ran; original failure
+collection/release is being finalized; isolated05explicitassembly pending.
+DX11 independently prepares USER compute runner/384-word validator locally.

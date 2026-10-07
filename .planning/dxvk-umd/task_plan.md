@@ -72,6 +72,12 @@ Actualpresent43 acquires/releases EMULATED successfully, but raw legacy primary
 blit still rejects c01e0342.20residency owners close and58readiness fields retain.
 Next isolated probe-only diagnostic uses documented PresentToBitmap; strict
 visible screen acceptance remains required, and ordinary runtime stays open.
+Targetpresent44 raw bitmap request returns c000000d, with balanced20owners,
+unchanged signedSYS/desktop58fields and no screen pixels. Stop speculative
+raw present flags. Build a separate read-only OpenAdapter frontend and genuine
+Microsoft System32 D3D9 enumeration probe; keep caps zero and CreateDevice
+blocked. Verify exact native build and baseline before temporary legacy-only
+binding to observe the actual runtime callback contract.
 
 Previous ae61dde compact clip37/38 acceptance remains unchanged. Production
 caps/exports, registration and paired package pins stay closed. Complete remaining

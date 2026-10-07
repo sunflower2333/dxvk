@@ -1558,3 +1558,25 @@ PresentToBitmap (0x4000), with exact source/window/rectangles and unchanged
 Actual ordinary runtime still requires caps/export negotiation, primary/opened
 resource ownership and runtime-managed window redirection; this raw harness
 provides its own callbacks and must not be mistaken for that admission.
+
+## 2026-10-07 bitmap presentation rejection and system runtime diagnostic
+Bitmap probeaf1ae8a compiles warning-free on nativeARM64 in2.4950676seconds,
+six invalid CLI/read-only enumeration checks pass. Root review06 joins all57
+Git/archive/build/after-run sources, originalCOFF/PE/LIB, originalSDK headers
+and raw official User32 NuGet member, reused originalCI inputs and continuity.
+Native32memberevidencec56d0090acf299b74c4a106944331a61d93775f46886478376b9341ad5547206.
+Targetpresent44 acquires/releases EMULATED source0/nativeLUID6e6c status0,
+then exact PresentToBitmap flag40c1 returnsc000000d/invalid parameters on first
+submission. No screen pixels or presentation acceptance.20residency refs and
+evictions balance; sourceallocation/GDIcontext close0, signedSYS/desktop and
+58readiness fields unchanged. Root failure proof verifies8payloads/3scripts,
+LimitedUSER/token/task cleanup and832raw rational prior query/clip pixels.
+Original12memberGPUevidence0889cdc973e291624450b9cafa3b121f919f7b4b6f55898d5d1161cf24b8e5b1.
+Do not accumulate speculative raw KMT present flags or claim DWM redirection
+from a private callback harness. Next implementation is a separate read-only
+OpenAdapter frontend forwarding only adapter/caps queries to exactUMD061ee8f.
+It always blocks CreateDevice; original caps/counts remain zero. A separate
+probe uses genuine System32 d3d9.dll for Direct3DCreate9/Ex and enumeration,
+plus two null-input frontend guard checks. Native build/guard/baseline come
+before any temporary legacy-driver binding. No production export/caps, D3D10
+registration or renderer changes; no ordinary rendering acceptance claimed.

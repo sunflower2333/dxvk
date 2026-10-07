@@ -199,6 +199,7 @@ $symbols = Join-Path 'build-umd/src/umd' "$LibraryName.pdb"
 if (-not (Test-Path -LiteralPath $symbols -PathType Leaf)) { throw "$LibraryName.dll has no PDB" }
 Copy-Item $symbols $OutputDirectory
 $exports = & dumpbin /exports "build-umd/src/umd/$LibraryName.dll" | Out-String
+if ($exports -notmatch '\bVioGpuDxvkOpenAdapter10_2ForTest\b') { throw 'Missing typed modern development adapter export' }
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bVioGpuDxvkQueryVulkanLoader\b' -or $exports -notmatch '\bVioGpuDxvkOpenAdapter9ForTest\b' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 if ($exports -notmatch '\bVioGpuDxvkProbeD3D9BackendForTest\b' -or $exports -match '\bDirect3DCreate9(?:Ex|On12)?\b') { throw 'Unexpected embedded D3D9 exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')

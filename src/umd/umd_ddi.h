@@ -14,6 +14,9 @@ extern "C" SIZE_T APIENTRY VioGpuDxvkPrivateDeviceSize();
 // Uses the real WDK OpenAdapter/CreateDevice structures and callback ABI.
 // Explicit harness name: no OpenAdapter10 export or system registration.
 extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapterForTest(D3D10DDIARG_OPENADAPTER* args);
+// Exact D3D10_2DDI_ADAPTERFUNCS development table for typed D3D10.1/D3D11
+// hardware probes. Public OpenAdapter10_2 capability admission is independent.
+extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter10_2ForTest(D3D10DDIARG_OPENADAPTER* args);
 // Consumer of the optional identity trailer. KMDs without the paired producer
 // fail closed; this entry point does not publish OpenAdapter to the runtime.
 extern "C" HRESULT APIENTRY VioGpuDxvkQueryRuntimeAdapterLuid(

@@ -325,6 +325,9 @@ def main() -> int:
            "OpenAdapter10 + OpenAdapter10_2 exported"
            + (f"; forbidden export {', '.join(sorted(forbidden))}" if forbidden else "")
            if have_open else "missing an OpenAdapter entry point")
+    record("modern-development-export", "VioGpuDxvkOpenAdapter10_2ForTest" in names
+           and "return dxvk::umd::openAdapterForTest(args, true);" in adapter,
+           "separate typed modern development helper; public admission remains gated")
 
     # The gate must be the single authority: every negotiation site consults it.
     gated = [

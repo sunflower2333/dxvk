@@ -168,9 +168,11 @@ static UINT buildFor(UINT interfaceVersion) {
 }
 
 static void nativeInterfaces();
+static void modernExportNegatives();
 
 int main() {
   CHECK(VioGpuDxvkOpenAdapterForTest(nullptr) == E_INVALIDARG);
+  CHECK(VioGpuDxvkOpenAdapter10_2ForTest(nullptr) == E_INVALIDARG);
   D3D10DDI_ADAPTERFUNCS functions = {};
   D3DDDI_ADAPTERCALLBACKS callbacks = {};
   callbacks.pfnQueryAdapterInfoCb = query;
@@ -262,6 +264,7 @@ int main() {
   open.Version += (1 << 16) | 0x1234;
   CHECK(VioGpuDxvkOpenAdapterForTest(&open) == S_OK);
   CHECK(functions.pfnCloseAdapter(open.hAdapter) == S_OK);
+  modernExportNegatives();
   nativeInterfaces();
   std::printf("adapter lifecycle PASS checks=%u; mock runtime and backend, no GPU\n", checks);
 }
@@ -274,9 +277,80 @@ static D3D10DDI_HADAPTER openModern(D3D10_2DDI_ADAPTERFUNCS& functions) {
   args.Interface = args.Version = 0xffffffff;
   args.pAdapterCallbacks = &callbacks;
   args.pAdapterFuncs_2 = &functions;
-  CHECK(dxvk::umd::openAdapterForTest(&args, true) == S_OK);
+  CHECK(VioGpuDxvkOpenAdapter10_2ForTest(&args) == S_OK);
   CHECK(args.hAdapter.pDrvPrivate && functions.pfnGetSupportedVersions && functions.pfnGetCaps);
   return args.hAdapter;
+}
+
+static HRESULT APIENTRY positiveQuery(HANDLE, const D3DDDICB_QUERYADAPTERINFO*) {
+  ++queryCalls;
+  return S_FALSE;
+}
+
+static void modernExportNegatives() {
+  GuardedBytes adapterTable(sizeof(D3D10_2DDI_ADAPTERFUNCS));
+  GuardedBytes openStorage(sizeof(D3D10DDIARG_OPENADAPTER));
+  auto functions = adapterTable.as<D3D10_2DDI_ADAPTERFUNCS>();
+  auto open = openStorage.as<D3D10DDIARG_OPENADAPTER>();
+  D3DDDI_ADAPTERCALLBACKS callbacks = {}; callbacks.pfnQueryAdapterInfoCb = query;
+  D3D10DDIARG_OPENADAPTER input = {};
+  input.hRTAdapter.handle = &adapterCookie; input.pAdapterCallbacks = &callbacks;
+  input.pAdapterFuncs_2 = functions; input.Interface = input.Version = 0xffffffff;
+  const std::vector<unsigned char> zeroTable(sizeof(D3D10_2DDI_ADAPTERFUNCS), 0);
+  const unsigned beforeQueries = queryCalls;
+  for (unsigned invalid = 0; invalid < 4; ++invalid) {
+    *open = input; adapterTable.fill(0xa5);
+    if (invalid == 0) open->pAdapterFuncs_2 = nullptr;
+    if (invalid == 1) open->pAdapterCallbacks = nullptr;
+    if (invalid == 2) open->hRTAdapter = {};
+    if (invalid == 3) callbacks.pfnQueryAdapterInfoCb = nullptr;
+    CHECK(VioGpuDxvkOpenAdapter10_2ForTest(open) == E_INVALIDARG && !open->hAdapter.pDrvPrivate);
+    CHECK(queryCalls == beforeQueries);
+    if (invalid) CHECK(adapterTable.snapshot() == zeroTable);
+    callbacks.pfnQueryAdapterInfoCb = query;
+  }
+  *open = input; callbacks.pfnQueryAdapterInfoCb = positiveQuery; adapterTable.fill(0xa5);
+  CHECK(VioGpuDxvkOpenAdapter10_2ForTest(open) == E_FAIL && !open->hAdapter.pDrvPrivate);
+  CHECK(queryCalls == beforeQueries + 1 && adapterTable.snapshot() == zeroTable);
+  callbacks.pfnQueryAdapterInfoCb = query;
+  *open = input;
+  CHECK(VioGpuDxvkOpenAdapter10_2ForTest(open) == S_OK);
+  CHECK(functions->pfnGetSupportedVersions && functions->pfnGetCaps && functions->pfnCreateDevice);
+
+  GuardedBytes table(sizeof(D3D11DDI_DEVICEFUNCS)); table.fill(0x5a);
+  GuardedBytes dxgi(sizeof(DXGI1_1_DDI_BASE_FUNCTIONS)); dxgi.fill(0x3c);
+  const auto tableBefore = table.snapshot(), dxgiBefore = dxgi.snapshot();
+  D3D11DDI_CORELAYER_DEVICECALLBACKS core = {}; core.pfnSetErrorCb = setError;
+  D3DDDI_DEVICECALLBACKS kernel = {};
+  D3D10DDIARG_CREATEDEVICE create = {};
+  create.Interface = D3D11_0_DDI_INTERFACE_VERSION;
+  create.Version = D3D11_0_DDI_BUILD_VERSION << 16;
+  create.Flags = 4; // Exact D3D11DDI_3DPIPELINELEVEL_11_0 encoding.
+  create.hRTDevice.handle = &deviceCookie; create.hRTCoreLayer.handle = &coreCookie;
+  create.hDrvDevice.pDrvPrivate = &privateCookie; create.pKTCallbacks = &kernel;
+  create.p11UMCallbacks = &core; create.p11DeviceFuncs = table.as<D3D11DDI_DEVICEFUNCS>();
+  create.DXGIBaseDDI.pDXGIDDIBaseFunctions2 = dxgi.as<DXGI1_1_DDI_BASE_FUNCTIONS>();
+  const unsigned beforeDevices = deviceCalls, beforeInvalidQueries = queryCalls;
+  for (unsigned invalid = 0; invalid < 11; ++invalid) {
+    auto request = create;
+    if (invalid == 0) request.Interface = D3D11_1_DDI_INTERFACE_VERSION;
+    if (invalid == 1) --request.Version;
+    if (invalid == 2) request.Flags |= D3D10DDI_CREATEDEVICE_FLAG_DISABLE_EXTRA_THREAD_CREATION;
+    if (invalid == 3) request.Flags |= 0x80000000;
+    if (invalid == 4) request.hRTDevice = {};
+    if (invalid == 5) request.hRTCoreLayer = {};
+    if (invalid == 6) request.hDrvDevice = {};
+    if (invalid == 7) request.pKTCallbacks = nullptr;
+    if (invalid == 8) request.p11UMCallbacks = nullptr;
+    if (invalid == 9) core.pfnSetErrorCb = nullptr;
+    if (invalid == 10) request.p11DeviceFuncs = nullptr;
+    CHECK(functions->pfnCreateDevice(open->hAdapter, &request)
+      == (invalid < 4 ? DXGI_ERROR_UNSUPPORTED : E_INVALIDARG));
+    core.pfnSetErrorCb = setError;
+    CHECK(table.matches(tableBefore) && dxgi.matches(dxgiBefore));
+    CHECK(deviceCalls == beforeDevices && queryCalls == beforeInvalidQueries);
+  }
+  CHECK(functions->pfnCloseAdapter(open->hAdapter) == S_OK);
 }
 
 enum class CreationCase {
@@ -459,7 +533,7 @@ static void nativeInterfaces() {
     open.pAdapterFuncs_2 = &alternate; open.hRTAdapter.handle = &deviceCookie;
     open.pAdapterCallbacks = nullptr; callbacks.pfnQueryAdapterInfoCb = nullptr;
   };
-  CHECK(dxvk::umd::openAdapterForTest(&open, true) == S_OK);
+  CHECK(VioGpuDxvkOpenAdapter10_2ForTest(&open) == S_OK);
   CHECK(functions->pfnCreateDevice && !alternate.pfnCreateDevice);
   UINT32 count = 0;
   GuardedBytes versionStorage(3 * sizeof(UINT64)); versionStorage.fill(0xa5);

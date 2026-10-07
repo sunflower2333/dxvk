@@ -332,3 +332,6 @@ HRESULT dxvk::umd::openAdapterForTest(D3D10DDIARG_OPENADAPTER* args, bool modern
 extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapterForTest(D3D10DDIARG_OPENADAPTER* args) {
   return dxvk::umd::openAdapterForTest(args, false);
 }
+extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter10_2ForTest(D3D10DDIARG_OPENADAPTER* args) {
+  return dxvk::umd::openAdapterForTest(args, true);
+}

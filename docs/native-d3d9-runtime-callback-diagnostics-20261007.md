@@ -33,11 +33,14 @@ hDevice can select the only active owner for that adapter, with ambiguous
 owners rejected instead of chosen arbitrarily. See the original
 [Escape callback contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/nc-d3dumddi-pfnd3dddi_escapecb).
 
-The frontend copies only the original22-slot Vista runtime callback prefix and
-preserves its99-slot typed device-function copy. The four intercepted function
-pointers are read from the original runtime table for each invocation; all
-other prefix slots retain their original values. Registry owners are installed
-before core CreateDevice, held through failed-create or DestroyDevice cleanup,
+The frontend snapshots only the original22-slot Vista runtime callback prefix
+during installation and preserves its99-slot typed device-function copy. Each
+owner holds a separate immutable typed function table. The four intercepted
+functions forward from that owned snapshot throughout creation and cleanup;
+the original table address is retained only as provenance and is never read
+again. All other prefix slots retain their captured original values. Registry
+owners are installed before core CreateDevice, held through failed-create or
+DestroyDevice cleanup,
 and independently pinned by active wrappers. No registry mutex is held while
 the original callback executes, so reentrant retirement is safe. The original
 CreateDevice request/output addresses remain intact; its callback-table input
@@ -45,9 +48,12 @@ pointer is temporarily substituted and restored even on C++ unwinding.
 
 The documented legacy pCallbacks field supplies a runtime callback table; it
 does not explicitly promise the dynamically mutable D3D11 core-table policy.
-This probe retains the original pointer for bounded protected reads. A missing
-or unreadable intercepted slot returns E_FAIL with `forwarded=0`; it must never
-be counted as a runtime/KMD HRESULT or hidden by falling back to stale data.
+The probe therefore matches production D3D9's callback snapshot semantics.
+Later runtime table mutation, unreadable/released storage or reused storage
+cannot replace a captured callback or create a new forwarding failure. A missing
+captured slot returns E_FAIL with `forwarded=0`; it must never be counted as a
+runtime/KMD HRESULT. Failure to capture the initial bounded table prevents
+installation before the core device is created.
 Unreadable optional payload logging likewise reports unreadable while forwarding
 the original callback and original request untouched. See the
 [legacy CreateDevice arguments](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/ns-d3dumddi-_d3dddiarg_createdevice).
@@ -63,8 +69,9 @@ to root; none was performed for this change.
 `tests/umd-d3d9-runtime-callbacks.cpp` includes the actual frontend implementation
 and calls it with typed synthetic callbacks. It tests exact input handles/
 request identity/thread, one-call forwarding, positive/failed HRESULTs, partial
-output writes on failure, in-place callback replacement, protected optional
-payloads and original slots, null/protected requests, callback-owner retirement,
+output writes on failure, original-table mutation that cannot alter forwarding,
+protected/released/reused original-table storage, protected optional payloads,
+missing captured slots, null/protected requests, callback-owner retirement,
 failed-create cleanup, successful-create cleanup and restoration of the original
 callback-table input. Guard pages immediately after the22 callback and99 device
 function prefixes also verify bounded table access; a Vista Render prefix
@@ -88,7 +95,7 @@ DXVK object. Keep `/W4 /WX /MT /std:c++17 /EHsc /Zc:preprocessor` for every unit
 Do not also link a separate frontend object into that control.
 
 Its success marker is
-`^probe D3D9 typed runtime callbacks verified checks=[0-9]+ calls=16 vista_callbacks=22 vista_functions=99 hardware_admission=0$`.
+`^probe D3D9 typed runtime callbacks verified checks=[0-9]+ calls=25 vista_callbacks=22 vista_functions=99 hardware_admission=0$`.
 The actual check count must be recorded from native output. The unchanged
 probe still needs its existing official d3d9/user32 import libraries and the
 existing10 malformed-CLI/3null guards/ordinary enumeration controls. Genuine

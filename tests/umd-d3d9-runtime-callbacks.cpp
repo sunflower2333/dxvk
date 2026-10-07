@@ -110,6 +110,7 @@ void callbackControls() {
   expected.pfnEscapeCb = owner->wrapped.pfnEscapeCb;
   CHECK(!std::memcmp(&expected, &owner->wrapped, Callbacks::callbackBytes));
   CHECK(!std::memcmp(live, &original, Callbacks::callbackBytes));
+  CHECK(!std::memcmp(&owner->functions, &original, Callbacks::callbackBytes));
 
   expectedHandle = runtime;
   D3DDDI_ALLOCATIONINFO allocation = {};
@@ -139,7 +140,7 @@ void callbackControls() {
     && vistaRender->NewCommandBufferSize == 32768 && vistaRender->NewAllocationListSize == 23
     && vistaRender->NewPatchLocationListSize == 29 && vistaRender->QueuedBufferCount == 7);
   live->pfnRenderCb = replacementRender;
-  CHECK(owner->wrapped.pfnRenderCb(runtime, vistaRender) == S_FALSE);
+  CHECK(owner->wrapped.pfnRenderCb(runtime, vistaRender) == E_FAIL);
 
   uint32_t privateData[8] = {0x504d5644, 0, 32, 0, 1, 0, 3, 0};
   D3DDDICB_ESCAPE escapeArgs = {}; escapeArgs.hDevice = runtime;
@@ -147,9 +148,9 @@ void callbackControls() {
   expectedHandle = adapter; expectedRequest = &escapeArgs;
   CHECK(owner->wrapped.pfnEscapeCb(adapter, &escapeArgs) == E_INVALIDARG);
   live->pfnEscapeCb = replacementEscape;
-  CHECK(owner->wrapped.pfnEscapeCb(adapter, &escapeArgs) == S_OK);
+  CHECK(owner->wrapped.pfnEscapeCb(adapter, &escapeArgs) == E_INVALIDARG);
   Guarded payloadPage; escapeArgs.pPrivateDriverData = payloadPage.boundary;
-  CHECK(owner->wrapped.pfnEscapeCb(adapter, &escapeArgs) == S_OK);
+  CHECK(owner->wrapped.pfnEscapeCb(adapter, &escapeArgs) == E_INVALIDARG);
   CHECK(records.back().find("private_readable=0") != std::string::npos);
 
   expectedHandle = runtime; expectedRequest = nullptr;
@@ -176,16 +177,50 @@ void callbackControls() {
   CHECK(VirtualProtect(callbackPage.memory, callbackPage.pageSize, PAGE_NOACCESS, &protection));
   const auto priorCalls = calls;
   expectedHandle = runtime; expectedRequest = &renderArgs;
-  CHECK(owner->wrapped.pfnRenderCb(runtime, &renderArgs) == E_FAIL && calls == priorCalls);
-  CHECK(records.back().find("forwarded=0") != std::string::npos);
-  CHECK(VirtualProtect(callbackPage.memory, callbackPage.pageSize, protection, &protection));
+  CHECK(owner->wrapped.pfnRenderCb(runtime, &renderArgs) == E_FAIL && calls == priorCalls + 1);
+  CHECK(records.back().find("forwarded=1") != std::string::npos);
+  // Retiring the borrowed table cannot turn a valid captured callback into a
+  // new diagnostic-created failure or redirect it to later reused storage.
+  void* retiredMemory = callbackPage.memory;
+  CHECK(VirtualFree(retiredMemory, 0, MEM_RELEASE)); callbackPage.memory = nullptr;
+  expectedRequest = &allocateArgs;
+  CHECK(owner->wrapped.pfnAllocateCb(runtime, &allocateArgs) == S_FALSE);
+  expectedRequest = &createArgs;
+  CHECK(owner->wrapped.pfnCreateContextCb(runtime, &createArgs) == E_OUTOFMEMORY);
+  expectedRequest = &renderArgs;
+  CHECK(owner->wrapped.pfnRenderCb(runtime, &renderArgs) == E_FAIL);
+  expectedHandle = adapter; expectedRequest = &escapeArgs;
+  CHECK(owner->wrapped.pfnEscapeCb(adapter, &escapeArgs) == E_INVALIDARG);
+  callbackPage.memory = VirtualAlloc(retiredMemory, size_t(callbackPage.pageSize) * 2,
+    MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  CHECK(callbackPage.memory == retiredMemory);
+  D3DDDI_DEVICECALLBACKS replacement = {};
+  replacement.pfnRenderCb = replacementRender; replacement.pfnEscapeCb = replacementEscape;
+  CHECK(callbackPage.put(replacement, Callbacks::callbackBytes) == live);
+  expectedHandle = runtime; expectedRequest = &allocateArgs;
+  CHECK(owner->wrapped.pfnAllocateCb(runtime, &allocateArgs) == S_FALSE);
+  expectedRequest = &createArgs;
+  CHECK(owner->wrapped.pfnCreateContextCb(runtime, &createArgs) == E_OUTOFMEMORY);
+  expectedRequest = &renderArgs;
+  CHECK(owner->wrapped.pfnRenderCb(runtime, &renderArgs) == E_FAIL);
+  expectedHandle = adapter; expectedRequest = &escapeArgs;
+  CHECK(owner->wrapped.pfnEscapeCb(adapter, &escapeArgs) == E_INVALIDARG);
+  const auto wrappedRender = owner->wrapped.pfnRenderCb;
+  Callbacks::remove(owner); owner.reset();
+  D3DDDI_DEVICECALLBACKS retiring = {}; retiring.pfnRenderCb = retireInCallback;
+  retirementOwner = Callbacks::install(runtime, adapter, &retiring, capture);
+  CHECK(retirementOwner); retirementWeak = retirementOwner;
+  retiring.pfnRenderCb = replacementRender;
   expectedHandle = runtime; expectedRequest = &renderArgs;
-  live->pfnRenderCb = retireInCallback; retirementOwner = owner; retirementWeak = owner;
-  const auto wrappedRender = owner->wrapped.pfnRenderCb; owner.reset();
   CHECK(wrappedRender(runtime, &renderArgs) == D3DERR_DEVICELOST);
   CHECK(retirementWeak.expired());
   const auto count = calls; CHECK(wrappedRender(runtime, &renderArgs) == E_INVALIDARG);
   CHECK(calls == count);
+  D3DDDI_DEVICECALLBACKS absent = {};
+  owner = Callbacks::install(runtime, adapter, &absent, capture); CHECK(owner);
+  CHECK(wrappedRender(runtime, &renderArgs) == E_FAIL && calls == count);
+  CHECK(records.back().find("forwarded=0") != std::string::npos);
+  Callbacks::remove(owner);
 }
 
 HANDLE frontRuntime = reinterpret_cast<HANDLE>(uintptr_t(0x900));
@@ -240,5 +275,6 @@ void frontendControls() {
 
 int main() {
   expectedThread = GetCurrentThreadId(); callbackControls(); frontendControls();
+  CHECK(calls == 25);
   std::printf("probe D3D9 typed runtime callbacks verified checks=%u calls=%u vista_callbacks=22 vista_functions=99 hardware_admission=0\n", checks, calls);
 }

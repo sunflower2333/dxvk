@@ -23,21 +23,26 @@ public:
 
   struct Owner {
     HANDLE device = nullptr, adapter = nullptr;
-    const D3DDDI_DEVICECALLBACKS* original = nullptr;
+    const D3DDDI_DEVICECALLBACKS* originalTable = nullptr; // Address provenance only.
+    const D3DDDI_DEVICECALLBACKS functions;
     D3DDDI_DEVICECALLBACKS wrapped = {};
     Log log = nullptr;
     std::atomic<uint64_t> sequence{0};
+    explicit Owner(const D3DDDI_DEVICECALLBACKS& inputFunctions)
+      : functions(inputFunctions), wrapped(inputFunctions) { }
   };
   using Pin = std::shared_ptr<Owner>;
 
   static Pin install(HANDLE device, HANDLE adapter,
                      const D3DDDI_DEVICECALLBACKS* original, Log log) {
     if (!device || !adapter || !original || !log) return {};
-    auto owner = std::make_shared<Owner>();
+    // Snapshot the actual Vista prefix once during CreateDevice, matching the
+    // production D3D9 driver. Borrowed runtime table storage may be ephemeral.
+    D3DDDI_DEVICECALLBACKS functions = {};
+    if (!read(&functions, original, callbackBytes)) return {};
+    auto owner = std::make_shared<Owner>(functions);
     owner->device = device; owner->adapter = adapter;
-    owner->original = original; owner->log = log;
-    // Read only the actual Vista prefix, even with the current SDK definition.
-    if (!read(&owner->wrapped, original, callbackBytes)) return {};
+    owner->originalTable = original; owner->log = log;
     if (owner->wrapped.pfnAllocateCb) owner->wrapped.pfnAllocateCb = allocate;
     if (owner->wrapped.pfnCreateContextCb) owner->wrapped.pfnCreateContextCb = createContext;
     if (owner->wrapped.pfnRenderCb) owner->wrapped.pfnRenderCb = render;
@@ -85,7 +90,7 @@ private:
       return entry != owners.end() && entry->second->adapter == adapter
         ? entry->second : Pin{};
     }
-    // Escape permits hDevice==NULL. A single active device supplies its live
+    // Escape permits hDevice==NULL. A single active device supplies its owned
     // adapter callback. Never choose arbitrarily between different owners.
     Pin result;
     for (const auto& entry : owners) {
@@ -97,11 +102,9 @@ private:
   }
 
   template<typename Function>
-  static Function current(const Pin& owner,
+  static Function captured(const Pin& owner,
                           Function D3DDDI_DEVICECALLBACKS::* member) {
-    Function function = nullptr;
-    if (!read(&function, &(owner->original->*member), sizeof(function))) function = nullptr;
-    return function;
+    return owner->functions.*member;
   }
 
   template<typename Function>
@@ -126,12 +129,12 @@ private:
   static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
     const auto owner = retain(device);
     if (!owner) return E_INVALIDARG;
-    const auto function = current(owner, &D3DDDI_DEVICECALLBACKS::pfnAllocateCb);
+    const auto function = captured(owner, &D3DDDI_DEVICECALLBACKS::pfnAllocateCb);
     const auto call = static_cast<unsigned long long>(++owner->sequence);
     D3DDDICB_ALLOCATE input = {};
     const bool readable = snapshot(input, args);
     owner->log("SYSTEM_D3D9_CALLBACK_BEGIN kind=Allocate call=%llu thread=%lu runtime=%p args=%p original_table=%p callback_address=%zx forwarded=%u readable=%u resource=%p allocations=%u private_data=%p private_bytes=%u allocation_info=%p\n",
-      call, static_cast<unsigned long>(GetCurrentThreadId()), device, args, owner->original,
+      call, static_cast<unsigned long>(GetCurrentThreadId()), device, args, owner->originalTable,
       address(function), unsigned(function != nullptr), unsigned(readable), input.hResource, input.NumAllocations, input.pPrivateDriverData,
       input.PrivateDriverDataSize, input.pAllocationInfo);
     const HRESULT hr = function ? function(device, args) : E_FAIL;
@@ -150,14 +153,14 @@ private:
   static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* args) {
     const auto owner = retain(device);
     if (!owner) return E_INVALIDARG;
-    const auto function = current(owner, &D3DDDI_DEVICECALLBACKS::pfnCreateContextCb);
+    const auto function = captured(owner, &D3DDDI_DEVICECALLBACKS::pfnCreateContextCb);
     const auto call = static_cast<unsigned long long>(++owner->sequence);
     constexpr size_t bytes = offsetof(D3DDDICB_CREATECONTEXT, PatchLocationListSize) + sizeof(UINT);
     D3DDDICB_CREATECONTEXT input = {};
     const bool readable = snapshot(input, args, bytes);
     const auto words = privateWords(input.pPrivateDriverData, input.PrivateDriverDataSize);
     owner->log("SYSTEM_D3D9_CALLBACK_BEGIN kind=CreateContext call=%llu thread=%lu runtime=%p args=%p original_table=%p callback_address=%zx forwarded=%u readable=%u node=%u engine=%u flags=%08x private_data=%p private_bytes=%u private_readable=%u private_magic=%08x private_version=%u private_declared=%u private16=%08x private20=%08x private24=%08x private28=%08x\n",
-      call, static_cast<unsigned long>(GetCurrentThreadId()), device, args, owner->original,
+      call, static_cast<unsigned long>(GetCurrentThreadId()), device, args, owner->originalTable,
       address(function), unsigned(function != nullptr), unsigned(readable), input.NodeOrdinal, input.EngineAffinity, input.Flags.Value,
       input.pPrivateDriverData, input.PrivateDriverDataSize, unsigned(words.readable),
       words.values[0], words.values[1], words.values[2], words.values[4], words.values[5],
@@ -176,13 +179,13 @@ private:
   static HRESULT APIENTRY render(HANDLE device, D3DDDICB_RENDER* args) {
     const auto owner = retain(device);
     if (!owner) return E_INVALIDARG;
-    const auto function = current(owner, &D3DDDI_DEVICECALLBACKS::pfnRenderCb);
+    const auto function = captured(owner, &D3DDDI_DEVICECALLBACKS::pfnRenderCb);
     const auto call = static_cast<unsigned long long>(++owner->sequence);
     constexpr size_t bytes = offsetof(D3DDDICB_RENDER, QueuedBufferCount) + sizeof(ULONG);
     D3DDDICB_RENDER input = {};
     const bool readable = snapshot(input, args, bytes);
     owner->log("SYSTEM_D3D9_CALLBACK_BEGIN kind=Render call=%llu thread=%lu runtime=%p args=%p original_table=%p callback_address=%zx forwarded=%u readable=%u context=%p command_offset=%u command_bytes=%u allocations=%u patches=%u flags=%08x broadcasts=%u command_buffer=%p next_command_bytes=%u allocation_list=%p next_allocation_count=%u patch_list=%p next_patch_count=%u\n",
-      call, static_cast<unsigned long>(GetCurrentThreadId()), device, args, owner->original,
+      call, static_cast<unsigned long>(GetCurrentThreadId()), device, args, owner->originalTable,
       address(function), unsigned(function != nullptr), unsigned(readable), input.hContext, input.CommandOffset, input.CommandLength,
       input.NumAllocations, input.NumPatchLocations, input.Flags.Value, input.BroadcastContextCount,
       input.pNewCommandBuffer, input.NewCommandBufferSize, input.pNewAllocationList,
@@ -204,12 +207,12 @@ private:
     const bool readable = snapshot(input, args);
     const auto owner = retainEscape(adapter, input.hDevice);
     if (!owner) return E_INVALIDARG;
-    const auto function = current(owner, &D3DDDI_DEVICECALLBACKS::pfnEscapeCb);
+    const auto function = captured(owner, &D3DDDI_DEVICECALLBACKS::pfnEscapeCb);
     const auto call = static_cast<unsigned long long>(++owner->sequence);
     const auto before = privateWords(input.pPrivateDriverData, input.PrivateDriverDataSize);
     owner->log("SYSTEM_D3D9_CALLBACK_BEGIN kind=Escape call=%llu thread=%lu adapter=%p runtime=%p args=%p original_table=%p callback_address=%zx forwarded=%u readable=%u context=%p flags=%08x private_data=%p private_bytes=%u private_readable=%u private_magic=%08x private_version=%u private_declared=%u private16=%08x private20=%08x\n",
       call, static_cast<unsigned long>(GetCurrentThreadId()), adapter, input.hDevice, args,
-      owner->original, address(function), unsigned(function != nullptr), unsigned(readable), input.hContext, input.Flags.Value,
+      owner->originalTable, address(function), unsigned(function != nullptr), unsigned(readable), input.hContext, input.Flags.Value,
       input.pPrivateDriverData, input.PrivateDriverDataSize, unsigned(before.readable),
       before.values[0], before.values[1], before.values[2], before.values[4], before.values[5]);
     const HRESULT hr = function ? function(adapter, args) : E_FAIL;

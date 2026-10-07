@@ -224,7 +224,7 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
     const auto originalCallbacks = args->pCallbacks;
     trace("SYSTEM_D3D9_CREATE_FORWARD adapter=%p runtime=%p interface=%u version=%u flags=%08x\n",
       handle, runtime, args->Interface, args->Version, args->Flags.Value);
-    trace("SYSTEM_D3D9_CALLBACK_TABLE runtime=%p adapter_runtime=%p original=%p wrapped=%p bytes=%zu live_delegate=1\n",
+    trace("SYSTEM_D3D9_CALLBACK_TABLE runtime=%p adapter_runtime=%p original=%p wrapped=%p bytes=%zu owned_snapshot=1 borrowed_table_reread=0\n",
       runtime, runtimeAdapter, originalCallbacks, &callbacks->wrapped, dxvk::test::RuntimeCallbacks9::callbackBytes);
     // Keep all original CreateDevice arguments/output addresses; substitute
     // only the callback table for this call and restore its input identity.

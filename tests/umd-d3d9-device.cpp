@@ -3607,8 +3607,24 @@ static void legacyDeviceContracts() {
     const auto originalVertices = snapshot(vertices); f->expectedDrawBytes = sizeof(vertices);
     D3DDDIARG_SETSTREAMSOURCEUM stream{0,20}; D3DDDIARG_DRAWPRIMITIVE draw{D3DPT_TRIANGLELIST,0,1};
     CHECK(f->table.pfnSetStreamSourceUm(f->device,&stream,vertices.data()) == S_OK);
-    CHECK(f->table.pfnDrawPrimitive(f->device,&draw,nullptr) == S_OK
+    const auto drawsBefore = f->draws;
+    const HRESULT unboundDraw = f->table.pfnDrawPrimitive(f->device,&draw,nullptr);
+    CHECK(unboundDraw == E_INVALIDARG && f->draws == drawsBefore && f->drawVertices.empty());
+    std::printf("D3D8 FVF unbound target hr=%08x backend_draws=%u captured_bytes=%zu\n",
+      unsigned(unboundDraw),f->draws,f->drawVertices.size());
+    char targetCookie;
+    D3DDDI_SURFACEINFO targetInfo{8,8,1,nullptr,0,0};
+    auto targetResource = resourceArgs(&targetCookie,&targetInfo,1,true);
+    CHECK(f->table.pfnCreateResource(f->device,&targetResource) == S_OK);
+    const D3DDDIARG_SETRENDERTARGET target{0,targetResource.hResource,0};
+    CHECK(f->table.pfnSetRenderTarget(f->device,&target) == S_OK);
+    const HRESULT boundDraw = f->table.pfnDrawPrimitive(f->device,&draw,nullptr);
+    CHECK(boundDraw == S_OK
       && f->drawVertices == std::vector<uint8_t>(originalVertices.begin(),originalVertices.end()));
+    CHECK(f->draws == drawsBefore + 1 && f->drawStride == sizeof(LegacyFvfVertex)
+      && f->drawCount == 1 && f->drawType == D3DPT_TRIANGLELIST);
+    std::printf("D3D8 FVF bound target hr=%08x backend_draws=%u captured_bytes=%zu stride=%u\n",
+      unsigned(boundDraw),f->draws,f->drawVertices.size(),f->drawStride);
     CHECK(snapshot(vertices) == originalVertices);
     CHECK(f->table.pfnDeleteVertexShaderDecl(f->device,declaration.ShaderHandle) == S_OK);
     const auto creates = f->declarationCreates; elements[0].Type = D3DDECLTYPE_FLOAT16_4; declaration.ShaderHandle = nullptr;
@@ -3621,6 +3637,8 @@ static void legacyDeviceContracts() {
     CHECK(f->table.pfnSetTextureStageState(f->device,&state) == S_OK && f->lastSampler && f->samplerState == D3DSAMP_MINFILTER);
     state.State = D3DDDITSS_SRGBTEXTURE;
     CHECK(f->table.pfnSetTextureStageState(f->device,&state) == E_INVALIDARG);
+    CHECK(f->table.pfnDestroyResource(f->device,targetResource.hResource) == S_OK);
+    CHECK(f->surfaceCreates == 1 && f->surfaceCloses == 1);
     closeAdapter();
     CHECK(f->table.pfnFlush(f->device) == D3DERR_DEVICELOST); closeDevice();
   }

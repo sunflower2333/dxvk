@@ -277,6 +277,8 @@ bool decodeShader11(ShaderStage stage, const uint32_t* code, size_t words, Shade
   if (!parser.getShaderInfo()) return false;
   uint32_t stream = 0;
   bool patchPhase = false, computeGroup = false;
+  auto hullPhase = dxbc::OpCode::eHsDecls;
+  bool hullInstanceDeclared = false;
   std::array<uint8_t, 4> computeInputs{};
   std::vector<uint32_t> tables;
   while (parser) {
@@ -289,8 +291,15 @@ bool decodeShader11(ShaderStage stage, const uint32_t* code, size_t words, Shade
           || operand.getIndex(0) >= 4) return false;
       stream = operand.getIndex(0); continue;
     }
-    if (op == dxbc::OpCode::eHsControlPointPhase) { candidate.hullControlPhase = true; patchPhase = false; continue; }
-    if (op == dxbc::OpCode::eHsForkPhase || op == dxbc::OpCode::eHsJoinPhase) { patchPhase = true; continue; }
+    if (op == dxbc::OpCode::eHsDecls || op == dxbc::OpCode::eHsControlPointPhase || op == dxbc::OpCode::eHsForkPhase
+        || op == dxbc::OpCode::eHsJoinPhase) {
+      if (stage != ShaderStage::Hull || instruction.getDstCount() || instruction.getSrcCount()
+          || instruction.getImmCount() || instruction.getExtraCount()) return false;
+      hullPhase = op; hullInstanceDeclared = false;
+      patchPhase = op == dxbc::OpCode::eHsForkPhase || op == dxbc::OpCode::eHsJoinPhase;
+      candidate.hullControlPhase |= op == dxbc::OpCode::eHsControlPointPhase;
+      continue;
+    }
     if (op == dxbc::OpCode::eDclFunctionTable) {
       if (instruction.getImmCount() != 2 || instruction.getImm(1).getImmediate<uint32_t>(0) != instruction.getExtraCount()) return false;
       const uint32_t table = instruction.getImm(0).getImmediate<uint32_t>(0);
@@ -331,6 +340,26 @@ bool decodeShader11(ShaderStage stage, const uint32_t* code, size_t words, Shade
     if (entry.systemValue > 22) return false;
     bool dedicated = false;
     switch (type) {
+      case dxbc::RegisterType::eForkInstanceId:
+      case dxbc::RegisterType::eJoinInstanceId: {
+        const auto requiredPhase = type == dxbc::RegisterType::eForkInstanceId
+          ? dxbc::OpCode::eHsForkPhase : dxbc::OpCode::eHsJoinPhase;
+        if (stage != ShaderStage::Hull || hullPhase != requiredPhase || hullInstanceDeclared
+            || op != dxbc::OpCode::eDclInput || instruction.getImmCount() || instruction.getExtraCount()
+            || operand.getIndexDimensions() || operand.getModifiers()) return false;
+        const auto components = operand.getComponentCount();
+        if (components != dxbc::ComponentCount::e0Component && components != dxbc::ComponentCount::e1Component
+            && components != dxbc::ComponentCount::e4Component) return false;
+        const uint32_t expected = (uint32_t(type) << 12) | uint32_t(components)
+          | (components == dxbc::ComponentCount::e4Component ? 1u << 4 : 0);
+        util::ByteWriter encoded;
+        if (!operand.write(encoded, instruction)) return false;
+        const auto raw = std::move(encoded).extract();
+        if (raw.size() != sizeof(expected) || std::memcmp(raw.data(), &expected, sizeof(expected))) return false;
+        // This scalar belongs to the current hull phase, not the ISGN/PCSG
+        // register files. The next fork/join phase may declare its own ID.
+        hullInstanceDeclared = true; continue;
+      }
       case dxbc::RegisterType::eThreadId:
       case dxbc::RegisterType::eThreadGroupId:
       case dxbc::RegisterType::eThreadIdInGroup:

@@ -130,9 +130,88 @@ static void computeSystemInputs() {
   split.pop_back(); instruction(split,OpCode::eDclInput,{2 | (2u << 4) | (uint32_t(RegisterType::eThreadId) << 12)});
   instruction(split,OpCode::eRet,{}); build(ShaderStage::Compute,split,shader);
 }
+static void hullPhaseInputs() {
+  using dxbc::OpCode;
+  using dxbc::RegisterType;
+  auto program = [](ShaderStage stage, OpCode phase, OpCode declaration, std::initializer_list<uint32_t> args) {
+    std::vector<uint32_t> code{(uint32_t(stage) << 16) | 0x50,0};
+    if (stage == ShaderStage::Compute) instruction(code,OpCode::eDclThreadGroup,{1,1,1});
+    instruction(code,OpCode::eHsDecls,{}); instruction(code,phase,{});
+    instruction(code,declaration,args); instruction(code,OpCode::eRet,{});
+    code[1] = uint32_t(code.size()); return code;
+  };
+  auto reject = [](ShaderStage stage, const std::vector<uint32_t>& code) {
+    ShaderCode11 shader; shader.tokens = {0xcdcdcdcd}; shader.patch.push_back({});
+    CHECK(!decodeShader11(stage,code.data(),code.size(),shader));
+    CHECK(shader.tokens.empty() && shader.inputs.empty() && shader.outputs.empty() && shader.patch.empty());
+  };
+  for (auto type : {RegisterType::eForkInstanceId,RegisterType::eJoinInstanceId}) {
+    const auto phase = type == RegisterType::eForkInstanceId ? OpCode::eHsForkPhase : OpCode::eHsJoinPhase;
+    const uint32_t raw = uint32_t(type) << 12;
+    for (uint32_t shape : {0u,1u,0x12u}) {
+      auto code = program(ShaderStage::Hull,phase,OpCode::eDclInput,{raw | shape});
+      ShaderCode11 shader; auto bytes = build(ShaderStage::Hull,code,shader);
+      CHECK(shader.inputs.empty() && shader.outputs.empty() && shader.patch.empty() && !shader.hullControlPhase);
+      dxbc::Container container(bytes.data(),bytes.size());
+      for (auto chunk : {container.getInputSignatureChunk(),container.getOutputSignatureChunk(),container.getPatchConstantSignatureChunk()}) {
+        dxbc::Signature signature(chunk); CHECK(signature && signature.begin() == signature.end());
+      }
+    }
+    for (uint32_t stage = 0; stage < 6; ++stage) if (stage != uint32_t(ShaderStage::Hull))
+      reject(ShaderStage(stage),program(ShaderStage(stage),phase,OpCode::eDclInput,{raw}));
+    for (auto wrong : {OpCode::eHsDecls,OpCode::eHsControlPointPhase,
+        type == RegisterType::eForkInstanceId ? OpCode::eHsJoinPhase : OpCode::eHsForkPhase})
+      reject(ShaderStage::Hull,program(ShaderStage::Hull,wrong,OpCode::eDclInput,{raw}));
+    reject(ShaderStage::Hull,program(ShaderStage::Hull,phase,OpCode::eDclOutput,{raw}));
+    reject(ShaderStage::Hull,program(ShaderStage::Hull,phase,OpCode::eDclInputSiv,{raw,0}));
+    for (uint32_t shape : {2u,0x22u,0x32u,0x1au,0x10u,0x11u,0x00400000u})
+      reject(ShaderStage::Hull,program(ShaderStage::Hull,phase,OpCode::eDclInput,{raw | shape}));
+    reject(ShaderStage::Hull,program(ShaderStage::Hull,phase,OpCode::eDclInput,{raw | 0x00100000u,0}));
+    reject(ShaderStage::Hull,program(ShaderStage::Hull,phase,OpCode::eDclInput,{raw | 0x80000000u,0}));
+    reject(ShaderStage::Hull,program(ShaderStage::Hull,phase,OpCode::eDclInput,{raw | 0x80000000u,0x41}));
+    auto duplicate = program(ShaderStage::Hull,phase,OpCode::eDclInput,{raw}); duplicate.pop_back();
+    instruction(duplicate,OpCode::eDclInput,{raw | 1}); instruction(duplicate,OpCode::eRet,{});
+    duplicate[1] = uint32_t(duplicate.size()); reject(ShaderStage::Hull,duplicate);
+    auto afterDeclarations = program(ShaderStage::Hull,phase,OpCode::eRet,{});
+    instruction(afterDeclarations,OpCode::eHsDecls,{}); instruction(afterDeclarations,OpCode::eDclInput,{raw});
+    instruction(afterDeclarations,OpCode::eRet,{}); afterDeclarations[1] = uint32_t(afterDeclarations.size());
+    reject(ShaderStage::Hull,afterDeclarations);
+    // Each independent fork/join phase has its own instance register.
+    auto repeated = program(ShaderStage::Hull,phase,OpCode::eDclInput,{raw});
+    instruction(repeated,phase,{}); instruction(repeated,OpCode::eDclInput,{raw}); instruction(repeated,OpCode::eRet,{});
+    ShaderCode11 shader; build(ShaderStage::Hull,repeated,shader);
+    CHECK(shader.inputs.empty() && shader.outputs.empty() && shader.patch.empty());
+  }
+  // Exact 54-word FXC hull SHEX captured before the decoder failure. Original
+  // WARP CreateHullShader accepts it; vForkInstanceID is raw 0x00017000.
+  // SHA256 d3f215bf793999e88af72a9b6f4fbf333efadd89af196ceae432a38c58d7e65a.
+  std::vector<uint32_t> actualFxc{
+    0x00030050u,0x00000036u,0x01000071u,0x01001893u,0x01001894u,0x01001095u,
+    0x01000896u,0x01001897u,0x0100086au,0x01000073u,0x02000099u,0x00000003u,
+    0x0200005fu,0x00017000u,0x04000067u,0x00102012u,0x00000000u,0x00000011u,
+    0x04000067u,0x00102012u,0x00000001u,0x00000012u,0x04000067u,0x00102012u,
+    0x00000002u,0x00000013u,0x02000068u,0x00000001u,0x0400005bu,0x00102012u,
+    0x00000000u,0x00000003u,0x04000036u,0x00100012u,0x00000000u,0x0001700au,
+    0x06000036u,0x00902012u,0x0010000au,0x00000000u,0x00004001u,0x40800000u,
+    0x0100003eu,0x01000073u,0x04000067u,0x00102012u,0x00000003u,0x00000014u,
+    0x05000036u,0x00102012u,0x00000003u,0x00004001u,0x40800000u,0x0100003eu,
+  };
+  ShaderCode11 shader; auto bytes = build(ShaderStage::Hull,actualFxc,shader);
+  CHECK(!shader.hullControlPhase && shader.inputs.empty() && shader.outputs.empty() && shader.patch.size() == 4);
+  dxbc::Container container(bytes.data(),bytes.size()); dxbc::Signature patch(container.getPatchConstantSignatureChunk());
+  uint32_t count = 0;
+  for (const auto& entry : patch) {
+    CHECK(entry.getRegisterIndex() == int32_t(count) && entry.getComponentMask() == 1);
+    CHECK(entry.getSystemValue() == (count < 3 ? dxbc::SignatureSysval::eTriEdgeTessFactor : dxbc::SignatureSysval::eTriInsideTessFactor));
+    CHECK(entry.getSemanticIndex() == (count < 3 ? count : 0) && entry.getScalarType() == ir::ScalarType::eF32);
+    ++count;
+  }
+  CHECK(count == 4);
+}
 int main() {
   ShaderCode11 shader;
   computeSystemInputs();
+  hullPhaseInputs();
   // Input layouts require only a signature; preserve the logical shader
   // version and every scalar/register, including the higher10.1 input31.
   for (uint32_t version : {0x40u, 0x41u, 0x50u}) {

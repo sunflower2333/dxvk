@@ -1109,6 +1109,58 @@ o.value-=100;b.Append(o);})";
   CHECK(signedResults[0].back() == poison[0] && signedResults[1].back() == poison[0]);
   f.output.table.pfnSoSetTargets(f.device,0,4,nullptr,nullptr); ok();
 }
+static void rejectedHullPhaseInputs(Fixture& f, GraphicsShader& shader, const char* source) {
+  auto tokens = compile(source,"hs_5_0");
+  dxbc_spv::dxbc::Container container(shader.original->GetBufferPointer(),shader.original->GetBufferSize()); CHECK(container);
+  auto inputs = nativeSignature(container.getInputSignatureChunk());
+  auto outputs = nativeSignature(container.getOutputSignatureChunk());
+  auto patch = nativeSignature(container.getPatchConstantSignatureChunk());
+  const D3D11DDIARG_TESSELLATION_IO_SIGNATURES signature{inputs.data(),UINT(inputs.size()),outputs.data(),UINT(outputs.size()),patch.data(),UINT(patch.size())};
+  size_t declaration = 0, phase = 0;
+  for (size_t offset = 2; offset < tokens.size();) {
+    const UINT opcode = tokens[offset] & 0x7ff, length = (tokens[offset] >> 24) & 0x7f;
+    CHECK(length && length <= tokens.size()-offset);
+    if (!phase && opcode == UINT(dxbc_spv::dxbc::OpCode::eHsForkPhase)) phase = offset;
+    if (opcode == UINT(dxbc_spv::dxbc::OpCode::eDclInput) && length == 2
+        && tokens[offset+1] == (UINT(dxbc_spv::dxbc::RegisterType::eForkInstanceId) << 12)) {
+      CHECK(!declaration); declaration = offset;
+    }
+    offset += length;
+  }
+  CHECK(phase && declaration && phase < declaration);
+  ComPtr<ID3D11HullShader> before; f.context->HSGetShader(&before,nullptr,nullptr); CHECK(before);
+  UINT rejected = 0;
+  auto reject = [&](std::vector<UINT> code) {
+    code[1] = UINT(code.size());
+    Storage output(f.output.table.pfnCalcPrivateTessellationShaderSize(f.device,nullptr,nullptr));
+    const auto untouched = output.words; const UINT callbacksBefore = errors;
+    f.output.table.pfnCreateHullShader(f.device,code.data(),{output.data()},{},&signature); failure(E_INVALIDARG);
+    CHECK(errors == callbacksBefore+1 && output.words == untouched); output.check();
+    ComPtr<ID3D11HullShader> after; f.context->HSGetShader(&after,nullptr,nullptr);
+    CHECK(after.Get() == before.Get()); ++rejected;
+  };
+  auto invalid = tokens;
+  invalid[declaration+1] = UINT(dxbc_spv::dxbc::RegisterType::eJoinInstanceId) << 12; reject(invalid);
+  for (auto wrong : {dxbc_spv::dxbc::OpCode::eHsDecls,dxbc_spv::dxbc::OpCode::eHsControlPointPhase,
+      dxbc_spv::dxbc::OpCode::eHsJoinPhase,dxbc_spv::dxbc::OpCode::eNop}) {
+    invalid = tokens; invalid[phase] = (1u << 24) | UINT(wrong); reject(invalid);
+  }
+  invalid = tokens; invalid[declaration] = (2u << 24) | UINT(dxbc_spv::dxbc::OpCode::eDclOutput); reject(invalid);
+  invalid = tokens; invalid[declaration] = (3u << 24) | UINT(dxbc_spv::dxbc::OpCode::eDclInputSiv);
+  invalid.insert(invalid.begin()+declaration+2,0); reject(invalid);
+  invalid = tokens; invalid[declaration] = (3u << 24) | UINT(dxbc_spv::dxbc::OpCode::eDclInput);
+  invalid[declaration+1] |= 1u << 20; invalid.insert(invalid.begin()+declaration+2,0); reject(invalid);
+  for (UINT extension : {0u,0x41u}) {
+    invalid = tokens; invalid[declaration] = (3u << 24) | UINT(dxbc_spv::dxbc::OpCode::eDclInput);
+    invalid[declaration+1] |= 0x80000000u; invalid.insert(invalid.begin()+declaration+2,extension); reject(invalid);
+  }
+  for (UINT shape : {0x10u,0x11u,2u,0x22u,0x32u,0x1au,0x00400000u}) {
+    invalid = tokens; invalid[declaration+1] |= shape; reject(invalid);
+  }
+  invalid = tokens;
+  invalid.insert(invalid.begin()+declaration+2,{tokens[declaration],tokens[declaration+1] | 1u}); reject(invalid);
+  CHECK(rejected == 18);
+}
 static void tessellation(Fixture& f) {
   using dxvk::umd::ShaderStage;
   const char* common = "struct V{float4 p:POSITION;};struct P{float e[3]:SV_TessFactor;float i:SV_InsideTessFactor;};";
@@ -1125,6 +1177,7 @@ return c[0].p*uv.x+c[1].p*uv.y+c[2].p*uv.z;})";
   GraphicsState state(f); ColorTarget target(f,DXGI_FORMAT_R8G8B8A8_UNORM); target.bind();
   vertex.bind(); hs.bind(); ds.bind(); pixel.bind(); f.output.table.pfnGsSetShader(f.device,{});
   f.output.table.pfnIaSetTopology(f.device,D3D11_DDI_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST); ok();
+  rejectedHullPhaseInputs(f,hs,hull.c_str());
   NativeQuery query(f,D3D11DDI_QUERY_PIPELINESTATS); query.begin();
   f.output.table.pfnDraw(f.device,3,0); ok(); query.end();
   const auto data = query.result<D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS>();

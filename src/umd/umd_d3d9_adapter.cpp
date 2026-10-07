@@ -207,7 +207,9 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
   if (!args) return E_INVALIDARG;
   // Interface is the literal API version; Version is an opaque runtime build
   // identifier, with no D3D10-style packed build requirement.
-  if (args->Interface != 9 || args->Flags.Value) return D3DERR_NOTAVAILABLE;
+  // Multithreading and flip batching are permissions, not requirements.
+  // The device still serializes its backend and presents synchronously.
+  if (args->Interface != 9 || (args->Flags.Value & ~UINT(3))) return D3DERR_NOTAVAILABLE;
   if (!args->hDevice || !args->pCallbacks || !args->pDeviceFuncs) return E_INVALIDARG;
   try {
     // Snapshot inputs before the first callback can reenter or replace them.

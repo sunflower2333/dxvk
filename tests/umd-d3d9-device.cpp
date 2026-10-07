@@ -1014,6 +1014,36 @@ static void closeAdapter() {
   f->adapterValid = false;
 }
 
+static void creationFlagContracts() {
+  for (const UINT flags : {UINT(0), UINT(1), UINT(2), UINT(3)}) {
+    Fixture fixture; initialize(fixture); f->create.Flags.Value = flags;
+    createDevice();
+    CHECK(f->create.Flags.Value == flags);
+    CHECK(f->table.pfnFlush(f->device) == S_OK);
+    CHECK(f->contexts == 1 && f->backends == 1);
+    closeDevice(); closeAdapter();
+  }
+  for (UINT bit = 2; bit < 32; ++bit) {
+    Fixture fixture; initialize(fixture);
+    f->create.Flags.Value = (UINT(1) << bit) | 3u;
+    const auto queries = f->queries;
+    unchangedCreate(D3DERR_NOTAVAILABLE);
+    CHECK(f->queries == queries && !f->contexts && !f->backends && !f->allocations);
+    closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); f->create.Flags.Value = 3;
+    // The runtime can replace the caller's flags during the identity callback.
+    // The supported original permissions must already have been snapshotted.
+    f->queryHook = [] { f->create.Flags.Value = UINT_MAX; };
+    CHECK(f->adapterFuncs.pfnCreateDevice(f->adapter, &f->create) == S_OK);
+    f->device = f->create.hDevice;
+    CHECK(f->create.Flags.Value == UINT_MAX && f->table.pfnFlush && f->table.pfnDestroyDevice);
+    CHECK(f->table.pfnFlush(f->device) == S_OK);
+    closeDevice(); closeAdapter();
+  }
+}
+
 static void ownedServiceStartup() {
   // A completion worker may reach the bridge before the first pump starts,
   // or just after it returns. Both requests must wait for a legal caller.
@@ -3212,6 +3242,7 @@ static void presentationContracts() {
 }
 
 int main() {
+  creationFlagContracts();
   presentationContracts();
   queryContracts();
   bufferTransferContracts();

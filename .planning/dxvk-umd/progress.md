@@ -2354,3 +2354,15 @@ only1 result despite2 attempts, so prepared strict reviewer rejects complete
 contract acceptance. Retain original runtime archive and fix only standalone
 frontend trace emission to one synchronous WriteFile per formatted record.
 Fresh native diagnostic build/guards and clean session1 trace are required.
+
+2026-10-07: Replacement single consolidated CI37567440170 builds exact8d7;
+superseded0dd37566610477 is cancelled by existing branch concurrency. Isolated
+eaa7 synchronous-trace frontend passes fresh native2CPP/8CLI/nullguard/SSH
+baseline, root original49member d1ceccb2 review02 and all60 Git/SDK/continuity
+joins. Fresh blocked session1 trace02 is running, without core creation.
+Implement documented AllowMultithreading/AllowFlipBatching permissions at
+both adapter and device validation boundaries (supported mask3, reserved bits
+still reject). Existing worker remains serialized and Present synchronous.
+New fixtures exercise0/1/2/3, every reserved bit, no callback/backend on invalid
+inputs and mutation of caller flags after snapshot. Fresh native CPU source
+and architecture/GPU validation are pending; do not claim ordinary admission.

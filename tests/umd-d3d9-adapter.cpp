@@ -13,8 +13,12 @@
 #include <thread>
 
 // The adapter fixture isolates the handshake from backend construction.
+static std::atomic<unsigned> backendCreateCalls{0};
+static std::atomic<UINT> backendCreateFlags{UINT_MAX};
 HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdentity>&,
-                                      D3DDDIARG_CREATEDEVICE*) {
+                                      D3DDDIARG_CREATEDEVICE* args) {
+  ++backendCreateCalls;
+  backendCreateFlags = args->Flags.Value;
   return D3DERR_NOTAVAILABLE;
 }
 
@@ -361,11 +365,29 @@ int main() {
     if (field == 1) invalid.pCallbacks = nullptr;
     if (field == 2) invalid.pDeviceFuncs = nullptr;
     if (field == 3) invalid.Interface = 10;
-    if (field == 4) invalid.Flags.Value = 1;
+    if (field == 4) invalid.Flags.Value = 4;
     const auto original = snapshot(invalid); const auto calls = first.calls;
     CHECK(first.functions.pfnCreateDevice(first.driver, &invalid)
       == (field < 3 ? E_INVALIDARG : D3DERR_NOTAVAILABLE));
     CHECK(snapshot(invalid) == original && snapshot(deviceTable) == deviceBefore && first.calls == calls);
+  }
+  for (const UINT flags : {UINT(0), UINT(1), UINT(2), UINT(3)}) {
+    auto permitted = create; permitted.Flags.Value = flags;
+    const auto original = snapshot(permitted);
+    const auto backendBefore = backendCreateCalls.load(); const auto queriesBefore = first.calls;
+    CHECK(first.functions.pfnCreateDevice(first.driver, &permitted) == D3DERR_NOTAVAILABLE);
+    CHECK(backendCreateCalls == backendBefore + 1 && backendCreateFlags == flags);
+    CHECK(first.calls == queriesBefore + 1 && snapshot(permitted) == original);
+    CHECK(snapshot(deviceTable) == deviceBefore && snapshot(allocations) == allocationsBefore);
+    CHECK(snapshot(patches) == patchesBefore && snapshot(command) == commandBefore);
+  }
+  for (UINT bit = 2; bit < 32; ++bit) {
+    auto reserved = create; reserved.Flags.Value = (UINT(1) << bit) | 3u;
+    const auto original = snapshot(reserved);
+    const auto backendBefore = backendCreateCalls.load(); const auto queriesBefore = first.calls;
+    CHECK(first.functions.pfnCreateDevice(first.driver, &reserved) == D3DERR_NOTAVAILABLE);
+    CHECK(backendCreateCalls == backendBefore && first.calls == queriesBefore);
+    CHECK(snapshot(reserved) == original && snapshot(deviceTable) == deviceBefore);
   }
   first.action = Action::NestedCaps; countCaps(first);
   first.action = Action::NestedCreate; countCaps(first);

@@ -1479,7 +1479,9 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
                                       D3DDDIARG_CREATEDEVICE* args) {
   if (!identity || !args || !args->hDevice || !args->pCallbacks || !args->pDeviceFuncs)
     return E_INVALIDARG;
-  if (args->Interface != 9 || args->Flags.Value) return D3DERR_NOTAVAILABLE;
+  // AllowMultithreading/AllowFlipBatching permit extra concurrency; callers
+  // can grant either permission while this device keeps its serialized worker.
+  if (args->Interface != 9 || (args->Flags.Value & ~UINT(3))) return D3DERR_NOTAVAILABLE;
   const auto& cb = *args->pCallbacks;
   if (!cb.pfnAllocateCb || !cb.pfnDeallocateCb || !cb.pfnLockCb || !cb.pfnUnlockCb
       || !cb.pfnCreateContextCb || !cb.pfnDestroyContextCb || !cb.pfnEscapeCb || !cb.pfnRenderCb)

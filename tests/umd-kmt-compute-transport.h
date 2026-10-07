@@ -90,12 +90,15 @@ public:
       counts.wrongThreads.load(), counts.badCookies.load(), counts.coreErrors, counts.malformedOutputs,
       m_allocations.size(), m_resident.size(), static_cast<unsigned long long>(m_pendingPaging));
   }
-  bool balanced() const {
+  // Callers with named negative/query controls separately prove each exact
+  // error callback before supplying its count. The original zero-error gate
+  // remains the default; raw event/counter state is never reset or hidden.
+  bool balanced(unsigned expectedCoreErrors = 0) const {
     return counts.queries && counts.contexts == 1 && counts.contextCloses == counts.contexts
       && counts.allocations && counts.allocations == counts.deallocations
       && counts.locks && counts.locks == counts.unlocks && counts.renders && counts.escapes >= 2
       && counts.residents && counts.residents == counts.evictions
-      && !counts.wrongThreads && !counts.badCookies && !counts.coreErrors && !counts.malformedOutputs
+      && !counts.wrongThreads && !counts.badCookies && counts.coreErrors == expectedCoreErrors && !counts.malformedOutputs
       && !m_context && !m_pendingPaging && m_allocations.empty() && m_resident.empty();
   }
   HRESULT close() {

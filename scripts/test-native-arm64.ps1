@@ -28,6 +28,7 @@ Add-Type -TypeDefinition ([IO.File]::ReadAllText($retainedRunnerSource))
 $runnerReceipt.type_compiled = $true
 $runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'arm64-fixture-runner-source.json') -Encoding UTF8
 $cases = [ordered]@{
+    'dxvk-umd-cube-probe-oracle-test.exe' = 'PASS cube probe arithmetic checks=159292 bit_flips=154752 texels=4830 hardware=0'
     'dxvk-umd-vertex-input-test.exe' = 'vertex input equality PASS checks=\d+; colliding layouts retained, no GPU runtime'
     'dxvk-umd-runtime-backend-test.exe' = 'runtime backend ownership PASS checks=\d+; CPU descriptor and lifetime contracts'
     'dxvk-umd-d3d9-backend-test.exe' = 'D3D9 backend rejection PASS checks=\d+; no GPU construction or runtime admission'

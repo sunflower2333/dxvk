@@ -8,117 +8,45 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Continue the actual Microsoft runtime device/resource lifecycle, then ordinary
-presentation. Native9 now reports the implemented Vista DDI000c and publishes
-only its99-pointer table. Strict nativec7 fixtures pass43067 adapter/538869
-device checks, including actual protected-page writes through both creation
-paths; root independently verifies original35-member evidence and all source,
-SDK/toolchain and retained driver/desktop joins. Sole consolidatedCI37573265151 passes all six jobs; root verifies five raw
-original ZIPs, three PE architectures and15 actual native ARM64 executions.
-Its exact c7 candidate is staged without installation or registration.
+Continue the genuine Microsoft D3D9/9Ex resource lifecycle, then ordinary
+presentation. Exact production affe7d43161a6a270e8779e9957de150e156617c is now
+pushed once; sole automatic CI37580729947 is in progress. Four unused workflows
+remain disabled, offline/system controls manual. Standalone2851 remains local.
+Native9 target-only DiscardRenderTarget1000 fixes observed back-buffer flags1081
+without broader admission. Earlier exact4e native43067/554085 and adapter93976
+original proofs remain accepted; fresh affe native9 and2851 frontend CPU checks
+are now exclusively owned by port_dx10 against a recorded new desktop baseline.
 
-Standalonec0ea frontend/probe passes native2CPP/2COFF/2PE,10 malformedCLI,
-3nullguards, read-only SSH baseline and zero warnings. It traces the exact
-Vista table and only permits the fixed c7 candidate path. New six-script family passes native parsing. Actual device-lifecycle-02 passes
-the earlier table validator and reaches two back-buffer CreateResource requests:
-flags1081/format22/pool3/16x16/mips0. Existing flag mask rejects documented
-DiscardRenderTarget1000. Both public APIs now return80070057; two devices close,
-registry34/critical58/SYS/desktop/raw KMT names/selector restore. Original42-member
-archive5c8740b3 and root review20d7a234 retain this failed runtime; no API/render
-acceptance. Target-only discard hint and four exact-shape/readback controls are now local;
-strict x64/x86 source/fixture COFF checks pass. Exact4e91632 actual ARM64 MSVC
-now passes43067 adapter/554085 device checks, zero warnings and both protected
-Vista99 table writes. Root independently joins original141-member archive,
-89Git/Vulkan inputs,9COFF/2PE,21official headers/5libraries and SYS/desktop.
-Integrated typed10/10.1/11 adapter also passes93976 native checks; root original
-52-member/12Git/4COFF/1PE review passes. Sole newCI/runtime rerun remain required.
-Port_dx10 owns target CPU verification exclusively.
+Root original affe nine-control review03 passes71 exact Git/dependency inputs,
+202 original members,25 ARM64 COFFs/nine PEs and all22 execution stages. Native
+D3D11 device308/compute35/entry2637/lifetime10834/rotation1428/MRT6404/texture1D1629/
+transfer1144/runtime852 checks pass. UMD/fixtures have zero strict compiler
+warnings; pinned unchanged dxbc W3 dependency retains61. This is controlled
+backend/WARP evidence; ordinary runtime/hardware rendering remains unaccepted.
 
-Exact8d7 dynamic45/47 pass5824pixels+1056bytes each with diagnostics1/0;
-failed65s dynamic46 remains retained. Previous actual lifecycle01 returned two
-private S_OK devices but both genuine HAL9/9Ex calls8876086a before any resource
-or state callback. Matching original System32/public PDB proves the advertised
-newer table contradicted its implemented old callbacks. Lifecycle01 restoration
-and registry34/critical58/SYS/desktop evidence pass; rendering does not.
+WARP retained historicalDWM1552/Explorer6464 during its own run. Fresh snapshots02/
+03 both showDWM1864(start1791378029900)/Explorer4464(start1791352985381), same signed
+SYSd48e/oem17/58624/service4/PnPStarted/USERconsole1. System41/6008 records an
+unexpected restart, cause unresolved. Root froze new desktop baseline01; no
+shell restoration or VM start was attempted. Failed native9affe01 stopped before
+compilation on Explorer enumeration; all original failures remain preserved.
 
-DX10 and DX11 replacement commits b490ed1/bdc963c integrate as85ca8eb/0d4ff1d.
-Root fixture updates retain core callback tables and verify live mutations;
-coordinated native WARP and related regression execution is pending. First WARP
-attempt stops on absent SDK d3d11.lib; original evidence retained, official
-ARM64 SDK import libraries staged to owned paths for fresh retry only.
-DX8 b61f8a3 integrates as5cff890: bounded212-byte caps, genuine I386 system8
-probe/import parser,384-pixel oracle and frozen x86 CPU packet. Root original
-13inputs/15COFF/9PE review and Linux543/4235 controls pass; native x86 is pending.
-DX8 agent continues immutable8/9 identity/backend compatibility on its branch.
-SM5 graphics/interface metadata134c061 integrates as550d336; typed GS/SO,
-HS/DS/class execution remains the DX11 agent's next slice.
-Standalone68d0d4c native build root review02 passes60Git/53members/2COFF/2PE,
-10malformedCLI/3nullguards, zero warnings and read-only SSH enum. Review01
-missing reused d3d9 SDK receipt is retained; review02 joins original package.
-Root's read-only target inventory confirms no System32 D3D8; SysWOW64 D3D8 is
-I386 and imports D3D8THK. Native runtime/architecture acceptance remains required.
-Ordinary DX8-DX11 hardware rendering and visible presentation remain unaccepted;
-the full GPU program stays active.
+Actual genuine lifecycle02 atc7 passes Vista99 table validation, reaches two
+back-buffer requests flags1081/format22/pool3/16x16/mips0, then returns80070057.
+Original42-member archive5c8740b3/root proof20d7a234 preserves balanced cleanup,
+registry34/critical58/SYS/desktop/KMT-name restoration, with zero accepted API
+render pixels. Fresh affe CI/core plus2851 frontend and native-parsed helper
+family are required before unchanged512-pixel lifecycle03 is dispatched.
+Previous typed9 dynamic45/47 each retain5824 pixels/1056 bytes; raw present41–44
+remain rejected. Visible presentation and ordinary DX8–DX11 remain open gates.
 
-Production061ee8f has one consolidated automatic CI37549764498, all six jobs
-passing. Root independently verifies five raw ZIPs, three architecture builds,
-15 native ARM64 executions, fixture466831 and six semantic controls. Four
-unused workflows are disabled; offline/runtime controls remain manual-only.
-
-All four raw present diagnostics41-44 retain prior5056pixels+1056bytes and
-original SYS/desktop/58readiness fields, but reject before accepted screen
-pixels (source ownership c01e0342 or bitmap c000000d). Stop guessing raw flags.
-
-Read-only native frontenda84fef4 is independently verified (60inputs,
-42original members, two ARM64 COFFs/two PEs/eight official headers). Session1
-baseline sees VirtIO1af4/1050, HAL caps8876086a. Temporary DX9-only registration
-bind01 still returns the installed UMD path and logs no frontend calls; it is
-fully restored. Registry34registration/58critical fields, SYS and desktop retain.
-
-Diagnostic5214397 adds an exact process-local DX9 name selector to genuine
-system d3d9.dll; frontend always blocks CreateDevice and production caps/exports
-remain unchanged. Frozen60input packet03 SHA05f24f70 is built natively with
-zero warnings; root original42member evidence review02 passes.
-Fresh helperfamily04 uses read-only registry access, exact LimitedUSER/session1,
-owned task cleanup and before/after physical KMT names. Native parser/ABI and selector01 trace verify two successful real adapter opens,
-18caps calls, ExLUID6e6c and exact restoration/cleanup. HAL remains rejected by
-zero caps/empty formats. Implemented limited typed caps/list/gamma responses and
-adversarial metadata/output tests now require native fixtures, one consolidated
-CI and another read-only system runtime trace. No GPU admission claim.
-
-Exact478eca2 native target fixtures pass42308 adapter and466831 device checks,
-zero warnings. Root independently verifies88Git/Vulkan inputs,33original members,
-9ARM64COFFs/2PEs and SDK/CRT/toolchain/SYS/desktop continuity. The sole automatic
-consolidatedCI37561240247 passes all six jobs, five original ZIPs, three
-architecture builds and15 actual native ARM64 executions. Original native765,
-c065 and777 standalone diagnostic builds, guards and SSH baselines also verify.
-
-Actual selector-caps-01 observes two adapter opens and20 successful GetCaps
-callbacks, four formats/six queries/gamma0, but HAL caps8876086a in9/Ex.
-Exact candidates, signedSYS, DWM1552/Explorer6464,34registration/58critical fields
-retain. New device-contract-dynamic-01 preserves Caps2.DYNAMICTEXTURES only;
-root evidence review02 verifies32original members, four runtime adapter opens,
-40caps callbacks and eight exact caps deltas, but both HAL caps still8876086a.
-Its VirtIO HAL preflight fails: zero API/core device calls and no rendering.
-The successful-device reviewer failure is retained; evidence verification does
-not accept HAL or a device-create contract. All restoration/cleanup gates pass.
-
-Matching System32 d3d9 public GUID/section layout locate native HAL validation
-atRVA1226f0. NonzeroDevCaps2 requires dynamic textures and SM2 requires legacy
-PrimitiveMisc bit0x2000. Actual FetchDirectDrawData RVA19b7cc maps this bit into
-public FOGANDSPECULARALPHA0x10000; FillInCaps RVA16571c removes the legacy bit
-from public caps. The next separate blocked frontend adds only this legacy bit
-to the prior dynamic diagnostic. Verify native build and genuine runtime result
-before changing production declarations. Core CreateDevice remains blocked.
-
-Dynamic2D native implementation is ready for verification: usage reaches the
-private renderer, default-pool mip surfaces are lockable, top-level whole-chain
-Discard is validated and forwarded, conflicting mappings/invalid flags reject
-without backend calls, and failures retain caller outputs. Meaningful fixtures
-cover A8/X8/four native pools/snapshots/retries/lifetime. New --dynamic-textures
-GPU mode retains all5056prior pixels/1056bytes and adds768 raw mip/update pixels.
-Native fixtures, one consolidated CI and independent target pixels are required;
-normal OpenAdapter export and ordinary rendering acceptance remain closed.
+DX10/11 first replacements integrate as85ca8eb/0d4ff1d. DX11 metadata134c061
+integrates550d336 and root ASan/UBSan71 passes. Functional SM5 stage/SO/tessellation/
+class slice1f20d7c is ready for local integration; agent continues separate
+query/IA work. DX8 firstb61 integrates5cff890, root543caps/4235imports and original
+13inputs/15COFF/9PE proof accepted; second498d2e6 identity/backend/SM1 slice is
+ready for local integration and exact packet handoff. Native x86 and genuine
+system8 offscreen acceptance remain required. No production admission opened.
 
 ## Parallel replacement work (user requested, 2026-10-07)
 

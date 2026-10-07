@@ -2527,3 +2527,40 @@ in templated SRV/sampler/CBbinders. Root8db3d7a changes exactlythose15to
 if constexpr, no other implementation edits. Agent preserves03 and re-freezes
 exact8db for nativeWARP/related lifetime regressions. No4eCI/runtime dispatch;
 newcandidate/frontend pins and fresh native9 provenance remain required.
+
+
+2026-10-07 continuation: affe7d4 native ARM64 nine-control original archive
+3881b1d6b9a1d52bf3c86f81a7c1ca4e94097b8ef8aa2ffa0d83f749e56dd78b
+collected; root independent review pending. Production/fixtures strictW4/WX
+zero warnings; pinned dxbc W3 retains61 dependency warnings. WARP retains old
+DWM1552/Explorer6464 before/after. Native9affe attempt01 stops before compilation
+on strict Get-Process Explorer enumeration. Separate read-only snapshot02 shows
+currentDWM1864(start1791378029900)/Explorer4464(start1791352985381), USERconsole1
+Active, same SYSd48e/oem17/58624/PnPStarted/service4. Cause of post-WARP desktop
+identity transition unresolved; no shell restoration justified or attempted.
+Root owns target; capture fresh stability/boot snapshot then freeze new desktop
+baseline for subsequent CPU/runtime controls, preserving all old proofs.
+Standalone2851 and native9affe source archives frozen separately; no new push.
+Local search shell unmatched wildcard is a read-only lookup error, no inputs changed.
+
+
+Root snapshots02/03 join current desktop/SYS/PnP/session; System41/6008 records
+unexpected restart, cause unresolved. New baseline01 frozen, no recovery. Port_dx10
+owns native9affe02 and standalone2851 CPU. Root WARP review01/02 stdout-parser
+errors retained;03 explicitly matches actual runtime GPU PASS852 and rotation1428
+forms, original native packet unchanged. Front packet preparation assertion used
+a nonexistent user32-copy anchor; unexecuted partial four receipts preserved,
+completed via actual librarySource anchor. New2851 build copies originald3d9 SDK
+receipt into native evidence; source60/coreaffe/oracle/deadlines unchanged.
+
+
+2026-10-07: Root affe WARP original review03 PASS, proof94c37c2ff9f6f6b8b3764c40944a5b4a0eeef0bcfc08f732e09840aa3034220a.
+Source71=47Git+24pinned dxbc,202original members,25COFF/9PE/22 native stages;
+checks308/35/2637/10834/1428/6404/1629/1144/852. Strict UMD/fixturewarnings0;
+unchanged pinned dependencywarnings61 retained. Historical SYS/desktop unchanged
+during WARP. Fresh baseline03 independentlyjoins newDWM1864/Explorer4464; System
+41/6008 unexpected restart, no current shell absence/recovery. Exactaffe production
+object pushed once; livequery confirms sole consolidatedCI37580729947inprogress.
+No frontend2851 or newer agent slices pushed. Root originalreview01/02 parse faults
+and unexecuted frontend anchor-preparation error retained separately. Source and
+execution archives unchanged; native9affe/frontend2851 CPU verifier owns target.

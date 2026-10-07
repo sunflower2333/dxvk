@@ -60,12 +60,17 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
       - run: git submodule update --init --recursive --depth 1
+      - name: Preserve exact Git build input bytes
+        shell: pwsh
+        run: |
+          git -c core.autocrlf=false checkout-index --all --force
+          if ($LASTEXITCODE) { throw 'Exact Git source checkout failed' }
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch == 'x64' && 'x64' || format('x64_{0}', matrix.arch) }}
       - name: Build embedded core and native DDI development library
         shell: pwsh
-        run: ./scripts/build-native-umd.ps1 -OutputDirectory artifacts
+        run: ./scripts/build-native-umd.ps1 -OutputDirectory artifacts -VulkanLoader 'viogpu_gl_loader_${{ matrix.arch }}.dll'
       - uses: actions/upload-artifact@v4
         with:
           name: dxvk-umd-backend-${{ matrix.arch }}-${{ github.sha }}
@@ -78,6 +83,8 @@ jobs:
           name: dxvk-umd-failure-${{ matrix.arch }}-${{ github.sha }}
           path: |
             artifacts/*.txt
+            artifacts/*.json
+            artifacts/*.h
             build-umd/meson-logs/*
           if-no-files-found: warn
   shader-cpu:

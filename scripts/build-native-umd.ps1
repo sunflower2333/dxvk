@@ -24,6 +24,32 @@ if (-not (Get-Command glslangValidator.exe -ErrorAction SilentlyContinue)) {
 }
 $arch = $env:VSCMD_ARG_TGT_ARCH
 $cpu = if ($arch -eq 'arm64') { 'aarch64' } elseif ($arch -eq 'x64') { 'x86_64' } elseif ($arch -eq 'x86') { 'x86' } else { throw "Unknown target $arch" }
+$buildSourceCommit = (& git rev-parse HEAD | Out-String).Trim()
+if ($LASTEXITCODE -or $buildSourceCommit -cnotmatch '^[0-9a-f]{40}$') { throw 'Missing build source identity' }
+$isGitHubBuild = $env:GITHUB_ACTIONS -ceq 'true'
+if ($isGitHubBuild -and ($env:GITHUB_SHA -cne $buildSourceCommit -or
+    $VulkanLoader -cne "viogpu_gl_loader_$arch.dll")) {
+    throw 'CI must build its exact source with the architecture-specific private loader'
+}
+New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
+# Snapshot the configuration inputs before Meson. A later checkout or source
+# edit must not give an already-built DLL a new source/configuration identity.
+$configurationInputs = @('.github/workflows/build-native-umd.yml', 'scripts/build-native-umd.ps1',
+    'meson.build', 'meson_options.txt', 'src/vulkan/meson.build', 'src/vulkan/vulkan_loader.cpp',
+    'src/vulkan/vulkan_loader.h', 'src/umd/meson.build', 'src/umd/umd_vulkan_loader.cpp', 'src/umd/viogpudxvk.def')
+$configurationBefore = @($configurationInputs | ForEach-Object {
+    $name = $_
+    $expectedBlob = (& git rev-parse ($buildSourceCommit + ':' + $name) | Out-String).Trim()
+    if ($LASTEXITCODE) { throw "Missing configuration source $name" }
+    $actualBlob = (& git hash-object --no-filters -- $name | Out-String).Trim()
+    if ($LASTEXITCODE -or ($isGitHubBuild -and $actualBlob -cne $expectedBlob)) {
+        throw "CI configuration source differs from Git: $name"
+    }
+    [ordered]@{path=$name;bytes=(Get-Item -LiteralPath $name).Length;
+        sha256=(Get-FileHash -LiteralPath $name -Algorithm SHA256).Hash.ToLowerInvariant();
+        git_blob=$expectedBlob;actual_blob=$actualBlob;matches_git=($actualBlob -ceq $expectedBlob)}
+})
+$configurationBefore | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory 'native-build-source-before.json') -Encoding UTF8
 @"
 [binaries]
 c = 'cl'
@@ -163,8 +189,66 @@ foreach ($name in @('dxvk-umd-runtime-backend-test.exe', 'dxvk-umd-d3d9-backend-
 if ($arch -ne 'arm64') {
     Invoke-BoundedFixture (Join-Path $OutputDirectory 'dxvk-umd-system-runtime-test.exe') system-runtime-test
 }
+# Retain actual Meson-generated configuration, not just the requested flag.
+$buildOptionsPath = 'build-umd/meson-info/intro-buildoptions.json'
+$buildOptions = [IO.File]::ReadAllText((Join-Path $PWD $buildOptionsPath)) | ConvertFrom-Json
+foreach ($option in @([ordered]@{name='umd_library_name';value=$LibraryName},
+    [ordered]@{name='umd_vulkan_loader';value=$VulkanLoader},
+    [ordered]@{name='enable_umd';value=$true})) {
+    $actual = @($buildOptions | Where-Object name -CEQ $option.name)
+    if ($actual.Count -ne 1 -or $actual[0].value -cne $option.value) { throw "Meson option differs: $($option.name)" }
+}
+$loaderHeader = 'build-umd/src/vulkan/vulkan_loader_config.h'
+$headerText = [IO.File]::ReadAllText((Join-Path $PWD $loaderHeader))
+$define = '(?m)^\s*#define\s+DXVK_PRIVATE_VULKAN_LOADER\s+"' + [regex]::Escape($VulkanLoader) + '"\s*$'
+if ($headerText -cnotmatch $define) { throw 'Generated Vulkan loader header differs from requested configuration' }
+$configurationAfter = @($configurationBefore | ForEach-Object {
+    $actualHash = (Get-FileHash -LiteralPath $_.path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -cne $_.sha256 -or (Get-Item -LiteralPath $_.path).Length -ne $_.bytes) {
+        throw "Configuration source changed during build: $($_.path)"
+    }
+    [ordered]@{path=$_.path;bytes=$_.bytes;sha256=$actualHash;matches_before=$true;matches_git=$_.matches_git}
+})
+$currentCommit = (& git rev-parse HEAD | Out-String).Trim()
+if ($LASTEXITCODE -or $currentCommit -cne $buildSourceCommit) { throw 'Source commit changed during build' }
+$configurationAfter | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory 'native-build-source-after.json') -Encoding UTF8
+$retainedConfiguration = @([ordered]@{source=$loaderHeader;member='vulkan_loader_config.h'},
+    [ordered]@{source=$buildOptionsPath;member='meson-build-options.json'},
+    [ordered]@{source='build-umd/meson-info/intro-machines.json';member='meson-build-machines.json'},
+    [ordered]@{source='build-umd/compile_commands.json';member='native-compile-commands.json'},
+    [ordered]@{source='build-umd/build.ninja';member='native-build.ninja.txt'})
+$configurationFiles = @($retainedConfiguration | ForEach-Object {
+    Copy-Item -LiteralPath $_.source -Destination (Join-Path $OutputDirectory $_.member)
+    [ordered]@{source=$_.source;member=$_.member;bytes=(Get-Item -LiteralPath $_.source).Length;
+        sha256=(Get-FileHash -LiteralPath $_.source -Algorithm SHA256).Hash.ToLowerInvariant()}
+})
+$builtDll = Join-Path 'build-umd/src/umd' "$LibraryName.dll"
+$artifactDll = Join-Path $OutputDirectory "$LibraryName.dll"
+$dllHash = (Get-FileHash -LiteralPath $builtDll -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($dllHash -cne (Get-FileHash -LiteralPath $artifactDll -Algorithm SHA256).Hash.ToLowerInvariant()) {
+    throw 'Artifact DLL differs from original linked DLL'
+}
+if ((Get-FileHash -LiteralPath $symbols -Algorithm SHA256).Hash -cne
+    (Get-FileHash -LiteralPath (Join-Path $OutputDirectory "$LibraryName.pdb") -Algorithm SHA256).Hash) {
+    throw 'Artifact PDB differs from original linked PDB'
+}
+$widePrivateName = $VulkanLoader -and [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($builtDll)).Contains($VulkanLoader)
+if ($VulkanLoader -and !$widePrivateName) { throw 'Original DLL does not contain its configured private loader name' }
+[ordered]@{schema='native-umd-build-configuration-v1';source_commit=$buildSourceCommit;arch=$arch;
+    library_name="$LibraryName.dll";vulkan_loader=$VulkanLoader;
+    loader_policy=$(if ($VulkanLoader) { 'module-local-private-no-fallback' } else { 'public-search' });
+    private_name_present_in_original_dll=[bool]$widePrivateName;configuration_files=$configurationFiles;
+    configuration_source_before=$configurationBefore;configuration_source_after=$configurationAfter;
+    all_configuration_sources_match_git=(@($configurationBefore | Where-Object { !$_.matches_git }).Count -eq 0);
+    dll=[ordered]@{member="$LibraryName.dll";bytes=(Get-Item -LiteralPath $artifactDll).Length;sha256=$dllHash};
+    pdb=[ordered]@{member="$LibraryName.pdb";bytes=(Get-Item -LiteralPath $symbols).Length;
+        sha256=(Get-FileHash -LiteralPath $symbols -Algorithm SHA256).Hash.ToLowerInvariant()};
+    github=[ordered]@{actions=$isGitHubBuild;repository=$env:GITHUB_REPOSITORY;sha=$env:GITHUB_SHA;
+        run_id=$env:GITHUB_RUN_ID;run_attempt=$env:GITHUB_RUN_ATTEMPT;job=$env:GITHUB_JOB};
+    target_hardware_validation='separate';installation=$false
+} | ConvertTo-Json -Depth 12 | Set-Content (Join-Path $OutputDirectory 'native-build-configuration.json') -Encoding UTF8
 @"
-DXVK_COMMIT=$(git rev-parse HEAD)
+DXVK_COMMIT=$buildSourceCommit
 ARCH=$arch
 LIBRARY=$LibraryName.dll
 VULKAN_LOADER=$(if ($VulkanLoader) { "$VulkanLoader (private, beside the UMD)" } else { 'winevulkan.dll/vulkan-1.dll search' })

@@ -2144,3 +2144,248 @@ four compute system input registers, excluded fromISGN; native/portable controls
 are in progress. Old dx11-port worktree is frozen; use actual dx11-warp-repair
 worktree from git worktree list. A reference artifact search guessed a worktree
 artifact directory; actual original evidence stays in workspaceartifacts.
+
+
+Root integrates10c831c compute input correction as555c83d, then exact malformed
+binding preservation3f64065 as14f0a69. Root integrated ClangASan/UBSan646 checks
+PASS16.48s, before/after input hashes unchanged. Independent original local review
+joins two646 raw GCC/Clang runs, six actual strict x64/x86 COFF objects, zero logs,
+and exact three integrated source files. Agent local receipts lack before/after
+source hashes; this limitation remains explicit, fresh native Git packet provides
+those actual inputs. Root direct diagnostic03 archive review independently joins
+171members,88 retained sources,19 outputs,11 retention flags, realc0000409 exit,
+original/legacy identical compute tokens and actual ThreadId00020012 declaration.
+
+Corrected native3f first attempt still fails decodeShader11 on the new all-four-ID
+shader after original and legacy public WARP succeed. Failure archivef25b2d20
+retained; root holds CI. Actual next diagnostic confirms SV_GroupIndex uses
+zero-component operand00024000, while other three input declarations use xyz
+vector masks. Agent collects the original DXBC and will add only the dedicated
+scalar zero-component form/effective-x overlap validation plus exact114-word
+native FXC portable replay. No successful corrected native WARP15 yet; target
+exclusive ownership remains DX11. Existing CI37593963656 remains failed exactly
+b6 (fresh read confirms all six job states); no additional workflow dispatch.
+
+Frozen GPU runner packet includes six original scripts/oracle/verifier inputs,
+manifest33cceff1 and target prep helper48a8a0f6. Preparation/verification operates
+only in new CUsersPublicDxvkLockedRunners-01; native parser/readback still pending.
+
+
+Root resumes current096e024 with merged669 local sanitizer checks and actual
+corrected compute96-thread/39malformed native controls passing. Later original
+four-stream GS/SO creation remains E_INVALIDARG; packed mixed-type VS and original/
+rebuilt public plain GS succeed. Local Microsoft stream declaration ABI confirms
+stream/slot/register/xyzw mask fields. Declaration ordering remains a hypothesis
+until direct original/rebuilt public GS/SO comparison, not an accepted root cause.
+
+Fresh GPU orchestrator02 guards owned task cleanup after any remote preparation
+attempt, including lost SSH response following registration. Original unexecuted
+01 stays unchanged. Revision962a8194 and source receipt locked-orchestrator-source-
+02.json retain exact diff and Python parse; no native execution or acceptance.
+Empty findings apply_patch was rejected after successful helper02 preparation;
+no plan change occurred until this explicit append. Root target access stays idle
+until DX11 release. All6 CI states refreshed at exactb6, no new push.
+
+Native81fa root original failure review02 verifies every163archive member,
+88exact Git source/before/after/collection joins,19AA64outputs and11retention
+flags. Three corrected shader/native fixture sources join current096e024 exactly;
+all remaining source differences are recorded. Actual failure remains caller576/
+2016checks/153callbacks/80070057, realc0000409 exit, bounded original pipes.
+First ad-hoc review prep duplicated subprojects in the manifest's already full
+submodule path; saved review01 then guessed standard COFF rather than actual
+MSVC bigobj header. Corrected02 reads actual bigobj machine at offset6. Both
+local validation failures preceded acceptance and imply no native state change.
+A resume read also guessed nonexistent scripts/check-ci-state.py; actual GitHub
+state is read directly through gh. No target call or production push by root.
+
+Actual DX11 native GS/SO diagnostic03 isolates declaration ordering. Original
+FXC and rebuilt public GS/SO both reject0,1,2,3,0gap withE_INVALIDARG/null and
+accept0,0gap,1,2,3 withS_OK/non-null, unchanged slots/strides32/16/24/16 and
+RasterizedStreamUINT_MAX. Single-stream raw/grouped controls pass. This confirms
+an API conversion boundary rather than lost output signatures. Agent collects
+originals then stable-groups public declarations byStream, preserving stream-local
+element/gap order, exact byte/query oracles and malformed control behavior.
+Root original81fa archive actually has163files/SHAe4632a68, correcting the earlier
+plan typo171. Its three root-source differences are umd_ddi.cpp and SM4.1
+umd_shader.cpp/.h; repaired compute sources join exactly, full-root native
+acceptance remains a separate gate. No root target calls or production push.
+
+Root freezes CPU4 native preflight helper6de68da8 and execution orchestrator
+868831df, with original source/helper05 eight inputs checked locally. Native
+preflight will pin prepared manifest32ade9cb and parse both original PowerShell
+helpers on native ARM64 before build. Orchestrator preserves each raw SSH/SCP
+command/stream and independently finalizes/joins the original archive after any
+build attempt. Neither helper is executed; target still belongs toDX11.
+DX8 agent local04 now preserves seven before/after source hashes, four strict
+I386COFFs/three PEs, soleOpenAdapter export, GCC/Clang306positives and eight
+semantic controls. Native CPU/build and genuine SysWOW64 runtime remain pending;
+agent freezes final packet after updating legacy manual entrypoints for the new
+separate modern-DDI guard unit. Core pins come from a future original CI DLL.
+
+Root reviews/integrates exacte6bf08d six-line stable SO grouping asd153e818d61a.
+Fresh root merged ClangASan/UBSan945 PASS17.44s/compile0/run0,13declared input
+before/after hashes retained, result root-stream-output-d153e81-01. Nativeexacte6
+strict build, GS/SO construction and all13 malformed pointer/private-byte/canary
+controls pass. Later NativeQuery creation124 returnsE_INVALIDARG before the
+four-stream draw; no full byte/query/pixel acceptance. Agent retains original
+failure and compares exact public Query/Predicate/QI behavior for stream-specific
+booleans before correction. Target ownership staysDX11, sole CI remains held.
+
+DX8 freezes e99391a28-input packet (14harnessGit/11uncompiled b75references/three
+licensed headers), local04positive306 and legacy18COFF/9PE compile gates. Root
+finds its new native Run() still has unbounded Kill/WaitForExit and serial40s pipe
+drains. Agent replaces only new helper with exact already-tested raw-process
+component in a follow-up/fresh packet; e993 originals retained, no integration or
+target execution yet. Root resumed Meson read guessed tests/meson.build; actual
+root meson.build/src/umd/meson.build contain no DX8 runtime-probe target, confirmed.
+
+Root independent DX8 local04 review02 passes seven exacte993 Git/source-before/
+after joins,37original commands, four strictI386COFFs, three independently parsed
+I386PEs, soleOpenAdapter frontend export, raw GCC/Clang306sanitizer positives and
+eight exact semantic negatives. Imports remain the original system/CRT libraries.
+Review01 guessed a positive command name rather than matching its actual
+sanitizer compiler argv; rejected locally before proof write,02 selects the
+original command structure. Native helper bounded-process follow-up pending;
+e993 frontend code remains unintegrated until that fresh packet is ready.
+Target scheduling: after DX11 current query correction attempt/collection,
+explicitly release to rootCPU4, then frozen DX10SM4.1, then return to DX11 if its
+remaining WARP15 stages need more work. No overlapping target calls or CI push.
+
+
+Root integrates bounded DX8 followup77bbe79 asf897bc2 and per-stream overflow
+query correction634d781 as2c1b0e2. Public WARP diagnostic shows CreateQuery succeeds
+for9/11/13/15 while CreatePredicate rejects all four; ordinary Query owners are
+kept for native typed predication. Exact634d native strict build and query/draw/
+readback advance to later GraphicsShader decode assertion558, stage not captured;
+lastHRESULTS_OK/checks2700/callbacks186. Original archive309694cb/88sources/21SDK/
+2APIlibs/19AA64outputs/6ownedstages/11retentions are joined before explicit target
+release. Root starts frozen CPU4b6-05 in orchestrator session5099; DX10SM4.1 follows
+only after original finalization. DX11 prepares next code/stage diagnostic locally.
+Merged root production/query/native fixture strict x64/x86 check is running
+locally using retained07 compiler arguments and original before/after sources.
+
+DX8 final handoff02/9b1804ee joins fresh77bbe29-input packet8c3a43b1 and independent
+frozen-packet-cross-verification03/937952c3:880 compiled tool/header/library inputs,
+four strictI386COFFs/threePEs. Nine compiled first-party inputs remain byte-identical
+e993 to77; GCC/Clang306 and eight intended semantic controls retained. Native
+PowerShell parse/EWDK CPU and genuine runtime execution remain pending; no core
+DLL is required for CPU packet. Future CI core commit/run/path/hash stay null.
+Build verifier now audits sole consolidated actual I386 private-loader config
+locally, without target access, rebuild/relabel or CI dispatch.
+
+Resume reads guessed nonexistent tests/meson.build and build-backend-umd.yml;
+actual root meson.build/src/umd/meson.build and build-native-umd.yml are discovered
+before follow-up. These failed local path reads caused no native state change.
+
+
+Root native CPU4b6-05 completes in13.55s and raw archivee8c17473 is finalized.
+Independent root-review02 verifies all409members/329Gitinputs/21SDK+five original
+libraryZIPmembers/13AA64COFFs/fourPEs/eight actual process handles/exits/pipes and
+11retentions. Adapter45802/device584971/copy4050444/callbacks243 pass. Ten unique
+compiled units equal currentroot2c1b0e2; full-source differences umd_ddi.cpp and
+umd_query.h remain explicit, so no full-root native acceptance is inferred.
+First reviewer incorrectly assumed every positive line says PASS checks=;
+callbacks original says verified checks=243 with25calls/22VistaCallbacks/99funcs.
+Original failedreview01 and root-review-error-01 retained; corrected02 reads actual
+marker, without rerunning native fixtures or altering their original bytes.
+Merged query correction strict x86/x64 sixCOFFs pass with684root input before/
+after hashes, raw zero stderr and original07 SDK/compiler flags. No target run.
+
+DX8 independent root-frozen03-review02 passes all29source archive/Git joins,
+880compiled before/after inputs, fourI386COFFs/threePEs, two older original ZIP
+hash/CRC joins, actual PE imports/soleOpenAdapter export and nine unchanged root
+compiled inputs. First reviewer guessed handoff key compiled_first_party_source_
+joins; actual key compiled_input_links is inspected and used. Original failed01/
+errorreceipt retained and no proof was written until corrected02. No native run.
+
+DX10 frozen c9 actual strict first-party compilation/link,18AA64COFFs/twoPEs and
+nativecontainer568 pass. Typed shader fixture rejects first expected S_OK at
+expect30/E_INVALIDARG before any draw; no18draw/4608pixel acceptance. Agent preserves
+167-member archive7301d4bd/three original FXC4.0 VS/GS/PS containers+token pairs/HLSL,
+seven exited/drained owned children, all12retentions and completed collection/
+transfer before explicit release. Target next belongs exclusively to DX11 for
+its already frozen634d stage/code/class-linkage diagnostic; root and DX10 stay
+local. After diagnostic finalization, root will run fresh77bbe DX8 CPU packet.
+
+Fresh GitHub read: CI37593963656 remains exactb6 failure; identity/ARM64backend/
+shaderCPU pass, x64/x86 backend fail, ARM64runtime skipped. Four unused workflows
+remain manually disabled; offline/runtime-control are manual-only, consolidated
+backend is sole production push trigger. Build verifier identifies all three
+backend jobs omit VulkanLoader, so future production cores would search public
+winevulkan/vulkan-1 despite existing module-local loader support. Narrow workflow/
+config provenance fix will pin existing architecture-named private loaders.
+
+## 2026-10-07 DX8 native success, hull repair and typed DX10 setup
+
+DX8 exact7c1f545 native CPU PASS is retained as original127-member archive
+9f7db177:28 owned stages all exited/drained,306 policy/14 CLI guards,4I386COFF/
+3PE,29source/575compiler/8SDK/7library before/after joins and unchanged state.
+No runtime/selector/core/hardware call is inferred. Actual EWDK bcrypt header is
+shared/bcrypt.h; original77bbe precompile failure remains retained.
+
+Root220b4c0 hull phase decoding passes merged1118 sanitizer checks. Exact14ebee
+WARP15 native packet is root-owned after agent execution turn stopped under
+automatic cybersecurity-content filtering without a result. Root directly runs
+the prepared build/test, preserving original phases. Native corrected result
+pending. DX10 ad13 proves all shaders create/bind; first Draw rejects missing
+typed fixture state. Root merged fixture chain0256206/d536e58/3178900; immutable
+production/HLSL/oracles retained. Native corrected e1bc suite pending.
+
+Root integrates61e private-loader CI as a334e39; source/config local checks pass,
+new CI native parse/execution pending. Separate bounded process repair assigned
+to build verifier. No push/dispatch/installation yet. Workspace artifacts live
+under /home/sunf/droidvm-repos/artifacts, not the checkout artifacts directory.
+Two initial cat reads incorrectly used checkout-relative paths and failed; rg
+confirmed actual original paths and handoff messages were explicitly corrected.
+Microsoft local SetRenderTargets/SetViewports/ClearRenderTargetView docs were
+read during fixture review; actual original SDK signatures remain authoritative.
+
+## 2026-10-07 continuation: integrated modern source and exception fixtures
+
+Root exact890 native attempt finalizes archivecebf778e49106fdf1036c72b7a2f686ef3d59718d374a5fbdde16cb678a40f27 (6644818bytes/290files):13 fixtures PASS, actual typed4147/callback430, query189/private4029/input41; final d3d10-formats strict compile fails oneC2220/sixC4702. All31 raw owned stages exited/drained and all11retention flags true. The original14 run had3832/367; do not transcribe poll-sensitive counts into890. Root release review errors01 (transcribed count) and02 (assumed homogeneous checks= format) remain preserved. Discovery command also initially used checkout-relative path for a workspace .planning helper; corrected through rg --files. Another exploratory host_commands[0] print assumed a list; actual DX10 schema is a mapping. No original guest evidence or source changed in these review corrections.
+
+Root3c1ef05 changes only two fixture files: volatile runtime exception injection avoids optimizer proving callbacks noreturn; every CHECK site, caught exception, zero output and call-count oracle retained; production templates unchanged. Portable ClangASanUBSan269 and four strict optimized official-header x64/x86 COFF controls PASS; actual MSVC test pending. Root3868b01 integrates bounded SampleIndex fix a00, andc407197 integrates separate modern=true test export925e with guarded modern table/malformed creation controls. Public admission/capability bodies unchanged.
+
+Native a00 completes9draws/2304 exact reference comparisons including SampleIndex256; next interpolation DrawE_INVALIDARG is captured. Agent original review227/79Git/21SDK/7libs/18COFF/2PE/7native stages/12retention PASS; archive d1b4e7f161619d89d5a28b1fb11abafebaa7cbd5047c937a29b78b471624bd93. Exact PS TEXCOORDreg0 conflicts with VS SV_Positionreg0/TEXCOORDreg1. Official D3D10 linkage requires register alignment; fixture-only position-first signature correction is next, not production fallback. All57/18/4608/3 oracles remain required. Root has exclusive target; c407 fresh packet88/15/archive8200a4614eb38648ec7a7b258d9d2120c5af0a18cca0f4c5ed1e861ecc6ab79f/manifest03d373966ef24af7902851e0f3ba5856ddcf9ead9104e4de6574f6784c7e0f46 is prepared and preflight running. bf6 full-script parse/wrapper smoke and c407 adapter native guards follow. No newCI/push/hardware acceptance.
+
+## 2026-10-07 completed native WARP15 and bounded wrapper smoke
+
+Exact c407197 full native WARP15 PASS. Original archiveb367f1dc987d7fec090d62ef3ce69afa729cd8a4db500d8fcb9121085768bf55 (7044979bytes/305files) and root-original-native-review-01.json join88 exact Git/archive/beforeafter inputs,34AA64COFF+15PE,34 exited/drained raw-process stages,21SDK+7libs against raw official packages, original helper/d8cf hashes, strict RSP flags and actual15 fixture outputs. Typed3977/callback396, native-entry2637/lifetime10834, SM51118, query189, private4029, input41, format3475/callback12/backend2 and MSAA269. Firstparty warnings0, unchanged pinned parser65. All11retention flags true, original source differences to root empty. Completed suite remains controlled WARP/CPU, no native hardware/ordinary runtime admission.
+
+Native bf6 wrapper smoke PASS: full committedPS AST0errors, actual functionextent9af16c1856583de7b3d3d1569d9d794a42418b073cf6b9ebc9e5088fa5b2c155 unchanged; real success0, nonzero7, concurrent1048579stdout+1048587stderr and fixed30-second kill/reap30.0061365s controls all accepted. Original archive3435c36d04391c54fe14ed5038f271efe6b38c0a526b1df53ec5d3756041fa04 (17663116bytes/47files),46 indexed original joins,9source/575compiler/3SDK/4library beforeafter plus SYS/service/desktop identical. NativeI386COFF/PE/PDB; three compile/link/inspect+four wrapper cases+tarcollection=8 actual retained OS children all exited/drained (intentional timeout exit-1 expected). All five host transports complete0; root release proof finalized. No production core built/loaded, GPU runs0.
+
+Root integrates fixture4a6 as85ae592; synthetic compatible-input control bug5/16 was then caught in agent original review and preserved. Correctiveb358 integrated111585a changes actual offsets5/15, asserts literal16 and compares all46 words; frozen763/147/35 and COFF4 PASS. HLSL2119/SHA7d658b unchanged after4a; all production/pixel/reference/57/18/4608/3 bodies unchanged. Isolated b358 packet differs from merged root at six sources including umd_ddi.cpp and umd_shader11.cpp; agent is preparing exact d2f native packet instead of relabeling isolated objects. Rootd2f0e0348b5ee13e7f6d140f00aba8dca036e491 integrates one CI adapter invocation via unchanged bounded runner9af/d8cf, keeping other26 calls, architecture/stdout/zeroexit policy. Five-sourcec9 actual nativeAST audit remains next. c407 adapter guard02 has13 source joins/8localCOFF, actual nativePS5.1parsePASS and nativebuild underway. Root retains exclusive target; no push/CI yet. Small exploratory filename/CWD/schema errors are discovery/reviewer failures only and never overwrite original receipts.
+
+## 2026-10-07 native adapter guard and CI AST finalized; merged SM4.1 handoff
+
+Modern c407 guard02 PASS94,208. Original archiveb3f3fd58d46756167c82b5e609679b76bbe9a4908ffb9c7a16367a4705c31c66 (995242bytes/62files), three actual OS children exited/drained0, fourAA64COFF+onePE, zero first-party warnings, source13 Git/archive/current-root/beforeafter/collection joins and all11 retention pairs verified. Seven local transport receipts finalized0. Root release is finalized; build verifier independently reviews official inputs locally. No core loaded or GPU/runtime admission.
+
+Native PS5.1 c9 adapter AST audit PASS: full before/after parse0errors, bounded26-to27/direct adapter1-to0, byte-identical function9af/C#d8cf, outputadapter-test.txt/exit0/30000ms/architecture condition retained. Five source inputs beforeafter unchanged; upload/audit/transfer original raw receipts exit0. Root final release28274e0f joins transferred proof. The broad CI script was only parsed; its build and GPU actions were not executed by the audit.
+
+DX10 merged d2f packet prepared3d753bf0/source732868ee/builder7b19b1ee, original local proof69a32b61 with GCC+Clang ASan/UBSan763/147/35 PASS. Root independently rejoins all79 inputs to current-root Git/archive bytes, including the changed DDI and shader11 compilation units. Explicit target handoff6f4fd6d4 gives DX10 exclusive ownership for native57/18/4608/3; all peer target calls stop until original collection/transfer and release. Root corrected a submodule-bool schema discovery after an exploratory TypeError; no originals changed or new target attempt.
+
+Fresh GitHub API snapshot root-ci-current-state-d2f0e03-01 confirms latest sole automatic CI37593963656 failedb6, no fresh published candidate; four unused workflows disabled_manually, offline/runtime controls active but manual-only. DX11 local real-KMT compute probe performs384-word/1536-byte structured UAV readback with typed11 guards; source/strict/native link reviews continue before integration. No push or hardware/ordinary-runtime acceptance.
+
+## 2026-10-07 complete merged-source SM4.1 accepted
+
+Exact d2f native763 compiler/7483 typed checks,57 original shader pairs/HLSL7d658b,18 draws/4608 reference-equal pixels/3 expected malformed create callbacks PASS. Original archive5c2a71a26762c5202ee4cc6e9952e03b8860fff91d679b47268beb5da27c1fc3 (3371615bytes/275files). Agent original prooff96b6e1e and root-sm41-merged-d2f0e03-review-01.json independently rejoin all79 current Git/source inputs, actual7 retained/exited/drained native stages,18AA64COFF+2PE,57 exact DXBC/token chunks, all18 scene rows and preserved final markers. First-party warnings0/parser65 retained; full SDK21+libs7/raw package28 joined by agent. All12retention true, six local transport operations finalized0; release41d59f explicitly returns target to root with no pending target operation.
+
+Both full CPU/WARP publication gates pass. Root bcedab5 changes only the stale ARM64 runtime-case marker568 to actual763; fixture inputs and all draw/pixel/negative oracles unchanged. DX11 compute-probe review caught an overrestrictive locked-allocation residency guard: matched Mesa keeps command/global BOs mapped through Render, while the proven D3D9 transport permits owned mapped references. Agent corrects/finalizes separate test probe/CI package slice before one consolidated push. Final native script parsing/probe compile-link and actual fresh CI artifacts remain pending; no hardware/ordinary-runtime success inferred.
+
+
+## 2026-10-07 corrected compute source and final script audit
+
+Root integrates eb3/23d as7b32aaf/da0a4ed; seven independently reviewed inputs match current committed Git. Corrected probe supplies DXGI runtime revision9 (Version0x00020009), preserves actual optimized D3DCompile/HLSL/DXBC/SHEX and384-word readback, and permits owned mapped BO residency. Independent read-only source proofca2795e1 verifies four original x64/x86 COFFs, typed10/11 callback signatures, guarded ownership/cleanup and separate GCC/ClangASanUBSan12482-check oracles with12288 bit rejects each. These are CPU/source checks; actual core/hardware pins remain null.
+
+Final actual WindowsPowerShell5.1.26100.1591 audit PASS full before/after script parse0errors, original27 bounded invocations preserved and one compute-oracle call added, function9af16c/C#d8cf unchanged, ARM64 table28 and strict SM4.1 marker763 joined to original native stdout. Native proof7cc2b00a and releaseedd4a073 finalize all three host transports0; both current root scripts still match tested55a23df/cd3914 bytes. Four unchanged locked GPU runner scripts also parse0errors on nativePS5.1, proof3d6d68af/releasecf1d68d7; no script main, scheduled GPU task or core invocation occurred.
+
+Root independently joins frozen23d packet19 exact Git/archive/current-root source inputs and13 prepared files. Native attempt01 passes three nativePS parses and originald8cf Add-Type, then LIB exits1146 because unparenthesized concatenations split each /DEF and /OUT scalar into prefix/path/quote response rows. Original archive3a42a11f (58files), failure reviewd62d5fbc and release0670d171 preserve the actual child retained handle/exit/drained pipes, source19 and13 retention pairs; all seven host transports finalized. No probe compilation or hardware occurred. Fresh helper02 parenthesizes all response-array scalar concatenations and asserts exact cardinality/paths; builder e7659b95 and preparedad99c2e6 retain identical19-source archive04e350c5, manifestaf1920f1, strict flags,12482-check oracle and eight60-second native children. Root review PASS and explicit e33ea960 authorization hand exclusive target CPU to DX11 for02; root and peers stay local until collection/transfer/release.
+
+Fresh GitHub API snapshot root-ci-current-state-da0a4ed-01 confirms publishedb6 remains latest failed37593963656, precedingaffe37580729947 succeeds. Four unused workflows remain disabled_manually; sole automatic native UMD workflow and manual-only controls retain. Fresh-CI collector now checks exact six job names/five original ZIPs, all three generated private-loader configurations/source11, actual28 source invocation receipts and original DLL CodeView GUID+Age against the PDB. Actual historical three architecture pairs and swapped-original PDB rejection pass; Optional raw-CR ARM64 Hash/Path robustness and duplicate-row checks added; the original actual read_text path already normalized CRLF and parsed17 historical rows. Independent collector review4b8cb612 PASS; no fresh candidate has been accepted or hardware run.
+
+
+## 2026-10-07 native compute probe publication gate complete
+
+Exact23d native helper02 PASS and explicit release0a39d778 finalize all seven host transports0 and all eight native retained/exited/drained children0. Original archive4f495a3eb926da4bf2dcf055d3bd043542d72742ab48234737499fb51cf48c10 has1130775bytes/89files. Agent original review4ee76335 joins19Git/source/beforeafter/collected inputs,21SDK/7libraries/4tools against original Microsoft packages and all13 retention flags. Root independent413315b7 reopens all89 originals, current19 inputs, actual raw process exits/pipe lengths,2AA64COFF+2PE, required modernadapter/KMT/D3DCompile imports and CPUoracle12482 output. Strict /W4 /WX /MT /O1 /std:c++17 /EHsc /Zc:preprocessor retained; actual optimized compute workload remains present. Probe/core/GPU unexecuted, ordinary runtime admission and future hardware pins remain unset.
+
+Root-publication-native-gates-da0a4ed-01.json verifies current88 WARP compilation inputs unchanged and78/79 SM4.1 source inputs unchanged; the sole difference is Meson metadata for the new separate probe, with all compiled SM4.1 units/oracles unchanged. Full native WARP15 and SM4.1 57program/18draw/4608pixel/3negative proofs remain accepted. Both final CI scripts still match nativePS5.1-tested55a23df/cd3914. Root commits this checkpoint and publishes one consolidated candidate; actual successful six-job CI, original five archives/private loader joins and target GPU/runtime acceptance follow. Target CPU is released to root; DX11 prepares the USER compute GPU runner locally and DX10 finalizes isolated typed10 probe locally.

@@ -34,6 +34,29 @@ constexpr UINT resource11CpuAccess(UINT native) {
     | ((native & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
 }
 
+// WDK cube SRV MipLevels=-1 selects the remaining chain beginning at
+// MostDetailedMip. NumCubes remains a finite count; validate in cube units to
+// avoid overflow in First2DArrayFace + 6 * NumCubes. Publish only a complete
+// valid descriptor so a failed conversion cannot modify its caller's output.
+inline bool cubeArrayShaderView11Desc(const D3D10_1DDIARG_TEXCUBE_SHADERRESOURCEVIEW& native,
+    DXGI_FORMAT format, const D3D11_TEXTURE2D_DESC& resource, D3D11_SHADER_RESOURCE_VIEW_DESC& out) {
+  if (!(resource.BindFlags & D3D11_BIND_SHADER_RESOURCE)
+      || !(resource.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE)
+      || native.First2DArrayFace % 6 || !native.NumCubes
+      || native.MostDetailedMip >= resource.MipLevels) return false;
+  const UINT totalCubes = resource.ArraySize / 6;
+  const UINT firstCube = native.First2DArrayFace / 6;
+  if (firstCube >= totalCubes || native.NumCubes > totalCubes - firstCube) return false;
+  const UINT remaining = resource.MipLevels - native.MostDetailedMip;
+  const UINT levels = native.MipLevels == UINT(-1) ? remaining : native.MipLevels;
+  if (!levels || levels > remaining) return false;
+  D3D11_SHADER_RESOURCE_VIEW_DESC staged{};
+  staged.Format = format; staged.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBEARRAY;
+  staged.TextureCubeArray = {native.MostDetailedMip, levels, native.First2DArrayFace, native.NumCubes};
+  out = staged;
+  return true;
+}
+
 inline D3D10DDIARG_CREATERESOURCE resource10Fields(const D3D11DDIARG_CREATERESOURCE& native) {
   D3D10DDIARG_CREATERESOURCE out = {};
   out.pMipInfoList = native.pMipInfoList; out.pInitialDataUP = native.pInitialDataUP;

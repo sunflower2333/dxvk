@@ -1635,3 +1635,14 @@ canaries, list bounds, absent unsupported features, callback-free malformed
 requests and a callback mutating the original output pointer/type/size. Only
 original snapshotted destination changes. Actual native fixtures/CI and system
 runtime caps are next gates; normal OpenAdapter export is still absent.
+
+## 2026-10-07 exact caps CPU checkpoint
+The frozen committed478eca2 88-input packet passes native adapter42308 and
+unchanged full device466831 checks. Root original33member archive review02
+independently validates exact source/build/after-run links,9AA64COFFs/2PEs,
+strict/W4/WX/MT flags, no warnings, original SDK/static CRT libraries and
+installedSYS/systemD3D9/desktop/oldcandidate continuity. This validates caps
+contracts in the controlled fixtures; it does not establish runtime admission.
+Only one automatic CI37561240247 starts for the production push. The next
+diagnostic uses a separate fresh process-local candidate directory for478eca2
+and preserves the blocked CreateDevice path and original installed registration.

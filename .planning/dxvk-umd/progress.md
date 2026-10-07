@@ -2228,3 +2228,16 @@ passes no registry writes/selector restoration/task cleanup/SYS/desktop/34+58
 fields. Typed caps implementation and meaningful adapter fixture bounds/snapshot
 checks are ready for native target CPU verification, followed by one automatic
 consolidated CI. No new UMD has been installed or ordinary rendering claimed.
+
+## 2026-10-07 committed caps native verification and single CI
+Build subagent completes native478eca2 adapter42308 and device466831 checks,
+strict3+6CPP compile/links with zero warnings and original9COFF/2PE. Original
+33member archiveaedcf040 and88input packet e3d216f0 retain. Root fresh archive
+review02 independently rejoins73Git+15pinnedVulkan, exact logs/output counts,
+SDK/WDK headers and five original static libraries, native toolchain and
+signedSYS/oldcandidate/systemD3D9/desktop. Root reviewer01 used the wrong helper
+receipt key; the failed original remains and reviewer02 uses actual name fields.
+Production478eca2 is pushed once, creating only consolidatedCI37561240247.
+Updated read-only frontend/probe permissions and path select an owned fresh
+CapsCandidate-478eca2. CreateDevice remains blocked. Native diagnostic build,
+all six CI jobs/raw artifacts and another actual Microsoft caps trace are next.

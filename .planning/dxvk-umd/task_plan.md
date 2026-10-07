@@ -39,6 +39,14 @@ zero caps/empty formats. Implemented limited typed caps/list/gamma responses and
 adversarial metadata/output tests now require native fixtures, one consolidated
 CI and another read-only system runtime trace. No GPU admission claim.
 
+Exact478eca2 native target fixtures now pass42308 adapter and466831 device
+checks with zero warnings. Root review02 independently verifies88Git/Vulkan
+inputs,33original archive members,9ARM64COFFs/2PEs and SDK/CRT/toolchain/SYS/
+desktop continuity. Production478eca2 is pushed once; the sole automatic
+consolidated run37561240247 is queued. Diagnostic frontend/probe are pinned to
+the fresh uninstalled CapsCandidate-478eca2 for the next real runtime trace.
+Verify original CI artifacts and the separate diagnostic build before execution.
+
 ## Presentation and query checkpoint details (historical)
 
 Owned typed D3D9 queries are accepted at exact source

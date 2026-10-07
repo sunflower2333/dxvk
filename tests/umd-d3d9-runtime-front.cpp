@@ -12,9 +12,9 @@
 #include <unordered_map>
 
 namespace {
-constexpr WCHAR permission[] = L"read-only-061ee8f";
+constexpr WCHAR permission[] = L"read-only-478eca2";
 constexpr WCHAR candidate[] =
-  L"C:\\Users\\Public\\DxvkD3D9Candidate-061ee8f-37549764498\\viogpudxvk.dll";
+  L"C:\\Users\\Public\\DxvkD3D9CapsCandidate-478eca2\\viogpudxvk.dll";
 std::mutex adaptersMutex;
 std::unordered_map<HANDLE, D3DDDI_ADAPTERFUNCS> adapters;
 

@@ -7,11 +7,12 @@ runtime threading. Some bounded paths are implemented; complete semantics
 and ordinary target validation are still required. D10.1/D11 add their exact
 interface/immediate/compute-UAV/tessellation/shader-interface requirements.
 Public supported-version discovery and pipeline levels remain unadvertised.
-Latest CI37724958522 was refreshed completed/success with allsix jobs; this
-is CPU/fixture evidence, not ordinary VM system runtime or desktop acceptance.
+Latest corrective CI37736830999 on ec6209e is terminal FAILURE (x86/x64
+allocation regression; ARM runtime SKIPPED); prior accepted CI37724958522
+remains CPU/fixture evidence, not ordinary VM runtime or desktop acceptance.
 No default VM UMD replacement has been accepted.
 
-Published source 1b378e61f9b4e852cb3deffc305cc652aabfeafa integrates corrected
+Previously accepted source 1b378e61f9b4e852cb3deffc305cc652aabfeafa integrates corrected
 typed DXGI Blt and preserves all45 prior ARM cases/32 shipped fixtures, adding
 one to each (46/33). ROOT b1806c72 joins all10 Blt files to frozen a3 source,
 all current DX8 helpers remain unchanged, and the owned push2821662 closed0.
@@ -165,8 +166,8 @@ initial check-count mismatch is preserved; fresh scoped review accounts for151
 already-retained original equality checks without changing any raw evidence.
 CPU03 and staging03 releases are historical; latest accepted target release
 is C2 read-only ROOTb3be5b4f; current HAL ROOT6d36 remains workload prerequisite.
-DX8 owns one offscreen-only window under ROOT03e15dcf; DX10/DX11 stay local
-until exact same-attempt closure/release. Local exact CPU03 PE imports reveal
+DX8 offscreen-only window03e15dcf has closed FAIL and ROOT37f91309 accepts
+closure-only release; target is idle ROOT-owned. DX10/DX11 remain local. Local exact CPU03 PE imports reveal
 omitted eager msvcdis140.dll and MSVCP140_1.dll, plus delayed pgodb140.dll;
 actual source readability/search resolution and OS-load cause remain unproved.
 A narrow native read-only dependency capture is being prepared without build,
@@ -4278,3 +4279,61 @@ CPU03 build-only attempt after acceptedcube03release. It binds prepared
 observe, exactfailedattempt collection and independent originals/release.
 ROOT/DX10/EWDK target-idle until explicit accepted release. No push/dispatch;
 lastpublished3d39760 soleCI37689715890 PASS/fourredundant disabled.
+
+Current corrective source ec6209e98dc39c7b0ce28ca6030772e13059f89d was pushed
+once by owned PID2941667/0. Sole NativeUMD37736830999 is terminal FAILURE:
+shader/identity/ARM64-build PASS, x86/x64 FAIL, ARM-runtime SKIPPED. The two
+DDI callback assertions no longer stop primary execution. x86 now reaches
+existing allocation fixture check186/line100: expected LockCb-returned124,
+but the refactored nonprimary balancing Unlock uses requested123. Original
+1b code unlocked returned lock.hAllocation. Correct the production balancing
+handle, preserve the assertion and reject publication on renamed output.
+ROOT original job logs913806/31707d9a retained; all-success core tuple remains
+unadmitted. Full fresh failure artifact collection is separate.
+
+DX8 offscreen03 actually FAIL before any workload: public CreateDevice HAL
+hardwareVP returns8876086a. ROOT37f91309 independently reopens all41 original
+TAR members/f0aaa3be, exact canonical closed attempt, static34/SYS/package/
+binding/service/PnP/desktop, seven payloads/four original system libraries,
+three task XML snapshots and selector/protection/callback teardown. Native2,
+host7 and outer2940169 are closed; explicit releaseb4d47e07 accepted. Target
+is now idle ROOT-owned. Existing successful HALc5f is preserved separately;
+448readback/64Present/default replacement remain unaccepted. Root and DX8
+agent infer frontend unload/reload causes Core's strict preloaded-core guard
+to reject its already-owned retained core; actual rejection stage was not
+logged, so this cause is not yet proven. Frozen fbd7afd holds one separately
+owned verified I386 frontend reference through runtime teardown and adds
+precise stage/HRESULT logs while preserving all guards/caps/core bytes.
+Local compile/model evidence only; focused new native proof is next.
+
+DX11 remaining Texture2D SRV mip/array slice source f236fbc is reviewed against
+original local Microsoft -1 semantics. Isolated ROOT a7369f3 keeps all7 exact
+source files and adds3 CI hook files. ROOTf4cc7fec joins6 optimized x64/x86
+COFFs and source originals; all48 old ARM cases/35 shipped fixtures retained,
+two each added (50/37),1380 raw originals whitelisted,504 views/5184 native
+and public words/63 negatives expected. Independent peer1847d9f6 reviewed
+all hooks. Native PowerShell/WARP/readback is pending; no main source push
+or runtime admission from local evidence. DX10 shared-primary remains local;
+current allocation regression fix takes priority before next combined push.
+
+Integrated source23bbc91 contains the exact returned-lock allocation fix,
+DX11 remaining2D SRV7files plus CI3files (d62e6b6), nested failure-original
+retention54abbda and exact frontend-lifetime4files d1b4d21. ROOTbbfc5a41
+reopens453 e47 originals and accepts the single production change to balance
+nonprimary Unlock with LockCb-returned lock.hAllocation; fixtures unchanged.
+SRV hooks peer1847d9f6 and ROOTf4cc7fec retain all48 prior cases/35 fixtures,
+adding2 each (50/37). Consolidated sole NativeUMD push is next; native results
+remain pending. Failed ec originals810ef7e9 retain2 genuine ZIPs155 each,
+92 closed native children; both logs expose allocation check186. Nested72
+primary raw files are absent, so ec remains runner-proof scope only.
+
+Target exclusivity transferred to DX11 for one frozen Hostarm64/x64 EWDK
+C2 readonly04 diagnostic under ROOTddf72357, prepared review8caa9a4f.
+ROOT verifies21pins/4packet members/17 genuine CPU03 selectedx64 pairs;
+actual local prepared reader2967465 closes0/54checks. Scope34known+6candidate
+observations/40before-after and at most3 evidence-only DLL copies. No compiler,
+DLL execution, repair, PATH, registry or GPU changes. Native AST/diagnostic/
+collection/release pending. Latest accepted target release is37f91309;
+ROOT/DX8/DX10 target-idle until current attempt originals/release accepted.
+DX8 focused fbd native03 preparation is local only, exact2COFF/2PE and reused
+original guard; public device/pixels/Present/default VM replacement unaccepted.

@@ -1,10 +1,116 @@
 # Current continuation checkpoint (2026-10-08)
 
-## Current checkpoint: D9 native ABI passed; GS physical packing and D11 lifecycle
+## Live checkpoint 2026-10-09: ColorFill passed, ordinary GPU gate active
 
-MAINa44b7f5 includes reviewed D11Phase0cf, D9ValidateDevicec493,
+MAINbe8f55c includes ColorFill, corrected controlled Present fixture, exact
+Win7 typed DDI11 negotiation, bee7 optional legacy same-owner lifecycle,
+DDI11 caller amortized processing, fixture caller-close correctionc9d6361
+and additive opt-in RuntimeGpu diagnosticbe8f55c. ROOT reviewed and merged
+both latest sources, preserving all callback guards and returns. These source
+commits are ready for one consolidated push;
+last published source is c8cda1f / run37835241647. Only build-native-umd handles push events; the two retained standalone
+control workflows are manual-only. ARM64 producer passed; x86/x64 distance-SO fixture failed and ARM64
+runtime was skipped. Whole CI failure is distinct from selected core output.
+
+Actual ColorFill03 now passes BOTH full native ARM64 and emulated x64
+fixtures, 690949 checks each, 14 COFFs/2 PEs. Independent peer verifies952
+joins and protected source/input/KMD/desktop continuity, scoped pending0.
+ROOT CPU release: artifacts/d3d9-colorfill-native-20261009/
+ROOT-native-ColorFill03-CPU-scoped-release-01.json (1496/SHAda355cc9).
+This is mocked renderer CPU/ABI proof, not ordinary HAL/GPU replacement.
+
+Corrected distance source69875 passes actual ARM64 and x64 full fixtures.
+Frozen raw reader runs exactly once per view:2323 checks/2048literal words/
+192query words/77raw files each, including exact80000000 negative zero.
+ROOT9 phase parents and9 transports close0/absent; peerd060ac34 verifies
+combined originals/closure. ROOT native SO CPU releasea9109cf is accepted.
+New callback source124149c merged as0eee0a2 after ROOT source review and six
+strict SDK COFFs. Actual callback01 ARM64 compiles all17COFF/onePE
+successfully, then fixture exits1 at check918/line57 (original-caller guard).
+The new fixture incorrectly closes RuntimeGpu on a service worker; production
+Device::close uses its original caller. Fixture-only source6f09db3 fixes
+that direct close and is merged asMAINc9d6361; all caller/coalescing/reentry/
+PAGE_NOACCESS oracles remain unchanged. Fresh native02 ARM64/x64 all nine ROOT and transport phases complete0.
+Both frozen original readers run ONCE (3971472/0 ARM64,3972732/0 x64),
+confirming1032checks/backenddrains2/childdrains2 each; both callback and
+whole-fixture markers exactlyonce,115sources/17COFF/onePE/sevennative
+stages,76ARM64/75x64 selectedmetadata entries stable. Reader proofs
+ad402989/779 and6e7a3385/777 are accepted for selected fixture originals;
+finite combined recorded-host/native closure peer is completing locally. Authorization69a81223
+pins latest actual native14ca CPU release8c98a605 and failed01 release65059d06.
+All5 actualROOT/transport phases and11 recordednative lifetimes close;
+ROOT failed CPU release65059d06. No x64 or successreader execution.
+Native14ca EWDK build PASSES:25 tools,6COFF/6PE, ARM64X frontend and four
+ARM64/x64 offscreen/Present probes. Frozen reader02 runs ONCE3962086/0,
+proof47171/SHA6b7c5887 joins17sources/30namedheaders/139selectedrows,
+29native children absent plus11transports/7ROOT wrappers closed. Actual
+frontend1464832/SHA2a403572 and ARM64 offscreen1049088/SHA5612d9f0 are
+retained in native14ca originals; handoff15455/SHA03f6f225. ROOT CPU release
+8c98a605/4145 accepted; local release parent3967214/0 closes. No probe/core/
+SYSTEM execution or hardware proof. New selected genuine CI core remains
+pending. Bounded read-only inventory ROOT3967423/0 confirms mounted EWDK
+compiler/SDK/rc paths; Python/Git/Meson/Ninja/glslang are absent from current
+SSH PATH. No tool, probe, registration or PnP call occurred in that inventory.
+
+Bee7 actual native CPU ROOT3933307/0 passed in22.311s:5AST, Api9 slot0
+16memory cases/130checks, pure163, argv6+census5/51checks, selected strict
+compiler/config+six references unchanged. Six CPU children+collector close,
+separate observation and all six transports/ROOTouter close0. ROOT CPU
+release5e1727de accepted; independent actual CPU peer01458fdc passes609
+joins/193 originals without a second reader run.
+
+Api9 c8 StageReadOnly ROOT3934706/0 passes23.812s; source18/payload17 and
+22fresh arguments/current paired160/raw6/all3Mesa/KMD join, ROOT release
+49589a72. Actual Apply ROOT3936515/1 closes144.609s without timeout, originals
+collected. Windows selects the standard legacy DXVK frontend and SYSTEM D9
+factory/exact VIOGPU LUID+adapter/format pass. Private loader and Adreno830
+at forwardLUID0345c596 are genuine; first queue submit failsVK_ERROR_DEVICE_LOST
+(result-4,3entries/6references/nextfence1), ordinaryCreateDevice9 E_FAIL.
+No pixels or ordinary success reader. Held missing-loader census is secondary
+teardown evidence. Original0331b5cd→forward0345c596→restored0348d123 are
+separate. Actual controller reports raw6 restored/settled, protectedjobzero,
+reverse exact-instance restart0, effectiveMesa/healthy desktop/devnode/signed
+KMD retained. Final ROOTobserver3951015/0 (7.781s) records seven original
+PID/start lifetimes and two exact tasks absent, with restored160/raw6/all3Mesa/
+KMD/desktop equality. Independent actualpeerb06b66b3 passes261joins/143originals;
+ROOT Api9 failure/recovery release7a9f00fb closes the scope. ICD audit confirms
+context/device-close prefix is expected capability-probe cleanup, also present
+in acceptedUSER06D10; premature-close hypothesis rejected. Firstsubmission
+failure needs RuntimeGpu/ICD stage and exactHRESULT telemetry before any fix.
+Diagnostic-only sourceb4896bb is merged asMAINbe8f55c. Existing
+TU_WDDM_DIAGNOSTICS=1 records per-owner first context/submit/success/failure
+with exact normalized and original callback HRESULT, context/queue/generation/
+reference/locked counts and failure index. All original guards, returns, masks,
+mapping and ABI are retained. Six strict official-SDK x86/x64 COFF builds
+and actual GCC ASan/UBSan output control30checks pass; focused independent
+peer00184d4e reports no blocker. This source has not yet executed on target;
+default remains Mesa.
+
+Latest ordinary D11 hardware03 selected the DXVK validation frontend after
+forward restart; factory S_OK/FL10_0 still lacked typed Calc/Create events,
+so pixels/Present remain unproved. Actual raw6/Mesa/KMD/desktop recovery and
+closure were accepted (ROOT hardware03 release40e3ffaa). Default VM Mesa
+remains. Exact Win7 DDI revision and amortized callback changes need a fresh
+core/front/probe before the next hardware attempt.
+
+Next: finalize corrected callback native02 scoped closure; consolidate ONE source/
+plans push through the sole build-native-umd workflow, select the genuinely
+successful ARM64 core containing Win7/amortized/diagnostics, then run fresh
+ordinary SYSTEM Api9 diagnostic and D11 typed-creation/pixel/recovery attempts.
+Accepted ColorFill/SO/bee7 suites and prior failure readers are not rerun. Never
+mark Finish before ordinary remote DX8-11 rendering and required recovery pass.
+
+## Previous checkpoint: D9 native ABI passed; GS physical packing and D11 lifecycle
+
+Publishedc8cda1f includes reviewed D11Phase0cf, D9ValidateDevicec493,
 GS-input union76f, shared-interfacecec6 and full DATA0-row fixturea44b7f5
-(source84e19a4). Published source remains90ff834. CI68/run37820635406
+(source84e19a4). ROOT3858743/0 publishes one consolidated push; new
+CI/run37835241647 has exactly one build-native-umd workflow. Identity and
+shaderCPU jobs pass; selected ARM64producer113510484818 passes. Run37835241647
+ends FAILURE: x86/x64 fail their distance-SO native fixture at line98, while
+ARM64runtime113518602916 is SKIPPED. Original logs are retained once; source
+diagnosis is active. This does not block the old90ff scoped ARM64 diagnostic.
+Previous CI68/run37820635406
 is FAILURE; ARM64 producer113460457210 is SUCCESS and ARM64 runtime
 113470495297 is SKIPPED. The exact selected ARM64 core6402048/SHAb411959a
 is accepted only as build output for a scoped diagnostic, not runtime proof.
@@ -68,12 +174,69 @@ fresh effective Mesa/desktop proof. Original/forward/restored LUIDs remain
 separate; generation2 may repeat. No lifecycle target call is authorized
 until ROOT reviews the concrete source and native CPU controls.
 
-Next: one consolidated reviewed source/plan push to the sole enabled push
-workflow. Optional lifecycle source55be6e5 is frozen separately with local
-147 strict helper checks and16 native memory-phase cases pending; the
-original named job must prove ActiveProcesses0 before reverse restart.
-Review/native CPU validation precedes the real same-owner experiment.
-Then continue actual SYSTEM
+ROOT3868788/0 completes actual lifecycleCPU preflight in23.413s:7
+nativePS5.1 parses,16 memory phases/130 checks,147 pure checks through
+the pinned FrameworkArm64 compiler. Five native children plus collector
+close;11 selected inputs and8 compiler/reference/config pins remain exact.
+ROOT and independent sourcepeerfa3a4185 review the six-file lifecycle
+source55be6e5 and13 Git/current/TAR files; MAIN merges as8fda343, unpushed.
+Native CPU-original peer d2c8a44c passes837 joins; ROOT scoped release
+1083/c09ed78d has zero pending owned children/transports/parents. No real registry/task/PnP/job
+operation or hardware rendering is included in this CPU result.
+
+Actual second StageReadOnly02 ROOT3887721/1 stopped before extraction: tar9508
+received empty arguments due to the PowerShell automatic $args variable. All
+three host transports and retained native tar child close, no owner or
+registry/PnP execution occurred, and originals are preserved. ROOT releases
+that failed preparation with scoped pending counts0; fresh03 packet renames
+argument variables and uses new source/evidence/run paths. No CPU rerun.
+
+ROOT reviewed and merged typed D8/9 ColorFill source0c970357 as MAINE5be3d0.
+Exact SDK sixCOFFs and both GCC/Clang sanitizer359 originals pass; independent
+peer da1c4531 joins342 controls and preserved failures. Native controlled
+Windows packet is being prepared. No actual Vulkan or ordinary HAL admission.
+CI c8 distanceSO failure is separately diagnosed from original FXC tokens:
+VS o2.x has positivezero immediate00000000 where unchanged raw oracle expects
+negativezero80000000. Fixture-only dynamic-signbit fix/early raw retention is
+in progress; no production shader defect is established by this failure.
+
+Actual hardware03 completed ROOT3894441/1 in133.302s. Native owner8788/1
+correctly propagates failure (81.22s/no timeout/closed pipes). Forward exact-
+instance PnP11972/0 refreshes6bec to032eccaf and genuinely selects validation
+DX11 frontend. SYSTEM factoryS_OK/FL10_0 is insufficient: no typedDDI11 Create
+appears, so unchanged probe fails runtime-created-typed11-fl10_0 before pixels.
+Captured events are Open/GetCaps130/GetSupportedVersions historical0xb000a/
+Close; frontend/core load, privateVulkan creates and tears down, held approved
+loader census fails. No GPU literal reader invoked, pixels/presents0. Reverse
+PnP14216/0 recovers0331b5cd, raw6/Mesa3names/signedKMD/healthyoriginaldesktop;
+original named jobActiveProcesses0 before reverse. FinalROOTobserver3904811/0
+finds8recordedlifetimes/2tasksabsent, independent peer57de971c357joins accepted.
+ROOT release1908/40e3ffaa has allscopedpending0; nofulltree/selfobserverclaim.
+ExactWindows7DDI0xb000b profile gap is being fixed against localSDK/MScontracts;
+this remains a hardware hypothesis until rebuiltcore/front/probe provesCreate.
+
+Reviewed SO source69875 dynamicnegativezero/earlybothrolecapture merges as
+MAIN98b9a0d; strictSDK2COFF pass, realFXC/nativeSO stillpending. Exactc8 ARMcore
+6410240/d344603f build-only originals pass4547 joins; producerSUCCESS but
+CIFAIL/runtimeSKIP remain explicit. LegacyApi9refresh extension is preparing
+sameowner/raw6/jobzero recovery plus freshforwardLUID and unchangedHALpixels/
+Present. No default replacement yet.
+
+Actual ColorFill native02 ROOT3909417/1 ends37.287s: ARM7COFF/PE/imports pass,
+newColorFill and oldValidateDevice/D8/Vista markers execute, then fullfixture
+fails check143242/line3698 allocation71-vs-resource comparison. No x64build
+or fixture executed. Five native children close withouttimeout; source31,
+selected42 and protectedKMD/registry/desktop beforeafter exact, originals
+retained1703367/0b3651fa. Finite failure review/source diagnosis active; this
+is not a full native pass. No driver/core/GPU/registry install occurred.
+
+Next: finalize ColorFill native failure correction and nativeSO verification,
+merge reviewed Win7DDI11 profile and legacyApi9refresh sources, then rebuild
+core/front/probes and retry actual ordinary SYSTEM creation/pixels/Present. Current selected90ff/b411 core and786
+front/probe are already accepted build-only diagnostic inputs; whole-new-CI
+success is not an extra diagnosis prerequisite. Native original job must
+prove ActiveProcesses0 before reverse restart. Observe newc8 CI results
+independently; then continue actual SYSTEM
 D11/D10/D9/D8 GPU creation, readback, Present and DWM. ROOT alone owns target
 calls. VM default remains Mesa; ordinary DX8-11 replacement and standing
 HDR/VPU/perf/0copy program remain incomplete.

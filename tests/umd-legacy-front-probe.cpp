@@ -40,7 +40,7 @@ int wmain(int argc, WCHAR** argv) {
   const bool closed = FreeLibrary(front) != FALSE;
   std::printf("LEGACY_FRONT_CPU null_hr=%08lx unsupported_hr=%08lx canaries=%u args=%u target=%ls frontend_released=%u\n",
     static_cast<unsigned long>(nullResult), static_cast<unsigned long>(unsupported), unsigned(retained), unsigned(retained), loaded, unsigned(closed));
-  if (unsupported != E_INVALIDARG || !retained || !matched || !closed) return 7;
+  if (unsupported != D3DERR_NOTAVAILABLE || !retained || !matched || !closed) return 7;
   std::printf("LEGACY_FRONT_CPU PASS typed_OpenAdapter=1 no_callbacks=1 explicit_device_calls=0 source_scope=1\n");
   return 0;
 }

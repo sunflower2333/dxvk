@@ -1,0 +1,5 @@
+# Progress
+
+Verified local MS contracts and Microsoft’s primary functional specification. A DSV-required guard would still reject legal output-free query work. Implemented existing native11 input prerequisites for decoded D10/10.1, preserving raster Position and admission checks.
+
+Added a genuine typed DDIs / separate public D3D10CreateDevice1 WARP fixture: 12 exact-depth/query cases, eight original FXC programs and 65 retained originals. Independent reader requires all 6144 depth words and 240 query words plus exact raw-directory closure. Its final 37 synthetic mutation controls (reader-local-02) passed with native/compiler/hardware fields false, including acceptance of a zero all-discard PS counter. Optimized official-header x64/x86 COFF compilation passed for production (local-01) and final fixture (local-03), zero diagnostics, actual machine headers and unchanged 65 selected inputs. Reviewed source and actual receipt handoff frozen; native Windows/hardware execution remains ROOT’s scope.

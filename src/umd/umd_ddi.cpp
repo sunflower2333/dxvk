@@ -2377,18 +2377,13 @@ bool prepareSharedDraw(Device* device) {
 
 bool prepareNativeGraphics11(Device* device);
 bool drawReady(Device* device, bool indexed = false) {
-  if (device->nativeTable11) {
-    if (!device->vertexBound || !device->topologyBound || (indexed && !device->indexBound)) {
-      device->error(E_INVALIDARG); return false;
-    }
-    return prepareNativeGraphics11(device) && prepareSharedDraw(device);
-  }
-  const bool streamOnly = device->geometryShader && device->geometryShader->withStreamOutput;
-  if (!device->vertexBound || (!streamOnly && (!device->pixelBound || !device->targetBound || !device->viewportBound))
-      || !device->topologyBound || (indexed && !device->indexBound)) {
+  // A null PS can write interpolated depth; draws without color outputs or
+  // viewports can still count geometry/occlusion. The renderer owns those
+  // states. Only these input prerequisites are necessary for either table.
+  if (!device->vertexBound || !device->topologyBound || (indexed && !device->indexBound)) {
     device->error(E_INVALIDARG); return false;
   }
-  return (device->vertexShader && device->vertexShader->native11
+  return (device->nativeTable11 || (device->vertexShader && device->vertexShader->native11)
     ? prepareNativeGraphics11(device) : prepareVertexShader(device)) && prepareSharedDraw(device);
 }
 void APIENTRY draw(D3D10DDI_HDEVICE h, UINT count, UINT start) {

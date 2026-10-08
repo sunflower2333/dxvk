@@ -350,3 +350,8 @@ umd_d3d10_system_shader_test = executable('dxvk-umd-d3d10-system-shader-test',
   ['../../tests/umd-d3d10-system-shaders.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_contract.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
+
+umd_d3d10_depth_test = executable('dxvk-umd-d3d10-depth-test',
+  ['../../tests/umd-d3d10-depth.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_contract.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler'), cpp.find_library('d3d10_1')])

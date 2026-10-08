@@ -277,7 +277,95 @@ static void testFaces(Fixture& f) {
   readPixels(f, resource, d.args, expected); ++cases;
 }
 
+// Capture direct public-backend behavior separately from the production oracle.
+// Preserve every face/mip before reporting observations, including unchanged
+// source/tail levels. Public mismatch counts are observations, not acceptance.
+static void observePublicMips(Fixture& f, UINT caseIndex, UINT selected) {
+  const UINT levels = 5, layers = 6, width = 16;
+  const UINT count = selected == UINT32_MAX ? 4 : selected;
+  Pixels expected = initialPixels(width, levels, layers);
+  for (UINT face = 0; face < layers; ++face)
+    std::fill(expected[face * levels + 1].begin(), expected[face * levels + 1].end(),
+      0xff000000u | face * 0x20202u);
+  std::vector<D3D11_SUBRESOURCE_DATA> initial(expected.size());
+  for (UINT index = 0; index < expected.size(); ++index) {
+    const UINT edge = std::max(1u, width >> (index % levels));
+    initial[index].pSysMem = expected[index].data();
+    initial[index].SysMemPitch = edge * static_cast<UINT>(sizeof(UINT));
+    initial[index].SysMemSlicePitch = edge * edge * static_cast<UINT>(sizeof(UINT));
+  }
+  ComPtr<ID3D11Device> backend;
+  f.context->GetDevice(&backend); CHECK(backend);
+  D3D11_TEXTURE2D_DESC desc{};
+  desc.Width = desc.Height = width; desc.MipLevels = levels; desc.ArraySize = layers;
+  desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+  desc.Usage = D3D11_USAGE_DEFAULT;
+  desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+  desc.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE | D3D11_RESOURCE_MISC_GENERATE_MIPS;
+  ComPtr<ID3D11Texture2D> texture;
+  CHECK(backend->CreateTexture2D(&desc, initial.data(), &texture) == S_OK && texture);
+  D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc{};
+  viewDesc.Format = desc.Format; viewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBE;
+  viewDesc.TextureCube.MostDetailedMip = 1; viewDesc.TextureCube.MipLevels = count;
+  ComPtr<ID3D11ShaderResourceView> view;
+  CHECK(backend->CreateShaderResourceView(texture.Get(), &viewDesc, &view) == S_OK && view);
+  D3D11_TEXTURE2D_DESC actualDesc{}; texture->GetDesc(&actualDesc);
+  D3D11_SHADER_RESOURCE_VIEW_DESC actualView{}; view->GetDesc(&actualView);
+  CHECK(actualDesc.Width == width && actualDesc.Height == width
+    && actualDesc.MipLevels == levels && actualDesc.ArraySize == layers);
+  CHECK(actualView.ViewDimension == D3D11_SRV_DIMENSION_TEXTURECUBE
+    && actualView.TextureCube.MostDetailedMip == 1 && actualView.TextureCube.MipLevels == count);
+  const UINT metadata[] = {caseIndex, selected, actualDesc.Width, actualDesc.Height,
+    actualDesc.MipLevels, actualDesc.ArraySize, static_cast<UINT>(actualDesc.Format),
+    actualDesc.SampleDesc.Count, actualDesc.SampleDesc.Quality,
+    static_cast<UINT>(actualDesc.Usage), actualDesc.BindFlags, actualDesc.MiscFlags,
+    static_cast<UINT>(actualView.ViewDimension), actualView.TextureCube.MostDetailedMip,
+    actualView.TextureCube.MipLevels};
+  saveBytes("public-cube-direct-" + std::to_string(caseIndex) + ".view", metadata, sizeof(metadata));
+  f.context->GenerateMips(view.Get());
+  for (UINT face = 0; face < layers; ++face)
+    for (UINT mip = 2; mip < 1 + count; ++mip)
+      std::fill(expected[face * levels + mip].begin(), expected[face * levels + mip].end(),
+        0xff000000u | face * 0x20202u);
+
+  D3D11_TEXTURE2D_DESC stagingDesc = desc;
+  stagingDesc.Usage = D3D11_USAGE_STAGING; stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  stagingDesc.BindFlags = stagingDesc.MiscFlags = 0;
+  ComPtr<ID3D11Texture2D> staging;
+  CHECK(backend->CreateTexture2D(&stagingDesc, nullptr, &staging) == S_OK && staging);
+  f.context->CopyResource(staging.Get(), texture.Get());
+  UINT mismatches = 0;
+  for (UINT face = 0; face < layers; ++face) {
+    for (UINT mip = 0; mip < levels; ++mip) {
+      const UINT index = face * levels + mip;
+      const UINT edge = std::max(1u, width >> mip);
+      D3D11_MAPPED_SUBRESOURCE mapped{};
+      CHECK(f.context->Map(staging.Get(), index, D3D11_MAP_READ, 0, &mapped) == S_OK);
+      CHECK(mapped.pData && mapped.RowPitch >= edge * sizeof(UINT));
+      std::vector<UINT> observed(expected[index].size());
+      for (size_t x = 0; x < observed.size(); ++x)
+        std::memcpy(&observed[x], static_cast<const char*>(mapped.pData)
+          + (x / edge) * mapped.RowPitch + (x % edge) * sizeof(UINT), sizeof(UINT));
+      const UINT dimensions[] = {caseIndex, face, mip, index, edge, edge,
+        mapped.RowPitch, mapped.DepthPitch, 1, count, levels, layers};
+      const std::string name = "public-cube-direct-" + std::to_string(caseIndex)
+        + "-face-" + std::to_string(face) + "-mip-" + std::to_string(mip);
+      saveBytes(name + ".metadata", dimensions, sizeof(dimensions));
+      saveBytes(name + ".words", observed.data(), observed.size() * sizeof(UINT));
+      saveBytes(name + ".expected", expected[index].data(), expected[index].size() * sizeof(UINT));
+      f.context->Unmap(staging.Get(), index);
+      for (size_t x = 0; x < observed.size(); ++x)
+        if (observed[x] != expected[index][x]) ++mismatches;
+    }
+  }
+  std::printf("PUBLIC TextureCube directGenerateMips\ncase=%u\nfirst_mip=1\nmip_count=%u\nmismatched_words=%u\n",
+    caseIndex, count, mismatches); std::fflush(stdout);
+}
+
 static void testMips(Fixture& f) {
+  UINT publicCase = 0;
+  for (UINT selected : {UINT32_MAX, 2u, 1u})
+    observePublicMips(f, publicCase++, selected);
   for (UINT selected : {UINT32_MAX, 2u, 1u}) {
     Description d(16, 5, 6); d.args.MiscFlags = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP;
     auto expected = initialPixels(16, 5, 6);

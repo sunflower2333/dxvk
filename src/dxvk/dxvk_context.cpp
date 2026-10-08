@@ -552,6 +552,58 @@ namespace dxvk {
           VkImageSubresourceLayers srcSubresource,
           VkOffset3D            srcOffset,
           VkExtent3D            extent) {
+    auto srcFormatInfo = srcImage->formatInfo();
+    auto dstFormatInfo = dstImage->formatInfo();
+    const auto bcFamily = [] (VkFormat format) {
+      if (format < VK_FORMAT_BC1_RGB_UNORM_BLOCK || format > VK_FORMAT_BC5_SNORM_BLOCK)
+        return 0u;
+      if (format <= VK_FORMAT_BC1_RGBA_SRGB_BLOCK) return 1u;
+      if (format <= VK_FORMAT_BC2_SRGB_BLOCK) return 2u;
+      if (format <= VK_FORMAT_BC3_SRGB_BLOCK) return 3u;
+      if (format <= VK_FORMAT_BC4_SNORM_BLOCK) return 4u;
+      return 5u;
+    };
+    auto sourceFamily = bcFamily(srcImage->info().format);
+
+    if (sourceFamily && sourceFamily == bcFamily(dstImage->info().format)
+     && srcFormatInfo->flags.test(DxvkFormatFlag::BlockCompressed)
+     && dstFormatInfo->flags.test(DxvkFormatFlag::BlockCompressed)
+     && srcFormatInfo->blockSize == dstFormatInfo->blockSize
+     && srcFormatInfo->elementSize == dstFormatInfo->elementSize
+     && formatsAreImageCopyCompatible(dstImage->info().format, srcImage->info().format)
+     && srcImage->info().type == VK_IMAGE_TYPE_2D
+     && dstImage->info().type == VK_IMAGE_TYPE_2D
+     && srcImage->info().sampleCount == VK_SAMPLE_COUNT_1_BIT
+     && dstImage->info().sampleCount == VK_SAMPLE_COUNT_1_BIT
+     && srcSubresource.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT
+     && dstSubresource.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT
+     && srcSubresource.layerCount == dstSubresource.layerCount
+     && srcSubresource.layerCount && srcSubresource.layerCount != VK_REMAINING_ARRAY_LAYERS) {
+      auto blockCount = util::computeBlockCount(extent, srcFormatInfo->blockSize);
+      auto dstExtent = util::computeBlockExtent(blockCount, dstFormatInfo->blockSize);
+      dstExtent = util::snapExtent3D(dstOffset, dstExtent,
+        dstImage->mipLevelExtent(dstSubresource.mipLevel));
+
+      if (dstExtent != extent
+       && util::computeBlockCount(dstExtent, dstFormatInfo->blockSize) == blockCount) {
+        // One Vulkan image-copy extent cannot describe different logical
+        // mip edges. Transfer whole encoded blocks through a GPU buffer,
+        // with each image's extent clipped independently to its edge.
+        DxvkBufferCreateInfo bufferInfo = { };
+        bufferInfo.size = srcSubresource.layerCount * util::computeImageDataSize(
+          srcImage->info().format, extent, srcSubresource.aspectMask);
+        bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        bufferInfo.stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        bufferInfo.access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+        bufferInfo.debugName = "BC edge copy buffer";
+
+        auto buffer = m_device->createBuffer(bufferInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        copyImageToBufferHw(buffer, 0, 0, 0, srcImage, srcSubresource, srcOffset, extent);
+        copyBufferToImageHw(dstImage, dstSubresource, dstOffset, dstExtent, buffer, 0, 0, 0);
+        return;
+      }
+    }
+
     if (this->copyImageClear(dstImage, dstSubresource, dstOffset, extent, srcImage, srcSubresource)
      || this->copyImageInline(*dstImage, dstSubresource, dstOffset, *srcImage, srcSubresource, srcOffset, extent))
       return;

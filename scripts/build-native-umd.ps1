@@ -94,6 +94,8 @@ ninja -C build-umd src/umd/dxvk-umd-primary-policy-test.exe src/umd/dxvk-umd-dxg
 if ($LASTEXITCODE) { throw 'Typed DXGI primary/display fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-volume-policy-test.exe src/umd/dxvk-umd-texture3d-test.exe
 if ($LASTEXITCODE) { throw 'Native volume policy and Texture3D fixture build failed' }
+ninja -C build-umd src/umd/dxvk-umd-srv-range-test.exe src/umd/dxvk-umd-tex2d-srv-remaining-test.exe
+if ($LASTEXITCODE) { throw 'Texture2D SRV remaining-range fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-texturecube-test.exe src/umd/dxvk-umd-cube-array-policy-test.exe src/umd/dxvk-umd-cube-array-resource-test.exe src/umd/dxvk-umd-cube-srv-mips-test.exe src/umd/dxvk-umd-cube-array-mips-test.exe
 if ($LASTEXITCODE) { throw 'Native cube resource, view and mip fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-cube-array-targets-test.exe
@@ -211,6 +213,18 @@ if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-stream-output-test.exe stream-output-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-texture1d-test.exe texture1d-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-volume-policy-test.exe volume-policy-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-srv-range-test.exe srv-range-test
+    if ((Get-Content -LiteralPath (Join-Path $OutputDirectory 'srv-range-test.txt') -Raw) -notmatch '(?m)^native SRV remaining range policy verified checks=436737\r?$') {
+        throw 'SRV remaining-range policy fixture did not pass'
+    }
+    $srvOriginals = Join-Path $OutputDirectory 'tex2d-srv-remaining-originals'
+    New-Item -ItemType Directory -Path $srvOriginals -ErrorAction Stop | Out-Null
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-tex2d-srv-remaining-test.exe tex2d-srv-remaining-test $srvOriginals
+    if ((Get-Content -LiteralPath (Join-Path $OutputDirectory 'tex2d-srv-remaining-test.txt') -Raw) -notmatch '(?m)^native D3D10/D3D10\.1/D3D11 Texture2D SRV remaining ranges verified checks=\d+ views=504 words=5184 callbacks=63 WARP controls\r?$') {
+        throw 'Texture2D SRV remaining-range fixture did not pass'
+    }
+    & python (Join-Path $PSScriptRoot '../tests/verify-tex2d-srv-remaining-originals.py') --directory $srvOriginals --output (Join-Path $OutputDirectory 'tex2d-srv-remaining-originals-verified.json')
+    if ($LASTEXITCODE) { throw 'Independent Texture2D SRV remaining-range originals failed' }
     $textureOriginals = Join-Path $OutputDirectory 'texture3d-originals'
     New-Item -ItemType Directory -Path $textureOriginals -ErrorAction Stop | Out-Null
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-texture3d-test.exe texture3d-test $textureOriginals
@@ -306,7 +320,7 @@ foreach ($name in @('dxvk-umd-runtime-backend-test.exe', 'dxvk-umd-d3d9-backend-
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }
     Copy-Item $path $OutputDirectory
 }
-foreach ($name in @('dxvk-umd-texturecube-test.exe', 'dxvk-umd-cube-array-policy-test.exe', 'dxvk-umd-cube-array-resource-test.exe', 'dxvk-umd-cube-srv-mips-test.exe', 'dxvk-umd-cube-array-mips-test.exe', 'dxvk-umd-cube-array-targets-test.exe')) {
+foreach ($name in @('dxvk-umd-texturecube-test.exe', 'dxvk-umd-cube-array-policy-test.exe', 'dxvk-umd-cube-array-resource-test.exe', 'dxvk-umd-cube-srv-mips-test.exe', 'dxvk-umd-cube-array-mips-test.exe', 'dxvk-umd-cube-array-targets-test.exe', 'dxvk-umd-srv-range-test.exe', 'dxvk-umd-tex2d-srv-remaining-test.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
     $headers = & dumpbin /headers $path | Out-String
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect cube fixture architecture: $name" }

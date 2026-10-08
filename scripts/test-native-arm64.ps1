@@ -72,12 +72,15 @@ $cases = [ordered]@{
     'dxvk-umd-dxgi-blt-test.exe' = '(?m)^DXGI Blt PASS checks=\d+ profiles=3 snapshots=30 pixels=1536 hardware_admission=0\r?$'
     'dxvk-umd-primary-policy-test.exe' = '(?m)^DXGI primary policy PASS checks=5637\r?$'
     'dxvk-umd-dxgi-primary-test.exe' = '(?m)^DXGI primary/display PASS checks=\d+ profiles=6 snapshots=24 pixels=768 hardware_admission=0\r?$'
+    'dxvk-umd-srv-range-test.exe' = '(?m)^native SRV remaining range policy verified checks=436737\r?$'
+    'dxvk-umd-tex2d-srv-remaining-test.exe' = '(?m)^native D3D10/D3D10\.1/D3D11 Texture2D SRV remaining ranges verified checks=\d+ views=504 words=5184 callbacks=63 WARP controls\r?$'
     'dxvk-umd-predication-test.exe' = 'native predication PASS checks=.*draw-cases=24'
     'dxvk-umd-stream-output-test.exe' = 'native stream output PASS checks=.*drawauto-cases=2'
     'dxvk-umd-query-test.exe' = 'query completion PASS checks='
     'dxvk-umd-system-runtime-test.exe' = 'system runtime control PASS: WARP Draw/readback/Present/immediate teardown'
 }
 $originalDirectories = @{
+    'dxvk-umd-tex2d-srv-remaining-test.exe' = 'arm64-tex2d-srv-remaining-originals'
     'dxvk-umd-dxgi-blt-test.exe' = 'arm64-dxgi-blt-originals'
     'dxvk-umd-dxgi-primary-test.exe' = 'arm64-dxgi-primary-originals'
     'dxvk-umd-dxgi-shared-resolve-test.exe' = 'arm64-dxgi-shared-resolve-originals'
@@ -136,6 +139,9 @@ foreach ($name in $cases.Keys) {
     } elseif ($name -ceq 'dxvk-umd-dxgi-primary-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-primary-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-dxgi-primary-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 typed DXGI primary originals failed' }
+    } elseif ($name -ceq 'dxvk-umd-tex2d-srv-remaining-test.exe') {
+        & python (Join-Path $PSScriptRoot '../tests/verify-tex2d-srv-remaining-originals.py') --directory $childDirectory --output (Join-Path $root 'arm64-tex2d-srv-remaining-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 Texture2D SRV remaining-range originals failed' }
     } elseif ($name -ceq 'dxvk-umd-texturecube-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-cube-originals.py') $childDirectory --output (Join-Path $root 'arm64-texturecube-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 cube original oracle failed' }

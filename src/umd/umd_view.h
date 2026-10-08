@@ -2,6 +2,7 @@
 #include "umd_ddi.h"
 #include "umd_format.h"
 #include "umd_cube_array_policy.h"
+#include "umd_srv_range.h"
 #include <d3d11.h>
 #include <algorithm>
 
@@ -152,30 +153,33 @@ inline bool textureShaderView(const D3D10DDIARG_CREATESHADERRESOURCEVIEW& args,
     out.TextureCube.MipLevels = mips;
     return true;
   }
+  UINT mipLevels = 0, arraySize = 0;
   if (args.ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
       || !(resource.BindFlags & D3D11_BIND_SHADER_RESOURCE)
-      || !viewRange(args.Tex2D.FirstArraySlice, args.Tex2D.ArraySize, resource.ArraySize)
-      || !viewRange(args.Tex2D.MostDetailedMip, args.Tex2D.MipLevels, resource.MipLevels)
+      || !shaderResourceViewRange(args.Tex2D.FirstArraySlice, args.Tex2D.ArraySize,
+                                 resource.ArraySize, arraySize)
+      || !shaderResourceViewRange(args.Tex2D.MostDetailedMip, args.Tex2D.MipLevels,
+                                 resource.MipLevels, mipLevels)
       || !resource.SampleDesc.Count) return false;
   out.Format = args.Format;
   if (resource.SampleDesc.Count > 1) {
-    if (args.Tex2D.MostDetailedMip || args.Tex2D.MipLevels != 1) return false;
+    if (args.Tex2D.MostDetailedMip || mipLevels != 1) return false;
     if (resource.ArraySize == 1) out.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DMS;
     else {
       out.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DMSARRAY;
       out.Texture2DMSArray.FirstArraySlice = args.Tex2D.FirstArraySlice;
-      out.Texture2DMSArray.ArraySize = args.Tex2D.ArraySize;
+      out.Texture2DMSArray.ArraySize = arraySize;
     }
   } else if (resource.ArraySize == 1) {
     out.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     out.Texture2D.MostDetailedMip = args.Tex2D.MostDetailedMip;
-    out.Texture2D.MipLevels = args.Tex2D.MipLevels;
+    out.Texture2D.MipLevels = mipLevels;
   } else {
     out.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
     out.Texture2DArray.MostDetailedMip = args.Tex2D.MostDetailedMip;
-    out.Texture2DArray.MipLevels = args.Tex2D.MipLevels;
+    out.Texture2DArray.MipLevels = mipLevels;
     out.Texture2DArray.FirstArraySlice = args.Tex2D.FirstArraySlice;
-    out.Texture2DArray.ArraySize = args.Tex2D.ArraySize;
+    out.Texture2DArray.ArraySize = arraySize;
   }
   // The embedded device validates typed/typeless format compatibility.
   return true;

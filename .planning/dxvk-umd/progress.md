@@ -1,52 +1,71 @@
 # Current continuation checkpoint (2026-10-08)
 
-Published source d650fe675400abf2adb69ed1e450e5006959a9c8 triggered one NativeUMD
-run, 37721066402, and all six jobs succeeded. ROOT 2d8db135 independently
-reopened five ZIPs / 9,503 members, 989 Git blobs / five gitlinks, four canonical
-source receipts and 135 closed native fixture receipts. All 18 cube and three
-volume reviews passed. New Resolve pixels passed for x86/x64; the ARM64 upload
-whitelist omitted its 36 raw originals while retaining the runner's proof and
-stdout. ARM64 Resolve pixel acceptance remains open. Correct the upload paths
-with the next meaningful Blt push; do not rerun or relabel this CI.
+Published source 1b378e61f9b4e852cb3deffc305cc652aabfeafa integrates corrected
+typed DXGI Blt and preserves all45 prior ARM cases/32 shipped fixtures, adding
+one to each (46/33). ROOT b1806c72 joins all10 Blt files to frozen a3 source,
+all current DX8 helpers remain unchanged, and the owned push2821662 closed0.
+Exactly one NativeUMD CI37724958522 runs; five jobs succeeded and ARM runtime
+is pending at the latest original API observation. No redundant push/rerun.
+Two workflow paths now retain actual ARM Resolve and Blt raw originals.
 
-Typed DXGI Blt source a3c7409 corrects the erased-table callback in 97a58e5.
-ROOT db824203 directly rejoins 2,839 originals, 241 Git/dependency files,
-657 compiler inputs, 253 portable source joins, four optimized SDK COFFs and
-47 closed compile/control processes. GCC optimized controls and Clang ASan/
-UBSan each passed 340,240 checks; the independent reader accepted one synthetic
-positive and rejected 18 mutations. All 45 ARM cases / 32 shipped fixtures are
-preserved, with Blt adding one to each. Trunk integration and new native CI are
-next. Real primary/SetDisplayMode work proceeds in a separate worktree; current
-whole-profile, rendering-allocation, gamma and threading gates remain closed.
+Previous d650 CI37721066402 all6 succeeded, but ROOT 2d8db135 accepted ARM
+Resolve only at runner-proof scope because the upload whitelist omitted its
+36 raw originals. Five original ZIPs/9503 members/989 Git blobs/five links,
+four canonical receipts/135 closed native fixtures and18 cube/three volume
+reviews remain accepted; independent x86/x64 Resolve pixels passed. Preserve
+that partial original review and do not relabel missing ARM pixels as accepted.
+New CI46 must retain/review its actual fresh Resolve and Blt originals.
 
-DX8 CPU10 passed its 35 remaining tests without rebuilding CPU09's five COFFs
-and four PEs. ROOT a1d07a8f accepted split originals and release. Fresh native
-AST5/CSharp parser passed; ROOT 852f3d74 accepted the 20 originals and release.
-The admitted manifest dbe5e1a9 changes only ready/native_phase_parse/pending.
-Fresh de72 four-payload staging passed and ROOT 7acf377e accepted 17 originals,
-actual ZIP CRC/hash/PE32/JSON, static34, SYS/desktop continuity and closed release.
-No production module/factory/GPU or default binding was changed by staging.
+Frozen Blt a3c7409 corrects97a58e5's erased-table callback. ROOT db824203 joins
+2839 originals/241 Git+dependency inputs/657 compiler inputs/253 portable
+joins/four optimized x86/x64 COFFs/47 closed children. GCC optimized and Clang
+ASan/UBSan each passed340240 controls; independent synthetic reader accepted
+one positive/rejected18 mutations. Primary work is separate and local: genuine
+primary+staging allocation pair, opcode2 RenderCb synchronized copy and typed
+SetDisplayMode now have four strict optimized SDK COFFs; pixel/retirement
+fixtures and ROOT review are pending. Full mandatory profile/rendering-cache
+VidMm association/primary/gamma/threading hardware acceptance stays open.
 
-Current target owner: /root/verify_cpu09_completion, retaining failed names01
-ownership pending narrow cleanup. Native Start rejected the delegate owner at
-the unchanged invoke script's third whitelist before the task/probe ran.
-Six host operations and the outer closed; Result/collector could not finalize
-an unstarted registered task, so no TAR/probe result or target release exists.
-The concrete cleanup must prove exact task is unrun before removing only that
-task, retain old attempt and establish closure. Fresh names02 uses ROOT principal
-with explicit exclusive delegate, a distinct phase/task root and the same actual
-parser01 proof. No unchanged parser replay or old names/HAL acceptance.
-After cleanup originals/release, execute names02 then genuine HAL enumeration.
-ROOT and both port agents make no target calls during owned work.
+DX8 CPU10, parser01 and fresh de72 payload staging remain ROOT-accepted with
+actual split CPU originals, AST5/Add-Type and17 staged payload originals.
+The current admitted manifest dbe5e1a9 changes only ready/native_phase_parse/
+pending. Names01 was rejected before Start by the invoke script's stale owner
+whitelist. ROOT765cf75d directly joins36 narrow cleanup originals: exact task
+Ready/neverrun267011/XML matched, no execution markers, only that task removed,
+old attempt/helper files unchanged and both native/fresh4host/old6host/both
+outer receipts closed. Failed names01 is preserved and never accepted.
 
-ARM64X CPU01 compiler failed with C1510; the read-only inventory confirmed
-49 unreadable language resources among 137 stable selected files. ROOT c50bdd35
-accepted its 28 originals and six-native/nine-host release. DX11 recovered 33
-exact same-version resources (17 ARM64 and 16 x64) from genuine Microsoft ISO
-range/member originals, with independent proof 9b653e97. Fresh-copy and real
-ARM64/x64 view-build source a1767ca is locally prepared; native copy/build and
-hybrid PE acceptance are pending. The mounted ISO remains unchanged; no whole
-compiler attestation is inferred.
+Fresh names02 ROOT-principal authorization succeeded once. ROOT70ba8098 directly
+rejoins38 originals/TAR290177f7, genuine I386524-byte/260-word name query,
+physical runtime identity, two native children/seven hosts/outer/task removal
+and actual releasebaef3450. The installed DriverStore name remains the old
+viogpud3d_x86.dll. No new default binding or HAL acceptance from names alone.
+
+Actual enumerate01 advanced past the former frontend denial: system
+Direct3DCreate8 object1/adaptercount1, new core CreateDevice forwarded once.
+HAL caps8876086a FAILED because private DXVK Vulkan instance initialization
+failed; exact612-byte log enables only VK_KHR_win32_surface. ROOTb30be87e
+joins41 original files/TARf7f95210, unchanged six production inputs, selector
+restore, failed native probeexit1/collector0/seven transports/outer closed,
+exact task removed and explicit release6572ff3a. No accepted HAL proof exists.
+CPU delegate diagnoses the genuine loader/ICD/environment setup locally,
+without caps bypass, failure relabeling or target replay.
+
+Current exclusive target owner: /root/port_dx11 under actual CPU02 authorization
+3be487b1, following ROOT's accepted enumerate failure release. ROOT and other
+agents remain target idle. Ordered CPU-only attempt: upload/stage/native Parse6
+and Add-Type/copy67/frontend seven-stage build/real ARM64+x64 view eight-stage
+build/collect/transfer/observe/original review/release. Actual copies/compilers/
+links/PEs are pending; no module/frontend/core/probe execution or registration.
+
+ROOT c14006d5 independently replays1949 original-only joins for33 same-version
+resources, including genuine17 native TAR members/32 Microsoft HTTP206 ranges
+for16 x64 resources, exact target-specific clui bytes/versions and native
+inventory continuity. No original D: compiler/ISO change or full ISO hash claim.
+ROOT b69be46f manually reads all CPU02 producers/controllers and joins51 packet
+members/59 frozen references/seven Git inputs/34 readable originals+33 resources
+and selected actual SDK/libraries before authorizing a1767ca. Full compiler
+attestation remainsfalse; actual ARM64X/hybrid and view execution are pending.
 
 The installed viogpud3d default remains unchanged. Actual system-runtime
 DX8-DX11 hardware rendering, Present and DWM/Display+Render are not accepted.

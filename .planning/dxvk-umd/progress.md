@@ -4337,3 +4337,70 @@ collection/release pending. Latest accepted target release is37f91309;
 ROOT/DX8/DX10 target-idle until current attempt originals/release accepted.
 DX8 focused fbd native03 preparation is local only, exact2COFF/2PE and reused
 original guard; public device/pixels/Present/default VM replacement unaccepted.
+
+Published combined3ed22aa soleNativeUMD37739924828 running after owned2967775
+closed0/4.35s, rawstderr139/c2a987f8. ActualGit1011blobs/fivegitlinks.
+ROOT full focusedfbdnative03 recipe review and independent original plan
+reader2968455 closed0; preparedROOTe1a0c408. DX11 currently owns target for
+readonly04; no fbd target authorization until its accepted release.
+
+ROOT C2x64 readonly04 acceptanceb8c9eb9b independently reopens25 originals/
+archive361292df and exact5native9host closed children/releasedc94f2dc.
+Original786checks→ROOT811 only25 preserved-byte equalitychecks; all other
+canonical fields exact. Three matching EWDK14.50 x64-output support originals
+are retained separately from ARM counterparts; no compiler readiness claim.
+ROOT granted one focused nativefbd lifetime03 under b01073d3 after release;
+actual2COFF2PE/reused37bguard/17native7host+outer PASS announced by agent,
+original120TAR087ad61f and canonical d7b4c66d/explicit208deb83 preserved.
+ROOT direct replay is pending; no new HAL/publicdevice/pixel/Present acceptance.
+
+Lifetime phase7d9cfd0 six exact files are locally integrated27545a3 (unpublished),
+ROOTsourcec1c2655f joins six committed raw sources and174 protocol controls/
+unchanged prior HAL canonical replay. New lifetime scope remains separate
+from e3 CPU and37b setup; newfrontendowner must span adapter/device teardown.
+Sole publishedCI3ed22aa/37739924828 is still running. CI50 collector exact
+three scripts reviewed, ready only for actual terminal6/all6SUCCESS;
+ROOT ec failedcanonicalreader2969886 closed0 reproduces310files/92native
+and denies absent rawprimary pixels/currentcore. No extra CI triggered.
+
+CI50 actualfailure: old viewcheck18/119 rejects valid Tex2D.ArraySizeUINT(-1)
+with FirstSlice1/total2. Production now correctly resolves remaining1 under
+local MicrosoftDDI semantics. New typed504views/5184words and independent
+reader, primary24/768/72, and allocation controls pass earlier in actual
+x86/x64 logs; no fresh allsuccesscore. DX11 prepares test-only correction
+preserving positive sentinel and explicit finite-overrun/other negatives.
+Original failurecollection9268files/9051a49b retained; independent whole
+failure source/process/raw review pending. No successcollector execution.
+ROOT nativefbd03 actual120archive/17native7hostouter/explicitrelease is now
+independently accepted b75f199e; canonical replayer2983536 closed0. Newlifetime
+phaseAST5 scope is authorized once0b36d6f7 under latestb75f, targetexclusiveDX8;
+11inputs/new2scripts/main6exact source checked. Names/HAL/publicdevice/pixels/
+Present stillpending. VM defaultMesa unchanged, ordinaryreplacement unaccepted.
+
+ROOT failedCI50 independent replay2987192 closes0; canonical rawreview649624bd
+reopens9268ZIP members/two1011Git+5links source receipts/96native/7collector/
+22new boundedlocalreader children. Independent20 cube/Resolve/Blt/primary/SRV
+readers and immutable volume reads pass. Primary48images/1536pixels and
+SRV1380files/504views/5184words perx86/x64 are retained actualreference scope.
+CurrentCI/core stillfailed; oldviewfailure onlyoriginaljoblogs, no ownerreceipt
+invented. New lifetimeAST parser host2985573 closes0 after35.62s; actual
+AST5/Add-Type original reader/release currently pending, targetexclusiveDX8.
+
+ROOT independently reviewed and integrated the exact test-only7ce8692 as
+c2ff33c472e3501ea6856b293bfd9d445f686883: documented remaining ordinary/MSAA SRV counts now
+positive with exact finite results; all original normalizedGenerateMips/RTV
+sentinel and finite-overrun/zero/first==total negatives retained. Original
+GPU shader/pixel/resolve bodies unchanged. ROOTfrozen62a5412c reproducible:
+two optimized officialSDK COFFs/249 selecteddependencies/10actualclosedlocal
+children and436737GCC+Clang sanitizer controls each. No production/CI count
+change. Combined with localphase27545, one consolidated fresh CI50 pushnext.
+
+Fresh lifetime AST ROOT189076e8 independently joins20originals/2native5host
+and explicit4941d8d6; actualready8d289 changes onlythreefields. ROOT-created
+pending text mismatched namesdescriptor; names01 stoppedbeforeanytransport,
+outer2992654 exit1/.115s. Originalfailure/auth/manifest preserved6d31041c;
+ROOT306061f4 independently accepts zero-target closure. Corrected manifest
+6942f0cc changes onlypending to exactfrozen single-list string. Newnames02
+outer/readers changes onlyauth/manifest/localreceipt paths; unchangedhost13a
+and never-used guestpaths remain. ROOT grantsf2fa7833 names02 once; actual
+host2995479 live, names/KMT proof and release pending. No GPUfactory yet.

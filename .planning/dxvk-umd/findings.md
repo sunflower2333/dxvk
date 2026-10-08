@@ -1,6 +1,68 @@
 # Findings
 
-## Current checkpoint: CI60 failure corrected, EWDK KMD build verified
+## Current checkpoint: five reviewed ports, CI61 failure retained, CPU08 pending
+
+VM default UMD remains Mesa. Ordinary system-runtime DX8-11 draw/readback/Present
+and DWM/Explorer replacement have not passed. Latest hardware-accepted historical
+core remains18452d7/USER06; no failed/new source is promoted to that evidence.
+
+CI61/37772962325 for e7954d7 is terminal FAILURE: identity/shader/ARMbackend pass,
+x86/x64 fail resource-copy-cast-test, ARM runtime is skipped. ROOT3298650/0
+reopens11500 original ZIP members,80 native children,1106 blobs+5links,
+9 GH transports/2 collectors and all completed literal readers. Proof2662711/
+9f176b89 is artifacts/root-CI61-failure-originals-independent-review-01/actual-CI61-failure-originals-reviewed-01.json.
+Only48 paired copy observations exist; the manifest is empty. Exact failed
+exit is -1073741819, checks9950/callbacks14/HRESULT88760870. The first reversed-X
+public call is located by source CHECK accounting, not a recorded phase trace.
+
+Reviewed source integrated: distanceSO f54ab4a->2e9cd67, minimal harness
+7e91e14->77c0ae6, query-generation prerequisite4551189->9dc3e72,
+actual dumpbin CSR guard100f0ea->ef8af0f, copy fixturee8b0500->4e178f4.
+ROOT3298560/0 joins the distance/query/harness frozen source/compiler/helper
+originals52397/168ce63a; ROOT3302100/0 passes four merged strict O2 official-header
+COFF compilations plus four LLVM reopens102401/1dd56c04. ROOT3327487/0 joins
+both focused failure fixes and genuine originals. New harness is63 native ARM
+cases/50 mandatory/73 complete shipping union; next push is one consolidated
+Native UMD run after CI61 terminal. No workflow activation/manual dispatch.
+
+CPU07 b5ee276 final04 actual stage/native PS5.1 parse/copy pass; five native
+tool stages pass (ARM64 CL/LINK, EC CL, both dumpbins). Producer rejects an
+unprinted archive pathname before hybrid LINK. Actual copied ARM64 helper
+is1136438/e140f4af and has genuine A641 definitions/AntiDependency aliases.
+All189 originals,1366 forensic checks,11 native children and10 host transports
+are closed and reviewed; native_build_passed=false, hybrid/views unattempted.
+ROOT3279723/0 admits only that failed attempt and explicit target release9954eb58.
+Target is now released to ROOT; fresh CPU08 packet from100f0ea is being prepared,
+with identical native15/native6/hybrid19/frontend9/views8 policy. Old attempts
+remain immutable. Corrected target mixed DLL build/load has not passed.
+
+Next work: actual63-case CI outcomes and raw reader admission; CPU08 native
+build and views; ordered predication replay plus retained query generations;
+optional shared primary ownership and full color MSAA regional-copy semantics.
+Ordinary feature masks, full public predication, scanout pair ABI, actual target
+resource/shader/threading coverage and default replacement remain incomplete.
+
+## Previous checkpoint: CI60 correction and KMD build
+
+Active continuation (2026-10-08): actual CI61 x86/x64 have failed
+resource-copy-cast-test at lastError==S_OK line24; ARM backend is still pending.
+Only one Native UMD run37772962325 exists for published e7954d7. Frozen success
+collection remains unexecuted; genuine failure logs are being reviewed before
+any fix. No current core/ordinary-runtime admission is inferred.
+
+ROOT CPU07 final04 preparation independently passed575 checks/113refs
+(actual3265074/0). One-attempt authorization371c8b7d binds the accepted KMD03
+release; actual upload3265998/stage3266673/native parse3267421/copy3268132 pass.
+Actual build3268312 fails, views are stopped; same-attempt collect passes and
+transfer/closure/original review are ongoing under ROOT sole ownership.
+Do not retry CPU07 or change its frozen113 inputs. Exact producer error pending.
+
+Distance SO f54ab4a and minimal harness7e91e14 are frozen for the next batch,
+with63/50/73 source-derived counts; query-generation prerequisite4551189 is
+also frozen. ROOT source review is in progress. Full public predication,
+ordinary DX8-11 draw/readback/Present and Mesa/DWM replacement remain incomplete.
+
+Actual publication: ROOT3247639/0 pushed e7954d7d3a5cb18ecedff7c447e3d1a8529c9a1a once. GHAPI3248247/0 returns exactly one push workflow, Native UMD backend development37772962325, in_progress; raw12682/7ad3fdee. No additional dispatch or workflow activation. CI61 has61 native ARM cases/48 mandatory/71 total shipped fixtures. Target remains released to ROOT while CPU07 packet is prepared.
 
 The default VM UMD is still Mesa. Latest fully accepted core remains18452d7;
 its isolated real-KMT D10/10.1 USER06 draw/readback/Present passed1792 exact

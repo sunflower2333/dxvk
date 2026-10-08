@@ -452,7 +452,7 @@ static void retirement(unsigned point) {
   if (point == 11) lockBeforeAction = retire; // No mapping acquired yet.
   CHECK(f.set(reinterpret_cast<DXGI_DDI_HRESOURCE>(texture.handle.pDrvPrivate)) == DXGI_ERROR_DEVICE_REMOVED);
   if (point == 2) {
-    CHECK(!f.live && owned.size() == 2 && releases == oldReleases && lastError == DXGI_ERROR_DEVICE_REMOVED);
+    CHECK(!f.live && owned.size() == 2 && releases == oldReleases && lastError == D3DDDIERR_DEVICEREMOVED);
     for (const auto& entry : owned) CHECK(!entry.second.mapped);
     runtimeTerminalCleanup(); // Successful callback, status still in flight at DestroyDevice.
   }
@@ -620,7 +620,7 @@ static void terminalUnlockFailures() {
     if (inFlight) unlockAction = [&] { f.retire(); };
     CHECK(f.set(reinterpret_cast<DXGI_DDI_HRESOURCE>(texture.handle.pDrvPrivate)) == (inFlight ? DXGI_ERROR_DEVICE_REMOVED : E_OUTOFMEMORY));
     if (!inFlight) f.retire();
-    CHECK(!f.live && owned.size() == 2 && releases == oldReleases && lastError == DXGI_ERROR_DEVICE_REMOVED);
+    CHECK(!f.live && owned.size() == 2 && releases == oldReleases && lastError == D3DDDIERR_DEVICEREMOVED);
     unsigned mapped = 0; for (const auto& entry : owned) mapped += entry.second.mapped;
     CHECK(mapped == 1);
     unlockResult = S_OK;

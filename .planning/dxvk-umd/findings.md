@@ -68,7 +68,7 @@ HAL caps8876086a FAILED because private DXVK Vulkan instance initialization
 failed; exact612-byte log enables only VK_KHR_win32_surface. ROOTb30be87e
 joins41 original files/TARf7f95210, unchanged six production inputs, selector
 restore, failed native probeexit1/collector0/seven transports/outer closed,
-exact task removed and explicit release6572ff3a. No accepted HAL proof exists.
+exact task removed and explicit release6572ff3a. That failed attempt does not admit HAL; current enum02 is accepted separately below.
 Frozen37b8a2d is integrated locally as0bbdf18 (six exact source files). It
 changes only the owned ICD JSON path to .\\viogpu_gl_vk_x86.dll
 and adds explicit -icd02 candidate/payload pins. ROOT9e67e94a directly rejoins
@@ -99,11 +99,52 @@ remain disabled until their respective actual receipts pass. Old packet01/02
 and unexecuted parser01 recipes stay preserved. No HAL/device/draw/Present/
 default replacement is accepted from staging or synthetic controls.
 
-Consolidated primary939+451, ownedICD37b and phase40d source is ready for one
-necessary NativeUMD push. Existing46 ARM cases/33 shipped fixtures are kept,
-two primary fixtures are added (48/35), and ARM primary raw originals are
-included in the upload whitelist. No dispatch-only or disabled workflow is
-triggered intentionally. New native CI evidence remains pending.
+Consolidated primary939+451, ownedICD37b and phase40d is published as
+ a37c72d3bc9af0f64a57c1cbb034eb9e5dce10d2. Owned push child2922823 closed0;
+only NativeUMD run37733967652 triggered. Terminal result is FAILURE: shader,
+identity and ARM64 build PASS; x64/x86 primary fixture fails at line455 with
+callback status88760870; ARM runtime is SKIPPED. Correct callback uses
+D3DDDIERR_DEVICEREMOVED, while the two fixture comparisons expected DXGI.
+Frozen dc53288 corrects only these two comparisons (455/623); ROOT rejoins379
+originals/273 compiler inputs and optimized x64/x86 COFFs. Direct HRESULT,
+ownership, mapping, release and24image/768pixel/72raw checks stay exact.
+Fresh native execution remains pending the single corrective CI push. Existing46 ARM cases/33
+shipped fixtures stay present and two are added (48/35), with primary raw
+originals in the ARM upload whitelist. No extra CI run or plan-only push.
+
+Fresh current parser02 actually PASS under ROOTc64e8abb. ROOTa1433c3b directly
+replays all20 original TAR members and native02's136 originals; AST5error0,
+unchanged CSharpd8cf, actual2native/5host/outer closed0/drained and release9562969b
+are joined. The three-field manifest admission52f7abd1 changes only ready,
+native_phase_parse and pending; admitted manifest15f40829 keeps all original
+source/binary/CPU/payload scope and no hardware/default admission. Fresh names02
+alone is authorizeda3185558: limited USER current I386524-byte KMT name query,
+two native/seven host/outer/task removal. DX8 agent owns target until same-attempt
+originals and explicit release are ROOT-reviewed; all other agents remain local.
+Fresh current names02 actually PASS; ROOT2c13fdc3 independently replays all38
+originals and the exact166291-byte proofd9dc890e. Genuine I386524-byte/260-word
+query and physical runtime, static34/SYS/desktop, actual2native/7host/outer and
+exact task removal/explicit releasee7ddd36d are accepted.
+
+Fresh genuine system8 HALenum02 actually PASS after ownedICD path repair.
+ROOT6d36b26c independently replays all41 originals and exact177424-byte
+canonicalproofc5f481fd: HALcaps=true, interface8,212capsbytes, internalcoredevice1,
+ownerteardown1, publicCreateDevice/draw/Present=false, initializationRender0.
+Original12814-byte log6c78b49b shows VK_KHR_surface enabled and actual Adreno830
+Turnip26.2.99 device construction with matching LUIDec6b000000000000. Old
+612-byte initialization failure stays immutable. Actual2native/7host/outer
+closed0/drained, task removed and release98cd5faa accepted. Public workloads,
+448offscreen/64Present pixels and default VM replacement remain pending.
+C2 read-only observation01 actually PASS; ROOTb3be5b4f directly replays25
+originals, with only retained-original equality count886-to911 added. All70
+before/after source observations match; genuine msvcdis140.dll,msvcp140_1.dll,
+pgodb140.dll ARM64-output copies are captured. Native5/host9/outer are closed
+and explicit release4c1eeeb5 accepted. No compiler/module/repair/PATH/registry
+or original ISO/EWDK mutation occurred; compiler readiness/load cause remains
+unproved. Target handed to DX8 under ROOT03e15dcf for one frozen offscreen03
+workflow: seven scenes/448readback/noPresent, currentHAL/manifest/staging
+required; native2/host7/outer/task/selector/lifetimes must close before release. New D10 shared-primary and D11 2D SRV
+remaining-range production slices continue locally with all caps closed.
 
 CPU02 actually FAILED at the first recovered resource after17 readable ARM
 copies. ROOTb14c2be1 directly rejoins86 originals/17 unchanged source copies/
@@ -122,9 +163,10 @@ actual build=false. ROOTa0de4e20 accepts seven closed native children/ten
 closed host transports and explicit release1f554914. The ROOT comparison's
 initial check-count mismatch is preserved; fresh scoped review accounts for151
 already-retained original equality checks without changing any raw evidence.
-CPU03 release is historical; latest accepted target release is now staging03
-ROOT32c9f843. Target is idle/ROOT-owned; agents are local-only pending fresh
-parser or compiler-readonly authorization. Local exact CPU03 PE imports reveal
+CPU03 and staging03 releases are historical; latest accepted target release
+is C2 read-only ROOTb3be5b4f; current HAL ROOT6d36 remains workload prerequisite.
+DX8 owns one offscreen-only window under ROOT03e15dcf; DX10/DX11 stay local
+until exact same-attempt closure/release. Local exact CPU03 PE imports reveal
 omitted eager msvcdis140.dll and MSVCP140_1.dll, plus delayed pgodb140.dll;
 actual source readability/search resolution and OS-load cause remain unproved.
 A narrow native read-only dependency capture is being prepared without build,

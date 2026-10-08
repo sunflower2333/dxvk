@@ -1,5 +1,25 @@
 # Findings
 
+Actual SystemD3D8 factory enumeration requires an internal device before HAL
+GetDeviceCaps. Enum08 original113180-byte stdout proves Interface8/69632/flags0
+and obsolete command/list sizes0, with one readonly frontend block8876086a
+and core CreateDevice count0. Adapter/core load succeeded; caps12 was never
+called. The probe's exit0 only records observational enumeration, not HAL
+success; corrected source must fail closed on the requested HAL result and
+explicitly permit only bounded internal construction/teardown. ROOT120c82a6
+retains40 originals; released ROOTd12d1109, targetidle. Real standard entry
+318 includes driver-only FOGINFVF and is being built asde72; next core scope
+must keep original oldd7 and newde72 distinct, with no runtime caps override.
+
+ROOT CI90 original91411b62 joinsfiveZIP/9368members/966Git/fourcanonical and
+120 closed children. All18 cube original readers and3 volume readers pass on
+actual native ARM64/x64/x86 outputs. This establishes controlled new6b/5624
+reference scope and SO/volume CPU oracles, avoiding redundant target WARP/CPU
+attempts. It establishes no Turnip/default runtime or hardware residency.
+Tracked-residency sourcecc andhooksd868 merged locally with untouched contract
+bytes; ROOTd80e5b49 joins72Git/338 original compiler inputs/10optimizedCOFF and
+14 closedchildren/102085 eachASan/UBSan. New43 nativeCI cases remainpending.
+
 2026-10-08 current: the actual I386 name query still selects installed
 viogpud3d_x86.dll. Owned original d7 candidate staging has independently
 passed17-file/4payload provenance and static34/SYS/desktop continuity; ROOT

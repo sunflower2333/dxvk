@@ -1,5 +1,36 @@
 # Progress
 
+2026-10-08 latest: actual enum789c3d73 child0 observationally completes, but
+strict855 original reader rejects before HAL admission. Direct3DCreate8 calls
+one internal CreateDevice with Interface8/version69632/flags0/callbacks1/
+functions1/obsolete buffers0; readonly frontend returns8876086a and forwards
+zero core CreateDevice calls. Core DLL/open succeeded; CAPS12/device/draw/
+Present never reached. Original40 files/TAR309c2bfb/stdout113180 retained;
+ROOT exact reader produces byteidentical120c82a6. ROOTd12d1109 accepts explicit
+release702c0c9d/native2/taskremoved/7host/outer/9localowners absent. No retry.
+EWDK now local-only narrow constructor/teardown/no-draw boundary repair, HAL
+failure exit and real standard entry/new core pins. Oldd7 lacks documented
+FOGINFVF0x2000, but this was not the pre-caps failure cause; prefer newde72core.
+
+CI90 genuine collectorf6c35d07 closed all downloads/logs. ROOT91411b62 directly
+reopens9368 files/fiveZIPs/966Git blobs+5links/fourcanonical/core-private-loader
+configuration and120 closed owned children. Independently repeats18 cube raw
+readers and3 volume arithmetic reviews on actual originals, allPASS. NewARM
+core6279168/d7d71695 is hardware-unrun. Local reader draft incorrectly assumed
+ARM andnonARM fixture sets identical; corrected to exact35 build calls+5cube
+loop and distinct40ARM patterns after inspecting two CPU-only differences.
+No CI/native rerun. Newpublicentry de72dc2 pushedonce/soleCI37711793677 running.
+
+ROOT manually reviewed realresidency/priority sourcecc878273, then original
+501-file TAR/72Git/338compilercopies/10O2COFF/14closedprocesses/rawGCC+Clang
+ASan+UBSan102085 PASS, ROOTd80e5b49. Local reviewer initially assumedO1; actual
+commands showO2, corrected without changing evidence or rerunningcompilation.
+Merge d8689ac retains8exactcc implementation/doc files and6legacy/contract
+files; Meson parse/41prior+2newARMcases43 PASS. Sole conflict was shipping-list,
+resolved exactunion preservingpubliclegacy andaddingbothresidency executables.
+Native43 CI stillpending, no extra push yet. DX10 prepares real shared-resolve
+handoff/pixel/lifetime work in separate branch, gates stillclosed.
+
 2026-10-08 current: original I386 staging underd6cd4674 PASS, original TAR
 63e67db2 has17 files/all4 original payloads. ROOT direct staging reader PASS,
 admission equals46471352 after normalizing only2 CLI-derived relative path

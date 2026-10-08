@@ -82,6 +82,8 @@ ninja -C build-umd src/umd/dxvk-umd-native-entry-test.exe src/umd/dxvk-umd-nativ
 if ($LASTEXITCODE) { throw 'Production native entry/lifetime fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-rotation-test.exe
 if ($LASTEXITCODE) { throw 'Production DXGI rotation fixture build failed' }
+ninja -C build-umd src/umd/dxvk-umd-residency-transaction-test.exe src/umd/dxvk-umd-dxgi-residency-test.exe
+if ($LASTEXITCODE) { throw 'Native DXGI residency and priority fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-volume-policy-test.exe src/umd/dxvk-umd-texture3d-test.exe
 if ($LASTEXITCODE) { throw 'Native volume policy and Texture3D fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-texturecube-test.exe src/umd/dxvk-umd-cube-array-policy-test.exe src/umd/dxvk-umd-cube-array-resource-test.exe src/umd/dxvk-umd-cube-srv-mips-test.exe src/umd/dxvk-umd-cube-array-mips-test.exe
@@ -166,6 +168,14 @@ if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-device-test.exe d3d9-device-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-native-entry-test.exe native-entry-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-native-lifetime-test.exe native-lifetime-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-residency-transaction-test.exe residency-transaction-test
+    if ((Get-Content -LiteralPath (Join-Path $OutputDirectory 'residency-transaction-test.txt') -Raw) -notmatch '(?m)^DXGI residency transaction PASS checks=102085\r?$') {
+        throw 'DXGI residency transaction marker mismatch'
+    }
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-dxgi-residency-test.exe dxgi-residency-test
+    if ((Get-Content -LiteralPath (Join-Path $OutputDirectory 'dxgi-residency-test.txt') -Raw) -notmatch '(?m)^DXGI residency/priority PASS checks=\d+ profiles=6 residency=108 priority=48 releases=36\r?$') {
+        throw 'Typed DXGI residency/priority marker mismatch'
+    }
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-predication-test.exe predication-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-stream-output-test.exe stream-output-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-texture1d-test.exe texture1d-test
@@ -251,7 +261,7 @@ if ($exports -notmatch '\bVioGpuDxvkOpenAdapter10_2ForTest\b') { throw 'Missing 
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bVioGpuDxvkQueryVulkanLoader\b' -or $exports -notmatch '\bVioGpuDxvkOpenAdapter9ForTest\b' -or $exports -notmatch '\bOpenAdapter\b' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bD3D(?:8|9|10|11|12)Create(?:Device|9|8)\b') { throw 'Unexpected native UMD exports' }
 if ($exports -notmatch '\bVioGpuDxvkProbeD3D9BackendForTest\b' -or $exports -match '\bDirect3DCreate(?:8|9)(?:Ex|On12)?\b') { throw 'Unexpected embedded D3D9 exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
-foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-volume-policy-test.exe', 'dxvk-umd-texture3d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d9-public-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-d3d8-system-identity-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe')) {
+foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-volume-policy-test.exe', 'dxvk-umd-texture3d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d9-public-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-d3d8-system-identity-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe', 'dxvk-umd-residency-transaction-test.exe', 'dxvk-umd-dxgi-residency-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
     # Include ARM64 fixtures for execution by the target validation owner.
     $path = Join-Path 'build-umd/src/umd' $name

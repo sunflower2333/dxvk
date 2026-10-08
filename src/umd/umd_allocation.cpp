@@ -1,4 +1,5 @@
 #include "umd_allocation.h"
+#include "umd_residency_transaction.h"
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -6,6 +7,8 @@
 namespace dxvk::umd {
 namespace {
 HRESULT completed(HRESULT hr) { return hr == S_OK || FAILED(hr) ? hr : E_FAIL; }
+static_assert(offsetof(D3DDDI_DEVICECALLBACKS, pfnSetPriorityCb) == 2 * sizeof(PFND3DDDI_ALLOCATECB));
+static_assert(offsetof(D3DDDI_DEVICECALLBACKS, pfnQueryResidencyCb) == 3 * sizeof(PFND3DDDI_ALLOCATECB));
 }
 
 RuntimeAllocation::~RuntimeAllocation() { release(); }
@@ -42,6 +45,9 @@ void RuntimeMemory::initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kern
   m_device = device;
   m_callbacks.pfnAllocateCb = kernel.pfnAllocateCb;
   m_callbacks.pfnDeallocateCb = kernel.pfnDeallocateCb;
+  // Both fields are in the original Vista prefix (slots2/3), not a newer tail.
+  m_callbacks.pfnSetPriorityCb = kernel.pfnSetPriorityCb;
+  m_callbacks.pfnQueryResidencyCb = kernel.pfnQueryResidencyCb;
   m_callbacks.pfnLockCb = kernel.pfnLockCb;
   m_callbacks.pfnUnlockCb = kernel.pfnUnlockCb;
   m_callbacks.pfnCreateContextCb = kernel.pfnCreateContextCb;
@@ -259,6 +265,58 @@ HRESULT RuntimeMemory::uploadImpl(RuntimeAllocation& allocation, const void* pix
 
 HRESULT RuntimeMemory::downloadImpl(RuntimeAllocation& allocation, void* pixels, UINT rowPitch) {
   return transferImpl(allocation, pixels, rowPitch, false);
+}
+
+HRESULT RuntimeMemory::queryResidencyImpl(const D3DKMT_HANDLE* allocations, UINT count,
+    D3DDDI_RESIDENCYSTATUS* output, const std::function<bool()>& live) {
+  if (!m_device || !m_callbacks.pfnQueryResidencyCb) return DXGI_DDI_ERR_UNSUPPORTED;
+  if (m_policyActive) return DXGI_ERROR_WAS_STILL_DRAWING;
+  m_policyActive = true;
+  struct PolicyScope { bool& active; ~PolicyScope() { active = false; } } scope{m_policyActive};
+  return residencyTransaction(allocations, count, output,
+    [&](const D3DKMT_HANDLE* handles, D3DDDI_RESIDENCYSTATUS* staged, UINT size) {
+      HRESULT hr = checkIdentity();
+      if (hr != S_OK) return hr;
+      if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+      D3DDDICB_QUERYRESIDENCY request = {};
+      request.NumAllocations = size; request.HandleList = handles; request.pResidencyStatus = staged;
+      hr = m_callbacks.pfnQueryResidencyCb(m_device, &request);
+      if (hr != S_OK) return hr;
+      if (request.hResource || request.NumAllocations != size || request.HandleList != handles
+          || request.pResidencyStatus != staged) return E_FAIL;
+      return checkIdentity();
+    }, [&] { return !m_removed && (!live || live()); },
+    [](const D3DDDI_RESIDENCYSTATUS& value) {
+      // Validate the raw ABI word before loading it as an enum. A malformed
+      // callback can write a value outside this C++ enum's representable range.
+      static_assert(sizeof(value) == sizeof(UINT));
+      UINT word;
+      std::memcpy(&word, &value, sizeof(word));
+      return word == D3DDDI_RESIDENCYSTATUS_RESIDENTINGPUMEMORY
+        || word == D3DDDI_RESIDENCYSTATUS_RESIDENTINSHAREDMEMORY
+        || word == D3DDDI_RESIDENCYSTATUS_NOTRESIDENT;
+    }, HRESULT(E_INVALIDARG), HRESULT(DXGI_DDI_ERR_UNSUPPORTED), HRESULT(E_FAIL), HRESULT(DXGI_ERROR_DEVICE_REMOVED));
+}
+
+HRESULT RuntimeMemory::setPriorityImpl(D3DKMT_HANDLE allocation, UINT priority,
+    const std::function<bool()>& live) {
+  if (!allocation) return E_INVALIDARG;
+  if (!m_device || !m_callbacks.pfnSetPriorityCb) return DXGI_DDI_ERR_UNSUPPORTED;
+  if (m_policyActive) return DXGI_ERROR_WAS_STILL_DRAWING;
+  m_policyActive = true;
+  struct PolicyScope { bool& active; ~PolicyScope() { active = false; } } scope{m_policyActive};
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+  HRESULT hr = checkIdentity();
+  if (hr != S_OK) return hr;
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+  D3DDDICB_SETPRIORITY request = {};
+  request.NumAllocations = 1; request.HandleList = &allocation; request.pPriorities = &priority;
+  hr = m_callbacks.pfnSetPriorityCb(m_device, &request);
+  if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (hr != S_OK) return completed(hr);
+  if (request.hResource || request.NumAllocations != 1 || request.HandleList != &allocation
+      || request.pPriorities != &priority) return E_FAIL;
+  return checkIdentity();
 }
 
 HRESULT RuntimeMemory::ensureContext() {

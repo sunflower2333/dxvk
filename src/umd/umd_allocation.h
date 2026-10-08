@@ -108,6 +108,16 @@ public:
     D3DKMT_HANDLE kernelResource, const AllocationInfo& info) {
     return call([&] { return adoptImpl(out, allocation, kernelResource, info); });
   }
+  // Raw allocation handles originate from pinned tracked resource owners;
+  // runtime resource cookies and kernel resource handles are never interchanged.
+  HRESULT queryResidency(const D3DKMT_HANDLE* allocations, UINT count,
+    D3DDDI_RESIDENCYSTATUS* output, const std::function<bool()>& live = {}) {
+    return call([&] { return queryResidencyImpl(allocations, count, output, live); });
+  }
+  HRESULT setPriority(D3DKMT_HANDLE allocation, UINT priority,
+    const std::function<bool()>& live = {}) {
+    return call([&] { return setPriorityImpl(allocation, priority, live); });
+  }
   // The pinned allocation may outlive the resource whose runtime storage was
   // reclaimed by a callback. Revalidate that resource before submitting it.
   HRESULT present(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args,
@@ -132,6 +142,9 @@ private:
   HRESULT downloadImpl(RuntimeAllocation& allocation, void* pixels, UINT rowPitch);
   HRESULT transferImpl(RuntimeAllocation& allocation, void* pixels, UINT rowPitch,
     bool publish);
+  HRESULT queryResidencyImpl(const D3DKMT_HANDLE*, UINT, D3DDDI_RESIDENCYSTATUS*,
+    const std::function<bool()>& live);
+  HRESULT setPriorityImpl(D3DKMT_HANDLE, UINT, const std::function<bool()>& live);
   HRESULT presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args,
     const std::function<bool()>& live);
   HRESULT present9Impl(RuntimeAllocation& source, const D3DDDIARG_PRESENT& args,
@@ -151,6 +164,7 @@ private:
   bool m_removed = false;
   bool m_querying = false;
   bool m_releasing9 = false;
+  bool m_policyActive = false;
 };
 
 }

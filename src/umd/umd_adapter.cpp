@@ -140,6 +140,8 @@ HRESULT APIENTRY createDevice(D3D10DDI_HADAPTER handle, D3D10DDIARG_CREATEDEVICE
     D3DDDI_DEVICECALLBACKS kernel = {};
     const auto& source = *args->pKTCallbacks;
     kernel.pfnAllocateCb = source.pfnAllocateCb; kernel.pfnDeallocateCb = source.pfnDeallocateCb;
+    kernel.pfnSetPriorityCb = source.pfnSetPriorityCb;
+    kernel.pfnQueryResidencyCb = source.pfnQueryResidencyCb;
     kernel.pfnLockCb = source.pfnLockCb; kernel.pfnUnlockCb = source.pfnUnlockCb;
     kernel.pfnCreateContextCb = source.pfnCreateContextCb;
     kernel.pfnDestroyContextCb = source.pfnDestroyContextCb;

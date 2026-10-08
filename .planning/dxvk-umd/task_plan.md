@@ -12,10 +12,14 @@ Latest checkpoint: original I386 candidate staging PASS, ROOT independently
 joins17 original files and accepts release19d2203c with ROOT346022f6. Four
 original ZIP payloads at the owned d7 candidate directory remain distinct from
 the new90 core. No module/factory/KMT/GPU/default change during staging.
-ROOT enum prepared4e1daea2 joins12 frozen inputs/unchanged11 native helpers;
-exclusive EWDK authorization789c3d73 now runs ONE genuine system8 enumeration
-attempt against immutable manifest07c, names2bda and staging4647. ROOT/peers
-make no target calls until original evidence and explicit release are reviewed.
+Enumeration789c3d73 completed but HAL caps FAILED: genuine Direct3DCreate8
+internally invokes CreateDevice before any CAPS12; the readonly frontend
+blocked that callback8876086a/core_create_calls0. Original40-file TAR309c2bfb
+and113180-byte stdout retained. ROOT exact frozen failure reader returns
+byteidentical120c82a6 retention; ROOTd12d1109 accepts release702c0c9d with
+native2/host7/outer/all9 local owners absent. Target ROOT idle. EWDK repairs
+the bounded internal-device path locally, with real standard entry/new core,
+explicit no-draw/Present boundary and HAL failure exit, not a caps override.
 
 Standard legacy OpenAdapter source318d330 is integrated locally after ROOT
 manual source review and direct local-original reviewe37e639b:8 Git files,
@@ -23,12 +27,22 @@ manual source review and direct local-original reviewe37e639b:8 Git files,
 reopens and current303 used-header rejoin. This does not attest historical
 whole-toolchain continuity or native execution. All40 existing ARM cases and
 CI90 cube hooks are retained; new Interface8/9 public-entry fixture makes41.
-SoleCI37709079286 on90fb093 completed all6 jobs SUCCESS. Five genuine ZIPs and
-six original logs are being collected before independent raw reference review.
+SoleCI37709079286 on90fb093 completed all6 jobs SUCCESS. ROOT91411b62 accepts
+five genuine ZIPs/9368 original files,966 Git blobs+5gitlinks/fourcanonical,
+120 closed fixtures,18 independent cube raw reviews and3 volume reviews.
+The separate6b/5624 target WARP references and CPU04 oracle-only build are
+superseded for controlled reference scope; actual GPU/ordinary runtime remain
+open. New standard-entry source de72dc2 pushed once, soleCI37711793677 running
+(identity/shader/x86 PASS; other jobs pending at latest live check).
 No default driver registration changed; genuine normal-runtime9/Present and
 ARM64X compatible forwarding remain separate work. DX10 implements tracked
 allocation residency/priority callbacks; primary/Blt/display mode/shared resolve
 and embedded rendering-cache VidMm ownership remain mandatory public gaps.
+Residency sourcecc878273+CI hooksd8689ac now merged locally: ROOTd80e5b49 joins
+501 originals/72Git/338compiler inputs/10 strict O2COFF/14 closed children and
+GCC+Clang ASan/UBSan102085 each. All41 prior ARM cases preserved, new2 make43;
+one shipping-list conflict resolved by exact union. New43 native execution and
+push are pending; unchanged contract bytes do not admit full renderer residency.
 
 Prior names checkpoint: names08 genuine I386 KMT query PASS, ROOT independently
 reopens38 original files with admission2bda9e1c and accepts releasec50a177c

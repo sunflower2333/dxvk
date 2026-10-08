@@ -1,22 +1,55 @@
 # Findings
 
-2026-10-08 live: CI2996 allsixSUCCESS after owned-allocation terminal cleanup;
-actual native44 originals still undergoing independent review. Typed shared
-Resolve source28881e4→0c3d872 is integrated locally with exact production bytes,
-all44 priorcases retained+one45; actual original-reader/sanitizer/compiler proof
-8f427aa1, hardwareandwholeprofile admission remainsclosed. Genuine ordinary
-DX10/11 still require Blt/gamma/primary/display, SHARED+PRESENT ownership,
-rendering allocation association and documented threading/conversion edges.
-ARM64X selected executable pins alone missed language/backend input closure:
-actual first compiler C1510/clui failure produced noCOFF/PE. Preserved original
-39-file failure and ROOT426join/allownedclosure; exact14.50 resource inventory
-must determine cause before a changed producer attempt. Recovered x86 native
-compiler uses matching14.50, so old14.44 resource mixing is unwarranted.
-DX8 CPU09 helper marker failed after real readonlyidentity; use exactactual
-SYSTEM_PROCESS_ID marker and run only35unexecuted fixtures, not rebuild.
-CPU10 actual35PASS and ROOTa1d07a8f release accepted; new3e currentphase
-binding preserves93+5controls, nativeparser/HAL remainpending. No default
-replacement/runtime success inferred.
+Published source d650fe675400abf2adb69ed1e450e5006959a9c8 triggered one NativeUMD
+run, 37721066402, and all six jobs succeeded. ROOT 2d8db135 independently
+reopened five ZIPs / 9,503 members, 989 Git blobs / five gitlinks, four canonical
+source receipts and 135 closed native fixture receipts. All 18 cube and three
+volume reviews passed. New Resolve pixels passed for x86/x64; the ARM64 upload
+whitelist omitted its 36 raw originals while retaining the runner's proof and
+stdout. ARM64 Resolve pixel acceptance remains open. Correct the upload paths
+with the next meaningful Blt push; do not rerun or relabel this CI.
+
+Typed DXGI Blt source a3c7409 corrects the erased-table callback in 97a58e5.
+ROOT db824203 directly rejoins 2,839 originals, 241 Git/dependency files,
+657 compiler inputs, 253 portable source joins, four optimized SDK COFFs and
+47 closed compile/control processes. GCC optimized controls and Clang ASan/
+UBSan each passed 340,240 checks; the independent reader accepted one synthetic
+positive and rejected 18 mutations. All 45 ARM cases / 32 shipped fixtures are
+preserved, with Blt adding one to each. Trunk integration and new native CI are
+next. Real primary/SetDisplayMode work proceeds in a separate worktree; current
+whole-profile, rendering-allocation, gamma and threading gates remain closed.
+
+DX8 CPU10 passed its 35 remaining tests without rebuilding CPU09's five COFFs
+and four PEs. ROOT a1d07a8f accepted split originals and release. Fresh native
+AST5/CSharp parser passed; ROOT 852f3d74 accepted the 20 originals and release.
+The admitted manifest dbe5e1a9 changes only ready/native_phase_parse/pending.
+Fresh de72 four-payload staging passed and ROOT 7acf377e accepted 17 originals,
+actual ZIP CRC/hash/PE32/JSON, static34, SYS/desktop continuity and closed release.
+No production module/factory/GPU or default binding was changed by staging.
+
+Current target owner: /root/verify_cpu09_completion, retaining failed names01
+ownership pending narrow cleanup. Native Start rejected the delegate owner at
+the unchanged invoke script's third whitelist before the task/probe ran.
+Six host operations and the outer closed; Result/collector could not finalize
+an unstarted registered task, so no TAR/probe result or target release exists.
+The concrete cleanup must prove exact task is unrun before removing only that
+task, retain old attempt and establish closure. Fresh names02 uses ROOT principal
+with explicit exclusive delegate, a distinct phase/task root and the same actual
+parser01 proof. No unchanged parser replay or old names/HAL acceptance.
+After cleanup originals/release, execute names02 then genuine HAL enumeration.
+ROOT and both port agents make no target calls during owned work.
+
+ARM64X CPU01 compiler failed with C1510; the read-only inventory confirmed
+49 unreadable language resources among 137 stable selected files. ROOT c50bdd35
+accepted its 28 originals and six-native/nine-host release. DX11 recovered 33
+exact same-version resources (17 ARM64 and 16 x64) from genuine Microsoft ISO
+range/member originals, with independent proof 9b653e97. Fresh-copy and real
+ARM64/x64 view-build source a1767ca is locally prepared; native copy/build and
+hybrid PE acceptance are pending. The mounted ISO remains unchanged; no whole
+compiler attestation is inferred.
+
+The installed viogpud3d default remains unchanged. Actual system-runtime
+DX8-DX11 hardware rendering, Present and DWM/Display+Render are not accepted.
 
 Actual SystemD3D8 factory enumeration requires an internal device before HAL
 GetDeviceCaps. Enum08 original113180-byte stdout proves Interface8/69632/flags0

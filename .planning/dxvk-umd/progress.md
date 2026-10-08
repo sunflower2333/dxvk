@@ -1,42 +1,55 @@
 # Current continuation checkpoint (2026-10-08)
 
-Published main2996a6139c5911ba878096a258d214ec499e8034 soleCI37718012323
-completed allsixSUCCESS. ROOTf549b652 rejoinsfiveZIP/9416originalmembers,
-985Git+5links/fourcanonical/132closed actualnativefixtures plus18cube and
-threevolume originalreaders, allPASS; collectioneb54909f closesallhostchildren.
-No redundant workflow or oldCI retry. Main0c3d872 locally adds typed DXGI1.1
-shared-resource Resolve from frozen28881e4: ROOT8f427aa1 directly joins1160
-original members/78Git/321compiler/26closed local children/fourstrictCOFF and
-allreadercontrols. Main exact frozen production bytes and all44 prior ARM
-patterns preserved+Resolve45; shipping31+Resolve32 and helper2996 unchanged.
-Next meaningful push is this reviewed newResolve slice afterCI44 originals.
+Published source d650fe675400abf2adb69ed1e450e5006959a9c8 triggered one NativeUMD
+run, 37721066402, and all six jobs succeeded. ROOT 2d8db135 independently
+reopened five ZIPs / 9,503 members, 989 Git blobs / five gitlinks, four canonical
+source receipts and 135 closed native fixture receipts. All 18 cube and three
+volume reviews passed. New Resolve pixels passed for x86/x64; the ARM64 upload
+whitelist omitted its 36 raw originals while retaining the runner's proof and
+stdout. ARM64 Resolve pixel acceptance remains open. Correct the upload paths
+with the next meaningful Blt push; do not rerun or relabel this CI.
 
-CPU09 actualfiveI386COFF/fourPE and16closed native children retained after
-stale diagnostic-marker failure; original122-fileTAR9ab98459 and bounded
-same-attempt posthash preserve source35/compiler575/SDK13/lib9/state. ROOT
-e8b23fbe accepts failed release. Marker-only e5bfaf→2996a61 matches actual
-8356-byte readonly trace, five exactpatterns/threephysicalpairs/sixcloses.
-ROOTfd122859 reopens complete prepared completion-only packet: no unchanged
-compile/diagnostic replay. ActualCPU10 completedPASS underauth40617663; ROOTa1d07a8f reopens96+122
-originals and accepts35fixtures/parent/collector/sevenhost/outer closure.
-Policy503/callback77/typeddenial6/CLI32 pass; source35/compiler575/SDK13/lib9
-outputs9/staticstate unchanged; originalCPU09 failure remainsFAIL. TargetROOTidle.
-Source3e750a3→1c96b3f binds actualsplitCPU and freshde72phasepipeline; ROOT
-8e2a0201 joins6frozenGit/current98controls withall93oldretained. Newnative
-AST5/parser, genuinefreshnames/HAL/offscreen/Present remainpending. Original
-de72stagingpreparedROOTb5b972bc joins5TAR/4originalZIPpayloads, no targetstaging.
+Typed DXGI Blt source a3c7409 corrects the erased-table callback in 97a58e5.
+ROOT db824203 directly rejoins 2,839 originals, 241 Git/dependency files,
+657 compiler inputs, 253 portable source joins, four optimized SDK COFFs and
+47 closed compile/control processes. GCC optimized controls and Clang ASan/
+UBSan each passed 340,240 checks; the independent reader accepted one synthetic
+positive and rejected 18 mutations. All 45 ARM cases / 32 shipped fixtures are
+preserved, with Blt adding one to each. Trunk integration and new native CI are
+next. Real primary/SetDisplayMode work proceeds in a separate worktree; current
+whole-profile, rendering-allocation, gamma and threading gates remain closed.
 
-ARM64X CPU01 failed first exact14.50 Hostarm64/arm64 compile exit2/C1510
-Cannot load language resource clui.dll. NoCOFF/PE/link/EC stage. Original39-file
-TAR111d0914 and selected45tool/header/library beforeafter retained; ROOTdirect
-e433c1ca reopens426 joins, sixnative/ninehost closure and explicitrelease
-acceptedc8f3bc9f. Full compiler/language/backend inputs were not attested.
-DX11 locally prepares exact14.50 resource inventory and genuine ARM/x64 view
-controls; no unchanged retry or mixed14.44 input. Next readonly toolchain inventory awaits concretehostrecipe/admission.
-DX10 separately implements real DXGI Blt; documented primary/display/shared/
-rendererallocation/threading/conversion gaps keep normal10/11 gates closed.
-Default installed viogpud3d line unchanged; genuineHAL/offscreen/Present and
-ordinary-runtime8-11/Display+Render acceptance remain open.
+DX8 CPU10 passed its 35 remaining tests without rebuilding CPU09's five COFFs
+and four PEs. ROOT a1d07a8f accepted split originals and release. Fresh native
+AST5/CSharp parser passed; ROOT 852f3d74 accepted the 20 originals and release.
+The admitted manifest dbe5e1a9 changes only ready/native_phase_parse/pending.
+Fresh de72 four-payload staging passed and ROOT 7acf377e accepted 17 originals,
+actual ZIP CRC/hash/PE32/JSON, static34, SYS/desktop continuity and closed release.
+No production module/factory/GPU or default binding was changed by staging.
+
+Current target owner: /root/verify_cpu09_completion, retaining failed names01
+ownership pending narrow cleanup. Native Start rejected the delegate owner at
+the unchanged invoke script's third whitelist before the task/probe ran.
+Six host operations and the outer closed; Result/collector could not finalize
+an unstarted registered task, so no TAR/probe result or target release exists.
+The concrete cleanup must prove exact task is unrun before removing only that
+task, retain old attempt and establish closure. Fresh names02 uses ROOT principal
+with explicit exclusive delegate, a distinct phase/task root and the same actual
+parser01 proof. No unchanged parser replay or old names/HAL acceptance.
+After cleanup originals/release, execute names02 then genuine HAL enumeration.
+ROOT and both port agents make no target calls during owned work.
+
+ARM64X CPU01 compiler failed with C1510; the read-only inventory confirmed
+49 unreadable language resources among 137 stable selected files. ROOT c50bdd35
+accepted its 28 originals and six-native/nine-host release. DX11 recovered 33
+exact same-version resources (17 ARM64 and 16 x64) from genuine Microsoft ISO
+range/member originals, with independent proof 9b653e97. Fresh-copy and real
+ARM64/x64 view-build source a1767ca is locally prepared; native copy/build and
+hybrid PE acceptance are pending. The mounted ISO remains unchanged; no whole
+compiler attestation is inferred.
+
+The installed viogpud3d default remains unchanged. Actual system-runtime
+DX8-DX11 hardware rendering, Present and DWM/Display+Render are not accepted.
 
 # Progress
 

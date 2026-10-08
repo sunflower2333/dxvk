@@ -1,5 +1,29 @@
 # Progress
 
+2026-10-08 current: original I386 staging underd6cd4674 PASS, original TAR
+63e67db2 has17 files/all4 original payloads. ROOT direct staging reader PASS,
+admission equals46471352 after normalizing only2 CLI-derived relative path
+strings; initial exact-string comparison failed locally with no target action.
+ROOT346022f6 accepts release19d2203c/native2/host5/all7local owners absent.
+Default registration/SYS/desktop unchanged. ROOT preparedenum4e1daea2 joins
+12 pins/unchanged11 names helpers/full host recipe/local no-target plan.
+EWDK now exclusively runs one enumerate-only attempt789c3d73, unchanged
+07c/names2bda/staging4647; no CreateDevice/draw/Present/default/VM action.
+
+Standard legacy OpenAdapter318d330 locally merged without conflicts. ROOT
+directsource/localoriginalreviewe37e639b passes8 Git files/2source controls/
+15strictCOFF/5preservedARM failures/6LLVM/current303deps, explicitly no
+historical whole-toolchain or native runtime claim. Actual merged Meson parse
+PASS, exact5 implementation/doc files preserved, all40 previous ARM cases plus
+new public-entry case41 and both public cube hooks retained. CI37709079286
+at90fb093 all6 SUCCESS; original fiveZIP/sixlog collector running locally.
+DX11 separate deployment/probe branch prepares unmodified normal System32
+D3D9 path and registry-kind-preserving conditional rollback. Genuine ARM64X
+frontend remains required for shared ARM64/x64 slot; default replacement open.
+DX10 residency/priority slice remainslocal and keeps ordinary modern gates
+closed while primary/Blt/mode/shared resolve/render allocation ownership gaps
+are implemented. Full remote acceptance and broader goal remain active.
+
 2026-10-08 live DX8 names milestone: CPU08 release368bc2d5 accepted ROOTbbd8a239.
 Native phase parser08 one-attempt auth2ed4101c PASS (AST5/Add-Type,20 originals,
 native2/host5/outer closed); ROOT051b2c65 accepts release6aff3997. Manifest

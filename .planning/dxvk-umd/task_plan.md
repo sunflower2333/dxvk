@@ -8,17 +8,37 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Latest live checkpoint: names08 genuine I386 KMT query PASS, ROOT independently
+Latest checkpoint: original I386 candidate staging PASS, ROOT independently
+joins17 original files and accepts release19d2203c with ROOT346022f6. Four
+original ZIP payloads at the owned d7 candidate directory remain distinct from
+the new90 core. No module/factory/KMT/GPU/default change during staging.
+ROOT enum prepared4e1daea2 joins12 frozen inputs/unchanged11 native helpers;
+exclusive EWDK authorization789c3d73 now runs ONE genuine system8 enumeration
+attempt against immutable manifest07c, names2bda and staging4647. ROOT/peers
+make no target calls until original evidence and explicit release are reviewed.
+
+Standard legacy OpenAdapter source318d330 is integrated locally after ROOT
+manual source review and direct local-original reviewe37e639b:8 Git files,
+15 successful strict COFFs,5 preserved initial ARM failures,6 original LLVM
+reopens and current303 used-header rejoin. This does not attest historical
+whole-toolchain continuity or native execution. All40 existing ARM cases and
+CI90 cube hooks are retained; new Interface8/9 public-entry fixture makes41.
+SoleCI37709079286 on90fb093 completed all6 jobs SUCCESS. Five genuine ZIPs and
+six original logs are being collected before independent raw reference review.
+No default driver registration changed; genuine normal-runtime9/Present and
+ARM64X compatible forwarding remain separate work. DX10 implements tracked
+allocation residency/priority callbacks; primary/Blt/display mode/shared resolve
+and embedded rendering-cache VidMm ownership remain mandatory public gaps.
+
+Prior names checkpoint: names08 genuine I386 KMT query PASS, ROOT independently
 reopens38 original files with admission2bda9e1c and accepts releasec50a177c
 with ROOTca61a0ff. Actual limitedUSER/session1 query ABI524/260 words/version0
 returns the existing viogpud3d_x86.dll in installed viogpu DriverStore.
 Parser08 native AST5/Add-Type PASS; original20-file TAR39f9ee34 and2 owned
 native children/5host/outer release6aff3997 accepted ROOT051b2c65. The
 admitted manifest07c46de5 changes only ready/native_phase_parse/pending.
-Target ROOT idle; EWDK prepares original four-payload staging and the genuine
-system8 enumeration/offscreen/Present follow-ons. No default binding changed.
-Source90fb093 pushed once; soleCI37709079286 is running. Linux identity and
-shader jobsPASS; three backend jobs pending. Four redundant workflows disabled.
+Four redundant workflows remain disabled. Genuine system8 offscreen/Present
+templates are local and require actual successful prior phase evidence.
 DX11 implements genuine legacy OpenAdapter and documented FOGINFVF mapping;
 DX10 audits ordinary-runtime10/11 admission gaps locally. CPU04 helper delta
 85f9ac8c confirms only separate compile/link and fresh receipt identities, with

@@ -1,5 +1,21 @@
 # Findings
 
+2026-10-08 current: the actual I386 name query still selects installed
+viogpud3d_x86.dll. Owned original d7 candidate staging has independently
+passed17-file/4payload provenance and static34/SYS/desktop continuity; ROOT
+346022f6 accepted release19d2203c. The immutable07c manifest deliberately
+retains payload_staged=false: separate actual staging proof46471352 supplies
+this observation without rewriting prior phase provenance. Enumeration-only
+attempt789c3d73 is the next genuine system8 gate, not default activation.
+Standard public legacy entry318d330 preserves exact Interface8/9 admission and
+adds documented driver-only FOGINFVF0x2000, distinct from public0x10000. ROOT
+local-original source/COFF reviewe37e639b passed; new native public fixture and
+ordinary runtime activation remain separate. New90 soleCI all6 succeeds;
+original payload/raw-word review is pending collection. Modern DXGI residency
+must aggregate real callback residency statuses and query allocations actually
+used for rendering; tracked linear backing alone does not map the separate
+embedded rendering cache or close normal runtime admission.
+
 The actual names08 KMT result is the installed Mesa-era viogpud3d_x86.dll
 under viogpuwddm.inf_arm64_46d4547d492b1e80. The query now proves the native
 I386 ABI and selected adapter identity; it does not replace that binding or

@@ -105,6 +105,12 @@ umd_d3d9_adapter_test = executable('dxvk-umd-d3d9-adapter-test',
   '../../tests/umd-d3d9-adapter.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d8_compat.cpp', 'umd_runtime_query.cpp',
 )
 
+# Run the full guarded handshake suite through the genuine runtime export.
+umd_d3d9_public_adapter_test = executable('dxvk-umd-d3d9-public-adapter-test',
+  '../../tests/umd-d3d9-adapter.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d8_compat.cpp', 'umd_runtime_query.cpp',
+  cpp_args : ['-DVIOGPU_DXVK_PUBLIC_LEGACY_ENTRY=1'],
+)
+
 umd_d3d9_device_test = executable('dxvk-umd-d3d9-device-test',
   '../../tests/umd-d3d9-device.cpp', 'umd_d3d9_adapter.cpp', 'umd_d3d8_compat.cpp', 'umd_d3d9_device.cpp',
   'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp', 'umd_allocation.cpp',

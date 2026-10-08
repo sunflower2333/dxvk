@@ -8,7 +8,23 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Latest checkpoint (2026-10-08): prioritize genuine VM DX8/DX9 enablement,
+Latest live checkpoint: names08 genuine I386 KMT query PASS, ROOT independently
+reopens38 original files with admission2bda9e1c and accepts releasec50a177c
+with ROOTca61a0ff. Actual limitedUSER/session1 query ABI524/260 words/version0
+returns the existing viogpud3d_x86.dll in installed viogpu DriverStore.
+Parser08 native AST5/Add-Type PASS; original20-file TAR39f9ee34 and2 owned
+native children/5host/outer release6aff3997 accepted ROOT051b2c65. The
+admitted manifest07c46de5 changes only ready/native_phase_parse/pending.
+Target ROOT idle; EWDK prepares original four-payload staging and the genuine
+system8 enumeration/offscreen/Present follow-ons. No default binding changed.
+Source90fb093 pushed once; soleCI37709079286 is running. Linux identity and
+shader jobsPASS; three backend jobs pending. Four redundant workflows disabled.
+DX11 implements genuine legacy OpenAdapter and documented FOGINFVF mapping;
+DX10 audits ordinary-runtime10/11 admission gaps locally. CPU04 helper delta
+85f9ac8c confirms only separate compile/link and fresh receipt identities, with
+all25 sources/11libraries/oracles unchanged; owned/native review remainspending.
+
+Prior integration checkpoint (2026-10-08): prioritize genuine VM DX8/DX9 enablement,
 following the user's observation that the default runtime is not replaced.
 EWDK exclusively owns target CPU08 under authorization16e1ff88. Actual native
 parser/build/collection and all7 host transports have completed successfully.

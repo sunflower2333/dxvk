@@ -1,5 +1,22 @@
 # Progress
 
+2026-10-08 live DX8 names milestone: CPU08 release368bc2d5 accepted ROOTbbd8a239.
+Native phase parser08 one-attempt auth2ed4101c PASS (AST5/Add-Type,20 originals,
+native2/host5/outer closed); ROOT051b2c65 accepts release6aff3997. Manifest
+07c46de5 admits only ready/native_phase_parse/pending. Names one-attempt
+auth78235c19 PASS under actual limitedUSER/session1: I386 KMT ec6b/source0,
+ABI524/260 words/version0, exact actual DriverStore viogpud3d_x86.dll.
+ROOT independent frozen855 archive reader returns byteidentical admission
+2bda9e1c on38 original files/TARc4077d19; ROOTca61a0ff accepts releasec50a177c
+with probe/task/collector/7host/outer closure. No factory/core/render/Present
+yet. EWDK prepares original payload staging and next runtime phases locally.
+Single push90fb093 launched onlyCI37709079286; Linux andshader alreadyPASS,
+three architecture backends pending. CPU04 helper-only ROOTdelta85f9ac8c PASS;
+local review drafts failed from substring/slice mistakes before proof output,
+corrected after inspecting actual source; no target retry or mutation.
+DX10 local audit now targets ordinary-runtime10/11 admission. DX11 owns
+normal legacy OpenAdapter and documented fog-cap mapping implementation.
+
 2026-10-08 current continuation: prioritize actual VM DX8/DX9 enablement.
 CPU08 native parser/build/collector and7 host transports all0; ROOT945dba7b
 directly rejoins107 original TAR files,21 sources,4I386COFF/3PE,18 closed

@@ -1,5 +1,15 @@
 # Findings
 
+The actual names08 KMT result is the installed Mesa-era viogpud3d_x86.dll
+under viogpuwddm.inf_arm64_46d4547d492b1e80. The query now proves the native
+I386 ABI and selected adapter identity; it does not replace that binding or
+prove Direct3DCreate8/device/draw/Present. ROOT855 reader joins physical DLL
+identities,34 protected registry values,SYS/package/service/PnP/desktop and
+complete task/child/collector originals. Actual name bytes524/words260/version0.
+Local MS SDK d3dhal.h defines driver-only FOGINFVF0x2000, distinct from public
+d3d9caps FOGANDSPECULARALPHA0x10000. Legacy agent is correcting terminology
+and introducing the normal OpenAdapter with existing typed handshake guards.
+
 2026-10-08 actual CPU08 fixes the prior ARM-Windows logical-path mismatch:
 the I386 process's logicalSystem32 and explicitSysWOW64 handles select the
 same mapped SyChpe32 file IDs, full sizes/hashes and selected PE headers for

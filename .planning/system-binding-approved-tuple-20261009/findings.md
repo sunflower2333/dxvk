@@ -1,0 +1,9 @@
+# Findings
+
+- Actual build-native-umd.yml passes viogpu_gl_loader_${arch}.dll, and build-native-umd.ps1 records the source/run,12 configuration source Git rows,5 generated files, private name and original linked core hash. The private loader appends its configured name to the core module directory and has no public fallback.
+- Historical USER06 ICD is220bytes/bd78e20731b52e6d2ded5d1c2ff23eb44127d009a72aaa50ae46a55a57d84dce: format1.0.1/API1.4.354/library_arch64/.\viogpu_gl_vk_arm64.dll. It remains a historical control, never current-core admission.
+- Current source0ccc3a2fb228afd9cb8a224c7aaa473177d56610/run37814911005/attempt1 is published, but actual six-job terminal success/core hash/configuration and ROOT admission remain unavailable. No approved current tuple is fabricated.
+- New Apply-only ROOT-hash-approved tuple joins verified core_production_bindings to exact source/run/config/canonical/core and5configuration originals. Every approved ICD/dependency byte is hashed. CPU metadata helper has no PInvoke/module/core/GPU calls.
+- New exact held-child module census is necessary for frozen8eeb D10, which has no loader/ICD operands/manifest. It requires front/core/configured loader/ICD/explicit loaded dependencies and rejects public fallback/WARP. Census failure still publishes failure-held identity for raw restore/release; final success additionally joins original runner PID/UTC start and both independent positive handles.
+- Same owner/default readonly/API9/9ex/10/11/native slots0/1/2/global lease/rescue/intent/raw6restoration remain. Core/capability/defaultMesa/DWM gates stay unchanged.
+- Corrected producer786593629c373503f708552c541921186f94c9ec probe27414/1622aa1eae8d4e6771fe9cf2c1ecf389202d031802b25f690155a2c94fca9841 retains offscreen D11 contract. Future Present8d0 is a separate explicit attempt; this packet keeps presents0.

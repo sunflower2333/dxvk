@@ -85,6 +85,7 @@ jobs:
             artifacts/*.txt
             artifacts/*.json
             artifacts/*.h
+            artifacts/*-originals/**
             build-umd/meson-logs/*
           if-no-files-found: warn
   shader-cpu:

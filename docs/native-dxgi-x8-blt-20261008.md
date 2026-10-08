@@ -22,7 +22,10 @@ verified. Float and X8 sRGB remain unsupported.
 
 The typed Blt fixture checks the exact X8 plan plus ten rejected
 conversion/resolve/format/shape/flag plans, including unchanged output on
-failure. The existing opened-primary fixture remains byte-identical: all
+failure. The existing opened-primary fixture's only change is a failure-only
+constructor diagnostic with format, opened/staging/presentable state and
+HRESULT. All original success conditions and oracles remain byte-identical:
+all
 three formats, 36 images, 1,260 pixels, 90 original files, padded rows, borrowed
 primary ownership, owned staging, callbacks and terminal teardown are still
 required. The current 52 ARM fixtures and 39 shipped fixtures are unchanged.

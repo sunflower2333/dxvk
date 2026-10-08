@@ -278,6 +278,10 @@ struct Texture {
       desc.MapFlags=staging?D3D10_DDI_CPU_ACCESS_READ:0;desc.SampleDesc.Count=1;desc.MipLevels=desc.ArraySize=1;
       f.table.pfnCreateResource(f.device,&desc,handle,{&runtime});
     }
+    if (lastError != S_OK) std::fprintf(stderr,
+      "Opened primary resource failure format=%u foreign=%u staging=%u presentable=%u error=%08lx\n",
+      static_cast<unsigned>(format), unsigned(foreign != nullptr), unsigned(staging), unsigned(presentable),
+      static_cast<unsigned long>(lastError));
     CHECK(lastError==S_OK);
   }
   DXGI_DDI_HRESOURCE dxgi() const { return reinterpret_cast<DXGI_DDI_HRESOURCE>(handle.pDrvPrivate); }

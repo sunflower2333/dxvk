@@ -3920,3 +3920,40 @@ Local cube-array RTV/DSV follow-on remains separate,4strictCOFF passed.
 
 GitHub live:37689715890 stillsuccess at3d397608; fourredundant workflows remain
 disabled_manually and sole matching backend active. No push or dispatch yet.
+
+
+## 2026-10-08 native cube03 failure, local integration, CPU03 handoff
+
+Native cube03 original11 release libraries resolve all linking. The first
+WARP fixture passes initialization/updates/faces but fails scoped-mips at
+subresource4: original wordff040001 versus expectedff000000. Actual fixture
+exit-1073741819 and wrapper1 retained, with failed word/metadata saved before
+CHECK. ROOTefd74363 directly joins archive07584ebd/391files,160Git inputs,
+16AA64COFF+1PE, six helper/two CI AST, all6 retention flags/static34/SYS/desktop,
+12 native children and13 absent host owners. Explicit releaseb3c9278e accepted.
+No automatic retry, source/helper changes or full-suite/hardware admission.
+ROOT preparedbde0c018 had already joined401 package originals and exact03
+helper normalizations. DX10 now owns local GenerateMips follow-on only.
+
+Aggregate086fe36 now contains exact8528+7a47+f96+66b+5624. Merge preserves
+all existing SO/volume/cube probes,27 phase controls and strengthened build/
+prepare helpers; added sharedheader wiring only. Meson/build/shipping40 ARM
+cases pass localda51f591. Typed10.1/11 cube-array target source5624 independently
+reviewed against localMSDDI slice docs: final4 strictx86/x64COFF, rawoptimized
+reopen,26 reader corruption controls and9 frozen source joins, ROOT937634af.
+Native moderncube target references remain pending.
+
+SharedDX8identity66b ROOT94aaa5ea joins889 compileinputs/16 original zero-exit
+commands/5I386COFF3PE and91 controls eachGCC/Clang. CPU08 ROOT0630c8e3 joins21
+source inputs18Git+3licensed bytes against original CPU07TAR and nested
+licensed original source paths, four separately counted registration files,
+frozenhelper Git bytes, hostAST/actual no-targetplan/allpins/manualbuildflow.
+Expected4COFF3PE,91 predicates,4CLI and one three-module/six-file-close readonly
+observation; no frontend/core/KMT/factory/GPU. Native08 remains queued.
+
+ROOT authorizationdd72d77d gives DX11 sole target ownership for one frozen
+CPU03 build-only attempt after acceptedcube03release. It binds prepared
+99d9b777/ownedmanual1bbb7e5a; bounded upload/stage/parse/build/collect/transfer/
+observe, exactfailedattempt collection and independent originals/release.
+ROOT/DX10/EWDK target-idle until explicit accepted release. No push/dispatch;
+lastpublished3d39760 soleCI37689715890 PASS/fourredundant disabled.

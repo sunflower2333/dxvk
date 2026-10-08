@@ -2324,14 +2324,18 @@ static void indexBufferVertexHintContracts() {
     CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &draw) == S_OK);
     // Normal lock works. Binding or drawing from that locked IB still fails,
     // even though the create-time vertex hint was present.
-    mapping.Flags.Value = 4; // DISCARD on the dynamic WriteOnly IB.
-    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && f->bufferFlags == D3DLOCK_DISCARD);
-    const auto draws = f->draws;
-    CHECK(f->table.pfnSetIndices(f->device, &indices) == E_INVALIDARG);
-    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &draw) == E_INVALIDARG && f->draws == draws);
-    D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = index;
-    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
-    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &draw) == S_OK);
+    for (const DWORD lockFlags : {D3DLOCK_DISCARD, D3DLOCK_NOOVERWRITE}) {
+      mapping.Flags.Value = 0;
+      mapping.Flags.Discard = lockFlags == D3DLOCK_DISCARD;
+      mapping.Flags.NoOverwrite = lockFlags == D3DLOCK_NOOVERWRITE;
+      CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && f->bufferFlags == lockFlags);
+      const auto draws = f->draws;
+      CHECK(f->table.pfnSetIndices(f->device, &indices) == E_INVALIDARG);
+      CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &draw) == E_INVALIDARG && f->draws == draws);
+      D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = index;
+      CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+      CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &draw) == S_OK);
+    }
     CHECK(f->table.pfnDestroyResource(f->device, index) == S_OK);
     closeDevice(); closeAdapter();
     CHECK(f->bufferCreates == f->bufferCloses && f->bufferLocks == f->bufferUnlocks);

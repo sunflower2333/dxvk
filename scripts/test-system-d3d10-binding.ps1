@@ -40,6 +40,9 @@ function Held-ModuleCensus($Child,$Value) {
         if ([IO.Path]::GetFileName($file.Path) -iin $selectedNames) { $file.Bytes=(Get-Item -LiteralPath $file.Path).Length; $file.Sha256=Hash $file.Path }
         $actual.Add($file)
     }
+    # Retain actual paths even if strict module selection rejects a fallback.
+    # This pending observation never substitutes for the completed census.
+    Write-Json (Join-Path $Value.output 'held-module-observation.json') ([ordered]@{schema=1;pid=$Child.Id;start_utc=$start;retained_handle=$handle.ToInt64();source_commit=$Value.payload_source;ci_run=$Value.payload_ci_run;approved_payload_sha256=$Value.approved_payload_sha256;required=$required.ToArray();actual=$actual.ToArray();validation_pending=$true;passed=$false;gpu_calls=0;registry_mutations=0;hardware_admission=$false})
     [DxvkApprovedPayloadPolicy01]::RequireModules($required.ToArray(),$actual.ToArray())
     if ($Child.HasExited -or $Child.StartTime.ToUniversalTime().ToString('o') -cne $start -or $Child.MainModule.FileName -ine $Value.probe) { throw 'Original held process changed during module census' }
     [ordered]@{schema=1;pid=$Child.Id;start_utc=$start;retained_handle=$handle.ToInt64();source_commit=$Value.payload_source;ci_run=$Value.payload_ci_run;approved_payload_sha256=$Value.approved_payload_sha256;required=$required.ToArray();actual=$actual.ToArray();passed=$true;gpu_calls=0;registry_mutations=0;hardware_admission=$false}
@@ -358,7 +361,10 @@ if ($Role -ne 'Controller') {
     }
 }
 Add-Type -Path $native
-if ($Role -ceq 'Controller') { [DxvkBindingNative01]::RequireLifecycleMode($RootAuthorizeLifecycleRestart.IsPresent,$ApplyReviewedTuple.IsPresent,$Api,$D11Phase,$WaitForReviewedRefresh.IsPresent) }
+if ($Role -ceq 'Controller') {
+    $lifecyclePhase=$D11Phase; if ($Api -in @('9','9ex')) { $lifecyclePhase=$D9Phase }
+    [DxvkBindingNative01]::RequireLifecycleMode($RootAuthorizeLifecycleRestart.IsPresent,$ApplyReviewedTuple.IsPresent,$Api,$lifecyclePhase,$WaitForReviewedRefresh.IsPresent)
+}
 if ($Role -ne 'Controller') {
     if ($Role -eq 'Watchdog') {
         $owner=$null; $reason='deadline'; $status=[ordered]@{schema=1;role='Watchdog';restored=$false;hardware_admission=$false}
@@ -460,12 +466,12 @@ public static class DxvkBindingAsync01 {
         $stdout=Join-Path $value.output 'probe.stdout.raw'; $stderr=Join-Path $value.output 'probe.stderr.raw'
         $raw=Join-Path $value.output 'originals'
         if ($value.api -ceq '10') {
-            $args='10 '+$value.luid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
+            $args='10 '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
         } elseif ($value.api -ceq '11') {
             $args=$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $value.vulkan_icd)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
         } else {
             # Frozen739de05 argv7 is the loaded ICD DLL, not its JSON manifest.
-            $args=$value.api+' '+$value.d9_phase+' '+$value.luid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
+            $args=$value.api+' '+$value.d9_phase+' '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
         }
         Write-Json (Join-Path $value.output 'probe-start.json') ([ordered]@{executable=$value.probe;arguments=$args;runner_sha256=$value.runner_sha256;utc=[DateTime]::UtcNow.ToString('o')})
         $task=[DxvkBindingAsync01]::Start($value.probe,$args,$value.output,$stdout,$stderr,115000)

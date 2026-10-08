@@ -226,8 +226,11 @@ public static class DxvkBindingNative01 {
         return result;
     }
     public static void RequireLifecycleMode(bool enabled, bool apply, string api, string phase, bool externalWait) {
-        if (enabled && (!apply || api != "11" || phase != "offscreen" || externalWait))
-            throw new InvalidOperationException("Explicit ROOT lifecycle mode requires Apply + Api11/offscreen and excludes external refresh");
+        bool legacy = api == "9" || api == "9ex";
+        bool reviewed = (legacy && (phase == "offscreen" || phase == "present"))
+            || ((api == "10" || api == "11") && phase == "offscreen");
+        if (enabled && (!apply || !reviewed || externalWait))
+            throw new InvalidOperationException("Explicit ROOT lifecycle mode requires Apply + reviewed API/phase and excludes external refresh");
     }
     public static DxvkBindingIdentity01 RuntimeIdentity160(byte[] raw, string luid) {
         if (raw == null || raw.Length != 160 || luid == null || luid.Length != 17 || luid[8] != ':' || !BitConverter.IsLittleEndian)

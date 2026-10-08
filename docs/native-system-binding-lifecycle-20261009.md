@@ -7,9 +7,12 @@ Mesa restoration passed. Source audit found OS-managed UMD selection, not a
 KMD filename cache. Cache timing remains an inference from that discrepancy.
 
 The existing owner now has one explicit optional switch,
-`-RootAuthorizeLifecycleRestart`, requiring `-ApplyReviewedTuple`, Api11 and
-D11Phase offscreen. It excludes `-WaitForReviewedRefresh`. Default behavior,
-production UMD/caps and other APIs remain unchanged. There is no second registry
+`-RootAuthorizeLifecycleRestart`, requiring `-ApplyReviewedTuple` and a reviewed
+API/phase. The original D11 restriction remains D11Phase offscreen; the legacy
+extension admits D9/9Ex offscreen or present and the existing D10 route, as
+described in `native-system-legacy-lifecycle-20261009.md`. It excludes
+`-WaitForReviewedRefresh`. Default behavior and production UMD/caps remain
+unchanged. There is no second registry
 owner, KMD install, disable/remove, reboot, image operation or VM operation.
 
 The ordinary rendering attempt is bounded and adapter-wide. It uses the same
@@ -81,7 +84,10 @@ LUIDs separately. No target execution or hardware admission is included here.
 
 Before any lifecycle operation, ROOT must run actual native PS5.1 AST over the
 changed scripts and the16-case actual-source in-memory phase controls, plus
-compile/run the147 pure helper controls with actual selected compiler/reference
+compile/run the163 pure helper controls with actual selected compiler/reference
 before/after pins. CPU controls never call real registry/task/process/PnP/KMT or
-GPU operations. Local strict C# controls passed; native Windows CPU execution
-remains pending. Old default18 phase cases remain unchanged and compatible.
+GPU operations. The frozen D11-only source had147 pure controls; the legacy
+extension adds16 malformed API/phase negatives and actual-source argv/census
+controls. Local strict C# controls passed; native Windows CPU execution of
+this extension remains pending. Old default18 phase cases remain unchanged
+and compatible.

@@ -1,5 +1,6 @@
 # Actual Restore/Cleanup/Settle source with memory/task/process doubles only.
-param([Parameter(Mandatory)][string]$Source,[Parameter(Mandatory)][string]$Output)
+param([Parameter(Mandatory)][string]$Source,[Parameter(Mandatory)][string]$Output,
+ [ValidateSet('9','9ex','10','11')][string]$LifecycleApi='11')
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 if(Test-Path -LiteralPath $Output){throw 'Fresh CPU phase output required'}
 $before=(Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -24,9 +25,10 @@ public static class DxvkBindingNative01 {
 }
 '@
 $checks=0;$rows=[Collections.Generic.List[object]]::new()
+$script:testedSlot=2; if($LifecycleApi -ceq '10'){$script:testedSlot=1}elseif($LifecycleApi -in @('9','9ex')){$script:testedSlot=0}
 function Check([bool]$v){$script:checks++;if(!$v){throw ('CPU lifecycle phase control '+$script:checks)}}
 function Original([byte]$Sentinel){@(0..5|ForEach-Object {$r=[DxvkBindingRawValue01]::new();$r.View=256;$r.Type=7;$r.Name='memory'+$_;$r.Exists=$true;$r.Data=[byte[]]@($Sentinel,$_);$r})}
-function State([bool]$Mesa){$names=[PhaseNames01]::new();$names.Slots=@('mesa0','mesa1',$(if($Mesa){'mesa2'}else{'candidate'}));[ordered]@{identity=[ordered]@{Luid='00000000:000092ab';Generation=2};names=$names;instance='MEMORY-INSTANCE'}}
+function State([bool]$Mesa){$names=[PhaseNames01]::new();$names.Slots=@('mesa0','mesa1','mesa2');if(!$Mesa){$names.Slots[$script:testedSlot]='candidate'};[ordered]@{identity=[ordered]@{Luid='00000000:000092ab';Generation=2};names=$names;instance='MEMORY-INSTANCE'}}
 function Get-ScheduledTask {param([string]$TaskName,[string]$ErrorAction);$script:task}
 function Stop-ScheduledTask {param([string]$TaskName);[DxvkBindingNative01]::Trace.Add('stop-worker');$script:task.State='Ready';$script:stopped=$true}
 function Lifecycle-OriginalProcess([int]$PidValue,[string]$Start,[string]$Executable,[string]$ExpectedHash,[int]$WaitMs,[bool]$Kill){
@@ -48,9 +50,9 @@ foreach($caseName in @('default-path','unused-stale-backup','reverse-success-new
  $script:case=$caseName;$script:stopped=$false;$script:reversed=$false
  [DxvkBindingNative01]::Restores=0;[DxvkBindingNative01]::Trace.Clear()
  $dir=Join-Path $work $caseName;$control=Join-Path $dir 'controller';$outputDir=Join-Path $dir 'worker';New-Item -ItemType Directory -Path $control,$outputDir|Out-Null
- $value=[pscustomobject]@{lifecycle_mode=($caseName -ne 'default-path');control=$control;output=$outputDir;original=(Original 11);owner_pid=$PID;registry_subkey='MEMORY-ONLY';native_slot=2;mutex=('Local\LifecyclePhase-'+[Guid]::NewGuid().ToString('N'));luid='00000000:00006bec';instance='MEMORY-INSTANCE';original_slots=@('mesa0','mesa1','mesa2');desktop_sid='MEMORY-SID';desktop_session=1;task_name='MEMORY-TASK';lifecycle_controller='C:\MEMORY\controller.ps1';lifecycle_powershell='C:\MEMORY\powershell.exe';lifecycle_powershell_sha256=('1'*64);probe='C:\MEMORY\probe.exe';probe_sha256=('2'*64)}
+ $value=[pscustomobject]@{lifecycle_mode=($caseName -ne 'default-path');control=$control;output=$outputDir;original=(Original 11);owner_pid=$PID;registry_subkey='MEMORY-ONLY';native_slot=$script:testedSlot;api=$LifecycleApi;mutex=('Local\LifecyclePhase-'+[Guid]::NewGuid().ToString('N'));luid='00000000:00006bec';instance='MEMORY-INSTANCE';original_slots=@('mesa0','mesa1','mesa2');desktop_sid='MEMORY-SID';desktop_session=1;task_name='MEMORY-TASK';lifecycle_controller='C:\MEMORY\controller.ps1';lifecycle_powershell='C:\MEMORY\powershell.exe';lifecycle_powershell_sha256=('1'*64);probe='C:\MEMORY\probe.exe';probe_sha256=('2'*64)}
  [DxvkBindingNative01]::Current=Original 22
- if($caseName -ne 'unused-stale-backup'){Write-MutationIntent (Join-Path $control 'mutation-intent.json') ([ordered]@{schema=2;owner_pid=$PID;registry_subkey='MEMORY-ONLY';selected_native_slot=2;only_native_tuple_slot=$true})}
+ if($caseName -ne 'unused-stale-backup'){Write-MutationIntent (Join-Path $control 'mutation-intent.json') ([ordered]@{schema=2;owner_pid=$PID;registry_subkey='MEMORY-ONLY';selected_native_slot=$script:testedSlot;only_native_tuple_slot=$true})}
  Write-Json (Join-Path $control 'config.json') ([ordered]@{memory_only=$true})
  $arguments='-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File '+(Quote $value.lifecycle_controller)+' -Role Worker -Config '+(Quote (Join-Path $control 'config.json'))+' -ConfigSha256 '+(Hash (Join-Path $control 'config.json'))
  $script:task=[pscustomobject]@{State='Running';Actions=@([pscustomobject]@{Execute=$value.lifecycle_powershell;Arguments=$arguments})}
@@ -72,5 +74,5 @@ foreach($caseName in @('default-path','unused-stale-backup','reverse-success-new
  $rows.Add([ordered]@{case=$caseName;failed=$failed;trace=$trace;reverse_started=($reverseIndex -ge 0);hardware_admission=$false})
 }
 Check ($before -ceq (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash.ToLowerInvariant())
-[ordered]@{schema='same-owner-lifecycle-memory-phase-controls-v1';passed=$true;source_sha256=$before;cases=$rows;checks=$checks;actual_source_functions=10;native_calls=0;registry_changes=0;task_changes=0;GPU_calls=0;hardware_admission=$false}|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $Output -Encoding UTF8
-'SYSTEM_D11_LIFECYCLE_PHASE_PASS cases=16 checks='+$checks+' native_calls=0 registry_changes=0 gpu_calls=0 hardware_admission=0'
+[ordered]@{schema='same-owner-lifecycle-memory-phase-controls-v1';api=$LifecycleApi;native_slot=$script:testedSlot;passed=$true;source_sha256=$before;cases=$rows;checks=$checks;actual_source_functions=10;native_calls=0;registry_changes=0;task_changes=0;GPU_calls=0;hardware_admission=$false}|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $Output -Encoding UTF8
+'SYSTEM_D11_LIFECYCLE_PHASE_PASS cases=16 checks='+$checks+' api='+$LifecycleApi+' native_slot='+$script:testedSlot+' native_calls=0 registry_changes=0 gpu_calls=0 hardware_admission=0'

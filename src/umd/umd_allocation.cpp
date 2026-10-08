@@ -288,8 +288,8 @@ HRESULT RuntimeMemory::allocatePrimaryImpl(RuntimeAllocation& out, HANDLE resour
     if (transaction->owner && transaction->owner->m_owner == this)
       released = releaseImpl(*transaction->owner);
     else if (transaction->acquired()) {
-      D3DDDICB_DEALLOCATE request = {}; request.hResource = resource;
-      released = completed(m_callbacks.pfnDeallocateCb(m_device, &request));
+      D3DDDICB_DEALLOCATE deallocation = {}; deallocation.hResource = resource;
+      released = completed(m_callbacks.pfnDeallocateCb(m_device, &deallocation));
     }
     return FAILED(released) ? released : DXGI_ERROR_DEVICE_REMOVED;
   }

@@ -275,6 +275,14 @@ umd_bc_update_test = executable('dxvk-umd-bc-update-test',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies)
 
+umd_bc_copy_policy_test = executable('dxvk-umd-bc-copy-policy-test',
+  '../../tests/umd-bc-copy-policy.cpp')
+
+umd_bc_copy_test = executable('dxvk-umd-bc-copy-test',
+  ['../../tests/umd-bc-copy.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
 umd_texture_uav_test = executable('dxvk-umd-texture-uav-test',
   ['../../tests/umd-texture-uav.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],

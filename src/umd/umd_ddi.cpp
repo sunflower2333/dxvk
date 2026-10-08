@@ -1511,8 +1511,8 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info,
     info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
     info.samples = desc.SampleDesc.Count; info.quality = desc.SampleDesc.Quality;
     info.texelBytes = dxvk::umd::transferTexelBytes(info.format);
-    // Block uploads have their own alignment/pitch checks. Keep other callers
-    // closed until they implement their independent block-copy contract.
+    // BC metadata is opt-in. Uploads and regional copies each validate their
+    // own byte span or source/destination block geometry.
     if (allowBlockCompressed) info.blockBytes = dxvk::umd::transferBlockBytes(info.format);
     return info.texelBytes != 0 || info.blockBytes != 0;
   }
@@ -1548,8 +1548,8 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
   // checks; the runtime still supplies valid owned resource handles.
   if (input && (input->left >= input->right || input->top >= input->bottom || input->front >= input->back)) return;
   SubresourceInfo source, destination; D3D11_BOX box;
-  if (!subresourceInfo(get(src), srcIndex, source, false, true)
-      || !subresourceInfo(get(dst), dstIndex, destination, false, true)
+  if (!subresourceInfo(get(src), srcIndex, source, true, true)
+      || !subresourceInfo(get(dst), dstIndex, destination, true, true)
       || source.dimension != destination.dimension || !dxvk::umd::copyFormatsCompatible(destination.format, source.format)
       || ((source.bindings | destination.bindings) & D3D11_BIND_DEPTH_STENCIL)
       || !dxvk::umd::sampleRegionCopyContract({source.width, source.height, source.samples, source.quality},
@@ -1559,6 +1559,11 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
   }
   if (box.left == box.right || box.top == box.bottom || box.front == box.back) return;
   if ((get(src)->backend.Get() == get(dst)->backend.Get() && srcIndex == dstIndex)
+      || ((source.blockBytes || destination.blockBytes)
+        && (source.dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D
+          || source.blockBytes != destination.blockBytes || source.samples != 1 || destination.samples != 1
+          || !dxvk::umd::copyBlockRegion2D(source.width, source.height, destination.width, destination.height,
+              {box.left, box.top, box.right, box.bottom}, x, y, source.blockBytes)))
       || !dxvk::umd::volumeCopyFits({destination.width, destination.height, destination.depth}, x, y, z,
           {box.right - box.left, box.bottom - box.top, box.back - box.front})) {
     device->error(E_INVALIDARG); return;

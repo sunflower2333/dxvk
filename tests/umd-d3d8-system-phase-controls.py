@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Small synthetic protocol controls. No native/runtime/hardware acceptance."""
 import copy
+import hashlib
+import io
 import importlib.util
 import json
 import sys
+import tarfile
+import tempfile
+import zipfile
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -404,5 +409,128 @@ reject('lifetime-build-relabels-old-source', phase.verify_frontend_lifetime_nati
 reject('lifetime-build-lacks-original-guard-admission', phase.verify_frontend_lifetime_native_build,
        {'accepted': True, 'source': phase.LIFETIME_SOURCE}, {'accepted': False, 'source': phase.SETUP_SOURCE})
 assert len(checks) == 174
+
+# The new core is a separately modelled producer. These files and receipts are
+# synthetic controls, never substitute target or CI originals.
+def current_core_model(root, poison=None):
+    source, run = '12' * 20, 42
+    code = (path.parents[1] / 'src/umd/umd_d3d9_device.cpp').read_bytes()
+    core = bytearray(768); core[:2] = b'MZ'; core[0x3c:0x40] = (64).to_bytes(4, 'little')
+    core[64:68] = b'PE\0\0'; core[68:70] = (0x8664 if poison == 'machine' else 0x14c).to_bytes(2, 'little')
+    core[84:86] = (224).to_bytes(2, 'little'); core[88:90] = (0x10b).to_bytes(2, 'little')
+    core[180:184] = (16).to_bytes(4, 'little')
+    if poison == 'signed': core[216:220] = (512).to_bytes(4, 'little')
+    core = bytes(core)
+    def file(name, data):
+        p = root / name; p.write_bytes(data)
+        return {'path': str(p), 'bytes': len(data), 'sha256': phase.digest(data)}
+    def receipt(name, value): return file(name, (json.dumps(value) + '\n').encode())
+    dll = file('core.dll', core)
+    config = {'schema': 'native-umd-build-configuration-v1', 'source_commit': source,
+        'arch': 'x86', 'library_name': 'viogpudxvk.dll', 'vulkan_loader': 'viogpu_gl_loader_x86.dll',
+        'loader_policy': 'module-local-private-no-fallback', 'private_name_present_in_original_dll': True,
+        'all_configuration_sources_match_git': True,
+        'dll': {'member': 'viogpudxvk.dll', 'bytes': len(core), 'sha256': phase.digest(core)},
+        'github': {'sha': source, 'run_id': str(run), 'repository': 'sunflower2333/dxvk'}}
+    canonical = {'source_commit': source, 'run_id': str(run), 'method': 'raw-git-cat-file-batch',
+        'tracked_files': 1, 'sources': [{'path': 'src/umd/umd_d3d9_device.cpp', 'bytes': len(code),
+        'sha256': phase.digest(code), 'git_blob': hashlib.sha1(b'blob ' + str(len(code)).encode() + b'\0' + code).hexdigest()}]}
+    if poison == 'configuration': config['source_commit'] = '34' * 20
+    if poison == 'loader-policy': config['loader_policy'] = 'fallback'
+    if poison == 'canonical-source': canonical['source_commit'] = '34' * 20
+    if poison == 'Git-blob': canonical['sources'][0]['git_blob'] = '34' * 20
+    zpath = root / 'backend.zip'
+    with zipfile.ZipFile(zpath, 'w') as z:
+        z.writestr('viogpudxvk.dll', core if poison != 'ZIP-core' else core + b'x')
+        z.writestr('native-build-configuration.json', json.dumps(config))
+        z.writestr('native-canonical-source.json', json.dumps(canonical))
+    zpin = {'path': str(zpath), 'bytes': zpath.stat().st_size, 'sha256': phase.digest(zpath.read_bytes())}
+    collection = receipt('collection.json', {'collected': True, 'source_commit': source, 'ci_run': run,
+        'original_archives': [{'api_id': 43, 'name': 'dxvk-umd-backend-x86-' + source, 'original_archive': zpin}]})
+    full = {'verified': True, 'source_commit': source, 'ci_run': run, 'native_reference_originals_verified': True,
+        'raw_Git_root_blobs': 1, 'cores': {'x86': dll}, 'collection': collection}
+    if poison == 'ROOT-full-source': full['source_commit'] = '34' * 20
+    if poison == 'ROOT-full-core': full['cores']['x86'] = dict(dll, sha256='34' * 32)
+    admission = {'verified': True, 'root_originals_direct_review': True, 'source_commit': source,
+        'ci_run': run, 'actual_terminal_jobs': 6, 'all_six_success': True,
+        'source_core_input_tuple_accepted': True, 'native_reference_originals_verified': True,
+        'ROOT_original_review': receipt('full.json', full), 'cores': {'x86': dll}, 'original_collection': collection}
+    if poison == 'ROOT-six-jobs': admission['all_six_success'] = False
+    api = {'id': run, 'head_sha': source, 'status': 'completed', 'conclusion': 'success'}
+    if poison == 'API-source': api['head_sha'] = '34' * 20
+    if poison == 'API-failure': api['conclusion'] = 'failure'
+    artifacts = {'artifacts': [{'id': 43, 'name': 'dxvk-umd-backend-x86-' + source, 'expired': False,
+        'workflow_run': {'id': run, 'head_sha': source}}]}
+    if poison == 'artifact-source': artifacts['artifacts'][0]['workflow_run']['head_sha'] = '34' * 20
+    reference = {'schema': 'system-d3d8-current-core-reference-v1', 'verified': True,
+        'root_originals_direct_review': True, 'source_commit': source, 'ci_run': run,
+        'core': {'bytes': len(core), 'sha256': phase.digest(core), 'machine': 0x14c,
+                 'original_ZIP_member': 'viogpudxvk.dll'},
+        'ROOT_source_core_admission': receipt('admission.json', admission),
+        'original_run_API': receipt('run.json', api), 'original_artifacts_API': receipt('artifacts.json', artifacts),
+        'api_artifact_id': 43, 'original_backend_ZIP': zpin, 'index_hint_source_original': file('device.cpp', code),
+        'required_index_hint_source_sha256': phase.digest(code)}
+    m = {'schema': 'system-d3d8-phase-inputs-v1', 'ready': True,
+        'probe_source': phase.LIFETIME_SOURCE, 'core_source': source, 'core_ci_run': run,
+        'native_cpu': {'accepted': True, 'source': phase.PROBE_SOURCE}, 'native_setup': {}, 'native_lifetime': {},
+        'files': [{'role': 'core', 'bytes': len(core), 'sha256': phase.digest(core)}],
+        'current_core': {'accepted': True, 'source': source, 'ci_run': run, 'bytes': len(core),
+                         'sha256': phase.digest(core), 'machine': 0x14c,
+                         'ROOT_reference': receipt('reference.json', reference)}}
+    return m
+
+
+with tempfile.TemporaryDirectory(prefix='dx8-current-core-') as directory:
+    root = Path(directory)
+    model = current_core_model(root)
+    joined = phase.verify_current_core(model)
+    checks.append({'label': 'new-core-ROOT-API-ZIP-Git-configuration-join', 'accepted_synthetic': True})
+    for poison in ('machine', 'signed', 'configuration', 'loader-policy', 'canonical-source', 'Git-blob',
+                   'ZIP-core', 'ROOT-full-source', 'ROOT-full-core', 'ROOT-six-jobs',
+                   'API-source', 'API-failure', 'artifact-source'):
+        reject('current-core-' + poison, phase.verify_current_core, current_core_model(root, poison))
+    model = current_core_model(root)
+    missing = copy.deepcopy(model); missing.pop('current_core')
+    reject('new-core-without-original-reference', phase.verify_current_core, missing)
+    historical = {'core_source': phase.CORE_SOURCE, 'core_ci_run': phase.RUN,
+        'files': [{'role': 'core', 'bytes': phase.PAYLOADS['core'][0], 'sha256': phase.PAYLOADS['core'][1]}]}
+    assert phase.verify_current_core(historical) == core_identity
+    checks.append({'label': 'historical-de72-core-unchanged-without-extension', 'accepted_synthetic': True})
+    # Exercise the actual archive call site up to its next independent gate.
+    # A new tuple must reach that gate; a malformed current reference must fail
+    # earlier. Native fixture and state admission are not mocked as successful.
+    def archive_prefix(manifest):
+        manifest = dict(manifest, loader_source='deliberate-next-gate', icd_source='deliberate-next-gate')
+        raw = json.dumps(manifest).encode(); path = root / 'phase.tar.gz'
+        with tarfile.open(path, 'w:gz') as tar:
+            for name in ('manifest-original.json', 'output/manifest-original.json'):
+                member = tarfile.TarInfo(name); member.size = len(raw); tar.addfile(member, io.BytesIO(raw))
+        manifest_path = root / 'phase-manifest.json'; manifest_path.write_bytes(raw)
+        Path(str(path) + '.stdout.raw').write_bytes(b''); Path(str(path) + '.stderr.raw').write_bytes(b'')
+        process = dict(row, StdoutBytes=0, StderrBytes=0)
+        collection = {'schema': 'system-d3d8-collection-v1', 'completed': True, 'unchanged': True, 'failure': None,
+            'archive_bytes': path.stat().st_size, 'archive_sha256': phase.digest(path.read_bytes()),
+            'process': process, 'runner_sha256': phase.RAW, 'command': {'deadline_ms': 60000},
+            'members': [{'name': n, 'bytes': len(raw), 'sha256': phase.digest(raw)}
+                        for n in ('manifest-original.json', 'output/manifest-original.json')]}
+        collect = root / 'phase-collection.json'; collect.write_text(json.dumps(collection))
+        try: phase.verify_archive(path, collect, manifest_path)
+        except ValueError as error: return str(error)
+        raise AssertionError('synthetic prefix cannot produce native phase acceptance')
+    assert archive_prefix(model) == 'distinct original loader/ICD source mismatch'
+    checks.append({'label': 'actual-archive-caller-joins-new-core-before-next-gate', 'accepted_synthetic': True})
+    assert archive_prefix(missing) == 'historical core identity mismatch'
+    checks.append({'label': 'actual-archive-caller-rejects-unjoined-new-core', 'rejected': True})
+    for mode in ('enumerate', 'offscreen', 'present'):
+        old = held_enumeration if mode == 'enumerate' else with_frontend_owner(pixel_fixture(mode == 'present'))
+        current_text = old.replace(phase.CORE_SOURCE, joined['source']).replace(str(phase.RUN), str(joined['run']))
+        current_text = current_text.replace(phase.CORE_SOURCE[:7], joined['source'][:7])
+        current_text = current_text.replace(phase.PAYLOADS['core'][1], joined['sha256'])
+        result = phase.verify_runtime_stdout(current_text, mode, 'ec6b000000000000', 0, joined, True, frontend_path)
+        assert result['HAL_caps'] if mode == 'enumerate' else result['offscreen_pixels'] == 448
+        checks.append({'label': 'new-core-held-frontend-runtime-dispatch-' + mode, 'accepted_synthetic': True})
+        reject_pixel('new-core-cannot-inherit-old-' + mode, phase.verify_runtime_stdout,
+                     old, mode, 'ec6b000000000000', 0, joined, True, frontend_path)
+
 print(json.dumps({'status': 'PASS', 'scope': 'synthetic names/process/mapped-file/runtime-dispatch/pixel protocol controls only', 'checks': checks,
                   'actual_runtime_calls': 0, 'actual_native_processes': 0, 'GPU_runs': 0, 'target_calls': 0}, indent=2))

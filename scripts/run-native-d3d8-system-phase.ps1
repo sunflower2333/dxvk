@@ -51,7 +51,15 @@ $config=Json $Manifest
 Require ($config.schema -ceq 'system-d3d8-phase-inputs-v1' -and $config.ready) 'Actual native CPU/source inputs are still pending'
 $heldFrontend=$null -ne $config.PSObject.Properties['native_lifetime']
 $probeSource=if ($heldFrontend) {'fbd7afdbdd277d9b2327a13efda5a0aca3905b25'} else {'37b8a2dde5bfe7022ccc676594c1f57621cc8ff9'}
-Require ($config.probe_source -ceq $probeSource -and $config.core_source -ceq 'de72dc2e97bd8e4ea70c5bf89c26918d06065723' -and [string]$config.core_ci_run -ceq '37711793677') 'Exact separate changed harness/production identities required'
+Require ($config.probe_source -ceq $probeSource) 'Exact separate changed harness identity required'
+if ($null -ne $config.PSObject.Properties['current_core']) {
+  $current=$config.current_core;$cores=@($config.files|Where-Object role -CEQ 'core')
+  Require ($heldFrontend -and $current.accepted -and $current.source -ceq $config.core_source -and $current.ci_run -eq $config.core_ci_run -and $current.source -cmatch '^[0-9a-f]{40}$' -and $current.ci_run -gt 0 -and $current.machine -eq 0x14c) 'Separate ROOT-reviewed current core required'
+  Require ($cores.Count -eq 1 -and $current.bytes -eq $cores[0].bytes -and $current.sha256 -ceq $cores[0].sha256 -and $current.sha256 -cmatch '^[0-9a-f]{64}$') 'Current core tuple differs from actual file pin'
+  Require ($current.ROOT_reference.bytes -gt 0 -and $current.ROOT_reference.sha256 -cmatch '^[0-9a-f]{64}$') 'Pinned ROOT current source/core reference required'
+} else {
+  Require ($config.core_source -ceq 'de72dc2e97bd8e4ea70c5bf89c26918d06065723' -and [string]$config.core_ci_run -ceq '37711793677') 'Exact historical core identities required'
+}
 Require ($config.loader_source -ceq '6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7' -and $config.icd_source -ceq '8443c71a5ab32b9d58b904fa51f4bf2f9089db8d') 'Original distinct loader and ICD sources required'
 Require ($config.adapter_luid -ceq 'ec6b000000000000' -and $config.source_id -eq 0) 'Fresh selected adapter identity required'
 Require ($config.native_cpu.accepted -and $config.native_cpu.source -ceq 'e3ac12646a1b55742d575109063ae78507af5cec' -and $config.native_cpu.original_archive_sha256 -ceq '9ab984590d37ba47a761d81ea76fbc42a8ed87666ca67ced1ef8f107e31b7ddc' -and $config.native_cpu.original_proof_sha256 -cmatch '^[0-9a-f]{64}$' -and $config.native_cpu.completion_archive_sha256 -cmatch '^[0-9a-f]{64}$' -and $config.native_cpu.posthash_original_sha256 -ceq 'd9e37a95907f0274ca4b962abba0e6b5052fcd96ea60a69e3a781ba0f74584eb') 'Accepted original base split native CPU proof required'
@@ -80,7 +88,7 @@ if ($Phase -cne 'names') {
   Require ($PriorAdmissionHash -cmatch '^[0-9a-f]{64}$' -and (Hash $PriorAdmission) -ceq $PriorAdmissionHash) 'Independent original previous-phase proof required'
   $previous=Json $PriorAdmission
   $expected=@{enumerate='names';offscreen='enumerate';present='offscreen'}[$Phase]
-  Require ($previous.schema -ceq 'system-d3d8-phase-admission-v1' -and $previous.verified -and $previous.phase -ceq $expected -and $previous.manifest_sha256 -ceq $ManifestHash -and $previous.probe_source -ceq $config.probe_source -and $previous.core_source -ceq $config.core_source) 'Previous independent original admission does not match this phase'
+  Require ($previous.schema -ceq 'system-d3d8-phase-admission-v1' -and $previous.verified -and $previous.phase -ceq $expected -and $previous.manifest_sha256 -ceq $ManifestHash -and $previous.probe_source -ceq $config.probe_source -and $previous.core_source -ceq $config.core_source -and $previous.core_ci_run -eq $config.core_ci_run) 'Previous independent original admission does not match this phase'
   Require ($previous.luid -ceq $config.adapter_luid -and $previous.source -eq $config.source_id -and $previous.sid -ceq $token.sid) 'Previous actual USER/adapter identity mismatch'
   $registered=[string]$previous.registered_I386_filename
   Require ($registered.Length -gt 3 -and $registered.Length -lt 260 -and $registered[1] -ceq ':' -and $registered.IndexOfAny([char[]]@([char]0,[char]10,[char]13,[char]34)) -lt 0) 'Actual original I386 KMT filename required'

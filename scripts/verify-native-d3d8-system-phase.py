@@ -6,6 +6,7 @@ import importlib.util
 import json
 import re
 import tarfile
+import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 
@@ -40,6 +41,107 @@ def digest(data):
 
 def read_json(data):
     return json.loads(data.decode('utf-8-sig'))
+
+
+def pinned_original(pin):
+    require(isinstance(pin, dict) and set(pin) == {'path', 'bytes', 'sha256'}
+        and isinstance(pin['path'], str) and Path(pin['path']).is_absolute()
+        and type(pin['bytes']) is int and pin['bytes'] > 0
+        and re.fullmatch(r'[0-9a-f]{64}', pin['sha256']), 'exact original file pin required')
+    data = Path(pin['path']).read_bytes()
+    require(len(data) == pin['bytes'] and digest(data) == pin['sha256'], 'pinned original changed')
+    return data
+
+
+def verify_current_core(manifest):
+    """Join a new core to originals; retain the exact historical de72 branch."""
+    source, run = manifest['core_source'], manifest['core_ci_run']
+    files = [row for row in manifest['files'] if row['role'] == 'core']
+    require(len(files) == 1, 'one independently pinned current core required')
+    core = files[0]
+    if 'current_core' not in manifest:
+        require(source == CORE_SOURCE and run == RUN and core['bytes'] == PAYLOADS['core'][0]
+            and core['sha256'] == PAYLOADS['core'][1], 'historical core identity mismatch')
+        return {'source': source, 'run': run, 'sha256': core['sha256']}
+    current = manifest['current_core']
+    require('native_lifetime' in manifest and 'native_setup' in manifest
+        and current['accepted'] is True and current['source'] == source and current['ci_run'] == run
+        and re.fullmatch(r'[0-9a-f]{40}', source) and type(run) is int and run > 0
+        and current['bytes'] == core['bytes'] and current['sha256'] == core['sha256']
+        and current['machine'] == 0x14c, 'separate current core identity required')
+    reference = read_json(pinned_original(current['ROOT_reference']))
+    require(reference['schema'] == 'system-d3d8-current-core-reference-v1'
+        and reference['verified'] is True and reference['root_originals_direct_review'] is True
+        and reference['source_commit'] == source and reference['ci_run'] == run,
+        'current core ROOT reference mismatch')
+    expected = {'bytes': core['bytes'], 'sha256': core['sha256'], 'machine': 0x14c,
+                'original_ZIP_member': 'viogpudxvk.dll'}
+    require(reference['core'] == expected, 'ROOT reference selected another core')
+    admission = read_json(pinned_original(reference['ROOT_source_core_admission']))
+    require(admission['verified'] is True and admission['root_originals_direct_review'] is True
+        and admission['source_commit'] == source and admission['ci_run'] == run
+        and admission['actual_terminal_jobs'] == 6 and admission['all_six_success'] is True
+        and admission['source_core_input_tuple_accepted'] is True
+        and admission['native_reference_originals_verified'] is True,
+        'current source/core requires actual six-job ROOT admission')
+    full = read_json(pinned_original(admission['ROOT_original_review']))
+    require(full['verified'] is True and full['source_commit'] == source and full['ci_run'] == run
+        and full['native_reference_originals_verified'] is True and full['raw_Git_root_blobs'] > 0
+        and admission['cores']['x86'] == full['cores']['x86'], 'full ROOT original source/core proof mismatch')
+    selected = admission['cores']['x86']
+    data = pinned_original(selected)
+    require(selected['bytes'] == core['bytes'] and selected['sha256'] == core['sha256'],
+        'selected core differs from full ROOT proof')
+    collection = read_json(pinned_original(admission['original_collection']))
+    require(admission['original_collection'] == full['collection'] and collection['collected'] is True
+        and collection['source_commit'] == source and collection['ci_run'] == run,
+        'ROOT original CI collection mismatch')
+    api = read_json(pinned_original(reference['original_run_API']))
+    require(api['id'] == run and api['head_sha'] == source and api['status'] == 'completed'
+        and api['conclusion'] == 'success', 'actual original successful CI run mismatch')
+    artifacts = read_json(pinned_original(reference['original_artifacts_API']))['artifacts']
+    rows = [row for row in artifacts if row['id'] == reference['api_artifact_id']]
+    require(len(rows) == 1 and rows[0]['name'] == 'dxvk-umd-backend-x86-' + source
+        and rows[0]['expired'] is False and rows[0]['workflow_run']['id'] == run
+        and rows[0]['workflow_run']['head_sha'] == source, 'original selected backend artifact mismatch')
+    archives = [row for row in collection['original_archives'] if row['api_id'] == reference['api_artifact_id']]
+    require(len(archives) == 1 and archives[0]['name'] == rows[0]['name']
+        and archives[0]['original_archive'] == reference['original_backend_ZIP'], 'ROOT collection selected another ZIP')
+    pinned_original(reference['original_backend_ZIP'])
+    with zipfile.ZipFile(reference['original_backend_ZIP']['path']) as archive:
+        require(len(archive.namelist()) == len(set(archive.namelist())), 'duplicate original ZIP member')
+        require(archive.read('viogpudxvk.dll') == data, 'original ZIP CRC/core bytes mismatch')
+        config = read_json(archive.read('native-build-configuration.json'))
+        canonical = read_json(archive.read('native-canonical-source.json'))
+    require(config['schema'] == 'native-umd-build-configuration-v1' and config['source_commit'] == source
+        and config['arch'] == 'x86' and config['library_name'] == 'viogpudxvk.dll'
+        and config['vulkan_loader'] == 'viogpu_gl_loader_x86.dll'
+        and config['loader_policy'] == 'module-local-private-no-fallback'
+        and config['private_name_present_in_original_dll'] is True
+        and config['all_configuration_sources_match_git'] is True
+        and config['dll'] == {'member': 'viogpudxvk.dll', 'bytes': len(data), 'sha256': digest(data)}
+        and config['github']['sha'] == source and config['github']['run_id'] == str(run)
+        and config['github']['repository'] == 'sunflower2333/dxvk', 'native configuration/source/core mismatch')
+    require(canonical['source_commit'] == source and canonical['run_id'] == str(run)
+        and canonical['method'] == 'raw-git-cat-file-batch'
+        and canonical['tracked_files'] == full['raw_Git_root_blobs'], 'native canonical Git source mismatch')
+    changed = pinned_original(reference['index_hint_source_original'])
+    source_rows = [row for row in canonical['sources'] if row['path'] == 'src/umd/umd_d3d9_device.cpp']
+    blob = hashlib.sha1(b'blob ' + str(len(changed)).encode() + b'\0' + changed).hexdigest()
+    require(len(source_rows) == 1 and source_rows[0]['git_blob'] == blob
+        and source_rows[0]['bytes'] == len(changed) and source_rows[0]['sha256'] == digest(changed),
+        'current index hint production source differs from canonical Git blob')
+    # ROOT pins the concrete source change in its reference; an older admitted
+    # CI lacking that exact source is not a substitute for the new core.
+    require(reference['required_index_hint_source_sha256'] == digest(changed), 'required source change mismatch')
+    require(data[:2] == b'MZ' and len(data) >= 64, 'current core DOS header required')
+    offset = int.from_bytes(data[0x3c:0x40], 'little')
+    require(offset >= 64 and offset + 24 + 224 <= len(data)
+        and data[offset:offset+4] == b'PE\0\0' and int.from_bytes(data[offset+4:offset+6], 'little') == 0x14c
+        and int.from_bytes(data[offset+24:offset+26], 'little') == 0x10b
+        and data[offset+24+128:offset+24+136] == b'\0' * 8,
+        'actual unsigned I386 PE32 core required')
+    return {'source': source, 'run': run, 'sha256': core['sha256']}
 
 
 def closed(row, stdout, stderr, deadline_ms=30000, expected_exit=0):
@@ -689,8 +791,10 @@ def verify_archive(archive, collection_path, manifest_path):
     held_frontend = 'native_lifetime' in manifest
     require(not held_frontend or owned_setup, 'frontend lifetime requires original owned ICD setup')
     probe_source = LIFETIME_SOURCE if held_frontend else SETUP_SOURCE if owned_setup else PROBE_SOURCE
-    require(manifest['probe_source'] == probe_source and manifest['native_cpu']['source'] == PROBE_SOURCE
-        and manifest['core_source'] == CORE_SOURCE and manifest['core_ci_run'] == RUN, 'separate base/setup/core source identity mismatch')
+    require(manifest['probe_source'] == probe_source and manifest['native_cpu']['source'] == PROBE_SOURCE,
+        'separate base/setup source identity mismatch')
+    core_identity = verify_current_core(manifest)
+    core_source, core_run = core_identity['source'], core_identity['run']
     require(manifest['loader_source'] == '6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7' and manifest['icd_source'] == '8443c71a5ab32b9d58b904fa51f4bf2f9089db8d', 'distinct original loader/ICD source mismatch')
     require(manifest['adapter_luid'] == 'ec6b000000000000' and manifest['source_id'] == 0, 'fresh selected adapter identity mismatch')
     require(len(manifest['helpers']) == len(HELPERS) and {row['name'] for row in manifest['helpers']} == HELPERS, 'exact frozen helper set required')
@@ -706,7 +810,8 @@ def verify_archive(archive, collection_path, manifest_path):
     task = read_json(contents['task-result-original.json'])
     finalized = read_json(contents['task-collection-original.json'])
     result = read_json(contents['output/result-original.json'])
-    require(result['probe_source'] == probe_source and result['core_source'] == CORE_SOURCE,
+    require(result['probe_source'] == probe_source and result['core_source'] == core_source
+        and result['core_ci_run'] == core_run,
             'actual phase result source identities differ')
     phase = result['phase']
     require(phase in ('names', *PRIOR) and config['phase'] == task['phase'] == finalized['phase'] == phase, 'original phase mismatch')
@@ -789,14 +894,16 @@ def verify_archive(archive, collection_path, manifest_path):
     require(len(manifest['files']) == 6 + len(derived_roles)
         and {row['role'] for row in manifest['files']} == {'probe', 'frontend', *PAYLOADS, *derived_roles}, 'exact phase input definitions required')
     require(files.keys() == ({'probe'} if phase == 'names' else {'probe', 'frontend', *PAYLOADS, *derived_roles}), 'unexpected selected phase input')
+    folder = rf'C:\Users\Public\DxvkD3D8Candidate-{core_source[:7]}-{core_run}' + ('-icd02' if owned_setup else '')
     for row in manifest['files']:
         if row['role'] in PAYLOADS:
             size, sha, name = PAYLOADS[row['role']]
-            folder = r'C:\Users\Public\DxvkD3D8Candidate-de72dc2-37711793677' + ('-icd02' if owned_setup else '')
+            if row['role'] == 'core':
+                size, sha = next(pin['bytes'] for pin in manifest['files'] if pin['role'] == 'core'), core_identity['sha256']
             require(row['bytes'] == size and row['sha256'] == sha and row['path'] == folder + chr(92) + name, 'original I386 payload/config pin mismatch')
         elif row['role'] == 'owned-icd-json':
             require(row['bytes'] == 148 and row['sha256'] == OWNED_ICD_SHA
-                and row['path'] == r'C:\Users\Public\DxvkD3D8Candidate-de72dc2-37711793677-icd02\freedreno_icd_owned_x86.json'
+                and row['path'] == folder + r'\freedreno_icd_owned_x86.json'
                 and row['original_ZIP_member'] is False, 'separately derived ICD input mismatch')
     require({row['role'] for row in result['inputs_before']} == files.keys(), 'exact phase payload set mismatch')
     for row in result['inputs_before']:
@@ -813,18 +920,16 @@ def verify_archive(archive, collection_path, manifest_path):
         prior_bytes = contents['prior-admission-original.json']
         require(prior_bytes == contents['output/prior-admission-original.json'] and digest(prior_bytes) == config['prior_admission_sha256'], 'independent previous-phase proof changed')
         prior = read_json(prior_bytes)
-        require(prior['verified'] and prior['phase'] == PRIOR[phase] and prior['manifest_sha256'] == digest(manifest_bytes) and prior['probe_source'] == probe_source and prior['core_source'] == CORE_SOURCE and prior['luid'] == luid and prior['source'] == source and prior['sid'] == SID, 'previous original admission mismatch')
+        require(prior['verified'] and prior['phase'] == PRIOR[phase] and prior['manifest_sha256'] == digest(manifest_bytes) and prior['probe_source'] == probe_source and prior['core_source'] == core_source and prior['core_ci_run'] == core_run and prior['luid'] == luid and prior['source'] == source and prior['sid'] == SID, 'previous original admission mismatch')
         registered = prior['registered_I386_filename']
         mode = {'enumerate': 'front-enumerate', 'offscreen': 'front-offscreen', 'present': 'front-present'}[phase]
-        arguments = f'--{mode} "{files["frontend"]["path"]}" "{registered}" "{files["core"]["path"]}" {files["core"]["sha256"]} {CORE_SOURCE}'
+        arguments = f'--{mode} "{files["frontend"]["path"]}" "{registered}" "{files["core"]["path"]}" {files["core"]["sha256"]} {core_source}'
         arguments += f' {luid} {source}'
         require(command['arguments'] == arguments, 'exact selected runtime command mismatch')
-        core_identity = {'source': manifest['core_source'], 'run': manifest['core_ci_run'],
-                         'sha256': files['core']['sha256']}
         detail = verify_runtime_stdout(text, phase, luid, source, core_identity, owned_setup,
                                       files['frontend']['path'] if held_frontend else None)
     return {'schema': 'system-d3d8-phase-admission-v1', 'verified': True, 'phase': phase, 'manifest_sha256': digest(manifest_bytes),
-            'probe_source': probe_source, 'core_source': CORE_SOURCE, 'core_ci_run': RUN, 'luid': luid, 'source': source, 'sid': SID,
+            'probe_source': probe_source, 'core_source': core_source, 'core_ci_run': core_run, 'luid': luid, 'source': source, 'sid': SID,
             'registered_I386_filename': registered, 'original_archive_sha256': digest(raw_archive), 'original_archive_bytes': len(raw_archive),
             'original_files': len(contents), 'stdout_sha256': digest(stdout), 'process_sha256': digest(contents['output/process-original.json']),
             'collection_sha256': digest(collection_path.read_bytes()), 'details': detail, 'registration': registration,

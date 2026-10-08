@@ -62,6 +62,8 @@ $cases = [ordered]@{
     'dxvk-umd-dxgi-optional-shared-primary-test.exe' = '(?m)^DXGI optional shared primary PASS checks=\d+ profiles=3 formats=2 images=24 pixels=840 negatives=12 raw_files=120 hardware_admission=0\r?$'
     'dxvk-umd-msaa-copy-policy-test.exe' = '(?m)^MSAA color copy policy PASS checks=236 single_quality_ignored=1 hardware_admission=0\r?$'
     'dxvk-umd-msaa-copy-test.exe' = '(?m)^MSAA color copy PASS checks=\d+ profiles=2 scenes=36 copies=32 snapshots=204 bytes=78336 rejections=84 noops=24 raw_files=612 hardware_admission=0\r?$'
+    'dxvk-umd-bc-copy-policy-test.exe' = '(?m)^BC regional copy policy PASS checks=164777 edge_blocks=1 hardware_admission=0\r?$'
+    'dxvk-umd-bc-copy-test.exe' = '(?m)^BC regional copy PASS checks=\d+ profiles=2 scenes=20 copies=160 rejections=400 noops=120 snapshots=180 subresources=3600 bytes=237312 raw_files=540 hardware_admission=0\r?$'
     'dxvk-umd-compute-container-test.exe' = 'compute container PASS checks=\d+ exact tokens/hash and malformed SM5 controls'
     'dxvk-umd-sm5-container-test.exe' = 'SM5 signatures/interfaces PASS checks=\d+ exact tokens/hash, GS streams, patch factors, typed/depth outputs, native table IDs'
     'dxvk-umd-legacy-api-test.exe' = 'legacy8/9 API bounds PASS checks=\d+; renderer framing follows, admission unchanged'
@@ -104,6 +106,7 @@ $originalDirectories = @{
     'dxvk-umd-d3d10-distance-stream-test.exe' = 'arm64-d3d10-distance-stream-originals'
     'dxvk-umd-dxgi-optional-shared-primary-test.exe' = 'arm64-dxgi-optional-shared-primary-originals'
     'dxvk-umd-msaa-copy-test.exe' = 'arm64-msaa-copy-originals'
+    'dxvk-umd-bc-copy-test.exe' = 'arm64-bc-copy-originals'
     'dxvk-umd-tex2d-srv-remaining-test.exe' = 'arm64-tex2d-srv-remaining-originals'
     'dxvk-umd-dxgi-blt-test.exe' = 'arm64-dxgi-blt-originals'
     'dxvk-umd-dxgi-primary-test.exe' = 'arm64-dxgi-primary-originals'
@@ -179,6 +182,14 @@ foreach ($name in $cases.Keys) {
     } elseif ($name -ceq 'dxvk-umd-msaa-copy-test.exe') {
         & python (Join-Path $PSScriptRoot '../tests/verify-msaa-copy-originals.py') --directory $childDirectory --output (Join-Path $root 'arm64-msaa-copy-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 MSAA color region copy typed/public originals failed' }
+    } elseif ($name -ceq 'dxvk-umd-bc-copy-test.exe') {
+        $bcCopyReview = Join-Path $root 'arm64-bc-copy-originals-verified.json'
+        & python (Join-Path $PSScriptRoot '../tests/verify-bc-copy-originals.py') --directory $childDirectory --output $bcCopyReview
+        if ($LASTEXITCODE) { throw 'Independent ARM64 BC regional copy encoded block originals failed' }
+        $bcCopyVerified = Get-Content -LiteralPath $bcCopyReview -Raw | ConvertFrom-Json
+        if ($bcCopyVerified.verified -ne $true -or $bcCopyVerified.raw_files -ne 540 -or $bcCopyVerified.byte_observations -ne 474624 -or $bcCopyVerified.snapshots -ne 180 -or $bcCopyVerified.subresources -ne 3600 -or $bcCopyVerified.hardware_admission -ne $false -or $bcCopyVerified.registration -ne $false) {
+            throw 'ARM64 BC regional copy independent reader totals or admission flags changed'
+        }
     } elseif ($name -ceq 'dxvk-umd-dxgi-shared-resolve-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-shared-resolve-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-dxgi-shared-resolve-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 shared-resource handoff originals failed' }

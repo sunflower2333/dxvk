@@ -83,6 +83,12 @@ D3D9BufferResource::~D3D9BufferResource() = default;
 D3D9Backend::D3D9Backend() : m_state(std::make_unique<State>()) { }
 D3D9Backend::~D3D9Backend() = default;
 IDirect3DDevice9Ex* D3D9Backend::device() const noexcept { return m_state->d3d.ptr(); }
+HRESULT D3D9Backend::validateDevice(UINT& passes) {
+  DWORD actual = 0;
+  const HRESULT hr = m_state->d3d->ValidateDevice(&actual);
+  if (hr == S_OK) passes = actual;
+  return hr;
+}
 HRESULT D3D9Backend::flush() noexcept {
   try { return m_state->d3d->FlushRuntimeSubmission(); }
   catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }

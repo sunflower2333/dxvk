@@ -116,6 +116,7 @@ public:
 
   IDirect3DDevice9Ex* device() const noexcept;
   HRESULT flush() noexcept;
+  HRESULT validateDevice(UINT& passes);
   HRESULT createBuffer(const D3D9BufferDesc& desc, std::unique_ptr<D3D9BufferResource>& result,
                        const void* initialData = nullptr);
   HRESULT lockBuffer(D3D9BufferResource& buffer, UINT offset, UINT bytes, DWORD flags, void*& data);

@@ -58,6 +58,11 @@ struct Fixture {
   unsigned allocations = 0, deallocations = 0, locks = 0, unlocks = 0;
   std::atomic<unsigned> backends{0}, backendCloses{0}, backendFlushes{0};
   HRESULT queryResult = S_OK, backendResult = S_OK, flushResult = S_OK, destroyResult = S_OK;
+  HRESULT validationResult = S_OK;
+  UINT validationPasses = 1;
+  unsigned validations = 0;
+  bool validationThrowAllocation = false, validationThrowOther = false;
+  std::function<void()> validationHook;
   bool allocationFailure = false, contextFailure = false, nullBackend = false;
   bool throwAllocation = false, throwOther = false, mapped = false, allocated = false;
   bool callbacksValid = true, adapterValid = true;
@@ -559,6 +564,16 @@ dxvk::umd::D3D9Backend::~D3D9Backend() {
   m_state.reset();
 }
 IDirect3DDevice9Ex* dxvk::umd::D3D9Backend::device() const noexcept { return nullptr; }
+HRESULT dxvk::umd::D3D9Backend::validateDevice(UINT& passes) {
+  CHECK(GetCurrentThreadId() != f->caller && passes == 0);
+  ++f->validations;
+  if (f->validationHook) { auto hook = std::move(f->validationHook); hook(); }
+  if (f->validationThrowAllocation) throw std::bad_alloc();
+  if (f->validationThrowOther) throw 1;
+  // Deliberately write even on failure: the DDI must stage, not publish, it.
+  passes = f->validationPasses;
+  return f->validationResult;
+}
 HRESULT dxvk::umd::D3D9Backend::create(const AdapterLuid& luid, const RuntimeBackend* runtime,
                                     std::unique_ptr<D3D9Backend>& output, LegacyD3DApi api) noexcept {
   output.reset();
@@ -965,7 +980,7 @@ static void createDevice() {
   f->device = f->create.hDevice;
   CHECK(f->device && f->device != &f->deviceCookie);
   expected.hDevice = f->device; CHECK(snapshot(f->create) == snapshot(expected));
-  CHECK(f->table.pfnFlush && f->table.pfnDestroyDevice);
+  CHECK(f->table.pfnFlush && f->table.pfnDestroyDevice && f->table.pfnValidateDevice);
   auto expectedTable = D3DDDI_DEVICEFUNCS{};
   // The runtime owns only the negotiated Vista prefix. A current-SDK caller's
   // extra storage is a canary, not an output for newer interface versions.
@@ -1001,6 +1016,7 @@ static void createDevice() {
   expectedTable.pfnSetVertexShaderConstB = f->table.pfnSetVertexShaderConstB;
   expectedTable.pfnSetPixelShaderConstB = f->table.pfnSetPixelShaderConstB;
   expectedTable.pfnSetRenderState = f->table.pfnSetRenderState;
+  expectedTable.pfnValidateDevice = f->table.pfnValidateDevice;
   expectedTable.pfnSetTransform = f->table.pfnSetTransform;
   expectedTable.pfnMultiplyTransform = f->table.pfnMultiplyTransform;
   expectedTable.pfnSetMaterial = f->table.pfnSetMaterial;
@@ -1035,6 +1051,126 @@ static void closeDevice(HRESULT expected = S_OK) {
 static void closeAdapter() {
   CHECK(f->adapterFuncs.pfnCloseAdapter(f->adapter) == S_OK);
   f->adapterValid = false;
+}
+
+static void validationContracts() {
+  for (const auto api : {dxvk::umd::LegacyD3DApi::D3D8, dxvk::umd::LegacyD3DApi::D3D9}) {
+    Fixture fixture; initialize(fixture, api); createDevice();
+    PFND3DDDI_VALIDATEDEVICE validate = f->table.pfnValidateDevice;
+    CHECK(validate);
+    struct Output { UINT before; D3DDDIARG_VALIDATETEXTURESTAGESTATE value; UINT after; };
+    Output output{0x13579bdf, {0x2468ace0}, 0xfedcba98};
+    const auto original = snapshot(output);
+    const unsigned queries = f->queries;
+    for (const HANDLE handle : {HANDLE(nullptr), HANDLE(&f->adapterCookie), HANDLE(&f->deviceCookie)}) {
+      CHECK(validate(handle, &output.value) == E_INVALIDARG);
+      CHECK(snapshot(output) == original);
+    }
+    CHECK(validate(f->device, nullptr) == E_INVALIDARG);
+    CHECK(f->validations == 0 && f->queries == queries);
+    for (const UINT passes : {1u, 3u, 17u, UINT_MAX}) {
+      f->validationPasses = passes;
+      output.value.NumPasses = 0x2468ace0;
+      const auto calls = f->validations;
+      CHECK(validate(f->device, &output.value) == S_OK);
+      CHECK(output.value.NumPasses == passes && f->validations == calls + 1);
+      CHECK(output.before == 0x13579bdf && output.after == 0xfedcba98);
+    }
+    for (const HRESULT hr : {E_OUTOFMEMORY, D3DERR_UNSUPPORTEDTEXTUREFILTER,
+                            D3DERR_TOOMANYOPERATIONS, S_FALSE}) {
+      f->validationResult = hr;
+      output.value.NumPasses = 0x2468ace0;
+      const auto expected = snapshot(output);
+      CHECK(validate(f->device, &output.value) == (hr == S_FALSE ? E_FAIL : hr));
+      CHECK(snapshot(output) == expected);
+    }
+    f->validationResult = S_OK; f->validationPasses = 0;
+    const auto expected = snapshot(output);
+    CHECK(validate(f->device, &output.value) == E_FAIL && snapshot(output) == expected);
+    f->validationPasses = 9;
+    f->validationThrowAllocation = true;
+    CHECK(validate(f->device, &output.value) == E_OUTOFMEMORY && snapshot(output) == expected);
+    f->validationThrowAllocation = false; f->validationThrowOther = true;
+    CHECK(validate(f->device, &output.value) == E_FAIL && snapshot(output) == expected);
+    f->validationThrowOther = false;
+    CHECK(validate(f->device, &output.value) == S_OK && output.value.NumPasses == 9);
+    const HANDLE retired = f->device;
+    closeDevice();
+    output.value.NumPasses = 0x2468ace0;
+    const auto retiredOutput = snapshot(output);
+    const auto calls = f->validations;
+    CHECK(validate(retired, &output.value) == E_INVALIDARG);
+    CHECK(f->validations == calls && snapshot(output) == retiredOutput);
+    closeAdapter();
+  }
+  for (const bool afterValidation : {false, true}) {
+    Fixture fixture; initialize(fixture); createDevice();
+    D3DDDIARG_VALIDATETEXTURESTAGESTATE output{0xcafebabe};
+    auto nested = [&] {
+      CHECK(GetCurrentThreadId() == f->caller);
+      D3DDDIARG_VALIDATETEXTURESTAGESTATE other{0xdeadbeef};
+      CHECK(f->table.pfnValidateDevice(f->device, &other) == D3DERR_WASSTILLDRAWING);
+      CHECK(other.NumPasses == 0xdeadbeef);
+      CHECK(f->table.pfnDestroyDevice(f->device) == D3DERR_WASSTILLDRAWING);
+      std::thread concurrent([&] {
+        D3DDDIARG_VALIDATETEXTURESTAGESTATE value{0xabcdef01};
+        CHECK(f->table.pfnValidateDevice(f->device, &value) == D3DERR_WASSTILLDRAWING);
+        CHECK(value.NumPasses == 0xabcdef01);
+        CHECK(f->table.pfnDestroyDevice(f->device) == D3DERR_WASSTILLDRAWING);
+      });
+      concurrent.join();
+      output.NumPasses = 0x12345678; // This is an output, never a renderer input.
+    };
+    if (afterValidation) f->validationHook = [&] { f->queryHook = nested; };
+    else f->queryHook = nested;
+    f->validationPasses = 23;
+    CHECK(f->table.pfnValidateDevice(f->device, &output) == S_OK);
+    CHECK(output.NumPasses == 23 && f->validations == 1);
+    closeDevice(); closeAdapter();
+  }
+  SYSTEM_INFO system = {}; GetSystemInfo(&system);
+  for (const bool retireAdapter : {false, true}) {
+    Fixture fixture; initialize(fixture); createDevice();
+    auto memory = static_cast<uint8_t*>(VirtualAlloc(nullptr, 2 * size_t(system.dwPageSize),
+      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+    CHECK(memory);
+    DWORD oldProtection = 0;
+    CHECK(VirtualProtect(memory + system.dwPageSize, system.dwPageSize, PAGE_NOACCESS, &oldProtection));
+    auto output = reinterpret_cast<D3DDDIARG_VALIDATETEXTURESTAGESTATE*>(
+      memory + system.dwPageSize - sizeof(D3DDDIARG_VALIDATETEXTURESTAGESTATE));
+    std::memset(reinterpret_cast<uint8_t*>(output) - 16, 0xa5, 16);
+    output->NumPasses = 0xcafebabe;
+    auto inaccessible = reinterpret_cast<D3DDDIARG_VALIDATETEXTURESTAGESTATE*>(memory + system.dwPageSize);
+    CHECK(f->table.pfnValidateDevice(&f->deviceCookie, inaccessible) == E_INVALIDARG);
+    f->validationHook = [&] { f->queryHook = [&] {
+      CHECK(f->table.pfnValidateDevice(f->device, inaccessible) == D3DERR_WASSTILLDRAWING);
+      CHECK(VirtualProtect(memory, system.dwPageSize, PAGE_NOACCESS, &oldProtection));
+      if (retireAdapter) closeAdapter(); else ++f->generation;
+    }; };
+    CHECK(f->table.pfnValidateDevice(f->device, output) == D3DERR_DEVICELOST);
+    CHECK(f->validations == 1);
+    CHECK(VirtualProtect(memory, system.dwPageSize, PAGE_READWRITE, &oldProtection));
+    CHECK(output->NumPasses == 0xcafebabe);
+    for (unsigned i = 0; i < 16; ++i) CHECK(reinterpret_cast<uint8_t*>(output)[int(i) - 16] == 0xa5);
+    const auto calls = f->validations;
+    CHECK(f->table.pfnValidateDevice(f->device, output) == D3DERR_DEVICELOST);
+    CHECK(f->validations == calls && output->NumPasses == 0xcafebabe);
+    closeDevice();
+    if (!retireAdapter) closeAdapter();
+    CHECK(VirtualFree(memory, 0, MEM_RELEASE));
+  }
+  for (const HRESULT hr : {D3DERR_DEVICELOST, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET}) {
+    Fixture fixture; initialize(fixture); createDevice();
+    D3DDDIARG_VALIDATETEXTURESTAGESTATE output{0xcafebabe};
+    f->validationResult = hr;
+    CHECK(f->table.pfnValidateDevice(f->device, &output) == D3DERR_DEVICELOST);
+    CHECK(output.NumPasses == 0xcafebabe && f->validations == 1);
+    f->validationResult = S_OK;
+    CHECK(f->table.pfnValidateDevice(f->device, &output) == D3DERR_DEVICELOST);
+    CHECK(output.NumPasses == 0xcafebabe && f->validations == 1);
+    closeDevice(); closeAdapter();
+  }
+  std::puts("D3D9 ValidateDevice typed forwarding verified backend pass/error, ownership, reentry and atomic output; controlled backend only");
 }
 
 static void deviceFunctionBounds() {
@@ -3722,6 +3858,7 @@ static void legacyDeviceContracts() {
 }
 
 int main() {
+  validationContracts();
   legacyDeviceContracts();
   deviceFunctionBounds();
   creationFlagContracts();

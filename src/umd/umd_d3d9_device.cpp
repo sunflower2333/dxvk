@@ -1168,6 +1168,26 @@ HRESULT APIENTRY setRenderState(HANDLE handle, const D3DDDIARG_RENDERSTATE* args
   });
 }
 
+HRESULT APIENTRY validateDevice(HANDLE handle, D3DDDIARG_VALIDATETEXTURESTAGESTATE* args) {
+  if (!args) return E_INVALIDARG;
+  // NumPasses is an output, not an input to the renderer. Do not expose its
+  // provisional result when validation fails or a pumped callback retires
+  // the original adapter. The device stays serialized through publication.
+  return operation(handle, [&](Device& device) {
+    UINT passes = 0;
+    const HRESULT hr = device.backend->validateDevice(passes);
+    if (hr != S_OK) return hr;
+    if (!passes) return E_FAIL;
+    const auto runtime = device.gpu->backend();
+    const HRESULT status = runtime.create.callbacks->status(runtime.create.owner);
+    if (status != S_OK) return status;
+    std::lock_guard<std::mutex> lock(devicesMutex);
+    if (device.closing || device.removed) return D3DERR_DEVICELOST;
+    args->NumPasses = passes;
+    return S_OK;
+  });
+}
+
 bool transformType(D3DTRANSFORMSTATETYPE type) {
   const UINT value = UINT(type);
   return type == D3DTS_VIEW || type == D3DTS_PROJECTION
@@ -1616,6 +1636,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnSetVertexShaderConstB = vertexConstantsB;
   table.pfnSetPixelShaderConstB = pixelConstantsB;
   table.pfnSetRenderState = setRenderState;
+  table.pfnValidateDevice = validateDevice;
   table.pfnSetTransform = setTransform<D3DDDIARG_SETTRANSFORM, false>;
   table.pfnMultiplyTransform = setTransform<D3DDDIARG_MULTIPLYTRANSFORM, true>;
   table.pfnSetMaterial = setMaterial;

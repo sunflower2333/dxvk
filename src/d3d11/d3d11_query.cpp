@@ -261,11 +261,12 @@ namespace dxvk {
   }
 
 
-  void D3D11Query::DoDeferredEnd() {
+  D3D11QueryTicket D3D11Query::DoDeferredEnd() {
     auto ticket = CreateTicket();
     m_deferredTickets.push(ticket);
     m_sequence.deferEnd();
     m_currentTicket = std::move(ticket);
+    return m_currentTicket;
   }
 
 

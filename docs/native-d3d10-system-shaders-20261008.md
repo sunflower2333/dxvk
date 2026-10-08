@@ -33,13 +33,23 @@ change cannot by itself replace the installed hardware runtime or Mesa.
 
 ## Controls and local validation
 
-`dxvk-umd-shader10-profile-test` checks223 portable controls: retained original
+`dxvk-umd-shader10-profile-test` checks615 portable controls: retained original
 tokens/hash, legal stage/system-value profiles, models/registers/masks,
 clip/cull limits, typed/depth/coverage signatures, reserved flags/opcodes,
 generated declarations, custom data and SM4.1 stage limits. The legal-profile
 matrix intentionally isolates metadata policy; it does not substitute for a
 renderer bytecode validator. Final GCC O2 and Clang ASan/UBSan executions pass
 with no diagnostics.
+
+CI67 retained the same original FXC pixel shader on x86 and x64 with
+`SV_PrimitiveID` packed in `v2.y` beside an ordinary uint varying in `v2.x`.
+The profile incorrectly required every scalar system value to occupy `x`.
+Register-file scalar values now accept exactly one of `x/y/z/w`; dedicated
+primitive/depth/coverage operands retain the canonical `x` mask. Added controls
+decode all four packed components, reject multi-component masks and retain the
+byte-exact 63-word CI pixel program. Fresh host replay accepts all three retained
+CI VS/GS/PS programs. This fixes the deterministic pixel-profile rejection;
+fresh native execution must still establish the complete scene result.
 
 `dxvk-umd-d3d10-system-shader-test` invokes actual typed10.0/10.1 creation,
 binding and draws with a WARP factory substitution. Four scenes cover both

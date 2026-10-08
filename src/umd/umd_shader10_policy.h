@@ -67,10 +67,12 @@ inline bool shader10Profile(const ShaderCode11& shader, bool allow4_1) {
     if (dedicated != (io.systemValue == 65 || io.systemValue == 66
         || (input && shader.stage == ShaderStage::Geometry && io.systemValue == 7))) return false;
     if (!dedicated && io.registerIndex >= (io.systemValue == 64 ? 8u : 32u)) return false;
-    if (io.systemValue == 4 || io.systemValue == 5)
-      return io.mask == 1 && io.scalar == ShaderScalar::Uint32;
-    if (io.systemValue >= 6 && io.systemValue <= 10)
-      return io.mask == 1 && io.scalar == ShaderScalar::Uint32;
+    if (io.systemValue >= 4 && io.systemValue <= 10)
+      // Scalar register-file values may occupy x, y, z or w. FXC packs
+      // SV_PrimitiveID beside an ordinary varying in v2.y; dedicated
+      // operands still use their canonical x mask below.
+      return !(io.mask & (io.mask - 1)) && (!dedicated || io.mask == 1)
+        && io.scalar == ShaderScalar::Uint32;
     if (io.systemValue == 65 || io.systemValue == 66)
       return io.mask == 1 && io.scalar == (io.systemValue == 65 ? ShaderScalar::Float32 : ShaderScalar::Uint32);
     if (io.systemValue >= 1 && io.systemValue <= 3)

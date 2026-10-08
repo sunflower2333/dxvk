@@ -63,8 +63,52 @@ int main() {
     auto changed=instance; changed.tokens[0]=(1u<<16)|version; CHECK(!shader10Profile(changed,false));
   }
   for (uint32_t mask : {0u,2u,3u,15u,16u}) {
-    auto changed=instance;changed.inputs[0].mask=uint8_t(mask); CHECK(!shader10Profile(changed,false));
+    auto changed=instance;changed.inputs[0].mask=uint8_t(mask); CHECK(shader10Profile(changed,false)==(mask==2));
   }
+  // Actual FXC may place generated scalar values in any one register
+  // component. Decode the packed declaration rather than changing metadata
+  // alone; malformed multi-component masks remain rejected.
+  for (uint32_t system : {6u,8u,7u,9u,10u}) for (uint32_t mask=0;mask<=16;++mask) {
+    const bool vertex=system==6||system==8;
+    const auto source=program(vertex?ShaderStage::Vertex:ShaderStage::Pixel,system==10?0x41:0x40,system,vertex?1:64);
+    auto tokens=source.tokens;tokens[3]=(tokens[3]&~0xf0u)|(mask<<4);
+    ShaderCode11 decoded;
+    const bool validMask=mask==1||mask==2||mask==4||mask==8;
+    const bool decodedOk=decodeShader11(source.stage,tokens.data(),tokens.size(),decoded);
+    CHECK(decodedOk==bool(mask&&mask<=15));
+    if(decodedOk) {
+      CHECK(shader10Profile(decoded,system==10)==validMask);
+      if(validMask){CHECK(decoded.inputs.size()==1&&decoded.inputs[0].mask==mask);container(decoded);}
+    }
+  }
+  for (uint32_t system : {4u,5u}) for (uint32_t mask : {1u,2u,4u,8u,3u,15u}) {
+    auto packed=program(ShaderStage::Pixel,0x40,system,64);packed.inputs[0].mask=uint8_t(mask);
+    CHECK(shader10Profile(packed,false)==(mask==1||mask==2||mask==4||mask==8));
+  }
+  for (uint32_t mask : {2u,4u,8u,3u,15u}) {
+    auto dedicated=depth;dedicated.outputs[0].mask=uint8_t(mask);CHECK(!shader10Profile(dedicated,false));
+    dedicated=coverage;dedicated.outputs[0].mask=uint8_t(mask);CHECK(!shader10Profile(dedicated,true));
+    dedicated=instance;dedicated.stage=ShaderStage::Geometry;dedicated.tokens[0]=(2u<<16)|0x40;
+    dedicated.inputs={{7,UINT32_MAX,uint8_t(mask),ShaderScalar::Uint32}};CHECK(!shader10Profile(dedicated,false));
+  }
+  // Byte-exact PS SHDR retained by both failed CI67 architectures. Its
+  // ordinary uint varying uses v2.x and generated PrimitiveID uses v2.y.
+  const uint32_t ci67Pixel[]={
+    0x00000040u,0x0000003fu,0x03000862u,0x00101012u,0x00000002u,0x04000863u,0x00101022u,0x00000002u,
+    0x00000007u,0x04000863u,0x00101012u,0x00000003u,0x00000009u,0x03000065u,0x001020f2u,0x00000000u,
+    0x03000065u,0x001020f2u,0x00000001u,0x02000065u,0x0000c001u,0x0700001eu,0x00102022u,0x00000000u,
+    0x0010101au,0x00000002u,0x00004001u,0x00000007u,0x07000001u,0x00102042u,0x00000000u,0x0010100au,
+    0x00000003u,0x00004001u,0x00000001u,0x05000036u,0x00102012u,0x00000000u,0x0010100au,0x00000002u,
+    0x05000036u,0x00102082u,0x00000000u,0x00004001u,0x7fc01234u,0x05000028u,0x00102012u,0x00000001u,
+    0x0010100au,0x00000002u,0x08000036u,0x001020e2u,0x00000001u,0x00004002u,0x00000000u,0xfffffff9u,
+    0x00000063u,0xffffffffu,0x04000036u,0x0000c001u,0x00004001u,0x3e800000u,0x0100003eu,
+  };
+  ShaderCode11 ci67;
+  CHECK(decodeShader11(ShaderStage::Pixel,ci67Pixel,sizeof(ci67Pixel)/sizeof(*ci67Pixel),ci67));
+  CHECK(shader10Profile(ci67,false)&&shader10Profile(ci67,true));
+  CHECK(ci67.inputs.size()==3&&ci67.inputs[0].systemValue==0&&ci67.inputs[0].registerIndex==2&&ci67.inputs[0].mask==1);
+  CHECK(ci67.inputs[1].systemValue==7&&ci67.inputs[1].registerIndex==2&&ci67.inputs[1].mask==2);
+  container(ci67);
   for (uint32_t system : {4u,5u,6u,7u,8u,9u,10u,11u,22u,64u,65u,66u}) {
     auto changed=instance;changed.outputs[0].systemValue=system; CHECK(!shader10Profile(changed,false));
   }

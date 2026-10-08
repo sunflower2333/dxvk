@@ -326,7 +326,7 @@ if ($arch -ne 'arm64') {
     & python (Join-Path $PSScriptRoot '../tests/verify-bc-update-originals.py') --directory $bcUpdateOriginals --output (Join-Path $OutputDirectory 'bc-update-originals-verified.json')
     if ($LASTEXITCODE) { throw 'Independent BC1-5 native/public update originals failed' }
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-shader10-profile-test.exe shader10-profile-test
-    if ((Get-Content -LiteralPath (Join-Path $OutputDirectory 'shader10-profile-test.txt') -Raw) -notmatch '(?m)^D3D10 shader profile PASS checks=223 retained_tokens=1 hardware_admission=0\r?$') {
+    if ((Get-Content -LiteralPath (Join-Path $OutputDirectory 'shader10-profile-test.txt') -Raw) -notmatch '(?m)^D3D10 shader profile PASS checks=615 retained_tokens=1 hardware_admission=0\r?$') {
         throw 'D3D10 system shader profile fixture did not pass'
     }
     $systemShaderOriginals = Join-Path $OutputDirectory 'd3d10-system-shader-originals'

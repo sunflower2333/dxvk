@@ -49,7 +49,7 @@ Require ($Output -cmatch '^C:\\Users\\Public\\DxvkD3D8SystemPhase-(names|enumera
 Require ((Hash $Manifest) -ceq $ManifestHash) 'Reviewed manifest changed'
 $config=Json $Manifest
 Require ($config.schema -ceq 'system-d3d8-phase-inputs-v1' -and $config.ready) 'Actual native CPU/source inputs are still pending'
-Require ($config.probe_source -ceq '5c420e4daddc39effb2c8e8a28bd07ec7407c402' -and $config.core_source -ceq 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1' -and [string]$config.core_ci_run -ceq '37648387721') 'Exact separate harness/production identities required'
+Require ($config.probe_source -ceq '66bfbdf73d32d7213af439a69cb569730b018f55' -and $config.core_source -ceq 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1' -and [string]$config.core_ci_run -ceq '37648387721') 'Exact separate harness/production identities required'
 Require ($config.loader_source -ceq '6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7' -and $config.icd_source -ceq '8443c71a5ab32b9d58b904fa51f4bf2f9089db8d') 'Original distinct loader and ICD sources required'
 Require ($config.adapter_luid -ceq 'ec6b000000000000' -and $config.source_id -eq 0) 'Fresh selected adapter identity required'
 Require ($config.native_cpu.accepted -and $config.native_cpu.source -ceq $config.probe_source -and $config.native_cpu.original_archive_sha256 -cmatch '^[0-9a-f]{64}$' -and $config.native_cpu.original_proof_sha256 -cmatch '^[0-9a-f]{64}$') 'Accepted original native CPU proof required'

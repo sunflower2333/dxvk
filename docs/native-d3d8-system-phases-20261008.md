@@ -1,10 +1,14 @@
 # Genuine I386 system D3D8 phases
 
-The source 6ae2f61 probe/frontend and production d7e5c7d/CI37648387721 are
-separate identities. Native171 CPU03 compiled the probe but failed the callback
-fixture variable-name ambiguity. That failure and release are retained. The
-fresh6ae2 native CPU04 build is pending. No system8
-CreateDevice, pixel or Present result has been accepted.
+The source66bfbdf probe/frontend and production d7e5c7d/CI37648387721 are
+separate identities. Prior6ae2 CPU04 and5c420e4 CPU05 passed their controlled
+fixtures. Both actual limited USER names attempts failed before KMT at system
+module identity guards; their originals and explicit closure remain retained.
+CPU07 then observed that I386 logical System32 module names and explicit
+SysWOW64 file handles map to the same redirected image. The shared66bfbdf
+identity helper rejoins those actual files; its focused native CPU08 execution
+is pending. No system8 KMT names, HAL enumeration, CreateDevice, pixel or
+Present result has been accepted.
 
 The prepared sequence is four separately reviewed attempts under original
 DROIDVM\USER, SID1000, session1, limited elevation type3 and integrity8192.
@@ -37,15 +41,28 @@ distinct; all three payload DLLs are genuinely unsigned. The original
 I386 core is 7be8cbb9 from CI37648387721, rather than an earlier fixture build.
 The generated candidate TAR is preparation only and has not been staged.
 
-After native CPU04 succeeds, supply `--native-originals`, `--native-archive`
+After native CPU08 succeeds, supply `--native-originals`, `--native-archive`
 and `--native-proof` in a fresh preparation directory. The independent proof
-must include `verified=true`, exact `source_commit`6ae2f61 and the original
+must include `verified=true`, exact `source_commit`66bfbdf and the original
 `archive_sha256`. The preparer reopens that archive/result and both original
-I386 outputs, checks five COFF/four PE, native policy 329, callback positive,
-30 CLI guards, unchanged source/state and zero runtime/selector/GPU calls.
+I386 outputs, checks four COFF/three PE,91 actual shared predicates, four CLI
+guards,18 original retained native children,21 unchanged inputs,575 original
+compiler pins,13 selected SDK headers/nine libraries and the complete actual
+three-module read-only observation. This scope does not rerun or relabel the
+earlier full policy/callback suite. Runtime/selector/GPU calls remain zero.
 It fills real output hashes and keeps `ready=false`. Root independently reviews
 the populated manifest, native parser receipt and stage originals before
 enabling a fresh reviewed manifest for a separately authorized USER phase.
+
+Each module admission requires the actual Process2 I386/ARM64/pointer4 and
+Directory2W(I386) records, then the selected loaded/file PE fields, both full
+read-only file IDs, lengths and SHA256 values, mapped NT name equal to both
+final file-handle NT names and successful paired closes before publication.
+Logical paths remain verbatim. An identity flag, System32 string or SyChpe32
+suffix cannot admit a module by itself. Every genuine runtime caller/OpenAdapter
+pair must match its preceding complete physical D3D8 identity. The runtime path
+must match that explicit I386 file view; Windows directory letter case is
+preserved. Pixel colors,448 readbacks and64 screen values remain unchanged.
 
 Transfer the frozen helper directory with SCP, preserving original bytes.
 First invoke `parse-native-d3d8-system-phase.ps1 -Manifest <manifest>
@@ -81,7 +98,10 @@ reopens every member and task/authorization/token/process/source/readiness
 join before producing a preceding-phase admission. Failed originals remain
 collectable after proven closure and never produce an admission.
 
-Local synthetic controls cover original 260-word identity and retained process
-timeout/nonzero/drain/output guards. They are not native/runtime results.
+Local synthetic controls retain all27 current-main labels, including architecture,
+directory, loaded GDI ordering,260-word identity and retained process
+timeout/nonzero/drain/output guards. New cases exercise the actual physical
+record parser and reject ID/hash/PE/mapped-name/close and caller/OpenAdapter
+mismatches. They are not native/runtime results.
 Scheduled-task execution and all four real phases remain pending until
 explicit exclusive target ownership is handed off.

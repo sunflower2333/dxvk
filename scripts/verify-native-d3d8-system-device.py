@@ -22,7 +22,9 @@ def verify(text, mode, luid, source):
     rows = text.splitlines()
     assert not re.search(r'^(?:D3D8_(?:ERROR|FAILED|UNAVAILABLE)|SYSTEM_D3D8_(?:CREATE_BLOCKED|DEVICE_DESTROY_FAILED))\b', text, re.M)
     runtime = [r for r in rows if r.startswith('D3D8_RUNTIME ')]
-    assert runtime == [r'D3D8_RUNTIME path=C:\Windows\SysWOW64\d3d8.dll machine=014c pointer_bytes=4 sdk_version=220 caps_bytes=212']
+    assert len(runtime) == 1
+    runtime_path = re.fullmatch(r'D3D8_RUNTIME path=(.+) machine=014c pointer_bytes=4 sdk_version=220 caps_bytes=212', runtime[0])
+    assert runtime_path and runtime_path[1].casefold() == r'C:\Windows\SysWOW64\d3d8.dll'.casefold()
     user = [r for r in rows if r.startswith('D3D8_USER_GATE ')]
     assert user == [f'D3D8_USER_GATE session=1 elevation=0 elevation_type=3 integrity_rid=8192 sid={SID}']
     matched = re.findall(r'^D3D8_KMT_MATCH adapter=(\d+) source=(\d+) luid=([0-9a-f]{16}) software=0 render=1 no_device=1$', text, re.M)

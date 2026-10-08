@@ -35,6 +35,7 @@ $cases = [ordered]@{
     'dxvk-umd-runtime-backend-test.exe' = 'runtime backend ownership PASS checks=\d+; CPU descriptor and lifetime contracts'
     'dxvk-umd-d3d9-backend-test.exe' = 'D3D9 backend rejection PASS checks=\d+; no GPU construction or runtime admission'
     'dxvk-umd-d3d9-adapter-test.exe' = 'native D3D9 adapter PASS checks=\d+; mock runtime, no rendering or admission'
+    'dxvk-umd-d3d9-public-adapter-test.exe' = 'native legacy OpenAdapter PASS checks=\d+; Interface8/9 mock runtime, no rendering'
     'dxvk-umd-d3d9-device-test.exe' = 'native D3D9 device PASS checks=\d+; controlled backend, no GPU rendering or runtime admission'
     'dxvk-umd-rotation-test.exe' = 'PASS native DXGI rotation: .*WARP only, admission closed'
     'dxvk-umd-texture1d-test.exe' = 'PASS Texture1D'

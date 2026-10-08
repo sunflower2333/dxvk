@@ -74,7 +74,7 @@ HRESULT current(const std::shared_ptr<Adapter>& adapter) noexcept {
 }
 
 // This is the subset implemented by the native DDI, rather than the larger
-// private DXVK renderer's caps. Normal OpenAdapter admission is still closed.
+// private DXVK renderer's caps. OpenAdapter exposes only this legacy profile.
 // In particular: one RT, static/dynamic 2D mip chains, no cube/volume/MSAA/instancing,
 // no stretched/color-fill plain surfaces, autogen, shared resources or gamma.
 constexpr FORMATOP formats[] = {
@@ -101,7 +101,8 @@ D3DCAPS9 nativeCaps() {
     | D3DDEVCAPS_HWTRANSFORMANDLIGHT | D3DDEVCAPS_HWRASTERIZATION;
   caps.PrimitiveMiscCaps = D3DPMISCCAPS_CULLNONE | D3DPMISCCAPS_CULLCW | D3DPMISCCAPS_CULLCCW
     | D3DPMISCCAPS_COLORWRITEENABLE | D3DPMISCCAPS_CLIPTLVERTS | D3DPMISCCAPS_TSSARGTEMP
-    | D3DPMISCCAPS_BLENDOP | D3DPMISCCAPS_PERSTAGECONSTANT | D3DPMISCCAPS_SEPARATEALPHABLEND;
+    | D3DPMISCCAPS_BLENDOP | D3DPMISCCAPS_PERSTAGECONSTANT | D3DPMISCCAPS_SEPARATEALPHABLEND
+    | dxvk::umd::d3d9DdiFogInFvf;
   caps.RasterCaps = D3DPRASTERCAPS_ZTEST | D3DPRASTERCAPS_FOGVERTEX | D3DPRASTERCAPS_FOGTABLE
     | D3DPRASTERCAPS_MIPMAPLODBIAS | D3DPRASTERCAPS_FOGRANGE | D3DPRASTERCAPS_WFOG
     | D3DPRASTERCAPS_ZFOG | D3DPRASTERCAPS_COLORPERSPECTIVE | D3DPRASTERCAPS_SCISSORTEST
@@ -279,7 +280,8 @@ HRESULT APIENTRY closeAdapter(HANDLE handle) {
 }
 }
 
-extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter9ForTest(D3DDDIARG_OPENADAPTER* args) {
+namespace {
+HRESULT openLegacyAdapter(D3DDDIARG_OPENADAPTER* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
   if (!input.hAdapter || !input.pAdapterFuncs || !input.pAdapterCallbacks) return E_INVALIDARG;
@@ -316,4 +318,13 @@ extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter9ForTest(D3DDDIARG_OPENADAPTER*
     return S_OK;
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }
+}
+}
+
+extern "C" HRESULT APIENTRY OpenAdapter(D3DDDIARG_OPENADAPTER* args) {
+  return openLegacyAdapter(args);
+}
+
+extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter9ForTest(D3DDDIARG_OPENADAPTER* args) {
+  return openLegacyAdapter(args);
 }

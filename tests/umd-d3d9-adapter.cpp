@@ -18,13 +18,39 @@
 static std::atomic<unsigned> backendCreateCalls{0};
 static std::atomic<UINT> backendCreateFlags{UINT_MAX};
 static std::atomic<UINT> backendLegacyApi{UINT_MAX}, backendInterface{UINT_MAX};
+#ifdef VIOGPU_DXVK_PUBLIC_LEGACY_ENTRY
+static bool publishDevice;
+static void (*afterDeviceCreation)() = nullptr;
+static unsigned destroyedDevices;
+static UINT deviceCookie;
+static HRESULT APIENTRY destroyPublishedDevice(HANDLE handle) {
+  if (handle != &deviceCookie) return E_INVALIDARG;
+  ++destroyedDevices;
+  return S_OK;
+}
+#endif
 HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdentity>& identity,
                                       D3DDDIARG_CREATEDEVICE* args) {
   ++backendCreateCalls;
   backendCreateFlags = args->Flags.Value;
   backendLegacyApi = UINT(identity->legacyApi); backendInterface = args->Interface;
+#ifdef VIOGPU_DXVK_PUBLIC_LEGACY_ENTRY
+  if (publishDevice) {
+    *args->pDeviceFuncs = {};
+    args->pDeviceFuncs->pfnDestroyDevice = destroyPublishedDevice;
+    args->hDevice = &deviceCookie;
+    if (afterDeviceCreation) afterDeviceCreation();
+    return S_OK;
+  }
+#endif
   return D3DERR_NOTAVAILABLE;
 }
+
+#ifdef VIOGPU_DXVK_PUBLIC_LEGACY_ENTRY
+static constexpr auto adapterEntry = OpenAdapter;
+#else
+static constexpr auto adapterEntry = VioGpuDxvkOpenAdapter9ForTest;
+#endif
 
 static std::atomic<unsigned> checks{0};
 #define CHECK(condition) do { const auto n = ++checks; if (!(condition)) { \
@@ -99,7 +125,7 @@ static void open(Runtime& owner, UINT version = 0) {
   callbacks.pfnQueryAdapterInfoCb = query;
   Guarded<D3DDDI_ADAPTERFUNCS> table;
   auto args = request(owner, table.value, callbacks, version);
-  CHECK(VioGpuDxvkOpenAdapter9ForTest(&args) == S_OK);
+  CHECK(adapterEntry(&args) == S_OK);
   CHECK(args.hAdapter && args.hAdapter != &owner);
   CHECK(args.Interface == owner.api && args.Version == version);
   CHECK(args.DriverVersion == D3D_UMD_INTERFACE_VERSION_VISTA);
@@ -111,7 +137,7 @@ static void unchangedOpen(D3DDDIARG_OPENADAPTER args, HRESULT expected) {
   const auto original = snapshot(args);
   const auto table = args.pAdapterFuncs ? snapshot(*args.pAdapterFuncs)
     : std::array<uint8_t, sizeof(D3DDDI_ADAPTERFUNCS)>{};
-  CHECK(VioGpuDxvkOpenAdapter9ForTest(&args) == expected);
+  CHECK(adapterEntry(&args) == expected);
   CHECK(snapshot(args) == original);
   if (args.pAdapterFuncs) CHECK(snapshot(*args.pAdapterFuncs) == table);
 }
@@ -227,7 +253,7 @@ static void legacyAdapterContracts() {
   std::memset(&alternateAdapterTable, 0xa5, sizeof(alternateAdapterTable));
   const auto alternateBefore = snapshot(alternateAdapterTable);
   changingOpen = &args; first.action = Action::ReplaceOpen;
-  CHECK(VioGpuDxvkOpenAdapter9ForTest(&args) == S_OK); changingOpen = nullptr;
+  CHECK(adapterEntry(&args) == S_OK); changingOpen = nullptr;
   CHECK(args.Interface == 9 && args.Version == UINT_MAX && args.DriverVersion == D3D_UMD_INTERFACE_VERSION_VISTA);
   CHECK(snapshot(alternateAdapterTable) == alternateBefore);
   first.driver = args.hAdapter; first.functions = table.value; table.intact();
@@ -289,10 +315,65 @@ static void legacyAdapterContracts() {
   first.api = 9; first.valid(0x12345678); first.calls = 0;
 }
 
+#ifdef VIOGPU_DXVK_PUBLIC_LEGACY_ENTRY
+static void publicDeviceContracts() {
+  publishDevice = true;
+  for (const UINT api : {8u, 9u}) {
+    first.api = api; first.valid(0x12345678);
+    open(first);
+    Guarded<D3DDDI_DEVICEFUNCS> table;
+    D3DDDI_DEVICECALLBACKS callbacks = {};
+    D3DDDIARG_CREATEDEVICE args = {};
+    args.hDevice = &first; args.Interface = api; args.Version = UINT_MAX;
+    args.pCallbacks = &callbacks; args.pDeviceFuncs = &table.value;
+    const auto before = snapshot(table);
+    const auto backendBefore = backendCreateCalls.load();
+    const auto destroyBefore = destroyedDevices;
+    CHECK(first.functions.pfnCreateDevice(first.driver, &args) == S_OK);
+    CHECK(args.hDevice == &deviceCookie && args.Interface == api && args.Version == UINT_MAX);
+    CHECK(backendCreateCalls == backendBefore + 1 && destroyedDevices == destroyBefore);
+    CHECK(backendLegacyApi == api && backendInterface == api);
+    CHECK(table.value.pfnDestroyDevice == destroyPublishedDevice);
+    const auto after = snapshot(table);
+    const size_t tail = offsetof(Guarded<D3DDDI_DEVICEFUNCS>, value)
+      + dxvk::umd::d3d9DeviceFunctionBytes;
+    for (size_t i = tail; i < after.size(); ++i) CHECK(after[i] == before[i]);
+    table.intact();
+    CHECK(table.value.pfnDestroyDevice(args.hDevice) == S_OK);
+    CHECK(destroyedDevices == destroyBefore + 1);
+    CHECK(first.functions.pfnCloseAdapter(first.driver) == S_OK);
+  }
+  first.api = 9;
+  // These failures occur only after the backend returned a live device.
+  // Destroy it and leave both runtime output owners intact.
+  for (const auto action : {Action::Close, Action::ThrowAllocation, Action::ThrowOther}) {
+    first.valid(0x12345678); open(first);
+    Guarded<D3DDDI_DEVICEFUNCS> table;
+    D3DDDI_DEVICECALLBACKS callbacks = {};
+    D3DDDIARG_CREATEDEVICE args = {};
+    args.hDevice = &first; args.Interface = 9;
+    args.pCallbacks = &callbacks; args.pDeviceFuncs = &table.value;
+    const auto before = snapshot(args); const auto tableBefore = snapshot(table);
+    const auto destroyBefore = destroyedDevices;
+    second.action = action;
+    afterDeviceCreation = [] { first.action = second.action; };
+    const HRESULT expected = action == Action::Close ? D3DERR_DEVICELOST
+      : action == Action::ThrowAllocation ? E_OUTOFMEMORY : E_FAIL;
+    CHECK(first.functions.pfnCreateDevice(first.driver, &args) == expected);
+    CHECK(snapshot(args) == before && snapshot(table) == tableBefore);
+    CHECK(destroyedDevices == destroyBefore + 1);
+    CHECK(first.functions.pfnCloseAdapter(first.driver)
+      == (action == Action::Close ? E_INVALIDARG : S_OK));
+  }
+  afterDeviceCreation = nullptr; publishDevice = false;
+  first.api = 9; first.valid(0x12345678); first.calls = 0;
+}
+#endif
+
 int main() {
   legacyAdapterContracts();
   first.valid(0x12345678); second.valid(0x99887766);
-  CHECK(VioGpuDxvkOpenAdapter9ForTest(nullptr) == E_INVALIDARG);
+  CHECK(adapterEntry(nullptr) == E_INVALIDARG);
   Guarded<D3DDDI_ADAPTERFUNCS> table;
   D3DDDI_ADAPTERCALLBACKS callbacks = {};
   callbacks.pfnQueryAdapterInfoCb = query;
@@ -339,7 +420,7 @@ int main() {
     CHECK(first.functions.pfnCloseAdapter(first.driver) == S_OK);
   }
   auto args = valid;
-  CHECK(VioGpuDxvkOpenAdapter9ForTest(&args) == S_OK);
+  CHECK(adapterEntry(&args) == S_OK);
   first.driver = args.hAdapter; first.functions = table.value;
   // Query ownership is captured before the runtime callback table changes.
   callbacks.pfnQueryAdapterInfoCb = wrongQuery;
@@ -356,6 +437,7 @@ int main() {
   CHECK(caps.value.NumSimultaneousRTs == 1 && caps.value.MaxTextureWidth >= 2048);
   CHECK(!(caps.value.TextureCaps & (D3DPTEXTURECAPS_CUBEMAP | D3DPTEXTURECAPS_VOLUMEMAP)));
   CHECK(caps.value.Caps2 & D3DCAPS2_DYNAMICTEXTURES);
+  CHECK(caps.value.PrimitiveMiscCaps & dxvk::umd::d3d9DdiFogInFvf);
   CHECK(!(caps.value.Caps2 & (D3DCAPS2_CANAUTOGENMIPMAP | D3DCAPS2_CANSHARERESOURCE)));
   CHECK(!caps.value.CubeTextureFilterCaps && !caps.value.VolumeTextureFilterCaps
     && !caps.value.VertexTextureFilterCaps && !caps.value.StretchRectFilterCaps);
@@ -560,5 +642,10 @@ int main() {
   }
   CHECK(first.functions.pfnCloseAdapter(nullptr) == E_INVALIDARG && wrongCalls == 0);
   table.intact();
+#ifdef VIOGPU_DXVK_PUBLIC_LEGACY_ENTRY
+  publicDeviceContracts();
+  std::printf("native legacy OpenAdapter PASS checks=%u; Interface8/9 mock runtime, no rendering\n", checks.load());
+#else
   std::printf("native D3D9 adapter PASS checks=%u; mock runtime, no rendering or admission\n", checks.load());
+#endif
 }

@@ -1,64 +1,189 @@
 # Findings
 
-## Current checkpoint: reviewed ports and actual frontend loads; next CI66
+## Current checkpoint: physical BC correction and native runtime continuation
 
-VM default UMD remains Mesa. Ordinary system-runtime DX8-11 hardware
-creation/draw/readback/Present and DWM/Explorer replacement remain incomplete.
+VM default UMD remains Mesa. Ordinary SYSTEM DX8-11 hardware creation, draw,
+readback, Present and DWM/Explorer replacement are incomplete. ROOT alone owns
+target calls; preserve the single registered8192MiB VM. No capability masks
+or default registration changed. Latest accepted core is historical18452d7 /
+CI37743643139; it cannot admit the newer unpublished ports.
 
-Current reviewed source union is50df75336ef246e1c6e7c2fb866351a3baf1fc45.
-Ordered predicate/query recording, optional shared primary, full color MSAA
-region copies, combined native harness, owned issued-query tickets, corrected
-frontend probe, volume-copy diagnostics, real GPU volume bridge and owning
-query replay mapping are merged. The next harness has66 ARM64 cases,
-53 mandatory and76 full shipping fixtures,198 expected native child processes.
-A single consolidated push publishes this union and checkpoint; no extra
-workflow activation or manual dispatch.
+Published2fbb79131da999d52caa92f7341ac14aca12c212 has one NativeUMD run
+37787018299, completed failure. Identity/shader/ARMbackend pass; x86/x64 BC
+update fails0xC0000005; ARM64runtime skipped. Both R9volume originals pass72721
+checks. Each arch executed42fixtures/41passed before BC failure;23 later
+fixtures unexecuted. Actual CI66 failure originals are admitted by
+artifacts/root-CI66-failure-originals-admitted-20261008-01.json. Four unused
+workflows remain manually disabled; no additional workflow dispatch occurred.
 
-CPU08 actual target EWDK builds passed all9 frontend and8 ARM64/x64 view
-stages. The corrected frontend probe now also PASSED actual ROOT3434800/0:
-ARM64 and x64 executables load the same1282048/1c040ae9 ARM64X frontend and
-matching historical18452 cores, preserving typed arguments/canaries and
-returning expected null/unsupported errors. Actual original reader657 checks,
-independent743 checks,15 native children and11 host transports all close.
-ROOT module-only admission1974/9b354cef and explicit release988/ee86784d are
-under artifacts/legacy-runtime-deploy-20261008/native-arm64x-front-ae65140-negative-forward-03.
-This proves module loading and typed negative forwarding, not valid runtime
-creation, rendering, registration or default replacement.
+Current local MAIN8359f6aee1aa79d8e2471a1ab4b4cbe1682a25bf includes all reviewed
+private query/pending retirement/CopyStructureCount/BGRA/packedDS/1DDS/ClearRTV/
+DSV+UAV predicate ports. New reviewed merges: physicalBC0a5->4ccde8b,
+FL10output47541bf2->966c7696, Dispatch44f0f975->54173e4 and Vulkan
+asymmetricBC50640c1d->7fdd97e5. ROOT read all production diffs and independent
+source reviews. Fresh mergedcontext/DDI x86+x64 strict optimized4COFFs pass
+3596033/0, diagnostics empty,641 actual dependencies/850selectedinputs stable.
+BC backend frozen2COFFs pass; current TU/454actualdeps/compiler match3597563/0.
+Historical explicit overlay hash was not captured, so full compiler-input
+reuse equivalence is not claimed. Full next CI build remains required.
 
-Previously published beb465c sole Native UMD37777560861 is terminal FAILURE.
-Both x86/x64 fail the3D R32_UINT-to-R9 regional-copy case after120 saved
-paired observations; later fixtures did not execute. Actual standalone target
-WARP repro02 independently reproduces DXGI_ERROR_DRIVER_INTERNAL_ERROR887a0020
-for both FL10_1 and11_0 direct calls; same-format controls pass. Repro03
-successfully uses whole-resource GPU reinterpretation followed by same-format
-regional copying in all4 forward/reverse profiles. Its12 raw originals pass
-7008 independently checked bytes. Both direct reverse controls retain the same
-failure. No CPU fallback or capability widening is introduced.
+BC native01 W4/WX allocation shadow failure fixed10ca6fd; native02 fixture
+failures retained. Actual39 native WARP diagnostics establish27 physical/NULL/
+composition passes and12 logical-boundary failures, not a complete BC gate.
+Physical boundary correction preserves all original byte patterns/rejections.
+NativeBC03 ROOT3587342/0 builds19ARM64COFF/3PE and runs12owned children: policy,
+copy and update allpass. Exactly-once unchanged literal copy3593819/0 verifies
+540files/180snapshots/474624byteobservations; update3593820/0 verifies2520files/
+840snapshots/34cases/130944compressedbytes. Frozen consumer3593821/0 plus finite
+closure3595143/0 joins99sources/25inputs/allstreams/desktop. Localwrapper count
+failure3593816/1 preserved; outputs are19COFF+3PE+8RSP. Proof
+artifacts/bc-native-originals-reviewed-20261008-03/
+native-BC03-literal-originals-and-owned-closure-verified-01.json.
+ROOT explicit release target-release-03.json918bytes/SHA79fe350f. WARP only.
+Separate Vulkan asymmetric copy uses retained DEVICE_LOCAL transferbuffer and
+existing barrier helpers;16actual public llvmpipe cases/96raw passed and peer
+3591177/0 reviewed. Embedded DXVK/targetGPU execution remains pending.
 
-Production bridgefe57 is merged2380832 and diagnosticsbe04 mergedd96c1fd.
-Current merged DDI strict optimized official-header x86/x64 compilation and
-LLVM reopen pass, actual3449883/0, proof178017/22080265 at
-artifacts/merged-bridge-ddi-20261008-01/merged-bridge-ddi-verified-01.json.
-The complete320/640 native volume fixture still requires the next CI run.
-Earlier merged MSAA/optional DDI+fixtures pass6 strict COFF/LLVM checks,
-proof143663/a08d4db4. Owning query replayf7b70 is independently reviewed3088
-checks and current9 files retain its exact original strict compiles.
+Merged a6dd EWDK reference02 builds21ARM64COFF/5PE. PackedDS unchangedreader
+3568930/0 passes150files/4100pix/49200byteobservations. Original1DDSreader
+3568931/1 had R16_TYPELESS54 instead of actual SDK53; ROOT d2707a2 changes only
+two metadata constants. Correctedreader3571385/0 passes204files/1360pix/8160
+byteobservations;38corruptioncontrols3571756/0. No native rerun. Reference02
+source/closure peer3581281/0 passed; released5b90ec0d. BGRA originally aborted
+on NULLRTV for logicalFL10_0; no pixel acceptance was granted.
 
-Ordinary-runtime source/doc audit separates real UMD gaps from broader public
-DXVK work. Outer UMD already implements predication; public SetPredication
-alone is not its baseline blocker. D10 tables have101/103 required slots
-filled; optional D11 command-list slots do not block baseline creation.
-BC regional copies are a concrete mandatory resource gap and are actively
-being implemented. D10.1/11 depth regional and extended-format requirements
-need their exact contracts. Shader/SO/opened/MRT/primary/threading hardware
-coverage and ordinary runtime creation are still due. Admission masks remain
-unchanged while each real contract is completed and tested.
+FL10output fix excludes unsupported pixel UAV slots and preserves FL11's
+original combined call/counters. Two strict DDI builds and672policy checks
+pass; independent source review finds no blocker. Fresh BGRA03 ROOT3596363/1
+builds18ARM64COFF/2PE, both native fixtures exit0. Unchanged literalreader
+3597151/1 fails scene extended-blt-1-0-9 pixel0,0: actual0 vsff808080. Its24
+words are allzero; same sceneprofiles0/2 and all scene8 encoded resolves pass.
+No byte admission. Originalarchive3834811bytes/SHA846ec542,338regularfiles.
+Peer3599005/0 closes8native+TAR/11absentlifetimes/6transports/reader/outer,
+static34+SYS+desktop unchanged. ROOT release target-release-native03.json
+1016bytes/SHA3c1e177b. Source owner diagnosing fullytypedSRGB/MSAA FL10 path;
+fixture/reader/expected bytes remain immutable. Native rerun of the original full fixture only after fix.
 
-Next: collect actual CI66 originals for this exact published source; review
-and merge BC regional copies; verify required D10_0 semantics and then run
-ordinary system-runtime hardware creation/draw/readback/Present. Keep target
-ownership with ROOT; last module attempt is fully released. Preserve one VM,
-8192MiB memory, separate Android8022 and Windows22 management services.
+Modern ARM64X source857a5fe is separate module-forwarding work. Modern02 built
+frontend but SDK C4201 prevented views; accidental dependent ARM64 call was
+rejected before probe launch and all original failure records were retained.
+Modern03 scopes warning4201 only around official DDI include, keeps/W4/WX,
+and host gates require actual successful prerequisite originals. ROOT exact
+BGRA03 release binds modern03 auth1804bytes/SHA9b5e0e2a. Upload3600435/0,
+stage3600943/0, sequential3601880/0 pass parse/build/views/ARM64/x64 module and
+negative forwarding. Modern03 original reader 3610976/0 and finite source/closure review 3612893/0
+passed. The frontend is 1282048 bytes / SHA64939f5c; all 25 native children,
+13 transports and 11 ROOT outers closed. Independent proof is
+artifacts/modern-runtime-deploy-20261008/independent-modern03-review-01/
+modern03-source-and-complete-outer-closure-verified-02.json, 16709 bytes /
+SHA9e77d162. Explicit ROOT release is 604 bytes / SHAcbcbb7b6.
+Historical18452 payload is negative-module only: no GPU, ordinary factory,
+registry or hardware admission. No same-attempt driver-readiness snapshot
+was collected by this module-only packet.
+
+Ordinary D10_0 validation8eeb20 source/probe is frozen: actual SYSTEM d3d10,
+exact KMT160adapterLUID, forwarding original runtime handles/callbacks, literal
+16x16 draw/readback+Present and bounded held restoration protocol. Native
+ARM64Xfrontend+ARM64/x64probe CPU source packet remains immutable8eeb20.
+Host01 native stage fails before parse/build: ROOT3630343/1 reaped, exact packet
+extract5096/0, but PowerShell5.1 wraps the ReadJson ledger array so the controller
+Count20 assertion fails. Failed01 collection/transfer/observation is complete: archive50144/SHA7fe5ce23,
+30 originals, finite3654735/0 proof9880/SHAa024f055, ROOT explicitrelease3234/
+SHAfd673a95. Corrected host02 actualROOT3656018/1 is reaped: native PS5.1
+Arm64 one/two/twenty-row shape and AST pass; frontend ARM64 CL passes, but
+LINK fails LNK4070/LNK1218 under /WX because DEF LIBRARY name differs from
+intermediate OUT filename. Archive810330/SHAe6478aa5 and complete observation
+are saved. Finite3666563/0 proof17559/SHA6919e372 passes; ROOT
+release3795/SHA21468570 closed host02. Fresh DEF-only0f4f5e removes the
+conflicting LIBRARY directive and preserves both exports. Actual CPU03
+ROOT3668478/0 passes all17tools, builds four COFFs/four PEs including ARM64X
+CHPEv2 and ARM64/x64 views, with zero warnings. Archive12133483/SHAa0222d24
+has152regular originals; finite3675099/0 proof29475/SHA416385c6 verifies
+selected139/118unique snapshots and21 absent exactlifetimes. ROOT release
+3800/SHA71941132 is closed. ROOT3680868/0 merges8eeb+0f4f as68f9d3d/c387ac0.
+No probe/factory/core load occurred; both original failures are preserved. D9 host01 shares the array bug and must not execute;
+corrected host02 and fail-prefix-aware ROOT sequential driver are prepared. All native source/build failures remain immutable. Single
+reversible binding controller preserves raw native/WoW tuples and independent
+SYSTEM watchdog/startup rescue, with real KMT before/bound/restored checks.
+Two-line separately pinned progress runner7def540f solves held-line visibility;
+portable held/exit/drain controls pass, Windows AST/task/job/restore pending.
+Binding source97bb has a concrete stale-backup rollback race and must never
+run Apply. Fresh648f612c acquires the lease before authoritative backup and
+uses protected, flushed mutation intent before RegSet; absent intent cannot
+replay the backup. Independent648f source review3623246/0 passed; five actual-source Windows
+in-memory phase controls now pass actualROOT3679124/0: nativePS5.1 six
+ASTs and five scenarios/29checks, all selected inputs unchanged. Archive27182/
+SHA91292c6c is retained. Finite3682864/0 proof6630/SHA728e2e42 passes;
+ROOT release1360/SHAae425894 closes the preflight.
+NoApply, registry/task/KMT/GPU/core calls occurred. Same-owner DX9/9Ex extensionac77
+also passes finite3651470/0 source review and225 portable controls; Windows
+AST/12 phase controls remain pending. No target registry writes occurred.
+DX9/9Ex ordinary SYSTEM probe739de05 is frozen with 512 literal readback
+pixels, optional two Present calls/512 desktop RGB observations, exact loaded
+module tuples and externally held final device release. Three strict local
+COFF builds and four reader layouts/15 rejection controls pass. Independent source review3626709/0 passed210 joins/69 originals; ROOT3627858/0
+merged739de05 as97836d9 after full CPP/reader/producer review. Native
+ARM64/x64 CPU build is pending. The historical
+fog-cap clear-only attempt is not compatible current proof.
+DX8 existing448pixel/64Present gate remains immutable and requires new accepted
+currentCIcore. New KMTpredicate build/run packet preparation is also pending
+successful currentCIcore and matching Vulkanpayload; all hardware gates closed.
+
+ROOT native BGRA MSAA diagnostic01 (2026-10-09) compiled successfully:
+CL8924/0, zero stderr, actual AA64 bigobj188772/SHAddba069b. The controller's
+ordinary-COFF-only machine check rejected that valid bigobj before LINK or
+execution. Failure originals and archive63636/SHAb0da39b3 are preserved;
+collection and exact lifetime observation passed, outer3620322/1 was reaped.
+Finite independent3624082/0 reviewed6475/SHA227e4491; ROOT release596/SHA60f5f669.
+Fresh diagnostic02 reuses the compiled object and only LINK2640/0 + run10940/0;
+ROOT3625015/0 reaped. Archive196809/SHAe7c2ff91 includes60 raw files/30 snapshots/
+720 pixels. Existing inspector3625409/0 ran once, proof25600/SHA5d5dc09b.
+Actual FL10_0 all twelve MSAA copy controls leave the magenta sentinel;
+native typed-sRGB Resolve isffbcbcbc, separately drawn typeless encoded Resolve
+isff808080, and unchanged helper returns zero. FL10_1 controls/helper pass their
+respective observed colors. These are diagnostic observations, no pixel admission.
+Finite independent3628627/0 closes all recorded lifetimes/transports/outer,
+10049/SHA bf7c9e7f. ROOT release596/SHAe84bf813 precedes D10 CPU ownership.
+The official local spec establishes typed-sRGB Resolve operates in linear
+space and inverse-sRGB reconstruction has finite decode precision. Source
+bounded FL10_0 shader fix189c473 is frozen, finite source peer3657069/0 passes,
+and ROOT merged it as1a1a5e5. Exact private UNORM MSAA SRV is preferred;
+native E_INVALIDARG/UNSUPPORTED uses original-SRGB bounded reconstruction,
+with generic inverse bit-exactness explicitly false. Four strict COFFs,
+10240 actual DXBC CPU channel observations and3072 syntheticpixels/76rejects
+pass. Fresh actualROOT3684203/0 completes41s: native9children0, three
+COFF TUs/threePEs, unchanged BGRA reader verifies171raw/1836pixels and new
+encoded reader verifies24raw/3072pixels/12672bytes. Originalarchive4097159/
+SHAbf01d23b is collected; exact lifetime observation passes. Independent
+source/closure review and explicitROOTrelease are underway. Native packet
+recompiled productionDDI, unchanged extended-blt directhelperdependent and
+new fixture; reused16originalobjects with no observedheader exclusion.
+Existing fixture/reader bytes and expectations remain immutable. WARP
+reference slice passes; currentembeddedGPU acceptance remains pending.
+
+Next: finish D9/D11 CPU builds and same-owner binding Windows controls; execute
+fresh encoded-resolve fixture plus original full BGRA fixtures; then one
+consolidated CI push. Current explicit source sets derive74 ARM64 cases and74
+bounded backend children each x86/x64,61 canonical mandatory and84 total EXEs
+plus DLL/PDB. Earlier prepared72/59/82/216 CI67 collection remains unexecuted
+and must be replaced for actual pushed source/run. Dedicated D11 FL10_0
+validationa103 passed finite3649032/0 source peer and ROOT merged6b40a0f;
+production-strength callback, real factory and current identity checks remain.
+It exposes only exact11.0 DDI version/pipeline bit1; production/generic masks
+remain unchanged. Separate SYSTEM D11 frontend/probe and same binding-owner
+Api11 extension5b35 source peer3671781/0 passes. Separate frontend/probe
+7865936 fixes exact approved private-loader handling; finite829 plus786
+source reviews passed, four changed-source tool children and59controls remain
+closed. ROOT3681172/0 merges0151+829+786 ascd62888/3a5d995/8359f6a. Its
+ordinary512pixel probe honestly records presents=0; native17stageCPU packet
+is in preparation. ROOT identified old binding owner hardcodedwinevulkan.dll
+and ICDformat1.0.0 contradict genuineCIviogpu_gl_loader_${arch}.dll and
+USER06 format1.0.1. One-owner tuple correction is in progress; noApply.
+Fresh74case CI67 preparation3672536/0 is local-only with futureSHA/run null;
+old72 packet remains unexecuted. Current-core private Vulkan payload inventory,
+typed11 baseline hardware, ordinary factories/pixels/Present/restore and DWM
+proof are still required before default replacement. Goal remains active.
+
 
 ## Previous checkpoint: five reviewed ports, CI61 failure retained, CPU08 pending
 

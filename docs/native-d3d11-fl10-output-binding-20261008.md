@@ -40,3 +40,24 @@ unit. The existing native BGRA fixtures and literal readers are byte
 unchanged. Fresh native execution and unchanged raw pixel oracles remain
 required; this source change does not grant ordinary runtime, hardware or
 adapter-capability admission.
+
+ROOT's fresh native ARM64 EWDK BGRA03 run at `47541bf2` builds 18 COFF objects
+and two executables. Both unchanged fixtures exit successfully and produce their
+complete original files, confirming that the previous NULL RTV failure is
+removed. The unchanged literal reader still fails: `extended-blt-1-0-9` contains
+24 zero words instead of `0xff808080`. That scene uses the ordinary fully typed
+sRGB multisample resolve path on logical FL10_0. The corresponding profiles
+10_1 and the PRESENT typeless resolve scene retain the expected bytes.
+
+The [same-attempt source and closure review](../../artifacts/bgra-fl10-ewdk-20261008/independent-native03-review-01/same-attempt-native-originals-and-closure-verified-01.json)
+retains the failed byte reader and closes all children while confirming the
+installed driver, static registry values and desktop are unchanged. Pixel
+acceptance remains false; the remaining resolve path needs a separate fix and
+fresh native verification.
+
+The subsequent [encoded multisample resolve fix](native-fl10-encoded-msaa-resolve-20261008.md)
+also passes the original full BGRA oracle in ROOT's native EWDK run at
+`189c473`. Both unchanged fixtures and the new encoded fixture exit successfully;
+the independent readers verify 1836 original BGRA pixels and 3072 encoded
+pixels. This closes the controlled WARP color regression. Embedded hardware,
+ordinary factories and desktop composition still need current-core evidence.

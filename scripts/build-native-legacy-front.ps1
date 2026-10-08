@@ -94,6 +94,9 @@ function Invoke-FrontTool([string]$Name, [string]$Command, [string[]]$Arguments)
 
 $completed = $false
 $failure = $null
+$softIntrinsicPin = $null
+$softIntrinsicX64Pin = $null
+$softIntrinsicSymbolsValidated = $false
 $nativeLibraryEnvironment = $env:LIB
 $ecLibraries = [IO.Path]::GetFullPath((Join-Path $env:VCToolsInstallDir 'lib\arm64ec'))
 $x64Libraries = [IO.Path]::GetFullPath((Join-Path $env:VCToolsInstallDir 'lib\x64'))
@@ -150,6 +153,41 @@ try {
         original_native_LIB=$nativeLibraryEnvironment;library_directories=$nativeLibraryDirectories;
         inputs=$nativeStaticCrtPins
     } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $output 'arm64-explicit-static-crt-inputs.json') -Encoding UTF8
+    # The SDK ARM64 archive also contains ARM64EC soft-intrinsic members.
+    # Its CSR implementations are absent from the x64 default-library archive.
+    # Select the same SDK as the reviewed EC um/x64 input, without adding an
+    # ARM64 directory to the EC default-library search path.
+    $softIntrinsicPath = $null
+    for ($index = 0; $index -lt $nativeLibraryDirectories.Count; $index++) {
+        $directory = $nativeLibraryDirectories[$index]
+        if ($directory -notmatch '(?i)[\\/]um[\\/]arm64$') { continue }
+        $ecSibling = Join-Path (Split-Path -Parent $directory) 'x64'
+        if ($Arm64EcLibraryDirectories -notcontains $ecSibling) { continue }
+        $candidate = Join-Path $directory 'softintrin.lib'
+        if (!(Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+        $softIntrinsicPath = [IO.Path]::GetFullPath($candidate)
+        $softIntrinsicPin = [ordered]@{path=$softIntrinsicPath;
+            library_directory_index=$index;matching_ec_directory=$ecSibling;
+            bytes=(Get-Item -LiteralPath $softIntrinsicPath).Length;
+            sha256=(Get-FileHash -LiteralPath $softIntrinsicPath -Algorithm SHA256).Hash.ToLowerInvariant()}
+        break
+    }
+    if (!$softIntrinsicPath) { throw 'Missing same-SDK ARM64 soft-intrinsic archive for ARM64X' }
+    $softIntrinsicX64Path = Join-Path $softIntrinsicPin.matching_ec_directory 'softintrin.lib'
+    if (!(Test-Path -LiteralPath $softIntrinsicX64Path -PathType Leaf)) { throw 'Missing same-SDK x64 soft-intrinsic archive' }
+    $softIntrinsicX64Pin = [ordered]@{path=$softIntrinsicX64Path;
+        bytes=(Get-Item -LiteralPath $softIntrinsicX64Path).Length;
+        sha256=(Get-FileHash -LiteralPath $softIntrinsicX64Path -Algorithm SHA256).Hash.ToLowerInvariant()}
+    Copy-Item -LiteralPath $softIntrinsicPath -Destination (Join-Path $output 'arm64-softintrin-original.lib')
+    Copy-Item -LiteralPath $softIntrinsicX64Path -Destination (Join-Path $output 'x64-softintrin-original.lib')
+    if ((Get-FileHash -LiteralPath (Join-Path $output 'arm64-softintrin-original.lib') -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+        $softIntrinsicPin.sha256 -or
+        (Get-FileHash -LiteralPath (Join-Path $output 'x64-softintrin-original.lib') -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+        $softIntrinsicX64Pin.sha256) { throw 'Soft-intrinsic archive changed while copying original bytes' }
+    [ordered]@{schema='native-legacy-arm64x-soft-intrinsic-input-v1';
+        original_native_LIB=$nativeLibraryEnvironment;library_directories=$nativeLibraryDirectories;
+        arm64ec_library_directories=$Arm64EcLibraryDirectories;input=$softIntrinsicPin;x64_input=$softIntrinsicX64Pin
+    } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $output 'arm64x-soft-intrinsic-input.json') -Encoding UTF8
     $nativeObject = Join-Path $output 'front-arm64.obj'
     $nativeDll = Join-Path $output 'viogpu_dxvk_legacy_native.dll'
     $nativePdb = Join-Path $output 'viogpu_dxvk_legacy_native.pdb'
@@ -189,10 +227,24 @@ try {
     $env:LIB = $Arm64EcLibraryDirectories -join ';'
     $ecObject = Join-Path $output 'front-arm64ec.obj'
     Invoke-FrontTool 'compile-arm64ec' 'cl.exe' ($commonCompile + @('/arm64EC',('"' + $source + '"'),('/Fo"' + $ecObject + '"')))
+    Invoke-FrontTool 'soft-intrinsics-arm64' 'dumpbin.exe' @('/headers','/symbols','/linkermember:2',('"' + $softIntrinsicPath + '"'))
+    Invoke-FrontTool 'soft-intrinsics-x64' 'dumpbin.exe' @('/headers','/symbols','/linkermember:2',('"' + $softIntrinsicX64Path + '"'))
+    $softSymbols = [IO.File]::ReadAllText((Join-Path $output 'soft-intrinsics-arm64.stdout.raw'))
+    if ($softSymbols -notmatch '(?im)^\s*A641 machine' -or $softSymbols -notmatch '(?i)arm64ec[\\/]widemath\.obj') {
+        throw 'Original soft-intrinsic archive has no ARM64EC widemath member'
+    }
+    foreach ($name in @('_mm_getcsr','_mm_setcsr')) {
+        $escaped = [Regex]::Escape($name)
+        if ($softSymbols -notmatch ('(?m)^.*\bSECT[0-9A-F]+\s+.*\bExternal\s+\|\s*#' + $escaped + '\s*$') -or
+            $softSymbols -notmatch ('(?m)^.*\bUNDEF\s+.*\bWeakExternal\s+\|\s*' + $escaped + '\s*$')) {
+            throw "Original soft-intrinsic CSR definition/alias missing: $name"
+        }
+    }
+    $softIntrinsicSymbolsValidated = $true
     # Keep the merge file as original evidence. LINK cannot expand an @file
     # embedded in Invoke-FrontTool's response file, so splice the same inputs.
     Invoke-FrontTool 'link-arm64x' 'link.exe' (@('/nologo','/DLL','/MACHINE:ARM64X','/WX','/DEBUG:FULL',
-        ('"' + $ecObject + '"')) + $nativeInputs + @(
+        ('"' + $ecObject + '"')) + $nativeInputs + @(('"' + $softIntrinsicPath + '"'),
         ('/DEFARM64NATIVE:"' + $definition + '"'),('/DEF:"' + $definition + '"'),
         ('/OUT:"' + (Join-Path $output 'viogpu_dxvk_legacy.dll') + '"'),
         ('/PDB:"' + (Join-Path $output 'viogpu_dxvk_legacy.pdb') + '"'),
@@ -232,12 +284,33 @@ try {
         (Get-FileHash -LiteralPath $SourceManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $SourceManifestSha256
     }
     $stable = $sameCommit -and @($after | Where-Object { !$_.matches_before }).Count -eq 0
+    $softIntrinsicStable = $true
+    if ($softIntrinsicPin -and $softIntrinsicX64Pin) {
+        $softIntrinsicAfter = [ordered]@{path=$softIntrinsicPin.path;
+            bytes=(Get-Item -LiteralPath $softIntrinsicPin.path).Length;
+            sha256=(Get-FileHash -LiteralPath $softIntrinsicPin.path -Algorithm SHA256).Hash.ToLowerInvariant()}
+        $softIntrinsicX64After = [ordered]@{path=$softIntrinsicX64Pin.path;
+            bytes=(Get-Item -LiteralPath $softIntrinsicX64Pin.path).Length;
+            sha256=(Get-FileHash -LiteralPath $softIntrinsicX64Pin.path -Algorithm SHA256).Hash.ToLowerInvariant()}
+        $softIntrinsicStable = $softIntrinsicAfter.bytes -eq $softIntrinsicPin.bytes -and
+            $softIntrinsicAfter.sha256 -ceq $softIntrinsicPin.sha256 -and
+            $softIntrinsicX64After.bytes -eq $softIntrinsicX64Pin.bytes -and
+            $softIntrinsicX64After.sha256 -ceq $softIntrinsicX64Pin.sha256
+        [ordered]@{before=$softIntrinsicPin;after=$softIntrinsicAfter;
+            x64_before=$softIntrinsicX64Pin;x64_after=$softIntrinsicX64After;matches_before=$softIntrinsicStable
+        } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $output 'arm64x-soft-intrinsic-after.json') -Encoding UTF8
+    } elseif ($softIntrinsicPin) {
+        $softIntrinsicStable = $false
+    }
     [ordered]@{schema='native-legacy-arm64x-build-v1';source_commit=$sourceCommit;source_mode=$sourceMode;
         source_manifest_sha256=$(if ($sourceMode -ceq 'actual-git-checkout') { $null } else { $SourceManifestSha256 });completed=$completed;
-        passed=($completed -and $stable);failure=$failure;source_stable=$stable;stages=$stages.ToArray();
+        passed=($completed -and $stable -and $softIntrinsicStable -and $softIntrinsicSymbolsValidated);failure=$failure;source_stable=$stable;stages=$stages.ToArray();
+        soft_intrinsic_stable=$softIntrinsicStable;
+        soft_intrinsic_symbols_validated=$softIntrinsicSymbolsValidated;
         arm64ec_library_directories=$Arm64EcLibraryDirectories;
         core_layout=[ordered]@{native='arm64/viogpudxvk.dll';emulated_x64='x64/viogpudxvk.dll';wow='x86/viogpudxvk.dll'};
         module_or_probe_executed=$false;registry_modified=$false;installation=$false
     } | ConvertTo-Json -Depth 12 | Set-Content (Join-Path $output 'native-legacy-front-build.json') -Encoding UTF8
     if (-not $stable) { throw 'Frontend source changed during the build' }
+    if (-not $softIntrinsicStable) { throw 'Soft-intrinsic archive changed during the build' }
 }

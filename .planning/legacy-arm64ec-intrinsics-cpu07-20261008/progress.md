@@ -1,0 +1,5 @@
+# Progress
+
+ROOT task received. Created independent checkout from publishedfae491c and contacted verify_ewdk_build read-only. Read CPU06 production producer and exact error/full responses. Prior CPU06 originals and release remain unchanged; no target operation.
+
+Official SDK28000.2526 comparison provider found by real HTTPS range ZIP capture and genuine archive/member COFF: ARM64 softintrin contains A641 widemath, defined # CSR and weak aliases; x64 lacks CSR. Full Nuget download timed out (exit28), preserved partial original and switched to central-directory+member ranges. First ARM64 member range was two bytes short due to name-length assumption; preserved and corrected from actual local-header name length25; CRC and length now joined. No target attestation inherited. ROOT requests one CPU07 with actual both-library copies and owned dumpbin prerequisite. Source now adds only same-SDK explicit hybrid helper while EC LIB unchanged; two real diagnostic dumpbin stages before hybrid (frontend9). CPU06 unchanged; no target calls.

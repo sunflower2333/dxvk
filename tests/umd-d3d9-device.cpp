@@ -2265,6 +2265,79 @@ static D3DDDIARG_CREATERESOURCE bufferArgs(HANDLE cookie, D3DDDI_SURFACEINFO* in
   return args;
 }
 
+static void indexBufferVertexHintContracts() {
+  for (const auto format : {D3DFMT_INDEX16, D3DFMT_INDEX32}) {
+    Fixture fixture; initialize(fixture); createDevice();
+    char indexCookie, vertexCookie, targetCookie;
+    D3DDDI_SURFACEINFO info = {12,UINT_MAX,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto args = bufferArgs(&indexCookie, &info, format);
+    args.Pool = D3DDDIPOOL_SYSTEMMEM; args.MipLevels = args.Fvf = 0;
+    // Exact flags from the genuine system8 CreateDevice failure. This is an
+    // ordinary dynamic WriteOnly IB, despite the unrelated vertex-buffer hint.
+    args.Flags.Value = 0x02100044;
+    const auto input = args;
+    CHECK(args.Flags.IndexBuffer && !args.Flags.VertexBuffer && args.Flags.Dynamic
+      && args.Flags.WriteOnly && args.Flags.MightDrawFromLocked);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    const HANDLE index = args.hResource;
+    const auto& desc = f->bufferDescriptions.back();
+    CHECK(desc.index && desc.dynamic && desc.writeOnly && desc.systemMemory
+      && desc.lockable && desc.bytes == 12 && desc.format == format && !desc.fvf
+      && !desc.mightDrawFromLocked && !desc.systemData);
+    // The flag does not admit malformed index metadata or change publication
+    // when preparation fails.
+    for (const UINT field : {0u,1u,2u,3u}) {
+      args = input;
+      if (field == 0) args.Format = D3DDDIFMT_VERTEXDATA;
+      if (field == 1) info.Width = 3;
+      if (field == 2) args.Flags.VertexBuffer = 1;
+      if (field == 3) args.SurfCount = 2;
+      const auto before = snapshot(args); const auto creates = f->bufferCreates;
+      CHECK(f->table.pfnCreateResource(f->device, &args) == E_INVALIDARG
+        && snapshot(args) == before && f->bufferCreates == creates);
+      info.Width = 12;
+    }
+    D3DDDIARG_LOCK mapping = {}; mapping.hResource = index;
+    for (const UINT flags : {0x100u,0x180u,0x80u,1u}) {
+      mapping.Flags.Value = flags;
+      const auto before = snapshot(mapping); const auto locks = f->bufferLocks;
+      CHECK(f->table.pfnLock(f->device, &mapping) == E_INVALIDARG
+        && snapshot(mapping) == before && f->bufferLocks == locks);
+    }
+    D3DDDI_SURFACEINFO vertexInfo = {36,0,0,nullptr,0,0};
+    args = bufferArgs(&vertexCookie, &vertexInfo);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    D3DDDIARG_SETSTREAMSOURCE stream = {0,args.hResource,0,12};
+    CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
+    D3DDDI_SURFACEINFO targetInfo = {8,8,0,nullptr,0,0};
+    args = resourceArgs(&targetCookie, &targetInfo, 1, true);
+    CHECK(f->table.pfnCreateResource(f->device, &args) == S_OK);
+    D3DDDIARG_SETRENDERTARGET target = {0,args.hResource,0};
+    CHECK(f->table.pfnSetRenderTarget(f->device, &target) == S_OK);
+    const D3DDDIVERTEXELEMENT element = {0,0,D3DDECLTYPE_FLOAT3,0,D3DDECLUSAGE_POSITION,0};
+    D3DDDIARG_CREATEVERTEXSHADERDECL declaration = {1,nullptr};
+    CHECK(f->table.pfnCreateVertexShaderDecl(f->device, &declaration, &element) == S_OK);
+    CHECK(f->table.pfnSetVertexShaderDecl(f->device, declaration.ShaderHandle) == S_OK);
+    D3DDDIARG_SETINDICES indices = {index,format == D3DFMT_INDEX16 ? 2u : 4u};
+    CHECK(f->table.pfnSetIndices(f->device, &indices) == S_OK);
+    D3DDDIARG_DRAWINDEXEDPRIMITIVE draw = {D3DPT_TRIANGLELIST,0,0,3,0,1};
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &draw) == S_OK);
+    // Normal lock works. Binding or drawing from that locked IB still fails,
+    // even though the create-time vertex hint was present.
+    mapping.Flags.Value = 4; // DISCARD on the dynamic WriteOnly IB.
+    CHECK(f->table.pfnLock(f->device, &mapping) == S_OK && f->bufferFlags == D3DLOCK_DISCARD);
+    const auto draws = f->draws;
+    CHECK(f->table.pfnSetIndices(f->device, &indices) == E_INVALIDARG);
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &draw) == E_INVALIDARG && f->draws == draws);
+    D3DDDIARG_UNLOCK unmap = {}; unmap.hResource = index;
+    CHECK(f->table.pfnUnlock(f->device, &unmap) == S_OK);
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &draw) == S_OK);
+    CHECK(f->table.pfnDestroyResource(f->device, index) == S_OK);
+    closeDevice(); closeAdapter();
+    CHECK(f->bufferCreates == f->bufferCloses && f->bufferLocks == f->bufferUnlocks);
+  }
+}
+
 static void lockedDrawBufferContracts() {
   for (const bool dynamic : {false, true}) {
     Fixture fixture; initialize(fixture); createDevice();
@@ -2276,13 +2349,12 @@ static void lockedDrawBufferContracts() {
     args.Flags.Dynamic = dynamic; args.Flags.MightDrawFromLocked = 1;
     args.Pool = D3DDDIPOOL_SYSTEMMEM; args.MipLevels = args.Fvf = 0;
     const auto valid = args;
-    // Narrow admission cannot silently extend locked rendering to an IB,
-    // video-memory allocation, non-lockable resource, or owned CPU buffer.
-    for (UINT field = 0; field < 6; ++field) {
+    // Borrowed locked-VB storage still excludes video-memory allocation,
+    // non-lockable resources, owned CPU buffers, sharing and primary ownership.
+    for (const UINT field : {0u,1u,3u,4u,5u}) {
       args = valid;
       if (field == 0) args.Pool = D3DDDIPOOL_VIDEOMEMORY;
       if (field == 1) args.Flags.NotLockable = 1;
-      if (field == 2) { args.Flags.VertexBuffer = 0; args.Flags.IndexBuffer = 1; args.Format = D3DDDIFMT_INDEX16; }
       if (field == 3) info.pSysMem = nullptr;
       if (field == 4) args.Flags.SharedResource = 1;
       if (field == 5) args.Flags.Primary = 1;
@@ -3656,6 +3728,7 @@ int main() {
   fixedFunctionContracts();
   depthContracts();
   bufferContracts();
+  indexBufferVertexHintContracts();
   lockedDrawBufferContracts();
   textureContracts();
   dynamicTextureContracts();

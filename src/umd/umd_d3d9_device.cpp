@@ -230,11 +230,11 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   if (input.Flags.Value & ~(buffer ? UINT(0x21800cc) : UINT(0x11087))) return E_INVALIDARG;
   if (buffer && (bool(input.Flags.VertexBuffer) == bool(input.Flags.IndexBuffer) || input.SurfCount != 1))
     return E_INVALIDARG;
-  // The documented locked-draw contract needs CPU storage. Implement the
-  // runtime-owned SYSTEMMEM VB path; index, GPU-only and owned buffers retain
-  // their existing locking contract.
-  if (input.Flags.MightDrawFromLocked && (!input.Flags.VertexBuffer
-      || input.Pool != D3DDDIPOOL_SYSTEMMEM || input.Flags.NotLockable)) return E_INVALIDARG;
+  // This hint describes vertex buffers. The system D3D8 runtime also supplies
+  // it on ordinary index-buffer creation; it does not enable locked IB draws.
+  const bool lockedVertex = input.Flags.VertexBuffer && input.Flags.MightDrawFromLocked;
+  if (lockedVertex && (input.Pool != D3DDDIPOOL_SYSTEMMEM || input.Flags.NotLockable))
+    return E_INVALIDARG;
   const bool target = input.Flags.RenderTarget != 0;
   const bool depth = input.Flags.ZBuffer != 0;
   const bool texture = input.Flags.Texture != 0;
@@ -274,14 +274,14 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
       const auto info = input.pSurfList[0];
       if (!info.Width || info.Width > UINT_MAX - 255
           || (info.pSysMem && input.Pool != D3DDDIPOOL_SYSTEMMEM)) return E_INVALIDARG;
-      if (input.Flags.MightDrawFromLocked && !info.pSysMem) return E_INVALIDARG;
+      if (lockedVertex && !info.pSysMem) return E_INVALIDARG;
       if (input.Flags.IndexBuffer && info.Width % (format == D3DFMT_INDEX16 ? 2 : 4)) return E_INVALIDARG;
       bufferDesc.bytes = info.Width; bufferDesc.format = format;
       bufferDesc.fvf = input.Flags.VertexBuffer ? input.Fvf : 0;
       bufferDesc.index = input.Flags.IndexBuffer != 0; bufferDesc.dynamic = input.Flags.Dynamic != 0;
       bufferDesc.writeOnly = input.Flags.WriteOnly != 0; bufferDesc.lockable = !input.Flags.NotLockable;
       bufferDesc.systemMemory = input.Pool == D3DDDIPOOL_SYSTEMMEM;
-      bufferDesc.mightDrawFromLocked = input.Flags.MightDrawFromLocked != 0;
+      bufferDesc.mightDrawFromLocked = lockedVertex;
       bufferDesc.systemData = const_cast<void*>(info.pSysMem);
       if (info.pSysMem) {
         if (bufferDesc.bytes > UINTPTR_MAX - reinterpret_cast<uintptr_t>(info.pSysMem)) return E_INVALIDARG;

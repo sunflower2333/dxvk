@@ -1031,6 +1031,10 @@ namespace dxvk {
 
     bool HasDirtyGraphicsBindings();
 
+    void RecordPredication(
+            D3D11Query*                       pQuery,
+            BOOL                              PredicateValue);
+
     void ResetCommandListState();
 
     void ResetContextState();

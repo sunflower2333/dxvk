@@ -2673,6 +2673,7 @@ namespace dxvk {
     auto predicate = D3D11Query::FromPredicate(pPredicate);
     m_state.pr.predicateObject = predicate;
     m_state.pr.predicateValue  = PredicateValue;
+    RecordPredication(predicate, PredicateValue);
 
     static bool s_errorShown = false;
 
@@ -4835,7 +4836,27 @@ namespace dxvk {
 
 
   template<typename ContextType>
+  void D3D11CommonContext<ContextType>::RecordPredication(
+          D3D11Query*                       pQuery,
+          BOOL                              PredicateValue) {
+    // A predicate transition must break both batching and chunk boundaries.
+    // Immediate API state remains in m_state.pr; deferred transitions need
+    // owned, ordered records because the recording state is mutable later.
+    FlushCsChunk();
+    if constexpr (IsDeferred) {
+      D3D11_QUERY_DESC1 desc = { };
+      if (pQuery)
+        pQuery->GetDesc1(&desc);
+      GetTypedContext()->m_commandList->AddPredication(pQuery, PredicateValue,
+        bool(desc.MiscFlags & D3D11_QUERY_MISC_PREDICATEHINT));
+    }
+  }
+
+
+  template<typename ContextType>
   void D3D11CommonContext<ContextType>::ResetCommandListState() {
+    // Execution state resets without changing the saved API predicate state.
+    RecordPredication(nullptr, FALSE);
     EmitCs([
       cUsedBindings  = GetMaxUsedBindings()
     ] (DxvkContext* ctx) {
@@ -5074,6 +5095,7 @@ namespace dxvk {
 
   template<typename ContextType>
   void D3D11CommonContext<ContextType>::RestoreCommandListState() {
+    RecordPredication(m_state.pr.predicateObject.ptr(), m_state.pr.predicateValue);
     BindFramebuffer();
 
     BindShader<D3D11ShaderType::eVertex>(GetCommonShader(m_state.vs.ptr()));

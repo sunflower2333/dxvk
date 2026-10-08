@@ -2,6 +2,7 @@
 #include "../src/umd/umd_map.h"
 #include <cstdio>
 #include <cstdlib>
+#include "umd-predicate-wait-controls.h"
 
 static unsigned checks;
 #define CHECK(condition) do { checks++; if (!(condition)) { \
@@ -10,6 +11,12 @@ static unsigned checks;
 
 int main() {
   using namespace dxvk::umd;
+  static_assert(S_OK == 0 && S_FALSE == 1 && E_FAIL == -2147467259);
+  static_assert(DXGI_ERROR_DEVICE_REMOVED == -2005270523
+    && DXGI_ERROR_DEVICE_RESET == -2005270521 && E_OUTOFMEMORY == -2147024882);
+  predicateWaitControls([](bool condition) { CHECK(condition); },
+    PredicateWaitCodes{S_OK, S_FALSE, E_FAIL}, DXGI_ERROR_DEVICE_REMOVED,
+    DXGI_ERROR_DEVICE_RESET, E_OUTOFMEMORY);
   QueryInfo info;
   unsigned unexpectedQueryCalls = 0;
   auto unexpectedQuery = [&](void*, UINT, UINT) { ++unexpectedQueryCalls; return S_OK; };

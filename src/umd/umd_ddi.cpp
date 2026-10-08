@@ -5,6 +5,7 @@
 #include "umd_shader11.h"
 #include "umd_shader10_policy.h"
 #include "umd_query.h"
+#include "umd_predicate_wait.h"
 #include "umd_allocation.h"
 #include "umd_primary.h"
 #include "umd_residency_transaction.h"
@@ -614,28 +615,32 @@ void APIENTRY setPredication(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object, BOOL va
   // bytes may be reclaimed from a nested runtime callback.
   const QueryBackend backend(*query);
   const auto context = device->context;
+  const auto renderer = device->backend;
   const auto info = query->info;
-  BOOL result = FALSE;
   if (!info.hint) {
     const HRESULT submitted = dxvk::umd::flushRuntimeSubmission(context.Get());
-    if (FAILED(submitted)) { device->error(submitted); return; }
     if (device->retired || query->retired) return;
-    const ULONGLONG deadline = GetTickCount64() + 2000;
-    for (;;) {
-      const HRESULT hr = backend.getData(context.Get(), &result, sizeof(result),
+    if (FAILED(submitted)) { device->error(submitted); return; }
+  }
+  const auto resolved = dxvk::umd::resolveNativePredicate(info.hint, value != FALSE,
+    dxvk::umd::PredicateWaitCodes{S_OK, S_FALSE, E_FAIL},
+    [&] { return !device->retired && !query->retired; },
+    [&] { return renderer->GetDeviceRemovedReason(); },
+    [&](bool& result) {
+      BOOL raw = FALSE;
+      const HRESULT hr = backend.getData(context.Get(), &raw, sizeof(raw),
         D3D11_ASYNC_GETDATA_DONOTFLUSH);
-      if (hr == S_OK) break;
-      if (hr != S_FALSE) { device->error(FAILED(hr) ? hr : E_FAIL); return; }
-      if (device->retired || GetTickCount64() >= deadline) {
-        device->error(DXGI_ERROR_DEVICE_REMOVED); return;
-      }
-      Sleep(1);
-    }
+      if (hr == S_OK) result = raw != FALSE;
+      return hr;
+    }, [] { Sleep(1); });
+  if (resolved.state == dxvk::umd::PredicateResolutionState::Retired) return;
+  if (resolved.state == dxvk::umd::PredicateResolutionState::Failed) {
+    device->error(resolved.error); return;
   }
   if (device->retired || query->retired) return;
   device->predicate = backend.streams[0];
   device->predicateValue = value;
-  device->suppressCommands = !info.hint && ((result != FALSE) == (value != FALSE));
+  device->suppressCommands = resolved.suppress;
 }
 void APIENTRY getQueryData(D3D10DDI_HDEVICE h, D3D10DDI_HQUERY object, void* data, UINT size, UINT flags) {
   auto device = get(h); auto query = registeredChild(device, queryStorage, object.pDrvPrivate);

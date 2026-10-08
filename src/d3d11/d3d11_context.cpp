@@ -494,7 +494,16 @@ namespace dxvk {
     if (FAILED(pUnorderedAccessView->QueryInterface(IID_PPV_ARGS(&qiUav))))
       return;
 
-    AddCost(GpuCostEstimate::Transfer);
+    auto emitClear = [this] (auto command) {
+      if constexpr (IsDeferred) {
+        EmitPredicateAction(std::move(command), GpuCostEstimate::Transfer, nullptr);
+      } else if (m_state.pr.predicateObject) {
+        EmitPredicateAction(std::move(command), GpuCostEstimate::Transfer, nullptr);
+      } else {
+        AddCost(GpuCostEstimate::Transfer);
+        EmitCs(std::move(command));
+      }
+    };
 
     auto uav = static_cast<D3D11UnorderedAccessView*>(qiUav.ptr());
 
@@ -552,7 +561,7 @@ namespace dxvk {
        || bufferView->info().format == VK_FORMAT_R32_SINT
        || bufferView->info().format == VK_FORMAT_R32_SFLOAT
        || bufferView->info().format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
-        EmitCs([
+        emitClear([
           cClearValue = clearValue.color.uint32[0],
           cDstSlice   = DxvkBufferSlice(bufferView)
         ] (DxvkContext* ctx) {
@@ -571,7 +580,7 @@ namespace dxvk {
           bufferView = bufferView->buffer()->createView(info);
         }
 
-        EmitCs([
+        emitClear([
           cClearValue = clearValue,
           cDstView    = bufferView
         ] (DxvkContext* ctx) {
@@ -589,7 +598,7 @@ namespace dxvk {
       bool isZeroClearValue = !(clearValue.color.uint32[0] | clearValue.color.uint32[1]
                               | clearValue.color.uint32[2] | clearValue.color.uint32[3]);
 
-      EmitCs([
+      emitClear([
         cClearValue = clearValue,
         cDstView    = imageView,
         cDstFormat  = isZeroClearValue ? uavFormat : rawFormat
@@ -646,7 +655,16 @@ namespace dxvk {
     if (!info || info->flags.any(DxvkFormatFlag::SampledSInt, DxvkFormatFlag::SampledUInt))
       return;
 
-    AddCost(GpuCostEstimate::Transfer);
+    auto emitClear = [this] (auto command) {
+      if constexpr (IsDeferred) {
+        EmitPredicateAction(std::move(command), GpuCostEstimate::Transfer, nullptr);
+      } else if (m_state.pr.predicateObject) {
+        EmitPredicateAction(std::move(command), GpuCostEstimate::Transfer, nullptr);
+      } else {
+        AddCost(GpuCostEstimate::Transfer);
+        EmitCs(std::move(command));
+      }
+    };
 
     VkClearValue clearValue;
     clearValue.color.float32[0] = Values[0];
@@ -655,7 +673,7 @@ namespace dxvk {
     clearValue.color.float32[3] = Values[3];
 
     if (uav->GetResourceType() == D3D11_RESOURCE_DIMENSION_BUFFER) {
-      EmitCs([
+      emitClear([
         cClearValue = clearValue,
         cDstView    = std::move(bufView)
       ] (DxvkContext* ctx) {
@@ -665,7 +683,7 @@ namespace dxvk {
           cClearValue.color);
       });
     } else {
-      EmitCs([
+      emitClear([
         cClearValue = clearValue,
         cDstView    = std::move(imgView)
       ] (DxvkContext* ctx) {
@@ -707,8 +725,6 @@ namespace dxvk {
     if (!aspectMask)
       return;
 
-    AddCost(GpuCostEstimate::Transfer);
-
     VkClearValue clearValue;
     clearValue.depthStencil.depth   = Depth;
     clearValue.depthStencil.stencil = Stencil;
@@ -716,14 +732,23 @@ namespace dxvk {
     DxvkAttachment attachment = {};
     attachment.view = dsv->GetImageView();
 
-    EmitCs([
+    auto command = [
       cClearValue = clearValue,
       cAspectMask = aspectMask,
       cAttachment = std::move(attachment)
     ] (DxvkContext* ctx) {
       ctx->clearRenderTarget(cAttachment,
         cAspectMask, cClearValue, 0u);
-    });
+    };
+
+    if constexpr (IsDeferred) {
+      EmitPredicateAction(std::move(command), GpuCostEstimate::Transfer, nullptr);
+    } else if (m_state.pr.predicateObject) {
+      EmitPredicateAction(std::move(command), GpuCostEstimate::Transfer, nullptr);
+    } else {
+      AddCost(GpuCostEstimate::Transfer);
+      EmitCs(std::move(command));
+    }
   }
 
 

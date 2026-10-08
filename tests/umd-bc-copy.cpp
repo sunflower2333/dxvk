@@ -105,8 +105,8 @@ struct Texture {
   D3D10DDI_HRESOURCE handle;
   ComPtr<ID3D11Texture2D> reference;
   Planes expected,initialBytes,initialOriginal;
-  Texture(Fixture& owner,DXGI_FORMAT fmt,UINT kind,UINT seed,bool staging=false,bool immutable=false)
-    : f(owner),cube(kind),width(kind?16u:24u),layers(kind?6u:2u),blockBytes(dxvk::umd::transferBlockBytes(fmt)),format(fmt),
+  Texture(Fixture& owner,DXGI_FORMAT fmt,UINT cubeKind,UINT seed,bool staging=false,bool immutable=false)
+    : f(owner),cube(cubeKind),width(cubeKind?16u:24u),layers(cubeKind?6u:2u),blockBytes(dxvk::umd::transferBlockBytes(fmt)),format(fmt),
       storage(f.call([&](auto& t){return t.pfnCalcPrivateResourceSize(f.device,nullptr);})),handle{storage.data()},
       expected(mips*layers),initialBytes(mips*layers) {
     Phase step(staging?"BC-staging-create":"BC-resource-create"); CHECK(blockBytes==8 || blockBytes==16);

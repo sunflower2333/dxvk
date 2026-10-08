@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Explicit reversible adapter-wide validation experiment. No reset/reboot/caps edits.
+# Explicit reversible adapter-wide validation experiment; lifecycle is ROOT opt-in.
 param(
     [ValidateSet('Controller','Watchdog','Worker')][string]$Role='Controller',
     [string]$Config='', [string]$ConfigSha256='', [string]$RunRoot='',
@@ -15,10 +15,12 @@ param(
     [string]$VulkanLibrarySha256='', [string]$VulkanLoaderSha256='',
     [string]$ApprovedPayload='', [string]$ApprovedPayloadSha256='',
     [string]$TokenScript='', [string]$TokenScriptSha256='',
-    [switch]$ApplyReviewedTuple, [switch]$WaitForReviewedRefresh
+    [switch]$ApplyReviewedTuple, [switch]$WaitForReviewedRefresh, [switch]$RootAuthorizeLifecycleRestart
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+$script:LifecycleJobHandle=0L
+$script:LifecycleWorkerJobHandle=0L
 function Hash([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
 function Check-File([string]$Path,[string]$Sha) {
     if ($Sha -cnotmatch '^[0-9a-f]{64}$' -or !(Test-Path -LiteralPath $Path -PathType Leaf) -or (Hash $Path) -cne $Sha) { throw "Pinned file differs: $Path" }
@@ -105,11 +107,181 @@ function Driver-State([string]$Device) {
     $thumbprint=''; if ($signature.SignerCertificate) { $thumbprint=$signature.SignerCertificate.Thumbprint }
     [ordered]@{service=$service;image=$image;sha256=(Hash $image);signature_status=$signature.Status.ToString();signer_thumbprint=$thumbprint;inf=[string](Get-PnpDeviceProperty -InstanceId $Device -KeyName 'DEVPKEY_Device_DriverInfPath').Data;version=[string](Get-PnpDeviceProperty -InstanceId $Device -KeyName 'DEVPKEY_Device_DriverVersion').Data;provider=[string](Get-PnpDeviceProperty -InstanceId $Device -KeyName 'DEVPKEY_Device_DriverProvider').Data}
 }
+function Lifecycle-Enabled($Value) { if ($Value -is [Collections.IDictionary]) { return $Value.Contains('lifecycle_mode') -and $Value.lifecycle_mode -eq $true }; $null -ne $Value.PSObject.Properties['lifecycle_mode'] -and $Value.lifecycle_mode -eq $true }
+function Lifecycle-Installed($Value) {
+    $devices=@(Get-PnpDevice -PresentOnly -Class Display | Where-Object {$_.InstanceId -match '^PCI\\VEN_1AF4&DEV_1050(?:&|\\)'})
+    if ($devices.Count -ne 1 -or $devices[0].InstanceId -cne $Value.instance) { throw 'Same one present VIOGPU instance required for lifecycle operation' }
+    $key=[string](Get-PnpDeviceProperty -InstanceId $Value.instance -KeyName 'DEVPKEY_Device_Driver').Data
+    if (('SYSTEM\CurrentControlSet\Control\Class\'+$key) -cne $Value.registry_subkey) { throw 'Display class binding changed during lifecycle transition' }
+    $driver=Driver-State $Value.instance
+    if (($driver | ConvertTo-Json -Compress) -cne ($Value.lifecycle_driver_state | ConvertTo-Json -Compress)) { throw 'Installed KMD identity/package changed during lifecycle transition' }
+    [ordered]@{instance=$Value.instance;registry_subkey=$Value.registry_subkey;driver=$driver;status=$devices[0].Status}
+}
+function Lifecycle-State($Value) {
+    $installed=Lifecycle-Installed $Value
+    if ($installed.status -cne 'OK') { throw 'Current VIOGPU devnode is not healthy' }
+    $driver=$installed.driver
+    $identity=[DxvkBindingNative01]::CurrentIdentity()
+    $names=[DxvkBindingNative01]::Names($identity.Luid); Check-Names $names $identity.Luid
+    [ordered]@{schema=1;instance=$Value.instance;registry_subkey=$Value.registry_subkey;identity=$identity;names=$names;driver=$driver;utc=[DateTime]::UtcNow.ToString('o')}
+}
+function Wait-LifecycleState($Value) {
+    $timer=[Diagnostics.Stopwatch]::StartNew(); $last=''
+    do { try { return Lifecycle-State $Value } catch { $last=$_.Exception.Message }; Start-Sleep -Milliseconds 200 } while ($timer.ElapsedMilliseconds -lt 12000)
+    throw ('Current healthy paired160 lifecycle identity unavailable: '+$last)
+}
+function Lifecycle-Desktop($Value) {
+    $explorer=@(Get-Process explorer -IncludeUserName); $dwm=@(Get-Process dwm)
+    if ($explorer.Count -ne 1 -or $dwm.Count -ne 1 -or !$explorer[0].UserName -or $explorer[0].SessionId -ne $Value.desktop_session -or $dwm[0].SessionId -ne $Value.desktop_session) { throw 'Healthy original interactive desktop session required after lifecycle recovery' }
+    $sid=([Security.Principal.NTAccount]$explorer[0].UserName).Translate([Security.Principal.SecurityIdentifier]).Value
+    if ($sid -cne $Value.desktop_sid) { throw 'Original desktop user changed during lifecycle recovery' }
+    [ordered]@{healthy=$true;sid=$sid;session=$Value.desktop_session;dwm_pid=$dwm[0].Id;explorer_pid=$explorer[0].Id;pid_retention_required=$false}
+}
+function Lifecycle-Restart($Value,[string]$Phase) {
+    if (!(Lifecycle-Enabled $Value) -or $Phase -notin @('forward','reverse')) { throw 'Explicit same-owner lifecycle mode required' }
+    $installed=Lifecycle-Installed $Value
+    Check-File $Value.lifecycle_pnputil $Value.lifecycle_pnputil_sha256
+    Check-File $Value.runner $Value.runner_sha256
+    if ($Value.lifecycle_pnputil -ine (Join-Path ([Environment]::SystemDirectory) 'pnputil.exe') -or $Value.instance -cnotmatch '^PCI\\VEN_1AF4&DEV_1050(?:&|\\)[A-Za-z0-9_&\\-]+$') { throw 'Exact installed devnode and genuine SYSTEM pnputil only' }
+    if (-not ('DxvkRawProcessF4_02' -as [type])) { Add-Type -Path $Value.runner }
+    if ($script:LifecycleJobHandle -eq 0) { $script:LifecycleJobHandle=[DxvkBindingNative01]::OwnWorkerLifetime() }
+    $prefix=Join-Path $Value.control ($Phase+'-restart-'+$PID)
+    foreach ($suffix in @('.stdout.raw','.stderr.raw','.process.json')) { if (Test-Path -LiteralPath ($prefix+$suffix)) { throw 'Fresh bounded lifecycle originals required' } }
+    $arguments='/restart-device '+(Quote $Value.instance)
+    $r=[DxvkRawProcessF4_02]::Run($Value.lifecycle_pnputil,$arguments,$Value.control,($prefix+'.stdout.raw'),($prefix+'.stderr.raw'),20000)
+    $receipt=Process-Receipt $r $Value.runner_sha256
+    $receipt.phase=$Phase; $receipt.instance=$Value.instance; $receipt.arguments=$arguments; $receipt.executable=$Value.lifecycle_pnputil; $receipt.executable_sha256=$Value.lifecycle_pnputil_sha256; $receipt.job_handle=$script:LifecycleJobHandle
+    $receipt.stdout=[ordered]@{path=($prefix+'.stdout.raw');sha256=(Hash ($prefix+'.stdout.raw'))}; $receipt.stderr=[ordered]@{path=($prefix+'.stderr.raw');sha256=(Hash ($prefix+'.stderr.raw'))}
+    Write-Json ($prefix+'.process.json') $receipt
+    if (!$r.Exited -or !$r.ExitCodeAvailable -or $r.ExitCode -ne 0 -or $r.TimedOut -or $r.ChildStillRunning -or !$r.PipesDrained -or $r.Failure) { throw 'Exact-instance lifecycle operation failed/timed out; owned originals retained' }
+    [ordered]@{receipt=$receipt;receipt_path=($prefix+'.process.json');state=(Wait-LifecycleState $Value)}
+}
+function Lifecycle-OriginalProcess([int]$PidValue,[string]$Start,[string]$Executable,[string]$ExpectedHash,[int]$WaitMs,[bool]$Kill) {
+    $child=$null
+    try { try { $child=[Diagnostics.Process]::GetProcessById($PidValue) } catch [ArgumentException] { return [ordered]@{pid=$PidValue;gone=$true;already_absent=$true;pid_reused=$false} }
+        $handle=$child.Handle
+        if ($child.WaitForExit(0)) { return [ordered]@{pid=$PidValue;gone=$true;exited_before_identity_query=$true;retained_handle=$handle.ToInt64();original_exit_claim=$false} }
+        $actualStart=$child.StartTime.ToUniversalTime().ToString('o')
+        if ($actualStart -cne $Start) { return [ordered]@{pid=$PidValue;gone=$true;already_absent=$false;pid_reused=$true;current_start_utc=$actualStart} }
+        if ($child.MainModule.FileName -ine $Executable -or (Hash $child.MainModule.FileName) -cne $ExpectedHash) { throw 'Refusing unrelated or changed lifecycle child' }
+        $exited=$child.WaitForExit($WaitMs); $killed=$false
+        if (!$exited -and $Kill) { $child.Kill(); $killed=$true; $exited=$child.WaitForExit(5000) }
+        [ordered]@{pid=$PidValue;start_utc=$Start;retained_handle=$handle.ToInt64();gone=$exited;killed=$killed;exit_code=$(if($exited){$child.ExitCode}else{$null});original_exit_claim=$false}
+    } finally { if ($child) { $child.Dispose() } }
+}
+function Lifecycle-AcquireJob($Value) {
+    if ($script:LifecycleWorkerJobHandle -gt 0) { return [ordered]@{retained_handle=$script:LifecycleWorkerJobHandle;already_retained=$true;previous_boot=$false} }
+    $worker=$null; $handle=0L
+    $readyPath=Join-Path $Value.control 'lifecycle-worker-original.json'
+    if (Test-Path -LiteralPath $readyPath) {
+        $ready=Get-Content -LiteralPath $readyPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        try {
+            try { $worker=[Diagnostics.Process]::GetProcessById([int]$ready.pid) } catch [ArgumentException] {}
+            if ($worker -and !$worker.WaitForExit(0) -and $worker.StartTime.ToUniversalTime().ToString('o') -ceq $ready.start_utc) {
+                if ($worker.MainModule.FileName -ine $Value.lifecycle_powershell -or (Hash $worker.MainModule.FileName) -cne $Value.lifecycle_powershell_sha256) { throw 'Original job worker identity differs' }
+                $handle=$worker.Handle.ToInt64()
+            }
+            $script:LifecycleWorkerJobHandle=[DxvkBindingNative01]::OpenLifecycleWorkerJob($Value.lifecycle_worker_job_name,$handle)
+        } finally { if ($worker) { $worker.Dispose() } }
+    }
+    if ($script:LifecycleWorkerJobHandle -le 0) {
+        $boot=(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')
+        if ($boot -ceq $Value.lifecycle_boot_utc) { throw 'Same-boot original job absence cannot prove unpublished probe teardown' }
+        return [ordered]@{retained_handle=0;already_retained=$false;previous_boot=$true;original_boot_utc=$Value.lifecycle_boot_utc;current_boot_utc=$boot}
+    }
+    [ordered]@{retained_handle=$script:LifecycleWorkerJobHandle;already_retained=$false;previous_boot=$false}
+}
+function Lifecycle-CompleteJob($Scope) {
+    if ($Scope.previous_boot) { return [ordered]@{active_processes=0;previous_boot=$true;exact_job_completion=$false;old_boot_processes_cannot_span_restart=$true} }
+    $active=[DxvkBindingNative01]::CompleteLifecycleWorkerJob([long]$Scope.retained_handle,10000)
+    [ordered]@{retained_handle=$Scope.retained_handle;active_processes=$active;previous_boot=$false;exact_job_completion=$true;termination_requested_only_when_active=$true}
+}
+
+function Lifecycle-Cleanup($Value) {
+    # Raw replay/release is already durable. The retained original job must
+    # report zero active processes BEFORE reverse Stop/Start.
+    $jobScope=Lifecycle-AcquireJob $Value
+    $readyPath=Join-Path $Value.control 'lifecycle-worker-original.json'; $workerGone=$false; $worker=$null
+    if (!(Test-Path -LiteralPath $readyPath) -and (Test-Path -LiteralPath (Join-Path $Value.control 'forward-lifecycle-intent.json'))) { throw 'Forward lifecycle intent requires its protected original worker checkpoint' }
+    if (Test-Path -LiteralPath $readyPath) {
+        $ready=Get-Content -LiteralPath $readyPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($ready.worker_job_handle -le 0 -or !$ready.start_utc -or $ready.sid -cne $Value.desktop_sid -or $ready.session -ne $Value.desktop_session) { throw 'Original lifecycle worker identity/job checkpoint required' }
+        $worker=Lifecycle-OriginalProcess ([int]$ready.pid) $ready.start_utc $Value.lifecycle_powershell $Value.lifecycle_powershell_sha256 20000 $false
+        $workerGone=$worker.gone
+    }
+    $task=Get-ScheduledTask -TaskName $Value.task_name -ErrorAction SilentlyContinue
+    if (!$workerGone -or ($task -and $task.State -eq 'Running')) {
+        if ($task) {
+            $config=Join-Path $Value.control 'config.json'; $expected='-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File '+(Quote $Value.lifecycle_controller)+' -Role Worker -Config '+(Quote $config)+' -ConfigSha256 '+(Hash $config)
+            if (@($task.Actions).Count -ne 1 -or $task.Actions[0].Execute -ine $Value.lifecycle_powershell -or $task.Actions[0].Arguments -cne $expected) { throw 'Refusing unrelated lifecycle scheduled worker' }
+            Stop-ScheduledTask -TaskName $Value.task_name
+        }
+        if (Test-Path -LiteralPath $readyPath) { $worker=Lifecycle-OriginalProcess ([int]$ready.pid) $ready.start_utc $Value.lifecycle_powershell $Value.lifecycle_powershell_sha256 5000 $false; $workerGone=$worker.gone }
+        else { $remaining=Get-ScheduledTask -TaskName $Value.task_name -ErrorAction SilentlyContinue; $workerGone=(!$remaining -or $remaining.State -ne 'Running') }
+    }
+    $jobCompletion=Lifecycle-CompleteJob $jobScope
+    if (Test-Path -LiteralPath $readyPath) { $worker=Lifecycle-OriginalProcess ([int]$ready.pid) $ready.start_utc $Value.lifecycle_powershell $Value.lifecycle_powershell_sha256 5000 $false; $workerGone=$worker.gone }
+    $taskClock=[Diagnostics.Stopwatch]::StartNew()
+    do { $remaining=Get-ScheduledTask -TaskName $Value.task_name -ErrorAction SilentlyContinue; if (!$remaining -or $remaining.State -ne 'Running') { break }; Start-Sleep -Milliseconds 100 } while ($taskClock.ElapsedMilliseconds -lt 5000)
+    $workerGone=$workerGone -and (!$remaining -or $remaining.State -ne 'Running')
+    $probeGone=$jobCompletion.active_processes -eq 0; $probe=$null; $heldPath=Join-Path $Value.output 'worker-held.json'
+    if (Test-Path -LiteralPath $heldPath) {
+        $held=Get-Content -LiteralPath $heldPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $probe=Lifecycle-OriginalProcess ([int]$held.pid) $held.start_utc $Value.probe $Value.probe_sha256 5000 $true
+        $probeGone=$probe.gone
+    }
+    [DxvkBindingNative01]::RequireLifecycleRestartPermit($true,$workerGone,$probeGone)
+    [ordered]@{schema=1;worker_gone=$workerGone;probe_gone=$probeGone;worker=$worker;published_probe=$probe;original_job_completion=$jobCompletion;unpublished_children_closed_by_original_job_completion=($jobCompletion.active_processes -eq 0);complete_tree_attestation=$false}
+}
+function Check-LifecycleIntent($Value,[string]$Phase) {
+    $path=Join-Path $Value.control ($Phase+'-lifecycle-intent.json')
+    if (!(Test-Path -LiteralPath $path)) { return }
+    $intent=Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($intent.schema -ne 1 -or $intent.owner_pid -ne $Value.owner_pid -or $intent.instance -cne $Value.instance -or $intent.registry_subkey -cne $Value.registry_subkey -or $intent.original_backup_luid -cne $Value.luid) { throw 'Protected lifecycle intent differs from the original backup owner/adapter' }
+    if ($Phase -ceq 'reverse' -and $intent.raw_restored_sha256 -cne (Hash (Join-Path $Value.control 'restored.json'))) { throw 'Reverse intent raw restoration proof differs' }
+}
+function Wait-LifecycleDesktop($Value) {
+    $timer=[Diagnostics.Stopwatch]::StartNew(); $last=''
+    do { try { return Lifecycle-Desktop $Value } catch { $last=$_.Exception.Message }; Start-Sleep -Milliseconds 200 } while ($timer.ElapsedMilliseconds -lt 12000)
+    throw ('Original interactive desktop did not become healthy after recovery: '+$last)
+}
+function Settle-Lifecycle($Value,$RawSettlement) {
+    if (!$RawSettlement.raw_tuple_restored) {
+        if (Test-Path -LiteralPath (Join-Path $Value.control 'forward-lifecycle-intent.json')) { throw 'Lifecycle intent cannot be settled without actual raw replay' }
+        return [ordered]@{enabled=$true;cancelled_without_registry_write=$true;effective_restoration_required=$false;hardware_admission=$false}
+    }
+    Check-LifecycleIntent $Value 'forward'; Check-LifecycleIntent $Value 'reverse'
+    $cleanup=Lifecycle-Cleanup $Value
+    [DxvkBindingNative01]::RequireSnapshot((Raw-Rows $Value.original),[DxvkBindingNative01]::Snapshot($Value.registry_subkey))
+    $state=$null; $reverse=$null; $alreadyOriginal=$false; $beforeFailure=''
+    # Failed forward Stop/Start can leave no current paired identity. Exact
+    # installed instance/class/KMD, raw restore and closed producers authorize
+    # the reverse recovery; full readiness is mandatory AFTER that operation.
+    try { $state=Wait-LifecycleState $Value; [DxvkBindingNative01]::RequireLifecycleNames($state.identity.Luid,[string[]]$Value.original_slots,$state.names); $alreadyOriginal=$true } catch { $beforeFailure=$_.Exception.Message }
+    if (!$alreadyOriginal) {
+        $intent=Join-Path $Value.control 'reverse-lifecycle-intent.json'
+        if (!(Test-Path -LiteralPath $intent)) { Write-MutationIntent $intent ([ordered]@{schema=1;owner_pid=$Value.owner_pid;instance=$Value.instance;registry_subkey=$Value.registry_subkey;original_backup_luid=$Value.luid;raw_restored_sha256=(Hash (Join-Path $Value.control 'restored.json'));utc=[DateTime]::UtcNow.ToString('o')}) }
+        $reverse=Lifecycle-Restart $Value 'reverse'; $state=$reverse.state
+    }
+    [DxvkBindingNative01]::RequireLifecycleNames($state.identity.Luid,[string[]]$Value.original_slots,$state.names)
+    [DxvkBindingNative01]::RequireSnapshot((Raw-Rows $Value.original),[DxvkBindingNative01]::Snapshot($Value.registry_subkey))
+    $desktop=Wait-LifecycleDesktop $Value
+    $proof=[ordered]@{schema=1;actor_pid=$PID;original_backup_luid=$Value.luid;forward_probe_luid=$null;restored_luid=$state.identity.Luid;raw_settlement=[ordered]@{raw_tuple_restored=$RawSettlement.raw_tuple_restored;mutation_intent_present=$RawSettlement.mutation_intent_present;proof_sha256=(Hash (Join-Path $Value.control 'restored.json'))};cleanup=$cleanup;reverse=$reverse;before_reverse_readiness_failure=$beforeFailure;already_effective_original=$alreadyOriginal;state=$state;desktop=$desktop;effective_original_names_restored=$true;hardware_admission=$false}
+    $forward=Join-Path $Value.control 'lifecycle-forward.json'
+    if (Test-Path -LiteralPath $forward) { $forwardState=Get-Content -LiteralPath $forward -Raw -Encoding UTF8 | ConvertFrom-Json; $proof.forward_probe_luid=$forwardState.state.identity.Luid }
+    $path=Join-Path $Value.control ('lifecycle-restored-'+$PID+'.json')
+    if (!(Test-Path -LiteralPath $path)) { Write-Json $path $proof }
+    return $proof
+}
+
 function Restore-Tuple($Value,[string]$Reason) {
     $mutex=[Threading.Mutex]::new($false,$Value.mutex)
     $locked=$false
     try {
-        try { $locked=$mutex.WaitOne(10000) } catch [Threading.AbandonedMutexException] { $locked=$true }
+        $waitMs=10000
+        if (($Value -is [Collections.IDictionary] -and $Value.Contains('lifecycle_mode') -and $Value.lifecycle_mode) -or
+            ($Value -isnot [Collections.IDictionary] -and $null -ne $Value.PSObject.Properties['lifecycle_mode'] -and $Value.lifecycle_mode)) { $waitMs=180000 }
+        try { $locked=$mutex.WaitOne($waitMs) } catch [Threading.AbandonedMutexException] { $locked=$true }
         if (!$locked) { throw 'Restoration mutex deadline exceeded' }
         $rows=Raw-Rows $Value.original
         $intent=Join-Path $Value.control 'mutation-intent.json'
@@ -134,6 +306,10 @@ function Restore-Tuple($Value,[string]$Reason) {
         # can read it. The interactive worker signals its own Local event.
         $release=Join-Path $Value.control 'release.json'
         if (!(Test-Path -LiteralPath $release)) { Write-Json $release ([ordered]@{restored_sha256=(Hash $proof);raw_tuple_restored=$settled.raw_tuple_restored;cancelled_without_registry_write=$settled.cancelled_without_registry_write}) }
+        if (($Value -is [Collections.IDictionary] -and $Value.Contains('lifecycle_mode') -and $Value.lifecycle_mode) -or
+            ($Value -isnot [Collections.IDictionary] -and $null -ne $Value.PSObject.Properties['lifecycle_mode'] -and $Value.lifecycle_mode)) {
+            $settled.lifecycle=Settle-Lifecycle $Value $settled
+        }
         return $settled
     } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
 }
@@ -182,6 +358,7 @@ if ($Role -ne 'Controller') {
     }
 }
 Add-Type -Path $native
+if ($Role -ceq 'Controller') { [DxvkBindingNative01]::RequireLifecycleMode($RootAuthorizeLifecycleRestart.IsPresent,$ApplyReviewedTuple.IsPresent,$Api,$D11Phase,$WaitForReviewedRefresh.IsPresent) }
 if ($Role -ne 'Controller') {
     if ($Role -eq 'Watchdog') {
         $owner=$null; $reason='deadline'; $status=[ordered]@{schema=1;role='Watchdog';restored=$false;hardware_admission=$false}
@@ -191,6 +368,11 @@ if ($Role -ne 'Controller') {
             if ($owner.StartTime.ToUniversalTime().Ticks -ne [long]$value.owner_start_ticks) { throw 'Controller PID was reused before watchdog armed' }
             Write-Json (Join-Path $value.control 'watchdog-ready.json') ([ordered]@{pid=$PID;start_utc=(Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o');owner_pid=$owner.Id;owner_handle=$ownerHandle.ToInt64();owner_start_ticks=$value.owner_start_ticks;deadline_utc=$value.deadline_utc})
             while ([DateTime]::UtcNow -lt [DateTime]::Parse($value.deadline_utc).ToUniversalTime()) {
+                if ((Lifecycle-Enabled $value) -and $script:LifecycleWorkerJobHandle -eq 0 -and (Test-Path -LiteralPath (Join-Path $value.control 'lifecycle-worker-original.json'))) {
+                    $scope=Lifecycle-AcquireJob $value
+                    if ($scope.previous_boot -or $scope.retained_handle -le 0) { throw 'Actual same-boot worker job must arm before binding' }
+                    Write-Json (Join-Path $value.control 'lifecycle-watchdog-job-ready.json') ([ordered]@{schema=1;pid=$PID;owner_pid=$value.owner_pid;job_name=$value.lifecycle_worker_job_name;retained_handle=$scope.retained_handle})
+                }
                 if (Test-Path -LiteralPath (Join-Path $value.control 'restored.json')) { $reason='controller-restored'; break }
                 if ($owner.WaitForExit(200)) { $reason='owner-loss'; break }
             }
@@ -227,7 +409,8 @@ if ($Role -ne 'Controller') {
         $token=& $value.token_script
         if ($token.sid -cne $value.desktop_sid -or $token.session_id -ne $value.desktop_session -or $token.elevated -or $token.elevation_type -ne 3 -or $token.integrity_rid -ne 8192 -or $env:PROCESSOR_ARCHITECTURE -cne 'ARM64') { throw 'Expected native Limited USER in the existing desktop session' }
         $status.token=$token
-        $status.worker_job_handle=[DxvkBindingNative01]::OwnWorkerLifetime()
+        if (Lifecycle-Enabled $value) { $status.worker_job_handle=[DxvkBindingNative01]::OwnLifecycleWorkerLifetime($value.lifecycle_worker_job_name,$value.desktop_sid) }
+        else { $status.worker_job_handle=[DxvkBindingNative01]::OwnWorkerLifetime() }
         # The separately pinned progress variant of the retained-process runner owns Start/Wait/Exit
         # and raw pipes. A tiny pure C# async wrapper allows Local-event release.
         $async=@'
@@ -248,16 +431,25 @@ public static class DxvkBindingAsync01 {
             if (!$negative.Exited -or !$negative.ExitCodeAvailable -or $negative.ExitCode -ne 0 -or $negative.TimedOut -or $negative.ChildStillRunning -or !$negative.PipesDrained -or $negative.Failure -or $negative.StderrBytes -ne 0 -or $negativeText -cnotmatch ('(?m)^'+[regex]::Escape($negativeMarker)+'\r?$')) { throw 'Actual native typed entry controls failed before binding' }
             $status.native_entry_negative_passed=$true
         } else { $status.native_entry_negative_executed=$false; $status.native_entry_negative_contract='Frozen739de05 ordinary D9 probe has no typed entry-negative mode' }
+        $probeLuid=$value.luid
         $before=[DxvkBindingNative01]::Names($value.luid); Check-Names $before $value.luid
         for ($index=0;$index -lt 3;++$index) { if ($before.Names[$index].Name -ine $value.original_slots[$index]) { throw 'Actual original KMT names differ from the three-slot tuple' } }
         Write-Json (Join-Path $value.output 'kmt-before.json') $before
-        Write-Json (Join-Path $value.output 'worker-ready.json') ([ordered]@{pid=$PID;sid=$token.sid;session=$token.session_id;worker_job_handle=$status.worker_job_handle})
+        $workerStart=[Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToString('o')
+        Write-Json (Join-Path $value.output 'worker-ready.json') ([ordered]@{pid=$PID;start_utc=$workerStart;sid=$token.sid;session=$token.session_id;worker_job_handle=$status.worker_job_handle})
         $clock=[Diagnostics.Stopwatch]::StartNew()
         while (!(Test-Path -LiteralPath (Join-Path $value.control 'bound.json'))) {
             if ((Test-Path -LiteralPath (Join-Path $value.control 'release.json')) -or $clock.ElapsedMilliseconds -gt 60000) { throw 'Binding was cancelled or never armed' }
             Start-Sleep -Milliseconds 100
         }
-        $bound=[DxvkBindingNative01]::Names($value.luid); Check-Names $bound $value.luid
+        if (Lifecycle-Enabled $value) {
+            $forward=Get-Content -LiteralPath (Join-Path $value.control 'lifecycle-forward.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($forward.schema -ne 1 -or $forward.owner_pid -ne $value.owner_pid -or $forward.instance -cne $value.instance -or $forward.original_backup_luid -cne $value.luid) { throw 'Protected current forward lifecycle identity required' }
+            $protected=[DxvkBindingNative01]::RuntimeIdentity160([byte[]]$forward.state.identity.Raw,$forward.state.identity.Luid)
+            $current=Lifecycle-State $value; [DxvkBindingNative01]::RequireIdentityMatch($protected,$current.identity)
+            $probeLuid=$protected.Luid; $status.original_backup_luid=$value.luid; $status.forward_probe_luid=$probeLuid
+        }
+        $bound=[DxvkBindingNative01]::Names($probeLuid); Check-Names $bound $probeLuid
         Write-Json (Join-Path $value.output 'kmt-bound.json') $bound
         $status.effective_candidate_selected=$bound.Names[$value.native_slot].Name -ieq $value.front
         # Existing proven runtime-lifecycle payload contract, confined to this
@@ -270,7 +462,7 @@ public static class DxvkBindingAsync01 {
         if ($value.api -ceq '10') {
             $args='10 '+$value.luid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
         } elseif ($value.api -ceq '11') {
-            $args=$value.luid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $value.vulkan_icd)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
+            $args=$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $value.vulkan_icd)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
         } else {
             # Frozen739de05 argv7 is the loaded ICD DLL, not its JSON manifest.
             $args=$value.api+' '+$value.d9_phase+' '+$value.luid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
@@ -331,9 +523,10 @@ public static class DxvkBindingAsync01 {
                 $permission=Get-Content -LiteralPath $release -Raw -Encoding UTF8 | ConvertFrom-Json
                 Check-File $proof $permission.restored_sha256
                 if ($permission.raw_tuple_restored -ne $true -or $permission.cancelled_without_registry_write -ne $false) { throw 'Held factory cannot be released by a no-mutation cancellation checkpoint' }
-                $after=[DxvkBindingNative01]::Names($value.luid); Check-Names $after $value.luid
+                $after=[DxvkBindingNative01]::Names($probeLuid); Check-Names $after $probeLuid
                 Write-Json (Join-Path $value.output 'kmt-after-restoration-before-release.json') $after
                 $status.effective_original_names_restored=Same-Names $before $after
+                if (Lifecycle-Enabled $value) { $status.effective_original_names_restoration_deferred_until_probe_reaped=$true }
                 $event=[Threading.EventWaitHandle]::OpenExisting($value.hold_event)
                 if (!$event.Set()) { throw 'Cannot release actual session-local held probe' }
                 $released=$true
@@ -348,7 +541,7 @@ public static class DxvkBindingAsync01 {
             [DxvkApprovedPayloadPolicy01]::RequireProcessJoin($publishedPid,$publishedStart,$publishedHandle,$row.Pid,$row.StartUtc,$row.ProcessHandle)
             $status.held_identity_joined_to_original_runner=$true
         }
-        if (!$published -or !$released -or !$status.held_module_census_passed -or $row.Pid -ne $publishedPid -or !$row.Exited -or !$row.ExitCodeAvailable -or $row.ExitCode -ne 0 -or $row.TimedOut -or $row.ChildStillRunning -or !$row.PipesDrained -or $row.Failure -or !$status.effective_candidate_selected -or !$status.effective_original_names_restored) { throw 'Actual factory/selection/held/modules/restore process gate failed; raw failure retained' }
+        if (!$published -or !$released -or !$status.held_module_census_passed -or $row.Pid -ne $publishedPid -or !$row.Exited -or !$row.ExitCodeAvailable -or $row.ExitCode -ne 0 -or $row.TimedOut -or $row.ChildStillRunning -or !$row.PipesDrained -or $row.Failure -or !$status.effective_candidate_selected -or (!(Lifecycle-Enabled $value) -and !$status.effective_original_names_restored)) { throw 'Actual factory/selection/held/modules/restore process gate failed; raw failure retained' }
         if ($value.api -ceq '11') {
             $finished=[DxvkBindingNative01]::ReadSharedText($stdout)
             $marker=D11-ValidationMarker $value.d11_phase
@@ -452,6 +645,20 @@ foreach ($copy in @(@($PSCommandPath,$controllerScript),@($native,$nativeCopy),@
 $self=(Get-Process -Id $PID)
 $value=[ordered]@{schema=2;api=$Api;native_slot=$nativeSlot;d9_phase=$D9Phase;private_loader=$vulkanLoader;vulkan_library=$vulkanLibrary;owner_pid=$PID;owner_start_ticks=$self.StartTime.ToUniversalTime().Ticks;deadline_utc=[DateTime]::UtcNow.AddSeconds(120).ToString('o');registry_subkey=$subkey;original=$original;original_slots=$slots;luid=$Luid;control=$control;output=$output;mutex=('Global\VioGpuD10Binding-'+$runId);task_name=$taskName;restore_task_name=($taskName+'-restore');desktop_sid=$sid.Value;desktop_session=$explorer[0].SessionId;desktop_dwm_pid=$dwm[0].Id;desktop_explorer_pid=$explorer[0].Id;probe=$Probe;probe_sha256=$ProbeSha256;front=$Front;front_sha256=$FrontSha256;core=$Core;core_sha256=$CoreSha256;runner=$runnerCopy;runner_sha256=$runnerSha;token_script=$tokenCopy;vulkan_icd=$VulkanIcd;hold_event=('Local\VioGpuD10Validation-'+$runId)}
 $value.d11_phase=$D11Phase
+$value.lifecycle_mode=$RootAuthorizeLifecycleRestart.IsPresent
+if ($value.lifecycle_mode) {
+    $script:LifecycleJobHandle=[DxvkBindingNative01]::OwnWorkerLifetime()
+    $value.lifecycle_controller_job_handle=$script:LifecycleJobHandle; $value.deadline_utc=[DateTime]::UtcNow.AddSeconds(240).ToString('o')
+    $value.instance=$InstanceId; $value.lifecycle_driver_state=$driverState; $value.lifecycle_controller=$controllerScript
+    $value.lifecycle_worker_job_name='Global\VioGpuLifecycleWorker-'+$runId
+    $value.lifecycle_boot_utc=(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')
+    $value.lifecycle_powershell=Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'; $value.lifecycle_powershell_sha256=Hash $value.lifecycle_powershell
+    $value.lifecycle_pnputil=Join-Path ([Environment]::SystemDirectory) 'pnputil.exe'; $value.lifecycle_pnputil_sha256=Hash $value.lifecycle_pnputil
+    $initial=Lifecycle-State $value
+    if ($initial.identity.Luid -cne $Luid) { throw 'Original current identity differs before lifecycle mode arms' }
+    [DxvkBindingNative01]::RequireLifecycleNames($Luid,[string[]]$slots,$initial.names)
+    Write-Json (Join-Path $control 'lifecycle-original.json') $initial
+}
 $value.files=@($controllerScript,$nativeCopy,$runnerCopy,$tokenCopy,$Probe,$Front,$Core,$DriverSys,$VulkanIcd,$vulkanLibrary,$vulkanLoader | ForEach-Object { [ordered]@{path=$_;sha256=(Hash $_)} })
 $value.payload_source=$approved.SourceCommit; $value.payload_ci_run=$approved.CiRun; $value.approved_payload_sha256=$ApprovedPayloadSha256
 $value.module_files=@([ordered]@{Path=$Front;Bytes=(Get-Item -LiteralPath $Front).Length;Sha256=$FrontSha256})+@($approved.ModuleFiles)
@@ -459,7 +666,7 @@ $value.files+=@([ordered]@{path=$payloadCopy;sha256=(Hash $payloadCopy)},[ordere
 $value.files+=@($approved.Files | ForEach-Object { [ordered]@{path=$_.Path;sha256=$_.Sha256} })
 $configFile=Join-Path $control 'config.json'; Write-Json $configFile $value; $configHash=Hash $configFile
 $sourceProfile='unregistered-validation8eeb20'; if ($Api -ceq '11') { $sourceProfile='dedicated-SYSTEM-D11-FL10_0-validation' } elseif ($Api -cne '10') { $sourceProfile='ordinary-D9-probe739de05' }
-$watchdog=$null; $registered=$false; $restoreRegistered=$false; $status=[ordered]@{schema=1;source=$sourceProfile;api=$Api;native_slot=$nativeSlot;registry_restored=$false;hardware_admission=$false;production_admission=$false;default_replacement=$false}
+$lifecycleWorker=$null; $watchdog=$null; $registered=$false; $restoreRegistered=$false; $status=[ordered]@{schema=1;source=$sourceProfile;api=$Api;native_slot=$nativeSlot;registry_restored=$false;hardware_admission=$false;production_admission=$false;default_replacement=$false}
 try {
     $power=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     # A service-owned task avoids inheriting an SSH session's process job.
@@ -467,7 +674,8 @@ try {
     $restorePrincipal=New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType ServiceAccount -RunLevel Highest
     $restoreArgs='-NoProfile -ExecutionPolicy Bypass -File '+(Quote $controllerScript)+' -Role Watchdog -Config '+(Quote $configFile)+' -ConfigSha256 '+$configHash
     $restoreAction=New-ScheduledTaskAction -Execute $power -Argument $restoreArgs
-    $restoreSettings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 240)
+    $restoreSeconds=240; if ($value.lifecycle_mode) { $restoreSeconds=600 }
+    $restoreSettings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds $restoreSeconds)
     $restoreTrigger=New-ScheduledTaskTrigger -AtStartup
     Register-ScheduledTask -TaskName $value.restore_task_name -Action $restoreAction -Trigger $restoreTrigger -Principal $restorePrincipal -Settings $restoreSettings | Out-Null; $restoreRegistered=$true
     Start-ScheduledTask -TaskName $value.restore_task_name
@@ -486,6 +694,18 @@ try {
     Start-ScheduledTask -TaskName $taskName
     $clock.Restart()
     while (!(Test-Path -LiteralPath (Join-Path $output 'worker-ready.json'))) { if ((Test-Path -LiteralPath (Join-Path $output 'worker-result.json')) -or $clock.ElapsedMilliseconds -gt 20000) { throw 'Interactive original-name/token gate failed' }; Start-Sleep -Milliseconds 100 }
+    if ($value.lifecycle_mode) {
+        $ready=Get-Content -LiteralPath (Join-Path $output 'worker-ready.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $lifecycleWorker=[Diagnostics.Process]::GetProcessById([int]$ready.pid); $lifecycleWorkerHandle=$lifecycleWorker.Handle
+        $command=Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId='+[int]$ready.pid)
+        if (!$ready.start_utc -or $lifecycleWorker.StartTime.ToUniversalTime().ToString('o') -cne $ready.start_utc -or $lifecycleWorker.MainModule.FileName -ine $power -or (Hash $power) -cne $value.lifecycle_powershell_sha256 -or $lifecycleWorker.SessionId -ne $value.desktop_session -or !$command.CommandLine -or !$command.CommandLine.EndsWith($arguments,[StringComparison]::Ordinal) -or $ready.worker_job_handle -le 0 -or $ready.sid -cne $value.desktop_sid -or $ready.session -ne $value.desktop_session) { throw 'Original exact scheduled lifecycle worker/PID/start/command/job required' }
+        Write-Json (Join-Path $control 'lifecycle-worker-original.json') ([ordered]@{pid=$lifecycleWorker.Id;start_utc=$ready.start_utc;retained_handle=$lifecycleWorkerHandle.ToInt64();sid=$ready.sid;session=$ready.session;worker_job_handle=$ready.worker_job_handle;command_line=$command.CommandLine;task_name=$taskName})
+        $jobScope=Lifecycle-AcquireJob $value; if ($jobScope.previous_boot -or $jobScope.retained_handle -le 0) { throw 'Original worker job not retained before binding' }
+        $clock.Restart(); $armedPath=Join-Path $control 'lifecycle-watchdog-job-ready.json'
+        while (!(Test-Path -LiteralPath $armedPath)) { if ($clock.ElapsedMilliseconds -gt 5000) { throw 'Independent watchdog did not retain original worker job before binding' }; Start-Sleep -Milliseconds 100 }
+        $jobArmed=Get-Content -LiteralPath $armedPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($jobArmed.schema -ne 1 -or $jobArmed.pid -ne $watchdog.Id -or $jobArmed.owner_pid -ne $PID -or $jobArmed.job_name -cne $value.lifecycle_worker_job_name -or $jobArmed.retained_handle -le 0) { throw 'Original watchdog job checkpoint differs' }
+    }
     $mutex=[Threading.Mutex]::new($false,$value.mutex); $locked=$false
     try {
         try { $locked=$mutex.WaitOne(5000) } catch [Threading.AbandonedMutexException] { $locked=$true }
@@ -502,6 +722,19 @@ try {
         Write-Json (Join-Path $control 'candidate-tuple-written.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);luid=$Luid;instance=$InstanceId;external_refresh_wait=$WaitForReviewedRefresh.IsPresent})
         $status.registry_changed=$true
     } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
+    if ($value.lifecycle_mode) {
+        $mutex=[Threading.Mutex]::new($false,$value.mutex); $locked=$false
+        try {
+            try { $locked=$mutex.WaitOne(5000) } catch [Threading.AbandonedMutexException] { $locked=$true }
+            if (!$locked -or (Test-Path -LiteralPath (Join-Path $control 'restored.json'))) { throw 'Lifecycle restart cannot race rescue restoration' }
+            if (![DxvkBindingNative01]::Same($replacement,[DxvkBindingNative01]::Read($subkey,0x100,'UserModeDriverName'))) { throw 'Candidate changed before exact-instance forward restart' }
+            Write-MutationIntent (Join-Path $control 'forward-lifecycle-intent.json') ([ordered]@{schema=1;owner_pid=$PID;instance=$InstanceId;registry_subkey=$subkey;original_backup_luid=$Luid;utc=[DateTime]::UtcNow.ToString('o')})
+            $forward=Lifecycle-Restart $value 'forward'; $expected=[string[]]$slots.Clone(); $expected[$nativeSlot]=$Front
+            [DxvkBindingNative01]::RequireLifecycleNames($forward.state.identity.Luid,$expected,$forward.state.names)
+            Write-Json (Join-Path $control 'lifecycle-forward.json') ([ordered]@{schema=1;owner_pid=$PID;instance=$InstanceId;original_backup_luid=$Luid;state=$forward.state;restart=$forward.receipt})
+            $status.original_backup_luid=$Luid; $status.forward_probe_luid=$forward.state.identity.Luid
+        } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
+    }
     if ($WaitForReviewedRefresh) {
         # ROOT may independently perform a reviewed exact-devnode restart and
         # write this protected checkpoint. This script never runs a reset,
@@ -527,6 +760,7 @@ try {
     $clock.Restart()
     while (!(Test-Path -LiteralPath (Join-Path $output 'worker-held.json'))) { if ((Test-Path -LiteralPath (Join-Path $output 'worker-result.json')) -or $clock.ElapsedMilliseconds -gt 80000) { throw 'Actual probe did not reach bounded hold' }; Start-Sleep -Milliseconds 100 }
     $settled=Restore-Tuple $value 'held-probe'; $status.registry_restored=$settled.raw_tuple_restored
+    if ($value.lifecycle_mode) { $status.lifecycle_recovery=$settled.lifecycle; $status.restored_luid=$settled.lifecycle.restored_luid }
     if (!$status.registry_restored) { throw 'Held probe requires actual intent-backed raw restoration' }
     $clock.Restart()
     while (!(Test-Path -LiteralPath (Join-Path $output 'worker-result.json'))) { if ($clock.ElapsedMilliseconds -gt 30000) { throw 'Interactive runner did not reap after restoration' }; Start-Sleep -Milliseconds 100 }
@@ -543,14 +777,23 @@ finally {
         while ($registered -and !(Test-Path -LiteralPath (Join-Path $output 'worker-result.json')) -and $clock.ElapsedMilliseconds -lt 25000) { Start-Sleep -Milliseconds 100 }
         try { if ($registered -and !(Test-Path -LiteralPath (Join-Path $output 'worker-result.json'))) { Close-HeldProbeIfWorkerLost $value } }
         finally { if ($registered) { Remove-OwnedTask $value } }
-        $status.final_names=[DxvkBindingNative01]::Names($Luid); Check-Names $status.final_names $Luid
-        $status.effective_original_names_restored=Same-Names $names $status.final_names
+        if ($value.lifecycle_mode) {
+            $status.lifecycle_recovery=$settled.lifecycle; $status.restored_luid=$settled.lifecycle.restored_luid
+            $restoredState=Lifecycle-State $value; $status.final_names=$restoredState.names
+            [DxvkBindingNative01]::RequireLifecycleNames($restoredState.identity.Luid,[string[]]$slots,$status.final_names)
+            $status.effective_original_names_restored=$true
+        } else {
+            $status.final_names=[DxvkBindingNative01]::Names($Luid); Check-Names $status.final_names $Luid
+            $status.effective_original_names_restored=Same-Names $names $status.final_names
+        }
         $afterDwm=@(Get-Process dwm); $afterExplorer=@(Get-Process explorer)
         $status.desktop_retained=$afterDwm.Count -eq 1 -and $afterExplorer.Count -eq 1 -and $afterDwm[0].Id -eq $value.desktop_dwm_pid -and $afterExplorer[0].Id -eq $value.desktop_explorer_pid
+        if ($value.lifecycle_mode) { $status.lifecycle_desktop=Lifecycle-Desktop $value; $status.desktop_healthy=$true }
+        else { $status.desktop_healthy=$status.desktop_retained }
         $status.devnode_retained=(Get-PnpDevice -PresentOnly -InstanceId $InstanceId).Status -ceq 'OK' -and [string](Get-PnpDeviceProperty -InstanceId $InstanceId -KeyName 'DEVPKEY_Device_Driver').Data -ceq $driver
         $driverAfter=Driver-State $InstanceId; Write-Json (Join-Path $control 'driver-state-after.json') $driverAfter
         $status.kmd_package_retained=($driverState | ConvertTo-Json -Compress) -ceq ($driverAfter | ConvertTo-Json -Compress)
-        if (!$status.effective_original_names_restored -or !$status.desktop_retained -or !$status.devnode_retained -or !$status.kmd_package_retained) { throw 'Effective name/desktop/devnode/KMD continuity changed; registry bytes restored, further recovery required' }
+        if (!$status.effective_original_names_restored -or !$status.desktop_healthy -or !$status.devnode_retained -or !$status.kmd_package_retained) { throw 'Effective name/desktop/devnode/KMD continuity changed; registry bytes restored, further recovery required' }
     } catch { $status.restoration_failure=$_.Exception.ToString() }
     if ($watchdog) {
         if ($watchdog.WaitForExit(10000)) { $status.watchdog_exit=$watchdog.ExitCode } else { $status.watchdog_still_running=$true }
@@ -567,6 +810,7 @@ finally {
             Unregister-ScheduledTask -TaskName $value.restore_task_name -Confirm:$false
         }
     }
+    if ($lifecycleWorker) { $lifecycleWorker.Dispose() }
     $self.Dispose()
     Write-Json (Join-Path $control 'controller-result.json') $status
 }

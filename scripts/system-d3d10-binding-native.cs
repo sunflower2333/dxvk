@@ -2,6 +2,7 @@
 // Validation-controller support. No production driver/caps or cache overrides.
 using System;
 using System.ComponentModel;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -27,6 +28,13 @@ public sealed class DxvkBindingNames01 {
     public int CloseStatus;
     public string GdiPath;
     public DxvkBindingName01[] Names;
+}
+
+public sealed class DxvkBindingIdentity01 {
+    public string Luid, GdiPath;
+    public ulong Generation, Capabilities;
+    public byte[] Raw;
+    public int AdapterCount;
 }
 
 public static class DxvkBindingNative01 {
@@ -217,6 +225,118 @@ public static class DxvkBindingNative01 {
         } finally { var closed=new Close { Adapter=opened.Adapter }; result.CloseStatus=D3DKMTCloseAdapter(ref closed); }
         return result;
     }
+    public static void RequireLifecycleMode(bool enabled, bool apply, string api, string phase, bool externalWait) {
+        if (enabled && (!apply || api != "11" || phase != "offscreen" || externalWait))
+            throw new InvalidOperationException("Explicit ROOT lifecycle mode requires Apply + Api11/offscreen and excludes external refresh");
+    }
+    public static DxvkBindingIdentity01 RuntimeIdentity160(byte[] raw, string luid) {
+        if (raw == null || raw.Length != 160 || luid == null || luid.Length != 17 || luid[8] != ':' || !BitConverter.IsLittleEndian)
+            throw new InvalidOperationException("Exact current paired160 identity and LUID required");
+        uint high=UInt32.Parse(luid.Substring(0,8),System.Globalization.NumberStyles.HexNumber), low=UInt32.Parse(luid.Substring(9,8),System.Globalization.NumberStyles.HexNumber);
+        if ((high | low) == 0 || BitConverter.ToUInt32(raw,0) != 0x504d5644 || BitConverter.ToUInt32(raw,4) != 0 || BitConverter.ToUInt32(raw,8) != 128 || BitConverter.ToUInt32(raw,12) != 0
+            || BitConverter.ToUInt32(raw,128) != 0x44494c56 || BitConverter.ToUInt32(raw,132) != 1 || BitConverter.ToUInt32(raw,136) != 32 || BitConverter.ToUInt32(raw,140) != 1
+            || BitConverter.ToUInt32(raw,144) != low || BitConverter.ToUInt32(raw,148) != high || BitConverter.ToUInt32(raw,152) != 1 || BitConverter.ToUInt32(raw,156) != 0
+            || BitConverter.ToUInt64(raw,24) == 0 || BitConverter.ToUInt64(raw,112) != 0 || BitConverter.ToUInt64(raw,120) != 0)
+            throw new InvalidOperationException("Current KMD paired identity differs");
+        return new DxvkBindingIdentity01 { Luid=luid,Generation=BitConverter.ToUInt64(raw,24),Capabilities=BitConverter.ToUInt64(raw,16),Raw=(byte[])raw.Clone() };
+    }
+    public static void RequireIdentityMatch(DxvkBindingIdentity01 expected, DxvkBindingIdentity01 actual) {
+        if (expected == null || actual == null || expected.Luid != actual.Luid || expected.Generation != actual.Generation || expected.Capabilities != actual.Capabilities
+            || expected.Raw == null || actual.Raw == null || expected.Raw.Length != 160 || actual.Raw.Length != 160)
+            throw new InvalidOperationException("Protected forward identity changed before ordinary factory");
+        for (int i=0;i<160;i++) if(expected.Raw[i] != actual.Raw[i]) throw new InvalidOperationException("Protected forward identity bytes changed");
+    }
+    public static void RequireLifecycleRestartPermit(bool rawRestored, bool workerGone, bool probeGone) {
+        if (!rawRestored || !workerGone || !probeGone)
+            throw new InvalidOperationException("Reverse Stop/Start requires proved raw restoration and no live owned worker/probe");
+    }
+    public static void RequireLifecycleNames(string currentLuid, string[] expected, DxvkBindingNames01 actual) {
+        if (actual == null || actual.Luid != currentLuid || actual.OpenStatus != 0 || actual.CloseStatus != 0 || expected == null || expected.Length != 3 || actual.Names == null || actual.Names.Length != 3)
+            throw new InvalidOperationException("Fresh current adapter/name proof required");
+        for (int i=0;i<3;i++) if(actual.Names[i] == null || actual.Names[i].Version != i || actual.Names[i].Status != 0 || !String.Equals(actual.Names[i].Name,expected[i],StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Effective current names differ from exact expected three slots");
+    }
+    [StructLayout(LayoutKind.Sequential)] struct AdapterInfo { public uint Adapter; public Luid Luid; public uint Sources; public int Precise; }
+    [StructLayout(LayoutKind.Sequential)] struct EnumAdapters2 { public uint Count; public IntPtr Adapters; }
+    [DllImport("gdi32.dll")] static extern int D3DKMTEnumAdapters2(ref EnumAdapters2 args);
+    public static DxvkBindingIdentity01 CurrentIdentity() {
+        if (IntPtr.Size != 8 || Marshal.SizeOf(typeof(AdapterInfo)) != 20 || Marshal.SizeOf(typeof(EnumAdapters2)) != 16 || Marshal.SizeOf(typeof(Query)) != 24)
+            throw new InvalidOperationException("Native64 official EnumAdapters2 ABI required");
+        string gdi=Path.Combine(Environment.SystemDirectory,"gdi32.dll"); IntPtr module=LoadLibraryEx(gdi,IntPtr.Zero,0x800);
+        var path=new StringBuilder(32768); uint length=GetModuleFileName(module,path,(uint)path.Capacity);
+        if (module == IntPtr.Zero || length == 0 || length >= path.Capacity || !String.Equals(gdi,path.ToString(),StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Genuine SYSTEM GDI required for current identity");
+        var e=new EnumAdapters2(); if(D3DKMTEnumAdapters2(ref e) != 0 || e.Count == 0 || e.Count > 64) throw new InvalidOperationException("Bounded current adapter count required");
+        uint capacity=e.Count; IntPtr list=Marshal.AllocHGlobal(checked((int)capacity*20)); var handles=new Dictionary<uint,AdapterInfo>();
+        DxvkBindingIdentity01 selected=null; int closeFailure=0;
+        try {
+            Marshal.Copy(new byte[checked((int)capacity*20)],0,list,checked((int)capacity*20)); e.Adapters=list;
+            int status=D3DKMTEnumAdapters2(ref e);
+            for(uint i=0;i<capacity;i++) { var a=(AdapterInfo)Marshal.PtrToStructure(IntPtr.Add(list,checked((int)i*20)),typeof(AdapterInfo)); if(a.Adapter != 0 && !handles.ContainsKey(a.Adapter))handles.Add(a.Adapter,a); }
+            if(status != 0 || e.Count == 0 || e.Count > capacity || handles.Count != e.Count) throw new InvalidOperationException("Complete current enumeration required");
+            foreach(var item in handles) {
+                var a=item.Value; IntPtr data=Marshal.AllocHGlobal(160);
+                try {
+                    Marshal.Copy(new byte[160],0,data,160); var q=new Query { Adapter=a.Adapter,Type=0,Data=data,Bytes=160 };
+                    if(D3DKMTQueryAdapterInfo(ref q) != 0)continue; var raw=new byte[160]; Marshal.Copy(data,raw,0,160);
+                    string luid=unchecked((uint)a.Luid.High).ToString("x8")+":"+a.Luid.Low.ToString("x8"); DxvkBindingIdentity01 identity;
+                    try { identity=RuntimeIdentity160(raw,luid); } catch(InvalidOperationException) { continue; }
+                    if(selected != null)throw new InvalidOperationException("Exactly one current paired VIOGPU adapter required");
+                    identity.GdiPath=path.ToString(); identity.AdapterCount=checked((int)e.Count); selected=identity;
+                } finally { Marshal.FreeHGlobal(data); }
+            }
+        } finally {
+            foreach(var item in handles) { var c=new Close { Adapter=item.Key }; if(D3DKMTCloseAdapter(ref c) != 0)closeFailure++; }
+            Marshal.FreeHGlobal(list);
+        }
+        if(closeFailure != 0 || selected == null)throw new InvalidOperationException("Closed current paired identity required"); return selected;
+    }
+
+    [StructLayout(LayoutKind.Sequential)] struct JobSecurity { public uint Length; public IntPtr Descriptor; public int Inherit; }
+    [StructLayout(LayoutKind.Sequential)] struct JobAccounting { public long User,Kernel,PeriodUser,PeriodKernel; public uint Faults,Total,Active,Terminated; }
+    [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string text,uint revision,out IntPtr result,out uint bytes);
+    [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true,EntryPoint="CreateJobObjectW")] static extern IntPtr CreateSecureJob(ref JobSecurity security,string name);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr OpenJobObject(uint access,bool inherit,string name);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool IsProcessInJob(IntPtr process,IntPtr job,out bool result);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool QueryInformationJobObject(IntPtr job,uint kind,ref JobLimits value,uint bytes,IntPtr returned);
+    [DllImport("kernel32.dll",SetLastError=true,EntryPoint="QueryInformationJobObject")] static extern bool QueryJobAccounting(IntPtr job,uint kind,ref JobAccounting value,uint bytes,IntPtr returned);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool TerminateJobObject(IntPtr job,uint code);
+    static void RequireLifecycleJobName(string name) {
+        if(name==null || !System.Text.RegularExpressions.Regex.IsMatch(name,@"\AGlobal\\VioGpuLifecycleWorker-[0-9a-f]{32}\z"))throw new ArgumentException("Protected unique original worker job required");
+    }
+    public static long OwnLifecycleWorkerLifetime(string name,string sid) {
+        RequireLifecycleJobName(name);
+        if(workerJob!=IntPtr.Zero || IntPtr.Size!=8 || Marshal.SizeOf(typeof(JobSecurity))!=24 || Marshal.SizeOf(typeof(JobLimits))!=144
+            || sid==null || !System.Text.RegularExpressions.Regex.IsMatch(sid,@"\AS-1-5-21-(?:[0-9]+-){3}[0-9]+\z"))throw new ArgumentException("Exact original native USER worker/job security required");
+        IntPtr descriptor;uint bytes;
+        if(!ConvertStringSecurityDescriptorToSecurityDescriptor("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;"+sid+")",1,out descriptor,out bytes))throw new Win32Exception(Marshal.GetLastWin32Error());
+        IntPtr job=IntPtr.Zero;
+        try { var security=new JobSecurity {Length=24,Descriptor=descriptor};job=CreateSecureJob(ref security,name);int error=Marshal.GetLastWin32Error();
+            if(job==IntPtr.Zero || error==183)throw new Win32Exception(error);var limits=new JobLimits();limits.Basic.Flags=0x2000;
+            if(!SetInformationJobObject(job,9,ref limits,144) || !AssignProcessToJobObject(job,GetCurrentProcess()))throw new Win32Exception(Marshal.GetLastWin32Error());
+            workerJob=job;job=IntPtr.Zero;return workerJob.ToInt64();
+        } finally {if(job!=IntPtr.Zero)CloseHandle(job);LocalFree(descriptor);}
+    }
+    public static long OpenLifecycleWorkerJob(string name,long originalWorkerHandle) {
+        RequireLifecycleJobName(name);IntPtr job=OpenJobObject(0xcu,false,name);
+        if(job==IntPtr.Zero){int error=Marshal.GetLastWin32Error();if(error==2)return 0;throw new Win32Exception(error);}
+        try { var limits=new JobLimits();if(!QueryInformationJobObject(job,9,ref limits,144,IntPtr.Zero) || limits.Basic.Flags!=0x2000)throw new InvalidOperationException("Original worker job limits differ");
+            if(originalWorkerHandle!=0){bool member;if(!IsProcessInJob(new IntPtr(originalWorkerHandle),job,out member) || !member)throw new InvalidOperationException("Original retained worker is not in its protected named job");}
+            long result=job.ToInt64();job=IntPtr.Zero;return result;
+        } finally {if(job!=IntPtr.Zero)CloseHandle(job);}
+    }
+    public static void RequireLifecycleJobComplete(uint active) { if(active!=0)throw new InvalidOperationException("Original job still contains live/terminating processes"); }
+    public static uint CompleteLifecycleWorkerJob(long handle,int deadlineMs) {
+        if(handle<=0 || deadlineMs<=0 || deadlineMs>10000 || Marshal.SizeOf(typeof(JobAccounting))!=48)throw new ArgumentException("Retained original job and bounded completion required");
+        IntPtr job=new IntPtr(handle);var value=new JobAccounting();
+        if(!QueryJobAccounting(job,1,ref value,48,IntPtr.Zero))throw new Win32Exception(Marshal.GetLastWin32Error());
+        if(value.Active!=0 && !TerminateJobObject(job,1))throw new Win32Exception(Marshal.GetLastWin32Error());
+        var timer=System.Diagnostics.Stopwatch.StartNew();
+        do {value=new JobAccounting();if(!QueryJobAccounting(job,1,ref value,48,IntPtr.Zero))throw new Win32Exception(Marshal.GetLastWin32Error());if(value.Active==0){RequireLifecycleJobComplete(value.Active);return value.Active;}System.Threading.Thread.Sleep(100);}while(timer.ElapsedMilliseconds<deadlineMs);
+        RequireLifecycleJobComplete(value.Active);return value.Active;
+    }
+
     public static bool NamesEqual(DxvkBindingNames01 first, DxvkBindingNames01 second) {
         if (first == null || second == null || first.Luid != second.Luid || first.OpenStatus != 0 || second.OpenStatus != 0
             || first.CloseStatus != 0 || second.CloseStatus != 0 || first.Names == null || second.Names == null

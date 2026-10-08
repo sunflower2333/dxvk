@@ -1,5 +1,6 @@
 #pragma once
 #include "umd_ddi.h"
+#include "umd_uav_texture_policy.h"
 #include <d3d11.h>
 
 namespace dxvk::umd {
@@ -32,6 +33,43 @@ constexpr bool resource11Flags(const D3D11DDIARG_CREATERESOURCE& native,
 constexpr UINT resource11CpuAccess(UINT native) {
   return ((native & D3D10_DDI_CPU_ACCESS_READ) ? D3D11_CPU_ACCESS_READ : 0)
     | ((native & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
+}
+
+inline bool textureUnorderedView11Desc(const D3D11DDIARG_TEX1D_UNORDEREDACCESSVIEW& native,
+    DXGI_FORMAT format, const D3D11_TEXTURE1D_DESC& resource, D3D11_UNORDERED_ACCESS_VIEW_DESC& out) {
+  const auto dimension = textureUavDimension(resource.ArraySize, native.FirstArraySlice, native.ArraySize);
+  if (!(resource.BindFlags & D3D11_BIND_UNORDERED_ACCESS) || native.MipSlice >= resource.MipLevels
+      || dimension == TextureUavDimension::Invalid) return false;
+  D3D11_UNORDERED_ACCESS_VIEW_DESC staged{};
+  staged.Format = format;
+  if (dimension == TextureUavDimension::Single) {
+    staged.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE1D;
+    staged.Texture1D.MipSlice = native.MipSlice;
+  } else {
+    staged.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE1DARRAY;
+    staged.Texture1DArray = {native.MipSlice, native.FirstArraySlice, native.ArraySize};
+  }
+  out = staged;
+  return true;
+}
+
+inline bool textureUnorderedView11Desc(const D3D11DDIARG_TEX2D_UNORDEREDACCESSVIEW& native,
+    DXGI_FORMAT format, const D3D11_TEXTURE2D_DESC& resource, D3D11_UNORDERED_ACCESS_VIEW_DESC& out) {
+  const auto dimension = textureUavDimension(resource.ArraySize, native.FirstArraySlice, native.ArraySize);
+  if (!(resource.BindFlags & D3D11_BIND_UNORDERED_ACCESS) || resource.SampleDesc.Count != 1
+      || native.MipSlice >= resource.MipLevels
+      || dimension == TextureUavDimension::Invalid) return false;
+  D3D11_UNORDERED_ACCESS_VIEW_DESC staged{};
+  staged.Format = format;
+  if (dimension == TextureUavDimension::Single) {
+    staged.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+    staged.Texture2D.MipSlice = native.MipSlice;
+  } else {
+    staged.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2DARRAY;
+    staged.Texture2DArray = {native.MipSlice, native.FirstArraySlice, native.ArraySize};
+  }
+  out = staged;
+  return true;
 }
 
 // WDK cube SRV MipLevels=-1 selects the remaining chain beginning at

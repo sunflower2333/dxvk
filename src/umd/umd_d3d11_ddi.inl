@@ -263,19 +263,12 @@ void APIENTRY createUnorderedView(D3D10DDI_HDEVICE h, const D3D11DDIARG_CREATEUN
         ComPtr<ID3D11Texture1D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;
         D3D11_TEXTURE1D_DESC info = {}; texture->GetDesc(&info);
-        if (!(info.BindFlags & D3D11_BIND_UNORDERED_ACCESS) || args->Tex1D.MipSlice >= info.MipLevels
-            || !dxvk::umd::viewRange(args->Tex1D.FirstArraySlice, args->Tex1D.ArraySize, info.ArraySize)) return E_INVALIDARG;
-        desc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE1DARRAY;
-        desc.Texture1DArray = {args->Tex1D.MipSlice, args->Tex1D.FirstArraySlice, args->Tex1D.ArraySize};
+        if (!dxvk::umd::textureUnorderedView11Desc(args->Tex1D, args->Format, info, desc)) return E_INVALIDARG;
       } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
         ComPtr<ID3D11Texture2D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;
         D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
-        if (!(info.BindFlags & D3D11_BIND_UNORDERED_ACCESS) || info.SampleDesc.Count != 1
-            || args->Tex2D.MipSlice >= info.MipLevels
-            || !dxvk::umd::viewRange(args->Tex2D.FirstArraySlice, args->Tex2D.ArraySize, info.ArraySize)) return E_INVALIDARG;
-        desc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2DARRAY;
-        desc.Texture2DArray = {args->Tex2D.MipSlice, args->Tex2D.FirstArraySlice, args->Tex2D.ArraySize};
+        if (!dxvk::umd::textureUnorderedView11Desc(args->Tex2D, args->Format, info, desc)) return E_INVALIDARG;
       } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
         ComPtr<ID3D11Texture3D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;

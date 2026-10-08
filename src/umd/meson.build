@@ -258,6 +258,14 @@ umd_tex2d_srv_remaining_test = executable('dxvk-umd-tex2d-srv-remaining-test',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
 
+umd_uav_texture_policy_test = executable('dxvk-umd-uav-texture-policy-test',
+  '../../tests/umd-uav-texture-policy.cpp')
+
+umd_texture_uav_test = executable('dxvk-umd-texture-uav-test',
+  ['../../tests/umd-texture-uav.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
+
 umd_texture3d_test = executable('dxvk-umd-texture3d-test',
   ['../../tests/umd-texture3d.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],

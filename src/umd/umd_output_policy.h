@@ -1,6 +1,7 @@
 #pragma once
 // SPDX-License-Identifier: MIT
 #include "umd_shader.h"
+#include <array>
 #include <cstdint>
 
 namespace dxvk::umd {
@@ -27,6 +28,19 @@ inline bool validFloatColorOutputs(const ShaderSignatureEntry* outputs, size_t c
 // Use subtraction for hostile counts so UINT_MAX cannot wrap past the bound.
 inline bool validRenderTargetRange(uint32_t count, uint32_t clear) {
   return count <= colorOutputSlots && clear <= colorOutputSlots - count;
+}
+
+enum class OutputMergerBindPath { RenderTargetsOnly, RenderTargetsAndUavs, UnsupportedUav };
+
+// The D3D11 DDI also serves feature level 10 devices. Their pixel stage has
+// no UAV bindings, even when a runtime supplies an explicit all-NULL tail.
+template<typename View, size_t Slots>
+inline OutputMergerBindPath outputMergerBindPath(bool supportsPixelUavs,
+    const std::array<View*, Slots>& views) {
+  if (supportsPixelUavs) return OutputMergerBindPath::RenderTargetsAndUavs;
+  for (const auto view : views)
+    if (view) return OutputMergerBindPath::UnsupportedUav;
+  return OutputMergerBindPath::RenderTargetsOnly;
 }
 
 enum class OutputKind { Texture2D, Texture1D, Texture3D };

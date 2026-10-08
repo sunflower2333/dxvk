@@ -329,12 +329,19 @@ void APIENTRY setRenderTargets11(D3D10DDI_HDEVICE h, const D3D10DDI_HRENDERTARGE
       || !unorderedBindings(device, start, unorderedCount, unordered, initialCounts, views)) {
     device->error(E_INVALIDARG); return;
   }
+  const auto path = dxvk::umd::outputMergerBindPath(device->featureLevel >= D3D_FEATURE_LEVEL_11_0, views);
+  if (path == dxvk::umd::OutputMergerBindPath::UnsupportedUav) { device->error(E_INVALIDARG); return; }
   std::array<UINT, slots> counters; counters.fill(UINT(-1));
   if (initialCounts) for (UINT i = 0; i < unorderedCount; ++i) counters[start + i] = initialCounts[i];
   // DDI binds the whole state. RangeStart/RangeSize are optimization hints;
   // omitted bindings are NULL, including a tail cleared with zero hints.
-  device->context->OMSetRenderTargetsAndUnorderedAccessViews(count, count ? bindings.targets.data() : nullptr,
-    bindings.depth, count, slots - count, views.data() + count, counters.data() + count);
+  // Feature level 10 rejects the combined public call's UAV slots, including
+  // an all-NULL tail. Bind its legal RTV/DSV state with the graphics-only API.
+  if (path == dxvk::umd::OutputMergerBindPath::RenderTargetsOnly)
+    device->context->OMSetRenderTargets(count, count ? bindings.targets.data() : nullptr, bindings.depth);
+  else
+    device->context->OMSetRenderTargetsAndUnorderedAccessViews(count, count ? bindings.targets.data() : nullptr,
+      bindings.depth, count, slots - count, views.data() + count, counters.data() + count);
   device->targetShared = std::move(bindings.shared); device->targetBound = bindings.anyColor;
   device->targetTypes = bindings.types;
 }

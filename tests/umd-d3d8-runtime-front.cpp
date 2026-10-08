@@ -182,32 +182,37 @@ struct Core {
   File file;
   HMODULE module = nullptr;
   HRESULT result = E_FAIL;
+  void failed(const char* stage, HRESULT failure, unsigned preloaded = 0) {
+    result = failure;
+    trace("SYSTEM_D3D8_CORE_FAILURE stage=%s hr=%08lx preloaded_core=%u borrowed_core_adoption=0",
+      stage, static_cast<unsigned long>(failure), preloaded);
+  }
   explicit Core(const CoreIdentity& input) : identity(input) {
-    if (!identity.valid()) { result = E_INVALIDARG; return; }
+    if (!identity.valid()) { failed("identity", E_INVALIDARG); return; }
     // Hold a read-only file handle without write/delete sharing through load
     // and the remaining process lifetime. Do not adopt a preloaded core.
-    if (GetModuleHandleW(L"viogpudxvk.dll")) { result = HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS); return; }
+    if (GetModuleHandleW(L"viogpudxvk.dll")) { failed("preloaded-core", HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS), 1); return; }
     file.value = CreateFileW(identity.path.c_str(), GENERIC_READ, FILE_SHARE_READ,
       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
-    if (file.value == INVALID_HANDLE_VALUE) { result = HRESULT_FROM_WIN32(GetLastError()); return; }
+    if (file.value == INVALID_HANDLE_VALUE) { failed("open-file", HRESULT_FROM_WIN32(GetLastError())); return; }
     WCHAR resolved[32768];
     const DWORD count = GetFinalPathNameByHandleW(file.value, resolved, DWORD(std::size(resolved)), FILE_NAME_NORMALIZED);
     if (!count || count >= std::size(resolved) || count < 4 || std::wcsncmp(resolved, L"\\\\?\\", 4)
         || _wcsicmp(resolved + 4, identity.path.c_str()) || !fileI386(file.value)) {
-      result = E_NOINTERFACE; return;
+      failed("file-identity", E_NOINTERFACE); return;
     }
     std::wstring actualHash;
     result = fileHash(file.value, actualHash);
-    if (FAILED(result)) return;
+    if (FAILED(result)) { failed("file-hash", result); return; }
     if (!policy::equalName(std::wstring_view(actualHash), std::wstring_view(identity.sha256))) {
-      result = HRESULT_FROM_WIN32(ERROR_INVALID_DATA); return;
+      failed("hash-mismatch", HRESULT_FROM_WIN32(ERROR_INVALID_DATA)); return;
     }
     module = LoadLibraryExW(identity.path.c_str(), nullptr,
       LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-    if (!module) { result = HRESULT_FROM_WIN32(GetLastError()); return; }
+    if (!module) { failed("load-module", HRESULT_FROM_WIN32(GetLastError())); return; }
     const auto loaded = modulePath(module);
     if (loaded.empty() || _wcsicmp(loaded.c_str(), identity.path.c_str()) || !i386(module)) {
-      result = E_NOINTERFACE; return;
+      failed("module-identity", E_NOINTERFACE); return;
     }
     trace("SYSTEM_D3D8_CORE_PIN path=%ls sha256=%ls expected_ci_source_commit=%ls machine=014c file_locked=1 core_unchanged=1",
       loaded.c_str(), actualHash.c_str(), identity.commit.c_str());
@@ -442,10 +447,19 @@ extern "C" HRESULT APIENTRY OpenAdapter(D3DDDIARG_OPENADAPTER* args) {
   // artifact receipt. No core is built, patched or relabeled by this harness.
   const CoreIdentity identity{environment(policy::corePathName, 259),
     environment(policy::coreSha256Name, 64), environment(policy::coreCommitName, 40)};
-  if (!identity.valid()) return E_INVALIDARG;
+  if (!identity.valid()) {
+    trace("SYSTEM_D3D8_OPEN_REJECT stage=core-identity hr=%08lx interface=%u version=%u", static_cast<unsigned long>(E_INVALIDARG), input.Interface, input.Version);
+    return E_INVALIDARG;
+  }
   static const Core pinned(identity);
-  if (!(identity == pinned.identity)) return E_INVALIDARG;
-  if (FAILED(pinned.result)) return pinned.result;
+  if (!(identity == pinned.identity)) {
+    trace("SYSTEM_D3D8_OPEN_REJECT stage=changed-core-identity hr=%08lx interface=%u version=%u", static_cast<unsigned long>(E_INVALIDARG), input.Interface, input.Version);
+    return E_INVALIDARG;
+  }
+  if (FAILED(pinned.result)) {
+    trace("SYSTEM_D3D8_OPEN_REJECT stage=core-construction hr=%08lx interface=%u version=%u", static_cast<unsigned long>(pinned.result), input.Interface, input.Version);
+    return pinned.result;
+  }
   const HMODULE core = pinned.module;
   const auto loaded = modulePath(core);
   const FARPROC symbol = GetProcAddress(core, "OpenAdapter");

@@ -420,6 +420,38 @@ struct Permission {
   }
 };
 
+// The system runtime may release its UMD reference after its internal caps
+// device is destroyed, then load the UMD again for public CreateDevice. Keep
+// our independently byte-pinned frontend alive across that whole workflow.
+// This reference does not adopt a preloaded frontend or change core admission.
+struct FrontendReference {
+  HMODULE module = nullptr;
+  std::wstring selectedPath;
+  FrontendReference() = default;
+  FrontendReference(const FrontendReference&) = delete;
+  FrontendReference& operator=(const FrontendReference&) = delete;
+  ~FrontendReference() { release(); }
+  void open(const wchar_t* selected) {
+    require(selected && policy::ownedFrontPath(std::wstring_view(selected)), "owned-frontend-reference-path");
+    require(!GetModuleHandleW(L"viogpu-d3d8-runtime-front.dll"), "frontend-reference-not-preloaded");
+    selectedPath = selected;
+    module = LoadLibraryExW(selected, nullptr,
+      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    require(module && moduleMachine(module) == IMAGE_FILE_MACHINE_I386
+      && !_wcsicmp(path(module).c_str(), selected)
+      && GetProcAddress(module, "OpenAdapter"), "owned-I386-frontend-reference");
+    trace("D3D8_FRONTEND_REFERENCE path=%ls machine=014c owned=1 preloaded_adoption=0 hold_through_runtime_teardown=1",
+      selectedPath.c_str());
+  }
+  bool release() noexcept {
+    if (!module) return true;
+    const bool closed = FreeLibrary(module) != FALSE;
+    trace("D3D8_FRONTEND_REFERENCE_RELEASE path=%ls released=%u", selectedPath.c_str(), unsigned(closed));
+    if (closed) module = nullptr;
+    return closed;
+  }
+};
+
 // The original SysWOW64 D3D8 runtime imports this KMT function directly from
 // GDI32. Preserve every real query/status, changing only the exact DX9 filename
 // supplied by the caller's independently verified installed package receipt.
@@ -908,6 +940,7 @@ int wmain(int argc, wchar_t** argv) {
           expected.c_str(), unsigned(moduleMachine(runtime.value)), sizeof(void*), D3D_SDK_VERSION, sizeof(D3DCAPS8));
     require(moduleMachine(runtime.value) == IMAGE_FILE_MACHINE_I386, "genuine-I386-system-d3d8");
     Permission permission; Selector selector; policy::D3d8HardwarePins pins(trace);
+    FrontendReference frontend;
     if (selected) {
       userGate();
       require(pins.open(argv[4], argv[5], argv[6]), "exact-original-I386-hardware-inputs");
@@ -915,6 +948,7 @@ int wmain(int argc, wchar_t** argv) {
         trace("D3D8_ENUMERATION_CONSTRUCTION allowed=1 public_create_device=0 draw=0 presents=0 core_entry=OpenAdapter");
     }
     if (selected) {
+      frontend.open(argv[2]);
       permission.enable(argv[4], argv[5], argv[6], selectedHardware ? policy::Mode::Device : policy::Mode::EnumerateDevice);
       selector.install(runtime.value, argv[2], argv[3]);
     }
@@ -958,6 +992,7 @@ int wmain(int argc, wchar_t** argv) {
       require(permission.restore(), "diagnostic-pin-restoration");
     }
     require(pins.restore(), "private-driver-environment-restoration");
+    require(frontend.release(), "owned-frontend-reference-release");
     trace("D3D8_COMPLETE mode=%s adapters=%u create_device=%u presents=%u registry_writes=0",
       selectedPresent ? "front-present" : selectedOffscreen ? "front-offscreen" : installedOffscreen ? "offscreen"
         : selected ? "front-enumerate" : "enumerate", count, unsigned(hardware), unsigned(selectedPresent));

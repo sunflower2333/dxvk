@@ -8,6 +8,52 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
+## Current checkpoint: 2026-10-08 integrated source, next sole CI52
+
+Published18452d7 / NativeUMD37743643139 completed all six jobs successfully.
+ROOT independently reopens five genuine ZIPs (14168 members),1012 Git blobs
+and five links, six original job logs and150 native fixture executions.
+Primary/SRV pixel readers pass on all three architectures. Source/core tuple
+is accepted at CPU/reference scope by ROOT00139eed; no ordinary VM hardware
+or default-driver replacement follows from these fixtures.
+
+Local trunk now includes exact opened-primary integration f94d6e3 (15 files,
+ROOT5dfc3238/720a7245/merged strictO2 COFF0cdb5574), INDEX16 creation-hint
+fix2752ed5 (three files, ROOTecc55ac6/1216382d), current-core phase helpers
+9d4d12d (four files, ROOTb6383825;198 controls, unchanged historical174 and
+actual held-frontend HAL ef1e8d), and flat ARM64X response producer4a08cc3
+(two files, ROOTac7b7e26;36 original-byte checks). The exact50/37 fixture
+union becomes52/39. One combined push is next; no extra workflow dispatch.
+Fresh native AST parsing, new core provenance and target phase results remain
+separate pending gates.
+
+DX8 fresh held-frontend HAL is accepted93fdbf8a. Public CreateDevice failed at
+INDEX16 flags02100044/format101 with80070057; later cleanup Render failure
+is not established as the first cause. Failed offscreen originals/release
+remain preserved85c7c07b. The creation-only vertex hint fix keeps index lock
+and draw restrictions. A genuine new CI core, fresh staging/names/HAL,
+448 offscreen pixels and64 screen pixels are still required.
+
+EWDK CPU04 copied73 selected inputs and actually passed ARM64 CL, native
+LINK and ARM64EC CL. ARM64X LINK then failed1104 on nested @RSP; views skipped.
+ROOT same-reader replay3025031 passed1425 checks (180 existing-extraction
+immutability checks beyond the agent1245),180 raw TAR files and10 native plus
+10 host closures. Explicit release accepted7458f01f. The flat argument fix
+keeps original merge evidence/options. CPU05 native build remains pending.
+
+DX10 current184 native probe preparation has15 genuine source inputs;
+allocation.h and transport header changed from05ff. CPU08-02 contained stale
+preflight lengths and a builder source-receipt pin, caught before target calls.
+Separate03 correction is being prepared; subsequent strict native CPU build,
+4141 oracle checks/five malformed CLI controls precede real1792 hardware pixels.
+
+VM default UMD remains Mesa. D10/D11 requirements mask0x17f and ordinary
+version/feature discovery remain gated. Complete resource/shader/MRT,
+stream-output, predication, sharing/primary/threading plus D11 interface,
+immediate/compute-UAV/tessellation semantics and real system-runtime hardware
+proof are still required, followed by DWM and dynamic Explorer validation.
+No driver installation or whole compiler attestation is claimed.
+
 
 D10/D11 replacement status: the mandatory D10 callback table is complete,
 but production D10 requirements remain0x17f: stream-output, predication,
@@ -20,6 +66,8 @@ Latest corrective CI37736830999 on ec6209e is terminal FAILURE (x86/x64
 allocation regression; ARM runtime SKIPPED); prior accepted CI37724958522
 remains CPU/fixture evidence, not ordinary VM runtime or desktop acceptance.
 No default VM UMD replacement has been accepted.
+Latest published18452d7 soleNativeUMD37743643139 is running with50/37;
+actual newnames accepted666e5fe1, freshheldfrontendHAL in progress.
 Published3ed22aaa0faaf5ea625b66a3ecfe0b248b4387d2 soleNativeUMD37739924828
 is terminal FAILURE: x86/x64 existing view check18/line119 rejects the now
 valid UINT(-1) remaining array range. Allocation and new SRV reader passed
@@ -1697,3 +1745,15 @@ ROOT306061f4 independently accepts zero-target closure. Corrected manifest
 outer/readers changes onlyauth/manifest/localreceipt paths; unchangedhost13a
 and never-used guestpaths remain. ROOT grantsf2fa7833 names02 once; actual
 host2995479 live, names/KMT proof and release pending. No GPUfactory yet.
+
+Published18452d7c020d8e176c288e18edd51a012c2a58ce consolidates exact6phase
+andtest-onlySRVfixture45+/1-. Ownedpush2996474 closes0/4.30s; soleNativeUMD
+37743643139 nowrunning, actualGit1012blobs/fivelinks, cases50/shipped37.
+No manualdispatch/redundantworkflow/usablefreshcore admission yet.
+Freshnames02 actualPASS ROOT666e5fe1 independently rejoins38raw/TARd952a4dc,
+canonical11cfc14d undercorrected6942manifest,2native7host/taskremoved/
+outer2995479+explicit9ec19c2b. Rootreplayer2997577 closes0. ROOT grants one
+fresh heldfrontendHAL enumerate01 under98ce33fa and correctedenumouter;
+targetexclusiveDX8. Publicdevice/offscreen448/Present64 remainpending.
+Sharedprimary114cbd frozenlocal15files/2newfixture/90raw next52cases39shipped
+is separatefromCI50 correction; compiler/originalsource archivepending.

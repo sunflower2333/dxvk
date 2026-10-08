@@ -123,7 +123,10 @@ struct Device {
     try {
       const HRESULT gpuResult = gpu ? gpu->close() : S_OK;
       if (FAILED(gpuResult)) result = gpuResult;
-      const HRESULT presentResult = memory.close();
+      // A suspended DDI can still pin a retired shared/present surface. Free
+      // its owned KMD allocation now on DestroyDevice's original caller;
+      // final surface release must not call a retired runtime after close.
+      const HRESULT presentResult = memory.closeDeviceAllocations();
       if (FAILED(presentResult)) result = presentResult;
     } catch (...) { result = E_FAIL; }
     service->close();

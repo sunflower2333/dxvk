@@ -67,6 +67,7 @@ $cases = [ordered]@{
     'dxvk-umd-allocation-test.exe' = 'runtime allocation/presentation PASS checks='
     'dxvk-umd-residency-transaction-test.exe' = '(?m)^DXGI residency transaction PASS checks=102085\r?$'
     'dxvk-umd-dxgi-residency-test.exe' = '(?m)^DXGI residency/priority PASS checks=\d+ profiles=6 residency=108 priority=48 releases=36\r?$'
+    'dxvk-umd-allocation-terminal-test.exe' = '(?m)^DXGI terminal allocations PASS checks=\d+ owned=10 opened=1 transfers=4 attempts=10 released=9 failures=1 locks=3 unlocks=2 retired_lock_returns=1\r?$'
     'dxvk-umd-predication-test.exe' = 'native predication PASS checks=.*draw-cases=24'
     'dxvk-umd-stream-output-test.exe' = 'native stream output PASS checks=.*drawauto-cases=2'
     'dxvk-umd-query-test.exe' = 'query completion PASS checks='

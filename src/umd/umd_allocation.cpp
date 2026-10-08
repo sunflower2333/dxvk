@@ -19,7 +19,10 @@ RuntimeAllocation::RuntimeAllocation(RuntimeAllocation&& other) noexcept
   m_kernelResource(std::exchange(other.m_kernelResource, 0)),
   m_generation(std::exchange(other.m_generation, 0)),
   m_info(other.m_info), m_published(std::exchange(other.m_published, false)),
-  m_opened(std::exchange(other.m_opened, false)) {}
+  m_opened(std::exchange(other.m_opened, false)) {
+  m_locked = std::exchange(other.m_locked, false);
+  if (other.m_tracked) m_owner->replace(other, *this);
+}
 HRESULT RuntimeAllocation::release() { return m_owner ? m_owner->release(*this) : S_OK; }
 bool RuntimeAllocation::canRotateWith(const RuntimeAllocation& other) const noexcept {
   return m_owner == other.m_owner && bool(m_handle) == bool(other.m_handle)
@@ -39,6 +42,27 @@ void RuntimeAllocation::swapIdentity(RuntimeAllocation& other) noexcept {
 }
 RuntimeMemory::~RuntimeMemory() { close(); }
 
+void RuntimeMemory::track(RuntimeAllocation& allocation) noexcept {
+  allocation.m_previous = nullptr; allocation.m_next = m_allocations;
+  if (m_allocations) m_allocations->m_previous = &allocation;
+  m_allocations = &allocation; allocation.m_tracked = true;
+}
+void RuntimeMemory::untrack(RuntimeAllocation& allocation) noexcept {
+  if (!allocation.m_tracked) return;
+  if (allocation.m_previous) allocation.m_previous->m_next = allocation.m_next;
+  else m_allocations = allocation.m_next;
+  if (allocation.m_next) allocation.m_next->m_previous = allocation.m_previous;
+  allocation.m_previous = allocation.m_next = nullptr; allocation.m_tracked = false;
+}
+void RuntimeMemory::replace(RuntimeAllocation& previous, RuntimeAllocation& current) noexcept {
+  current.m_previous = previous.m_previous; current.m_next = previous.m_next;
+  current.m_tracked = true;
+  if (current.m_previous) current.m_previous->m_next = &current;
+  else m_allocations = &current;
+  if (current.m_next) current.m_next->m_previous = &current;
+  previous.m_previous = previous.m_next = nullptr; previous.m_tracked = false;
+}
+
 void RuntimeMemory::initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kernel,
     const DXGI_DDI_BASE_CALLBACKS* dxgi, std::shared_ptr<const AdapterIdentity> identity,
     std::shared_ptr<RuntimeService> service) {
@@ -57,6 +81,7 @@ void RuntimeMemory::initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kern
   m_identity = std::move(identity);
   m_service = std::move(service);
   m_removed = false;
+  m_terminal = false;
 }
 
 void RuntimeMemory::initialize9(HANDLE device, const D3DDDI_DEVICECALLBACKS& kernel,
@@ -68,6 +93,7 @@ void RuntimeMemory::initialize9(HANDLE device, const D3DDDI_DEVICECALLBACKS& ker
 }
 
 HRESULT RuntimeMemory::checkIdentity() {
+  if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
   // The older standalone allocation helper has no runtime adapter binding.
   // The actual native entry always supplies its immutable original identity.
   if (!m_identity) return S_OK;
@@ -77,6 +103,7 @@ HRESULT RuntimeMemory::checkIdentity() {
   struct QueryScope { bool& querying; ~QueryScope() { querying = false; } } scope{m_querying};
   RuntimeIdentity current;
   HRESULT hr = queryRuntimeIdentity(m_identity->runtime, m_identity->query, current);
+  if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
   if (!m_identity->available()) hr = DXGI_ERROR_DEVICE_REMOVED;
   if (hr == S_OK && (std::memcmp(current.luid.data(), &m_identity->luid, sizeof(LUID))
       || current.generation != m_identity->generation
@@ -87,7 +114,7 @@ HRESULT RuntimeMemory::checkIdentity() {
 }
 
 bool RuntimeMemory::available() const {
-  return m_device && m_callbacks.pfnAllocateCb && m_callbacks.pfnDeallocateCb
+  return !m_terminal && m_device && m_callbacks.pfnAllocateCb && m_callbacks.pfnDeallocateCb
       && m_callbacks.pfnLockCb && m_callbacks.pfnUnlockCb
       && m_callbacks.pfnCreateContextCb && m_callbacks.pfnDestroyContextCb
       && (m_callbacks.pfnPresentCb || (m_dxgi && m_dxgi->pfnPresentCb));
@@ -116,6 +143,7 @@ HRESULT RuntimeMemory::allocateImpl(RuntimeAllocation& out, HANDLE resource,
   request.NumAllocations = 1;
   request.pAllocationInfo = &allocation;
   const HRESULT allocated = m_callbacks.pfnAllocateCb(m_device, &request);
+  if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(allocated)) return allocated;
   hr = allocated == S_OK ? checkIdentity() : E_FAIL;
   if (FAILED(hr) || !allocation.hAllocation || !request.hKMResource) {
@@ -134,15 +162,41 @@ HRESULT RuntimeMemory::allocateImpl(RuntimeAllocation& out, HANDLE resource,
   out.m_generation = m_identity ? m_identity->generation : 0;
   out.m_published = false;
   out.m_opened = false;
+  if (!m_callbacks.pfnPresentCb) track(out);
   return S_OK;
 }
 
 HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   if (allocation.m_owner != this) return E_INVALIDARG;
+  if (m_terminal) {
+    const auto handle = allocation.m_handle;
+    const auto resource = allocation.m_resource;
+    const bool opened = allocation.m_opened, locked = allocation.m_locked;
+    const auto unlockCallback = m_callbacks.pfnUnlockCb;
+    const auto deallocateCallback = m_callbacks.pfnDeallocateCb;
+    const auto device = m_device;
+    untrack(allocation);
+    allocation.m_owner = nullptr; allocation.m_resource = nullptr;
+    allocation.m_handle = 0; allocation.m_kernelResource = 0;
+    allocation.m_generation = 0; allocation.m_published = false;
+    allocation.m_opened = false; allocation.m_locked = false;
+    HRESULT result = S_OK;
+    if (locked) {
+      D3DDDICB_UNLOCK request = {}; request.NumAllocations = 1; request.phAllocations = &handle;
+      result = completed(unlockCallback(device, &request));
+    }
+    if (!opened) {
+      D3DDDICB_DEALLOCATE request = {}; request.hResource = resource;
+      const HRESULT hr = completed(deallocateCallback(device, &request));
+      if (FAILED(hr)) result = hr;
+    }
+    return result;
+  }
   if (allocation.m_opened) {
     // A view, not an owner. Dropping it must not reach DeallocateCb: the
     // allocation outlives this resource and the creating process still uses
     // it. Retire the local state only.
+    untrack(allocation);
     allocation.m_owner = nullptr; allocation.m_handle = 0;
     allocation.m_kernelResource = 0; allocation.m_generation = 0;
     allocation.m_published = false; allocation.m_opened = false;
@@ -163,6 +217,7 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
     if (FAILED(released)) return released;
     // A callback-reported success freed the resource even if the status is
     // outside the exact-S_OK contract. Reject it without freeing twice.
+    untrack(allocation);
     allocation.m_owner = nullptr; allocation.m_resource = nullptr;
     allocation.m_handle = 0; allocation.m_published = false;
     allocation.m_kernelResource = 0; allocation.m_generation = 0;
@@ -170,6 +225,7 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   }
   // Retire all user ownership before entering runtime code. A recursive
   // Release/DestroyResource must neither deallocate twice nor touch old state.
+  untrack(allocation);
   allocation.m_owner = nullptr; allocation.m_resource = nullptr;
   allocation.m_handle = 0; allocation.m_published = false;
   allocation.m_kernelResource = 0; allocation.m_generation = 0;
@@ -206,6 +262,7 @@ HRESULT RuntimeMemory::adoptImpl(RuntimeAllocation& out, D3DKMT_HANDLE allocatio
   out.m_generation = m_identity ? m_identity->generation : 0;
   out.m_published = false;
   out.m_opened = true;
+  if (!m_callbacks.pfnPresentCb) track(out);
   return S_OK;
 }
 
@@ -216,6 +273,7 @@ HRESULT RuntimeMemory::adoptImpl(RuntimeAllocation& out, D3DKMT_HANDLE allocatio
 // them in one place is what stops the two directions drifting apart.
 HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
     UINT rowPitch, bool publish) {
+  if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
   if (allocation.m_owner != this || !allocation.m_handle) return E_INVALIDARG;
   if (publish) allocation.m_published = false;
   const auto& info = allocation.m_info;
@@ -230,17 +288,26 @@ HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
   HRESULT hr = checkIdentity();
   if (FAILED(hr)) return hr;
   D3DDDICB_LOCK lock = {};
-  lock.hAllocation = allocation.m_handle;
+  const auto handle = allocation.m_handle;
+  lock.hAllocation = handle;
   lock.Flags.LockEntire = 1;
   lock.Flags.WriteOnly = publish ? 1 : 0;
   lock.Flags.ReadOnly = publish ? 0 : 1;
   // Do not discard or ignore synchronization: VidSch may still consume the
   // last Present. A successful synchronized lock precedes every CPU access.
   const HRESULT locked = m_callbacks.pfnLockCb(m_device, &lock);
+  // Terminal destruction can complete inside the runtime callback. Its
+  // cleanup invalidated this allocation and callback owner; never touch the
+  // returned address or issue an Unlock against that retired owner.
+  if (m_terminal || allocation.m_owner != this || allocation.m_handle != handle)
+    return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(locked)) return locked;
+  if (!m_callbacks.pfnPresentCb) allocation.m_locked = true;
   // Any callback-reported success acquired a lock, even when its status is
   // outside the documented exact-S_OK contract. Balance before rejecting it.
   hr = locked == S_OK ? checkIdentity() : E_FAIL;
+  if (m_terminal || allocation.m_owner != this || allocation.m_handle != handle)
+    return DXGI_ERROR_DEVICE_REMOVED;
   if (SUCCEEDED(hr) && (!lock.pData || lock.hAllocation != allocation.m_handle)) hr = E_FAIL;
   if (SUCCEEDED(hr)) {
     for (UINT y = 0; y < info.height; y++) {
@@ -252,7 +319,10 @@ HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
   D3DDDICB_UNLOCK unlock = {};
   unlock.NumAllocations = 1;
   unlock.phAllocations = &lock.hAllocation;
+  allocation.m_locked = false;
   const HRESULT unlocked = completed(m_callbacks.pfnUnlockCb(m_device, &unlock));
+  if (m_terminal || allocation.m_owner != this || allocation.m_handle != handle)
+    return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(unlocked)) hr = unlocked;
   if (SUCCEEDED(hr)) hr = checkIdentity();
   if (publish) allocation.m_published = hr == S_OK;
@@ -412,5 +482,24 @@ HRESULT RuntimeMemory::closeImpl() {
   const HANDLE device = m_device;
   m_context = nullptr;
   return completed(destroy(device, &request));
+}
+
+HRESULT RuntimeMemory::closeDeviceAllocationsImpl() {
+  if (m_terminal) return S_OK;
+  // Typed9 preserves ownership after a failed DeallocateCb so its synchronous
+  // DestroyResource can retry. This terminal modern path must not change it.
+  if (m_callbacks.pfnPresentCb) return DXGI_ERROR_UNSUPPORTED;
+  m_terminal = true;
+  HRESULT result = S_OK;
+  while (m_allocations) {
+    // releaseImpl detaches and zeros before entering runtime code. A nested
+    // callback can release or move any remaining node; reload the actual head.
+    const HRESULT hr = releaseImpl(*m_allocations);
+    if (FAILED(hr) && SUCCEEDED(result)) result = hr;
+  }
+  const HRESULT context = closeImpl();
+  if (FAILED(context)) result = context;
+  m_device = nullptr; m_dxgi = nullptr; m_callbacks = {};
+  return result;
 }
 }

@@ -198,6 +198,9 @@ umd_d3d10_formats_test = executable('dxvk-umd-d3d10-formats-test',
 umd_allocation_test = executable('dxvk-umd-allocation-test',
   '../../tests/umd-allocation.cpp', 'umd_allocation.cpp', 'umd_runtime_query.cpp')
 
+umd_allocation_terminal_test = executable('dxvk-umd-allocation-terminal-test',
+  '../../tests/umd-allocation-terminal.cpp', 'umd_allocation.cpp', 'umd_runtime_query.cpp')
+
 umd_residency_transaction_test = executable('dxvk-umd-residency-transaction-test',
   '../../tests/umd-residency-transaction.cpp')
 

@@ -67,6 +67,10 @@ private:
   AllocationInfo m_info;
   bool m_published = false;
   bool m_opened = false;
+  RuntimeAllocation* m_previous = nullptr;
+  RuntimeAllocation* m_next = nullptr;
+  bool m_tracked = false;
+  bool m_locked = false;
 };
 
 // Only kernel callback fields used by the negotiated bridge are copied;
@@ -129,7 +133,15 @@ public:
     return call([&] { return present9Impl(source, args, live); });
   }
   HRESULT close() { return !m_context ? S_OK : call([&] { return closeImpl(); }); }
+  // Terminal modern-device cleanup happens while DestroyDevice's original
+  // callback owner is valid, including when surfaces remain pinned by an
+  // interrupted operation. Ordinary context-only close and typed9 are separate.
+  HRESULT closeDeviceAllocations() { return call([&] { return closeDeviceAllocationsImpl(); }); }
 private:
+  friend class RuntimeAllocation;
+  void track(RuntimeAllocation& allocation) noexcept;
+  void untrack(RuntimeAllocation& allocation) noexcept;
+  void replace(RuntimeAllocation& previous, RuntimeAllocation& current) noexcept;
   template<typename Function> HRESULT call(Function&& function) {
     return m_service ? m_service->invoke(std::forward<Function>(function)) : function();
   }
@@ -150,6 +162,7 @@ private:
   HRESULT present9Impl(RuntimeAllocation& source, const D3DDDIARG_PRESENT& args,
     const std::function<bool()>& live);
   HRESULT closeImpl();
+  HRESULT closeDeviceAllocationsImpl();
   HRESULT ensureContext();
   HRESULT checkIdentity();
   HANDLE m_device = nullptr;
@@ -164,6 +177,8 @@ private:
   bool m_removed = false;
   bool m_querying = false;
   bool m_releasing9 = false;
+  RuntimeAllocation* m_allocations = nullptr;
+  bool m_terminal = false;
   bool m_policyActive = false;
 };
 

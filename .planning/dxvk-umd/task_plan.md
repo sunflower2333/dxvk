@@ -1,5 +1,46 @@
 # DXVK native Windows UMD
 
+## Live continuation 2026-10-09: D11 budget fix integrated, native verification queued
+
+MAIN now includes a7a9a19 (API10/11 Vulkan loader error-only logging) and
+494bda844401f0d5e96a741bf8719acc32ad3602 (owned invocation hold budget).
+Independent source reviews pass; native CPU04 is being prepared, not passed.
+Expected source scope: production AST6/combined8/WoW producer4, pure220,
+WoW390, argv9/diagnostics8/routing79/census5, invocation25cases/52checks/
+3sourcefunctions. Startup120s, invocation-to-hold120s, overall240s;
+retained child115s, worker480s, watchdog600s/task900s. Strict guards unchanged.
+
+Actual D11 quiet hardware05 failed its controller hold wait. Bound-to-probe
+invocation was72.213s; raw tuple replay began7.906s after invocation. Neither
+raw replay nor later lifecycle reverse proves a completed115s child timeout,
+factory entry/return or a rendering fault. Stdout0/stderr4096/identity-only
+originals are retained; no success reader ran. Fresh read-only recovery02
+passes original raw6/all3effectiveMesa/KMD/USERdesktop/devnode, recorded
+lifetimes/tasks/job absent and current valid160 with immediate exact recheck.
+ROOT recovery release6717/SHA32aa7742; desktop recovered automatically.
+New D11 hardware06 and DX8 packets are being prepared with source494bda8;
+core source remains actual96d1663, not a claimed build at the owner SHA.
+
+CI run37852733974/1 for published96d1663 is verified COMPLETE SUCCESS.
+Both genuine ARM64 and I386 cores remain accepted build-only (combined
+handoff17742/2f3ee4b8). MSAA now passes BOTH ARM64 fresh02 and x64 original01,
+52205checks each; combined finite audit38562/729044f8, ARM release0d08aab3,
+x64 release36926f08. Ordinary DX8 native I386 probeCPU is accepted, exact
+probe669696/44d03443, source1dc1cf2, ROOT CPU release1846/815d10c6.
+These CPU results do not prove ordinary SYSTEM GPU rendering.
+
+D10.1 CPU03 stage/parse passed; actual build failed before any compiler/tool
+because EWDK D: was absent (Join-Path, driverline31). Failed prefix collected
+and transferred once; final known-child observer passed with4 recorded
+native lifetimes absent. ROOT all7 outer wrappers closed (build exit1,
+other6 exit0); failed-prefix release and fresh04 packet preparation underway.
+Remount the same original EWDK read-only, verify selected tool/profile paths,
+and build in fresh roots; never overwrite03 or invoke its success reader.
+
+ROOT remains sole target caller. Default Mesa remains active. Ordinary SYSTEM
+DX8-11 literal pixels/Present, recovery and replacement admission are still
+UNPROVED. Goal stays active until actual remote tests pass.
+
 ## Goal
 Embed DXVK translation in a real VIOGPU D3D9/10/11 UMD, loaded by the Windows
 runtime, with correct hardware rendering, DX8 compatibility proven through
@@ -7,6 +48,40 @@ the system runtime, and full Display+Render integration.
 ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
+
+## Live continuation 2026-10-09: ports published, VM recovery accepted
+
+Published MAIN96d1663839e8dbdf31d3bdc3e8acdffe5d2b5f81 in one batch push
+(ROOT4047136/0,3.6748s). Exactly one push workflow run37852733974/attempt1
+is active. Identity/shaderpassed; ARM64/x86/x64 producersbuilding; selected
+new candidates unavailable. Ports916941c and close diagnosticsbe76e66 are
+published. Fresh combined lifecycle CPU issue03 is running on native ARM64
+PS5.1 (ROOTsolecaller), expected affectedAST5/combined7/WoWproducerAST4,
+pure182/WoW390/argv9/diagnostics8/routing70/census5. No hardware test yet.
+
+Actual Api9hardware02 recovery is now accepted after clean Windows shutdown
+and existing registeredVM restart. ROOTfinalobserver05 (4056480/0,16.6586s)
+passes: original raw6/all3effectiveMesa/KMD/USERsid-session/healthydevnode,
+tenrecordedoriginal lifetimes absent, namedprotectedjobabsent/active0, exact
+twoownedtasksabsent. CurrentLUID00000000:00006bf3/Generation9/caps0, exact
+validated paired160 and immediate same-observation recheck. ROOTrelease
+4506/SHA77332b79 at selected-aa2a2da-bee7-hardware-02/
+ROOT-Api9-aa2-failure-clean-reboot-recovery-scoped-release-02.json. Missing
+probe/ApplyproducerPID evidence remainsunknown; nofulltree/selfobserver claim.
+Two failed postboot observations are retained: first caught transientmissing
+Explorer +generation6 vsold2; second historicalgeneration6 differedfromactual9.
+Observer05 corrects historicalgenerationassumption without weakening actual
+paired160/LUID/caps/name/driver/desktopguards. KMDResetGeneration is a validity
+token, advanced on failure, transportstop and adapterinitialization; current
+nonzerovalidatedtoken and immediateexactrecheck are mandatory. SameLUID alone
+does not prove sameepoch. Actual configuredmemory6656MiB preserved, config
+SHA6e9063f5 unchanged, onlyoneVMstart and noimage/partition/package changes.
+
+D11 quiet05 source materializer preparation is frozen; it requires genuine
+selected newcore, actualmergedCPUrelease and latestrecoveryrelease. Actual
+14ca front/probes retained. D10.1 nativefront/probe CPU packet is being reviewed.
+MSAAfixture nativepacket and ordinaryDX8 I386probebuild ready after CPUscope.
+Ordinary SYSTEM DX8–11/pixels/Present and Mesa replacement remain UNPROVED.
 
 ## Live checkpoint 2026-10-09: ColorFill passed, ordinary GPU gate active
 

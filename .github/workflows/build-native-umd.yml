@@ -163,3 +163,6 @@ jobs:
             candidate/arm64-tex2d-srv-remaining-originals/**
             candidate/arm64-dxgi-open-primary-originals/**
             candidate/arm64-texture-uav-originals/**
+            candidate/arm64-resource-copy-cast-originals/**
+            candidate/arm64-bc-update-originals/**
+            candidate/arm64-d3d10-system-shader-originals/**

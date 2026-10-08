@@ -50,6 +50,12 @@ $cases = [ordered]@{
     'dxvk-umd-d3d11-device-test.exe' = '(?m)^typed D3D10\.1/D3D11 fixture PASS checks=\d+ callbacks=\d+ SM5 graphics/queries/packed IA/streams/tessellation/classes WARP controls; native Turnip/runtime acceptance remains gated\r?$'
     'dxvk-umd-uav-texture-policy-test.exe' = '(?m)^D3D11 texture UAV shape policy verified checks=49631\r?$'
     'dxvk-umd-texture-uav-test.exe' = '(?m)^D3D11 texture UAVs verified checks=\d+ views=72 words=10752 callbacks=88 original_files=384 WARP controls hardware_admission=0\r?$'
+    'dxvk-umd-copy-format-test.exe' = '(?m)^Copy format policy passed: 74036 checks, 36864 format pairs\r?$'
+    'dxvk-umd-resource-copy-cast-test.exe' = '(?m)^Resource copy cast passed: \d+ checks, 320 observations, 134624 bytes each native/public, 92 rejections\r?$'
+    'dxvk-umd-bc-transfer-policy-test.exe' = '(?m)^PASS BC block upload policy: checks=5780432\r?$'
+    'dxvk-umd-bc-update-test.exe' = '(?m)^PASS native BC1-5 updates: uploads=552 noops=136 rejects=408 snapshots=840 bytes=130944 checks=\d+\r?$'
+    'dxvk-umd-shader10-profile-test.exe' = '(?m)^D3D10 shader profile PASS checks=223 retained_tokens=1 hardware_admission=0\r?$'
+    'dxvk-umd-d3d10-system-shader-test.exe' = '(?m)^D3D10 system shader PASS checks=\d+ scenes=4 pixels=1024 words=9216 original_frames=24 fxc_programs=12 hardware_admission=0\r?$'
     'dxvk-umd-compute-container-test.exe' = 'compute container PASS checks=\d+ exact tokens/hash and malformed SM5 controls'
     'dxvk-umd-sm5-container-test.exe' = 'SM5 signatures/interfaces PASS checks=\d+ exact tokens/hash, GS streams, patch factors, typed/depth outputs, native table IDs'
     'dxvk-umd-legacy-api-test.exe' = 'legacy8/9 API bounds PASS checks=\d+; renderer framing follows, admission unchanged'
@@ -85,6 +91,9 @@ $cases = [ordered]@{
 }
 $originalDirectories = @{
     'dxvk-umd-texture-uav-test.exe' = 'arm64-texture-uav-originals'
+    'dxvk-umd-resource-copy-cast-test.exe' = 'arm64-resource-copy-cast-originals'
+    'dxvk-umd-bc-update-test.exe' = 'arm64-bc-update-originals'
+    'dxvk-umd-d3d10-system-shader-test.exe' = 'arm64-d3d10-system-shader-originals'
     'dxvk-umd-tex2d-srv-remaining-test.exe' = 'arm64-tex2d-srv-remaining-originals'
     'dxvk-umd-dxgi-blt-test.exe' = 'arm64-dxgi-blt-originals'
     'dxvk-umd-dxgi-primary-test.exe' = 'arm64-dxgi-primary-originals'
@@ -139,6 +148,15 @@ foreach ($name in $cases.Keys) {
     if ($name -ceq 'dxvk-umd-texture-uav-test.exe') {
         & python (Join-Path $PSScriptRoot '../tests/verify-texture-uav-originals.py') --directory $childDirectory --output (Join-Path $root 'arm64-texture-uav-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 texture UAV descriptor/compute/clear originals failed' }
+    } elseif ($name -ceq 'dxvk-umd-resource-copy-cast-test.exe') {
+        & python (Join-Path $PSScriptRoot '../tests/verify-resource-copy-cast-originals.py') --directory $childDirectory --output (Join-Path $root 'arm64-resource-copy-cast-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 resource copy cast native/public originals failed' }
+    } elseif ($name -ceq 'dxvk-umd-bc-update-test.exe') {
+        & python (Join-Path $PSScriptRoot '../tests/verify-bc-update-originals.py') --directory $childDirectory --output (Join-Path $root 'arm64-bc-update-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 BC1-5 native/public update originals failed' }
+    } elseif ($name -ceq 'dxvk-umd-d3d10-system-shader-test.exe') {
+        & python (Join-Path $PSScriptRoot '../tests/verify-d3d10-system-shader-originals.py') --directory $childDirectory --output (Join-Path $root 'arm64-d3d10-system-shader-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 D3D10 system shader DXBC/token/readback originals failed' }
     } elseif ($name -ceq 'dxvk-umd-dxgi-shared-resolve-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-shared-resolve-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-dxgi-shared-resolve-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 shared-resource handoff originals failed' }

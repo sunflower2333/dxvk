@@ -50,6 +50,7 @@ $cases = [ordered]@{
     'dxvk-umd-sm5-container-test.exe' = 'SM5 signatures/interfaces PASS checks=\d+ exact tokens/hash, GS streams, patch factors, typed/depth outputs, native table IDs'
     'dxvk-umd-legacy-api-test.exe' = 'legacy8/9 API bounds PASS checks=\d+; renderer framing follows, admission unchanged'
     'dxvk-umd-d3d8-sm1-test.exe' = 'actual DXVK SM1.1/1.4 compiler bridge PASS checks=\d+; no GPU execution'
+    'dxvk-umd-d3d8-system-identity-test.exe' = '(?m)^D3D8 system image identity fixture PASS checks=91 runtime_calls=0 KMT_calls=0 core_loads=0\r?$'
     'dxvk-umd-private-children-test.exe' = 'private children PASS checks=\d+; concurrent pins/reuse/rollback/epoch cleanup, no GPU'
     'dxvk-umd-input-formats-test.exe' = 'input formats PASS checks=\d+; scalar/packed offsets/overflow, no GPU'
     'dxvk-umd-d3d10-formats-test.exe' = 'native D3D10/10\.1 format queries verified checks=\d+ callbacks=12 backend_calls=2 hardware_admission=0'

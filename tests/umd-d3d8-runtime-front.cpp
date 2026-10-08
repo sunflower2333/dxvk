@@ -18,6 +18,7 @@
 #include <vector>
 #include "umd-d3d8-runtime-policy.h"
 #include "umd-d3d8-runtime-callbacks.h"
+#include "umd-d3d8-system-identity.h"
 #include "../src/umd/umd_runtime_imports.h"
 
 static_assert(sizeof(void*) == 4, "Microsoft D3D8 on the target requires an I386 frontend");
@@ -87,38 +88,12 @@ bool system8Caller(const void* returnAddress, std::wstring& actual) {
       | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
       reinterpret_cast<LPCWSTR>(returnAddress), &caller)) return false;
   actual = modulePath(caller);
-  // IsWow64Process alone does not identify I386 emulation on ARM64.
-  using Machines = BOOL (WINAPI*)(HANDLE, USHORT*, USHORT*);
-  using Directory = UINT (WINAPI*)(LPWSTR, UINT, WORD);
-  const HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
-  if (!kernel) return false;
-  const FARPROC machineAddress = GetProcAddress(kernel, "IsWow64Process2");
-  const FARPROC directoryAddress = GetProcAddress(kernel, "GetSystemWow64Directory2W");
-  Machines machines = nullptr; Directory wowDirectory = nullptr;
-  static_assert(sizeof(machines) == sizeof(machineAddress) && sizeof(wowDirectory) == sizeof(directoryAddress));
-  std::memcpy(&machines, &machineAddress, sizeof(machines));
-  std::memcpy(&wowDirectory, &directoryAddress, sizeof(wowDirectory));
-  if (!machines || !wowDirectory) return false;
-  USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN, nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
-  if (!machines(GetCurrentProcess(), &processMachine, &nativeMachine)) return false;
-  const USHORT effectiveMachine = processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? nativeMachine : processMachine;
-  BOOL legacyWow = FALSE;
-  const BOOL legacyStatus = IsWow64Process(GetCurrentProcess(), &legacyWow);
-  trace("SYSTEM_D3D8_CALLER_MACHINE process=%04x native=%04x effective=%04x pointer_bytes=%zu legacy_status=%u legacy_wow=%u",
-    unsigned(processMachine), unsigned(nativeMachine), unsigned(effectiveMachine), sizeof(void*),
-    unsigned(legacyStatus != FALSE), unsigned(legacyWow != FALSE));
-  if (effectiveMachine != IMAGE_FILE_MACHINE_I386) return false;
-  WCHAR directory[MAX_PATH]{};
-  const UINT count = processMachine == IMAGE_FILE_MACHINE_UNKNOWN
-    ? GetSystemDirectoryW(directory, MAX_PATH)
-    : wowDirectory(directory, MAX_PATH, IMAGE_FILE_MACHINE_I386);
-  if (!count || count >= MAX_PATH) return false;
-  const auto expected = std::wstring(directory, count) + L"\\d3d8.dll";
-  const uint16_t callerMachine = moduleMachine(caller);
-  trace("SYSTEM_D3D8_CALLER_PATH actual=%ls expected=%ls machine=%04x pointer_bytes=%zu directory_api=%s",
-    actual.c_str(), expected.c_str(), unsigned(callerMachine), sizeof(void*),
-    processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? "GetSystemDirectoryW" : "GetSystemWow64Directory2W");
-  return !actual.empty() && !_wcsicmp(actual.c_str(), expected.c_str()) && callerMachine == IMAGE_FILE_MACHINE_I386;
+  std::wstring directory;
+  if (!dxvk::test::runtime8::system::directory(directory, trace)) return false;
+  const bool joined = dxvk::test::runtime8::system::moduleIdentity(caller, L"d3d8.dll", directory, trace);
+  trace("SYSTEM_D3D8_CALLER_PATH actual=%ls expected=%ls machine=%04x pointer_bytes=%zu directory_api=GetSystemWow64Directory2W file_identity=%u",
+    actual.c_str(), (directory + L"\\d3d8.dll").c_str(), unsigned(moduleMachine(caller)), sizeof(void*), unsigned(joined));
+  return joined;
 }
 
 std::wstring environment(const wchar_t* name, size_t limit) {

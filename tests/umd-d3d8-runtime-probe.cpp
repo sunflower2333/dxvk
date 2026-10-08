@@ -3,6 +3,7 @@
 #include "umd-d3d8-runtime-policy.h"
 #include "umd-d3d8-runtime-guard.h"
 #include "umd-d3d8-runtime-hardware.h"
+#include "umd-d3d8-system-identity.h"
 #include "../src/umd/umd_runtime_imports.h"
 #include <d3dkmthk.h>
 #include <psapi.h>
@@ -54,38 +55,36 @@ std::wstring path(HMODULE module) {
   require(length && length < std::size(value), "GetModuleFileName");
   return {value, length};
 }
+uint16_t moduleMachine(HMODULE module);
+struct ProcessApi {
+  FARPROC address = nullptr;
+  DWORD error = ERROR_SUCCESS;
+  HMODULE owner = nullptr;
+  DWORD ownerError = ERROR_SUCCESS;
+};
+ProcessApi lookupProcessApi(HMODULE provider, const char* symbol) {
+  SetLastError(ERROR_SUCCESS);
+  const FARPROC address = provider ? GetProcAddress(provider, symbol) : nullptr;
+  const DWORD error = provider ? GetLastError() : ERROR_MOD_NOT_FOUND;
+  return {address, error};
+}
+void traceProcessApi(ProcessApi& api, const wchar_t* name, const char* symbol) {
+  if (api.address) {
+    SetLastError(ERROR_SUCCESS);
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+        | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(api.address), &api.owner)) api.ownerError = GetLastError();
+  }
+  const auto ownerPath = api.owner ? path(api.owner) : std::wstring();
+  trace("D3D8_PROCESS_API provider=%ls symbol=%s present=%u error=%lu address=%p owner_path=%ls owner_machine=%04x owner_error=%lu",
+    name, symbol, unsigned(api.address != nullptr), api.error, reinterpret_cast<void*>(api.address),
+    ownerPath.c_str(), unsigned(api.owner ? moduleMachine(api.owner) : 0), api.ownerError);
+  SetLastError(api.error);
+}
 std::wstring systemDirectory() {
-  // The legacy boolean is FALSE for an I386 process emulated on ARM64.
-  // Resolve the documented signatures without raising the fixture's Vista
-  // header target; these diagnostics run on the existing Windows 11 guest.
-  using Machines = BOOL (WINAPI*)(HANDLE, USHORT*, USHORT*);
-  using Directory = UINT (WINAPI*)(LPWSTR, UINT, WORD);
-  const HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
-  require(kernel != nullptr, "system-kernel32");
-  const FARPROC machineAddress = GetProcAddress(kernel, "IsWow64Process2");
-  const FARPROC directoryAddress = GetProcAddress(kernel, "GetSystemWow64Directory2W");
-  Machines machines = nullptr; Directory wowDirectory = nullptr;
-  static_assert(sizeof(machines) == sizeof(machineAddress) && sizeof(wowDirectory) == sizeof(directoryAddress));
-  std::memcpy(&machines, &machineAddress, sizeof(machines));
-  std::memcpy(&wowDirectory, &directoryAddress, sizeof(wowDirectory));
-  require(machines && wowDirectory, "explicit-process-machine-APIs");
-  USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN, nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
-  require(machines(GetCurrentProcess(), &processMachine, &nativeMachine) != FALSE, "IsWow64Process2");
-  const USHORT effectiveMachine = processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? nativeMachine : processMachine;
-  BOOL legacyWow = FALSE;
-  const BOOL legacyStatus = IsWow64Process(GetCurrentProcess(), &legacyWow);
-  trace("D3D8_PROCESS_MACHINE process=%04x native=%04x effective=%04x pointer_bytes=%zu legacy_status=%u legacy_wow=%u",
-    unsigned(processMachine), unsigned(nativeMachine), unsigned(effectiveMachine), sizeof(void*),
-    unsigned(legacyStatus != FALSE), unsigned(legacyWow != FALSE));
-  require(sizeof(void*) == 4 && effectiveMachine == IMAGE_FILE_MACHINE_I386, "actual-I386-process-machine");
-  wchar_t directory[MAX_PATH]{};
-  const UINT length = processMachine == IMAGE_FILE_MACHINE_UNKNOWN
-    ? GetSystemDirectoryW(directory, MAX_PATH)
-    : wowDirectory(directory, MAX_PATH, IMAGE_FILE_MACHINE_I386);
-  require(length && length < MAX_PATH, "system-directory");
-  trace("D3D8_SYSTEM_DIRECTORY machine=%04x api=%s path=%ls", unsigned(effectiveMachine),
-    processMachine == IMAGE_FILE_MACHINE_UNKNOWN ? "GetSystemDirectoryW" : "GetSystemWow64Directory2W", directory);
-  return {directory, length};
+  std::wstring directory;
+  require(dxvk::test::runtime8::system::directory(directory, trace), "I386-system-provider-file-identity");
+  return directory;
 }
 dxvk::umd::diagnostic::RuntimeImage image(HMODULE module) {
   MODULEINFO info{};
@@ -99,12 +98,292 @@ uint16_t moduleMachine(HMODULE module) {
       && dxvk::umd::diagnostic::runtimeImageRead(loaded, size_t(pe) + 4, machine), "module-machine");
   return machine;
 }
+void processApiDiagnostics() {
+  // Observe already loaded providers only. A missing API is diagnostic data;
+  // this mode never chooses a fallback or admits a runtime/KMT invocation.
+  const auto executable = GetModuleHandleW(nullptr);
+  trace("D3D8_PROCESS_IMAGE path=%ls machine=%04x pointer_bytes=%zu",
+    path(executable).c_str(), unsigned(moduleMachine(executable)), sizeof(void*));
+  ProcessApi machineLookup, directoryLookup;
+  const wchar_t* providers[] = {L"kernel32.dll", L"kernelbase.dll",
+    L"api-ms-win-core-wow64-l1-1-0.dll", L"api-ms-win-core-wow64-l1-1-1.dll",
+    L"api-ms-win-core-wow64-l1-1-3.dll"};
+  for (size_t i = 0; i < std::size(providers); ++i) {
+    SetLastError(ERROR_SUCCESS);
+    const HMODULE provider = GetModuleHandleW(providers[i]);
+    const DWORD error = GetLastError();
+    const auto providerPath = provider ? path(provider) : std::wstring();
+    trace("D3D8_PROCESS_PROVIDER name=%ls present=%u error=%lu path=%ls machine=%04x pointer_bytes=%zu",
+      providers[i], unsigned(provider != nullptr), error, providerPath.c_str(),
+      unsigned(provider ? moduleMachine(provider) : 0), sizeof(void*));
+    auto process = lookupProcessApi(provider, "IsWow64Process2");
+    auto directory = lookupProcessApi(provider, "GetSystemWow64Directory2W");
+    traceProcessApi(process, providers[i], "IsWow64Process2");
+    traceProcessApi(directory, providers[i], "GetSystemWow64Directory2W");
+    if (!i) { machineLookup = process; directoryLookup = directory; }
+  }
+  using Machines = BOOL (WINAPI*)(HANDLE, USHORT*, USHORT*);
+  using Directory = UINT (WINAPI*)(LPWSTR, UINT, WORD);
+  Machines machines = nullptr; Directory wowDirectory = nullptr;
+  static_assert(sizeof(machines) == sizeof(machineLookup.address)
+    && sizeof(wowDirectory) == sizeof(directoryLookup.address));
+  std::memcpy(&machines, &machineLookup.address, sizeof(machines));
+  std::memcpy(&wowDirectory, &directoryLookup.address, sizeof(wowDirectory));
+  if (machines) {
+    USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN, nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
+    SetLastError(ERROR_SUCCESS);
+    const BOOL status = machines(GetCurrentProcess(), &processMachine, &nativeMachine);
+    const DWORD error = GetLastError();
+    trace("D3D8_PROCESS_API_RESULT symbol=IsWow64Process2 status=%u error=%lu process=%04x native=%04x",
+      unsigned(status != FALSE), error, unsigned(processMachine), unsigned(nativeMachine));
+  }
+  if (wowDirectory) {
+    wchar_t directory[MAX_PATH]{};
+    SetLastError(ERROR_SUCCESS);
+    const UINT count = wowDirectory(directory, MAX_PATH, IMAGE_FILE_MACHINE_I386);
+    const DWORD error = GetLastError();
+    trace("D3D8_PROCESS_API_RESULT symbol=GetSystemWow64Directory2W count=%u error=%lu requested_machine=014c path=%ls",
+      count, error, count && count < MAX_PATH ? directory : L"");
+  }
+  wchar_t directory[MAX_PATH]{};
+  SetLastError(ERROR_SUCCESS);
+  const UINT count = GetSystemDirectoryW(directory, MAX_PATH);
+  const DWORD error = GetLastError();
+  trace("D3D8_PROCESS_API_RESULT symbol=GetSystemDirectoryW count=%u error=%lu path=%ls",
+    count, error, count && count < MAX_PATH ? directory : L"");
+  const auto canonical = systemDirectory();
+  const HMODULE gdi = GetModuleHandleW(L"gdi32.dll");
+  require(dxvk::test::runtime8::system::moduleIdentity(gdi, L"gdi32.dll", canonical, trace),
+    "read-only-loaded-GDI32-file-identity");
+  trace("D3D8_PROCESS_API_CANONICAL_DIRECTORY path=%ls admission=0", canonical.c_str());
+  trace("D3D8_PROCESS_API_DIAGNOSTICS_COMPLETE observed_providers=5 observed_lookup_rows=10 verified_modules=3 readonly_file_pairs=3 runtime_calls=0 KMT_calls=0 core_loads=0 admission=0");
+}
+struct IdentityPe {
+  uint16_t machine = 0, magic = 0, sections = 0;
+  uint32_t pe = 0, timestamp = 0, imageBytes = 0, headerBytes = 0, checksum = 0, entry = 0;
+};
+bool identityPe(dxvk::umd::diagnostic::RuntimeImage data, IdentityPe& output) {
+  using dxvk::umd::diagnostic::runtimeImageRange;
+  using dxvk::umd::diagnostic::runtimeImageRead;
+  IdentityPe value;
+  uint16_t dos = 0, optionalBytes = 0;
+  uint32_t signature = 0;
+  if (!runtimeImageRead(data, 0, dos) || dos != 0x5a4d
+      || !runtimeImageRead(data, 0x3c, value.pe) || value.pe < 0x40
+      || !runtimeImageRange(data, value.pe, 24)
+      || !runtimeImageRead(data, value.pe, signature) || signature != 0x4550
+      || !runtimeImageRead(data, size_t(value.pe) + 4, value.machine)
+      || !runtimeImageRead(data, size_t(value.pe) + 6, value.sections)
+      || !runtimeImageRead(data, size_t(value.pe) + 8, value.timestamp)
+      || !runtimeImageRead(data, size_t(value.pe) + 20, optionalBytes)
+      || optionalBytes < 68
+      || !runtimeImageRange(data, size_t(value.pe) + 24, optionalBytes)
+      || !runtimeImageRead(data, size_t(value.pe) + 24, value.magic)
+      || (value.magic != 0x10b && value.magic != 0x20b)
+      || !runtimeImageRead(data, size_t(value.pe) + 40, value.entry)
+      || !runtimeImageRead(data, size_t(value.pe) + 80, value.imageBytes)
+      || !runtimeImageRead(data, size_t(value.pe) + 84, value.headerBytes)
+      || !runtimeImageRead(data, size_t(value.pe) + 88, value.checksum)) return false;
+  output = value;
+  return true;
+}
+bool sameIdentityPe(const IdentityPe& a, const IdentityPe& b) {
+  return a.machine == b.machine && a.magic == b.magic && a.sections == b.sections
+    && a.pe == b.pe && a.timestamp == b.timestamp && a.imageBytes == b.imageBytes
+    && a.headerBytes == b.headerBytes && a.checksum == b.checksum && a.entry == b.entry;
+}
+void traceIdentityPe(const wchar_t* name, const char* view, bool valid, const IdentityPe& value) {
+  trace("D3D8_IMAGE_PE name=%ls view=%s valid=%u machine=%04x magic=%04x sections=%u pe=%08lx timestamp=%08lx image_bytes=%lu header_bytes=%lu checksum=%08lx entry=%08lx",
+    name, view, unsigned(valid), unsigned(value.machine), unsigned(value.magic), unsigned(value.sections),
+    static_cast<unsigned long>(value.pe), static_cast<unsigned long>(value.timestamp),
+    static_cast<unsigned long>(value.imageBytes), static_cast<unsigned long>(value.headerBytes),
+    static_cast<unsigned long>(value.checksum), static_cast<unsigned long>(value.entry));
+}
+bool identityFileSha256(HANDLE file, std::wstring& output) {
+  struct Algorithm {
+    BCRYPT_ALG_HANDLE value = nullptr;
+    ~Algorithm() { if (value) BCryptCloseAlgorithmProvider(value, 0); }
+  } algorithm;
+  struct Hash {
+    BCRYPT_HASH_HANDLE value = nullptr;
+    ~Hash() { if (value) BCryptDestroyHash(value); }
+  };
+  DWORD bytes = 0, returned = 0;
+  if (BCryptOpenAlgorithmProvider(&algorithm.value, BCRYPT_SHA256_ALGORITHM, nullptr, 0) < 0
+      || BCryptGetProperty(algorithm.value, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&bytes),
+        sizeof(bytes), &returned, 0) < 0 || returned != sizeof(bytes) || !bytes || bytes > 65536) return false;
+  std::vector<UCHAR> object(bytes);
+  // BCryptDestroyHash must run before its caller-owned backing buffer dies.
+  Hash hash;
+  LARGE_INTEGER zero{};
+  if (BCryptCreateHash(algorithm.value, &hash.value, object.data(), bytes, nullptr, 0, 0) < 0
+      || !SetFilePointerEx(file, zero, nullptr, FILE_BEGIN)) return false;
+  std::array<UCHAR, 65536> buffer{};
+  uint64_t total = 0;
+  for (;;) {
+    DWORD count = 0;
+    if (!ReadFile(file, buffer.data(), DWORD(buffer.size()), &count, nullptr)) return false;
+    if (!count) break;
+    total += count;
+    if (total > 32u * 1024u * 1024u || BCryptHashData(hash.value, buffer.data(), count, 0) < 0) return false;
+  }
+  std::array<UCHAR, 32> digest{};
+  if (BCryptFinishHash(hash.value, digest.data(), DWORD(digest.size()), 0) < 0) return false;
+  constexpr wchar_t digits[] = L"0123456789abcdef";
+  output.clear();
+  for (const auto byte : digest) { output.push_back(digits[byte >> 4]); output.push_back(digits[byte & 15]); }
+  return true;
+}
+struct IdentityFile {
+  const wchar_t* name;
+  const char* view;
+  HANDLE handle = INVALID_HANDLE_VALUE;
+  BY_HANDLE_FILE_INFORMATION information{};
+  std::wstring finalNt, hash;
+  bool fileIdValid = false, peValid = false, hashValid = false, unchanged = false;
+  unsigned& closed;
+  IdentityFile(const wchar_t* inputName, const char* inputView, unsigned& counter)
+  : name(inputName), view(inputView), closed(counter) { }
+  IdentityFile(const IdentityFile&) = delete;
+  IdentityFile& operator=(const IdentityFile&) = delete;
+  ~IdentityFile() {
+    if (handle != INVALID_HANDLE_VALUE) {
+      const HANDLE original = handle; handle = INVALID_HANDLE_VALUE;
+      SetLastError(ERROR_SUCCESS);
+      const BOOL status = CloseHandle(original);
+      const DWORD error = GetLastError();
+      trace("D3D8_IMAGE_FILE_CLOSE name=%ls view=%s handle=%p status=%u error=%lu",
+        name, view, original, unsigned(status != FALSE), error);
+      if (status) ++closed; else traceFailed = true;
+    }
+  }
+  void observe(const std::wstring& input, const std::wstring& mapped, const IdentityPe& loaded) {
+    SetLastError(ERROR_SUCCESS);
+    handle = CreateFileW(input.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    const DWORD openError = GetLastError();
+    trace("D3D8_IMAGE_FILE_OPEN name=%ls view=%s path=%ls opened=%u error=%lu write_access=0 write_share=0 delete_share=0",
+      name, view, input.c_str(), unsigned(handle != INVALID_HANDLE_VALUE), openError);
+    if (handle == INVALID_HANDLE_VALUE) return;
+    SetLastError(ERROR_SUCCESS);
+    fileIdValid = GetFileInformationByHandle(handle, &information) != FALSE;
+    const DWORD infoError = GetLastError();
+    trace("D3D8_IMAGE_FILE_ID name=%ls view=%s valid=%u error=%lu volume=%08lx index_high=%08lx index_low=%08lx bytes_high=%lu bytes_low=%lu",
+      name, view, unsigned(fileIdValid), infoError, information.dwVolumeSerialNumber,
+      information.nFileIndexHigh, information.nFileIndexLow, information.nFileSizeHigh, information.nFileSizeLow);
+    std::array<wchar_t, 32768> finalName{};
+    SetLastError(ERROR_SUCCESS);
+    const DWORD finalCount = GetFinalPathNameByHandleW(handle, finalName.data(), DWORD(finalName.size()),
+      FILE_NAME_NORMALIZED | VOLUME_NAME_NT);
+    const DWORD finalError = GetLastError();
+    if (finalCount && finalCount < finalName.size()) finalNt.assign(finalName.data(), finalCount);
+    trace("D3D8_IMAGE_FILE_FINAL name=%ls view=%s flags=2 count=%lu error=%lu path=%ls mapped_path_equal=%u",
+      name, view, finalCount, finalError, finalNt.c_str(),
+      unsigned(!mapped.empty() && !finalNt.empty() && !_wcsicmp(mapped.c_str(), finalNt.c_str())));
+    std::array<uint8_t, 65536> headers{};
+    LARGE_INTEGER zero{}; DWORD count = 0;
+    const bool read = SetFilePointerEx(handle, zero, nullptr, FILE_BEGIN) != FALSE
+      && ReadFile(handle, headers.data(), DWORD(headers.size()), &count, nullptr) != FALSE;
+    IdentityPe disk;
+    peValid = read && identityPe({headers.data(), count}, disk);
+    traceIdentityPe(name, view, peValid, disk);
+    trace("D3D8_IMAGE_HEADERS_COMPARE name=%ls view=%s same_loaded_headers=%u admission=0",
+      name, view, unsigned(peValid && sameIdentityPe(loaded, disk)));
+    hashValid = identityFileSha256(handle, hash);
+    std::wstring after;
+    const bool afterHashValid = identityFileSha256(handle, after);
+    BY_HANDLE_FILE_INFORMATION afterInfo{};
+    const bool afterId = GetFileInformationByHandle(handle, &afterInfo) != FALSE;
+    unchanged = hashValid && afterHashValid && hash == after && fileIdValid && afterId
+      && information.dwVolumeSerialNumber == afterInfo.dwVolumeSerialNumber
+      && information.nFileIndexHigh == afterInfo.nFileIndexHigh && information.nFileIndexLow == afterInfo.nFileIndexLow
+      && information.nFileSizeHigh == afterInfo.nFileSizeHigh && information.nFileSizeLow == afterInfo.nFileSizeLow;
+    trace("D3D8_IMAGE_FILE_SHA256 name=%ls view=%s valid=%u before=%ls after_valid=%u after=%ls unchanged=%u",
+      name, view, unsigned(hashValid), hash.c_str(), unsigned(afterHashValid), after.c_str(), unsigned(unchanged));
+  }
+};
+void mappedImageDiagnostics() {
+  using Machines = BOOL (WINAPI*)(HANDLE, USHORT*, USHORT*);
+  using Directory = UINT (WINAPI*)(LPWSTR, UINT, WORD);
+  const HMODULE kernel = GetModuleHandleW(L"kernel32.dll"), base = GetModuleHandleW(L"kernelbase.dll");
+  auto machines = lookupProcessApi(kernel, "IsWow64Process2");
+  auto directory = lookupProcessApi(kernel, "GetSystemWow64Directory2W");
+  traceProcessApi(machines, L"kernel32.dll", "IsWow64Process2");
+  traceProcessApi(directory, L"kernel32.dll", "GetSystemWow64Directory2W");
+  if (!directory.address && directory.error == ERROR_PROC_NOT_FOUND) {
+    directory = lookupProcessApi(base, "GetSystemWow64Directory2W");
+    traceProcessApi(directory, L"kernelbase.dll", "GetSystemWow64Directory2W");
+  }
+  Machines processApi = nullptr; Directory directoryApi = nullptr;
+  static_assert(sizeof(processApi) == sizeof(machines.address) && sizeof(directoryApi) == sizeof(directory.address));
+  std::memcpy(&processApi, &machines.address, sizeof(processApi));
+  std::memcpy(&directoryApi, &directory.address, sizeof(directoryApi));
+  require(processApi && directoryApi, "image-diagnostic-exact-WOW64-APIs");
+  USHORT process = 0, native = 0;
+  require(processApi(GetCurrentProcess(), &process, &native) != FALSE, "image-diagnostic-process-machine");
+  trace("D3D8_IMAGE_PROCESS process=%04x native=%04x pointer_bytes=%zu admission=0", unsigned(process), unsigned(native), sizeof(void*));
+  require(sizeof(void*) == 4 && (process ? process : native) == IMAGE_FILE_MACHINE_I386, "image-diagnostic-I386-only");
+  wchar_t system[MAX_PATH]{};
+  SetLastError(ERROR_SUCCESS);
+  const UINT count = directoryApi(system, MAX_PATH, IMAGE_FILE_MACHINE_I386);
+  const DWORD error = GetLastError();
+  trace("D3D8_IMAGE_EXPLICIT_DIRECTORY requested_machine=014c count=%u error=%lu path=%ls admission=0",
+    count, error, count && count < MAX_PATH ? system : L"");
+  require(count && count < MAX_PATH, "image-diagnostic-machine-specific-directory");
+  const std::wstring explicitDirectory(system, count);
+  const std::array<const wchar_t*, 4> names{{L"executable", L"kernel32.dll", L"kernelbase.dll", L"gdi32.dll"}};
+  const std::array<HMODULE, 4> modules{{GetModuleHandleW(nullptr), kernel, base, GetModuleHandleW(L"gdi32.dll")}};
+  unsigned attempted = 0, opened = 0, closed = 0;
+  bool observed = true;
+  for (size_t i = 0; i < names.size(); ++i) {
+    require(modules[i] != nullptr, "image-diagnostic-already-loaded-module");
+    const auto logical = path(modules[i]);
+    const auto extent = image(modules[i]); IdentityPe loaded;
+    const bool valid = identityPe(extent, loaded);
+    trace("D3D8_IMAGE_LOADED name=%ls base=%p logical_path=%ls module_bytes=%zu already_loaded=1",
+      names[i], reinterpret_cast<void*>(modules[i]), logical.c_str(), extent.bytes);
+    traceIdentityPe(names[i], "loaded", valid, loaded);
+    std::array<wchar_t, 32768> mappedBuffer{};
+    SetLastError(ERROR_SUCCESS);
+    const DWORD mappedCount = K32GetMappedFileNameW(GetCurrentProcess(), reinterpret_cast<LPVOID>(modules[i]),
+      mappedBuffer.data(), DWORD(mappedBuffer.size()));
+    const DWORD mappedError = GetLastError();
+    const std::wstring mapped = mappedCount && mappedCount < mappedBuffer.size()
+      ? std::wstring(mappedBuffer.data(), mappedCount) : std::wstring();
+    trace("D3D8_IMAGE_MAPPED name=%ls address=%p count=%lu error=%lu path=%ls admission=0",
+      names[i], reinterpret_cast<void*>(modules[i]), mappedCount, mappedError, mapped.c_str());
+    observed = valid && !mapped.empty() && observed;
+    {
+      IdentityFile logicalFile(names[i], "logical", closed); ++attempted;
+      logicalFile.observe(logical, mapped, loaded);
+      opened += unsigned(logicalFile.handle != INVALID_HANDLE_VALUE);
+      observed = logicalFile.unchanged && logicalFile.peValid && !logicalFile.finalNt.empty() && observed;
+      if (i) {
+        IdentityFile explicitFile(names[i], "explicit-I386", closed); ++attempted;
+        explicitFile.observe(explicitDirectory + L"\\" + names[i], mapped, loaded);
+        opened += unsigned(explicitFile.handle != INVALID_HANDLE_VALUE);
+        observed = explicitFile.unchanged && explicitFile.peValid && !explicitFile.finalNt.empty() && observed;
+        const bool sameFile = logicalFile.fileIdValid && explicitFile.fileIdValid
+          && logicalFile.information.dwVolumeSerialNumber == explicitFile.information.dwVolumeSerialNumber
+          && logicalFile.information.nFileIndexHigh == explicitFile.information.nFileIndexHigh
+          && logicalFile.information.nFileIndexLow == explicitFile.information.nFileIndexLow
+          && logicalFile.hashValid && explicitFile.hashValid && logicalFile.hash == explicitFile.hash;
+        trace("D3D8_IMAGE_FILE_PAIR name=%ls same_file_id_and_bytes=%u admission=0", names[i], unsigned(sameFile));
+      }
+    }
+  }
+  const std::array<HMODULE, 4> after{{GetModuleHandleW(nullptr), GetModuleHandleW(L"kernel32.dll"),
+    GetModuleHandleW(L"kernelbase.dll"), GetModuleHandleW(L"gdi32.dll")}};
+  require(modules == after && attempted == 7 && opened == closed && observed, "image-diagnostic-originals-and-closure");
+  trace("D3D8_IMAGE_IDENTITY_COMPLETE modules=4 file_attempts=%u files_opened=%u files_closed=%u observation_valid=1 runtime_calls=0 KMT_calls=0 core_loads=0 admission=0",
+    attempted, opened, closed);
+}
 void auditModules(const std::wstring& directory) {
   for (const auto* name : {L"d3d8.dll", L"d3d8thk.dll", L"d3d9.dll", L"dxgi.dll", L"d3d11.dll", L"d3d9on12.dll"}) {
     if (const HMODULE loaded = GetModuleHandleW(name)) {
-      const auto actual = path(loaded); const auto expected = directory + L"\\" + name;
+      const auto actual = path(loaded);
       trace("D3D8_MODULE name=%ls path=%ls machine=%04x", name, actual.c_str(), unsigned(moduleMachine(loaded)));
-      require(!_wcsicmp(actual.c_str(), expected.c_str()), "system-api-module-path");
+      require(dxvk::test::runtime8::system::moduleIdentity(loaded, name, directory, trace), "system-api-module-file-identity");
     }
   }
   require(!GetModuleHandleW(L"d3d10warp.dll"), "no-WARP-module");
@@ -318,13 +597,14 @@ HMONITOR matchAdapter(IDirect3D8* api, UINT index, const LUID& expected, UINT ex
   dc.value = CreateDCW(L"DISPLAY", info.szDevice, nullptr, nullptr);
   require(dc.value != nullptr, "selected-monitor-DC");
   const HMODULE gdi = GetModuleHandleW(L"gdi32.dll");
-  const auto expectedGdi = systemDirectory() + L"\\gdi32.dll";
+  const auto directory = systemDirectory();
+  const auto expectedGdi = directory + L"\\gdi32.dll";
   const auto actualGdi = gdi ? path(gdi) : std::wstring(L"<absent>");
   const uint16_t gdiMachine = gdi ? moduleMachine(gdi) : 0;
-  trace("D3D8_SYSTEM_GDI32 actual=%ls expected=%ls machine=%04x pointer_bytes=%zu",
-    actualGdi.c_str(), expectedGdi.c_str(), unsigned(gdiMachine), sizeof(void*));
-  require(gdi && !_wcsicmp(actualGdi.c_str(), expectedGdi.c_str())
-    && gdiMachine == IMAGE_FILE_MACHINE_I386, "system-GDI32");
+  const bool gdiIdentity = dxvk::test::runtime8::system::moduleIdentity(gdi, L"gdi32.dll", directory, trace);
+  trace("D3D8_SYSTEM_GDI32 actual=%ls expected=%ls machine=%04x pointer_bytes=%zu file_identity=%u",
+    actualGdi.c_str(), expectedGdi.c_str(), unsigned(gdiMachine), sizeof(void*), unsigned(gdiIdentity));
+  require(gdiIdentity && gdiMachine == IMAGE_FILE_MACHINE_I386, "system-GDI32-file-identity");
   const auto function = [gdi](const char* name, auto& output) {
     const FARPROC pointer = GetProcAddress(gdi, name);
     static_assert(sizeof(output) == sizeof(pointer)); std::memcpy(&output, &pointer, sizeof(output));
@@ -578,6 +858,8 @@ int wmain(int argc, wchar_t** argv) {
   const bool selectedPresent = argc == 9 && !std::wcscmp(argv[1], L"--front-present");
   const bool selectedHardware = selectedOffscreen || selectedPresent;
   const bool kmtNames = argc == 4 && !std::wcscmp(argv[1], L"--kmt-names");
+  const bool processDiagnostics = argc == 2 && !std::wcscmp(argv[1], L"--process-api-diagnostics");
+  const bool imageDiagnostics = argc == 2 && !std::wcscmp(argv[1], L"--mapped-image-diagnostics");
   const bool selected = selectedEnumerate || selectedHardware;
   const bool hardware = installedOffscreen || selectedHardware;
   LUID expectedLuid{}; UINT expectedSource = 0;
@@ -586,13 +868,25 @@ int wmain(int argc, wchar_t** argv) {
       || !policy::hexIdentity(std::wstring_view(argv[5]), 64))) return 64;
   if (selectedHardware && (!parseLuid(argv[7], expectedLuid) || !sourceId(argv[8], expectedSource))) return 64;
   if (kmtNames && (!parseLuid(argv[2], expectedLuid) || !sourceId(argv[3], expectedSource))) return 64;
-  if (!enumerate && !hardware && !selected && !guard && !kmtNames) return 64;
+  if (!enumerate && !hardware && !selected && !guard && !kmtNames && !processDiagnostics && !imageDiagnostics) return 64;
   if (guard) return d3d8RuntimeFrontGuard(argv[2]);
   if constexpr (sizeof(void*) != 4) {
     trace("D3D8_UNAVAILABLE required_machine=014c pointer_bytes=%zu exit=77", sizeof(void*)); return 77;
   }
   try {
     require(Permission::absent(), "diagnostic-pins-originally-absent");
+    if (imageDiagnostics) {
+      require(!GetModuleHandleW(L"d3d8.dll") && !GetModuleHandleW(L"viogpudxvk.dll"), "image-diagnostics-no-graphics-factory");
+      mappedImageDiagnostics();
+      require(!GetModuleHandleW(L"d3d8.dll") && !GetModuleHandleW(L"viogpudxvk.dll"), "image-diagnostics-no-graphics-factory-after");
+      return traceFailed ? 1 : 0;
+    }
+    if (processDiagnostics) {
+      require(!GetModuleHandleW(L"d3d8.dll") && !GetModuleHandleW(L"viogpudxvk.dll"), "process-diagnostics-no-graphics-factory");
+      processApiDiagnostics();
+      require(!GetModuleHandleW(L"d3d8.dll") && !GetModuleHandleW(L"viogpudxvk.dll"), "process-diagnostics-no-graphics-factory-after");
+      return traceFailed ? 1 : 0;
+    }
     if (kmtNames) {
       userGate();
       require(!GetModuleHandleW(L"d3d8.dll") && !GetModuleHandleW(L"viogpudxvk.dll"), "KMT-name-no-graphics-factory");
@@ -606,7 +900,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     require(!GetModuleHandleW(L"d3d8.dll"), "runtime-not-preloaded");
     Module runtime; runtime.value = LoadLibraryExW(expected.c_str(), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-    require(runtime.value && !_wcsicmp(path(runtime.value).c_str(), expected.c_str()), "genuine-system-d3d8");
+    require(runtime.value && dxvk::test::runtime8::system::moduleIdentity(runtime.value, L"d3d8.dll", directory, trace), "genuine-system-d3d8-file-identity");
     auditModules(directory);
     trace("D3D8_RUNTIME path=%ls machine=%04x pointer_bytes=%zu sdk_version=%u caps_bytes=%zu",
           expected.c_str(), unsigned(moduleMachine(runtime.value)), sizeof(void*), D3D_SDK_VERSION, sizeof(D3DCAPS8));

@@ -94,6 +94,8 @@ ninja -C build-umd src/umd/dxvk-umd-d3d11-so-probe.exe src/umd/dxvk-umd-d3d11-vo
 if ($LASTEXITCODE) { throw 'Typed D3D11 SO and volume probes/oracles failed to build' }
 ninja -C build-umd src/umd/dxvk-umd-private-children-test.exe src/umd/dxvk-umd-input-formats-test.exe src/umd/dxvk-umd-d3d10-formats-test.exe src/umd/dxvk-umd-multisample-policy-test.exe src/umd/dxvk-umd-d3d9-buffer-copy-test.exe
 if ($LASTEXITCODE) { throw 'Native child/input/format and D3D9 copy fixture build failed' }
+ninja -C build-umd src/umd/dxvk-umd-d3d8-system-identity-test.exe
+if ($LASTEXITCODE) { throw 'Shared system D3D8 image identity fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d9-runtime-callbacks-test.exe
 if ($LASTEXITCODE) { throw 'Probe-only D3D9 callback fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-sm41-container-test.exe src/umd/dxvk-umd-d3d10-shader-test.exe
@@ -191,6 +193,7 @@ if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-sm5-container-test.exe sm5-container-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-legacy-api-test.exe legacy-api-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d8-sm1-test.exe d3d8-sm1-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d8-system-identity-test.exe d3d8-system-identity-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-private-children-test.exe private-children-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-input-formats-test.exe input-formats-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d10-formats-test.exe d3d10-formats-test
@@ -239,7 +242,7 @@ if ($exports -notmatch '\bVioGpuDxvkOpenAdapter10_2ForTest\b') { throw 'Missing 
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bVioGpuDxvkQueryVulkanLoader\b' -or $exports -notmatch '\bVioGpuDxvkOpenAdapter9ForTest\b' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bOpenAdapter\b|D3D11CreateDevice') { throw 'Unexpected native UMD exports' }
 if ($exports -notmatch '\bVioGpuDxvkProbeD3D9BackendForTest\b' -or $exports -match '\bDirect3DCreate9(?:Ex|On12)?\b') { throw 'Unexpected embedded D3D9 exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
-foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-volume-policy-test.exe', 'dxvk-umd-texture3d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe')) {
+foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-volume-policy-test.exe', 'dxvk-umd-texture3d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-d3d8-system-identity-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
     # Include ARM64 fixtures for execution by the target validation owner.
     $path = Join-Path 'build-umd/src/umd' $name

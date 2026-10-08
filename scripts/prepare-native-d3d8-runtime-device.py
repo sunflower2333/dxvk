@@ -22,6 +22,7 @@ PRIMARY = [
     'tests/umd-d3d8-runtime-guard.cpp', 'tests/umd-d3d8-runtime-guard.h',
     'tests/umd-d3d8-runtime-policy.cpp', 'tests/umd-d3d8-runtime-policy.h',
     'tests/umd-d3d8-runtime-probe.cpp', 'tests/umd-d3d8-runtime-hardware.h',
+    'tests/umd-d3d8-system-identity.h',
     'tests/umd-d3d8-runtime-callbacks.cpp', 'tests/umd-d3d8-runtime-callbacks.h',
     'src/umd/umd_runtime_imports.h', 'scripts/build-native-d3d8-runtime-device.ps1',
     'scripts/collect-native-d3d8-runtime-device.ps1', 'scripts/prepare-native-d3d8-runtime-device.py',

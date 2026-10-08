@@ -1,4 +1,3 @@
-LIBRARY viogpudxvk_validate10
 EXPORTS
   OpenAdapter10
   VioGpuDxvkValidationEntryInfo

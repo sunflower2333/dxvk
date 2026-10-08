@@ -10,15 +10,70 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Live checkpoint 2026-10-09: ColorFill passed, ordinary GPU gate active
 
-MAINbe8f55c includes ColorFill, corrected controlled Present fixture, exact
-Win7 typed DDI11 negotiation, bee7 optional legacy same-owner lifecycle,
-DDI11 caller amortized processing, fixture caller-close correctionc9d6361
-and additive opt-in RuntimeGpu diagnosticbe8f55c. ROOT reviewed and merged
-both latest sources, preserving all callback guards and returns. These source
-commits are ready for one consolidated push;
-last published source is c8cda1f / run37835241647. Only build-native-umd handles push events; the two retained standalone
-control workflows are manual-only. ARM64 producer passed; x86/x64 distance-SO fixture failed and ARM64
-runtime was skipped. Whole CI failure is distinct from selected core output.
+Published MAIN aa2a2daa9443861615e4f987b18b53c87d6f4ec1 includes
+ColorFill, corrected Present fixture, Win7 typed DDI11 negotiation, bee7
+legacy same-owner lifecycle, DDI11 amortized callbacks, original-caller close
+fix and opt-in RuntimeGpu submit diagnostics. One consolidated push triggered
+run37847180490 attempt1. It has completed FAILURE: ARM64 selected producer
+113550858892, shader CPU and identity passed; x86 and x64 producers failed;
+ARM64 runtime skipped. Only build-native-umd handles push; two standalone
+controls remain manual-only.
+
+The genuine ARM64 core is accepted from artifact11581776325:6443008bytes,
+SHA86e79ddd5332bb3e1162f1c83fe8474a84a315619ee156c572562343e57bb6ff,
+matching PDB GUID4bbfcf23-2d3b-4d06-bff2-c2b37b82fdd5/age1. Once-only
+reader4656checks passed. It is build-only proof, no native hardware admission.
+Genuine x86 core remains unavailable. Actual x86 failure is MSAA staging
+DDI descriptor copying public CPU_ACCESS_READ0x20000 into native MapFlags
+(validbits0x3), rejected80070057 before backend creation. Original 2xMSAA
+source/resolved textures already created successfully. Fixture-only ca8080df
+translates public READ/WRITE into DDI0x2/0x1; affected strict x86 SDK compile
+passed. Production mask/reader unchanged; actual x64 has independently the same check113/DDI80070057 staging
+failure; both runtimeGPU1062checks and SO1054checks/16scenes passed.
+
+Fresh Api9 aa2/bee7 hardware02 reached actual Windows RenderCb: context10,
+queue30,6references,stream228; exact callback HRESULT80004005/E_FAIL.
+Five locked references are observed, not an established cause. Public D9 CreateDevice did not return a recorded HRESULT or bounded hold;
+pixels remain unproved, no success reader invoked. Original
+collection has no failures. Raw6 replay passed, but both exact-instance
+reverse PnP restarts timed out20s; no lifecycle-restored.json was produced.
+Current effectiveMesa/healthydevnode/desktop and recorded owner closure are
+PENDING a fresh bounded read-only observer. No other target CPU/GPU test
+until actual recovery is established. Default replacement is not authorized
+by this failed test and remains unproved.
+
+Ready source ports have been merged as MAIN916941c from exact source462ba2f:
+ordinary I386 SYSTEM DX8 probe1dc1cf2 without IAT interception; API8 direct
+I386 core/WoWslot0 lifecyclee68a6c4; exact SYSTEM D10.1/FL10.1 source5b0ca08;
+Api10/11 quiet diagnostic selection89a4d93; fixture CPU bit translationca8080df.
+Two independent source reviews found no blocker. Shared lifecycle closure
+has20 members; pending merged native CPU expected scope is AST4/6, pure182,
+WoW390, argv9/diagnostic8/routing70/census5. Native execution is pending.
+Finite close diagnostics92af871 merged as MAINbe76e66: five opt-in boundary
+records, allocation/lock/active counts, exact DestroyContext callback HRESULT,
+unchanged cleanup order/guards/returns. Strict SDK x64 and45ASan/UBSan output
+controls passed; independent source review found no blocker. No root cause
+or mapping/KMD change is justified by current hardware evidence.
+
+Fresh ROOT observer4038326/1 finished20.940s with all sidecars collected. Ten
+recorded original lifetimes absent, protectedjob absent/active0; original raw6,
+signed KMD and original desktop match. Two exact owned tasks remainedReady;
+devnode problem21/notstarted, fresh pairedidentity query failed. NativeRender
+failure fields were0; context10 destroy complete4095/status0/released1/owner
+retained0. Signed SYS/PDB audit resolves historical initializer/reset RVAs;
+these counters do not prove currently held lock or Render failure provenance.
+ROOT captured then removed only the two exact verified inactive tasks; clean
+Windows shutdown/s/t0 completed0 (ROOT4044852/0). Android control confirmed
+registeredVM stopped/no crosvm with same configurationSHA6e9063f5. Actual
+configured memory is6656MiB and is preserved. Only existing registered VM
+is being restarted once through acknowledged daemon API; no image/package/
+partition/RAM change. Fresh postboot raw6/all3Mesa/KMD/devnode/desktop proof
+is pending before any CPU/GPU target test or recovery scope release.
+
+Quiet D11 next packet must use actual post-D9 recovery release, actual merged
+CPU proof, a genuine selected next CI core and accepted native14ca front/probes.
+Old bee7 diagnostic1 hardware04 remains immutable and is not ordinary success
+admission. New I386 core and ordinary DX8–11 rendering remain unproved.
 
 Actual ColorFill03 now passes BOTH full native ARM64 and emulated x64
 fixtures, 690949 checks each, 14 COFFs/2 PEs. Independent peer verifies952
@@ -44,7 +99,11 @@ confirming1032checks/backenddrains2/childdrains2 each; both callback and
 whole-fixture markers exactlyonce,115sources/17COFF/onePE/sevennative
 stages,76ARM64/75x64 selectedmetadata entries stable. Reader proofs
 ad402989/779 and6e7a3385/777 are accepted for selected fixture originals;
-finite combined recorded-host/native closure peer is completing locally. Authorization69a81223
+finite combined closure peer67f1038a/20058 joins95hashes,9ROOTparents/
+9transports/2once-onlyreaders/22recordednative lifetimes, scopedpending0.
+ROOT native02 CPU release is accepted at artifacts/d3d11-amortized-native-
+20261009/6f09db3-02/ROOT-native-amortized02-CPU-scoped-release-01.json.
+Controlled CPU/WARP only; no ordinary SYSTEMhardware or default replacement. Authorization69a81223
 pins latest actual native14ca CPU release8c98a605 and failed01 release65059d06.
 All5 actualROOT/transport phases and11 recordednative lifetimes close;
 ROOT failed CPU release65059d06. No x64 or successreader execution.
@@ -55,8 +114,7 @@ proof47171/SHA6b7c5887 joins17sources/30namedheaders/139selectedrows,
 frontend1464832/SHA2a403572 and ARM64 offscreen1049088/SHA5612d9f0 are
 retained in native14ca originals; handoff15455/SHA03f6f225. ROOT CPU release
 8c98a605/4145 accepted; local release parent3967214/0 closes. No probe/core/
-SYSTEM execution or hardware proof. New selected genuine CI core remains
-pending. Bounded read-only inventory ROOT3967423/0 confirms mounted EWDK
+SYSTEM execution or hardware proof. New selected genuine CI core is accepted as build-only evidence. Bounded read-only inventory ROOT3967423/0 confirms mounted EWDK
 compiler/SDK/rc paths; Python/Git/Meson/Ninja/glslang are absent from current
 SSH PATH. No tool, probe, registration or PnP call occurred in that inventory.
 
@@ -91,8 +149,8 @@ with exact normalized and original callback HRESULT, context/queue/generation/
 reference/locked counts and failure index. All original guards, returns, masks,
 mapping and ABI are retained. Six strict official-SDK x86/x64 COFF builds
 and actual GCC ASan/UBSan output control30checks pass; focused independent
-peer00184d4e reports no blocker. This source has not yet executed on target;
-default remains Mesa.
+peer00184d4e reports no blocker. This source executed on target in failed hardware02 and preserved actual
+RenderCb E_FAIL. Recovery is pending as recorded above; no replacement proof.
 
 Latest ordinary D11 hardware03 selected the DXVK validation frontend after
 forward restart; factory S_OK/FL10_0 still lacked typed Calc/Create events,
@@ -101,8 +159,15 @@ closure were accepted (ROOT hardware03 release40e3ffaa). Default VM Mesa
 remains. Exact Win7 DDI revision and amortized callback changes need a fresh
 core/front/probe before the next hardware attempt.
 
-Next: finalize corrected callback native02 scoped closure; consolidate ONE source/
-plans push through the sole build-native-umd workflow, select the genuinely
+DX8 source-only audit identifies a separate ordinary-routing gap: historical
+front modes load genuine Microsoft x86 SYSTEMd3d8 but intercept its KMT
+filename query. That controlled path is not ordinary installed UMD proof.
+Public OpenAdapter already accepts Interface8; next actual ordinary x86
+probe needs no IAT hook, a genuine I386 core/private tuple, exact live LUID
+and UserModeDriverNameWoW slot0 binding with unchanged recovery. A focused
+probe and WoW lifecycle derivation are in progress; no admission-mask change.
+
+Next: collect the consolidated run37847180490 selected genuinely
 successful ARM64 core containing Win7/amortized/diagnostics, then run fresh
 ordinary SYSTEM Api9 diagnostic and D11 typed-creation/pixel/recovery attempts.
 Accepted ColorFill/SO/bee7 suites and prior failure readers are not rerun. Never

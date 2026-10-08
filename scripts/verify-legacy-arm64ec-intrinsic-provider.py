@@ -58,6 +58,7 @@ def coff_symbols(raw):
     symbols, index = {}, 0
     while index < count:
         name, value, section, kind, storage, auxiliary = struct.unpack_from('<8sIhHBB', raw, offset+index*18)
+        require(-2 <= section <= sections, 'actual symbol section within COFF header or special values')
         if name[:4] == b'\0'*4:
             cursor = struct.unpack_from('<I', name, 4)[0]
             require(4 <= cursor < string_bytes, 'bounded original symbol long name')

@@ -173,3 +173,4 @@ jobs:
             candidate/arm64-dxgi-optional-shared-primary-originals/**
             candidate/arm64-msaa-copy-originals/**
             candidate/arm64-bc-copy-originals/**
+            candidate/arm64-depth-stencil-copy-originals/**

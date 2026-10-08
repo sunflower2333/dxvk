@@ -1,5 +1,3 @@
-LIBRARY viogpudxvk_validate11
 EXPORTS
   OpenAdapter10_2
   VioGpuDxvkD11ValidationInfo
-

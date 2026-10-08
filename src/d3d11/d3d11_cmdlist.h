@@ -4,10 +4,21 @@
 
 #include "d3d11_context.h"
 #include "d3d11_command_order.h"
+#include "d3d11_command_replay.h"
 
 namespace dxvk {
   
   using D3D11ChunkDispatchProc = std::function<uint64_t (DxvkCsChunkRef&&, uint64_t, GpuFlushType)>;
+
+  struct D3D11ActionDispatchResult {
+    uint64_t sequence = 0;
+    bool executed = false;
+  };
+
+  using D3D11ActionDispatchProc = std::function<D3D11ActionDispatchResult (
+    const D3D11PredicateAction&,
+    const D3D11ReplayPredicate<Com<D3D11Query, false>, D3D11QueryTicket>&,
+    uint64_t, GpuFlushType)>;
 
   class D3D11CommandList : public D3D11DeviceChild<ID3D11CommandList> {
     
@@ -44,8 +55,14 @@ namespace dxvk {
     uint64_t AddCommandList(
             D3D11CommandList*   pCommandList);
 
+    void AddAction(
+            D3D11PredicateAction Command,
+            uint64_t            Cost,
+            D3D11Buffer*        TrackedBuffer);
+
     void EmitToCsThread(
-      const D3D11ChunkDispatchProc& DispatchProc);
+      const D3D11ChunkDispatchProc& DispatchProc,
+      const D3D11ActionDispatchProc& DispatchAction);
 
     uint64_t GetCurrentChunkId(bool Empty) const {
       return D3D11RecordedCurrentChunkId(m_chunks.size(), Empty);
@@ -72,11 +89,18 @@ namespace dxvk {
       uint64_t          chunkId;
     };
 
+    struct ActionEntry {
+      D3D11PredicateAction command;
+      uint64_t cost = 0;
+      D3D11ResourceRef resource;
+    };
+
     UINT m_contextFlags = 0u;
 
     std::vector<ChunkEntry>             m_chunks;
     std::vector<Com<D3D11Query, false>> m_queries;
     std::vector<TrackedResource>        m_resources;
+    std::vector<ActionEntry>            m_actions;
     D3D11CommandOrder<Com<D3D11Query, false>> m_order;
 
     D3DDestructionNotifier              m_destructionNotifier;

@@ -419,9 +419,7 @@ namespace dxvk {
     if (counterView == nullptr)
       return;
 
-    AddCost(GpuCostEstimate::Transfer);
-
-    EmitCs([
+    auto command = [
       cDstSlice = buf->GetBufferSlice(DstAlignedByteOffset),
       cSrcSlice = DxvkBufferSlice(counterView)
     ] (DxvkContext* ctx) {
@@ -431,7 +429,15 @@ namespace dxvk {
         cSrcSlice.buffer(),
         cSrcSlice.offset(),
         sizeof(uint32_t));
-    });
+    };
+
+    if (m_state.pr.predicateObject) {
+      EmitPredicateAction(std::move(command), GpuCostEstimate::Transfer, buf);
+      return;
+    }
+
+    AddCost(GpuCostEstimate::Transfer);
+    EmitCs(std::move(command));
 
     if (buf->HasSequenceNumber())
       GetTypedContext()->TrackBufferSequenceNumber(buf);
@@ -4832,6 +4838,33 @@ namespace dxvk {
       D3D11ShaderType::eVertex, D3D11ShaderType::eGeometry,
       D3D11ShaderType::eHull,   D3D11ShaderType::eDomain,
       D3D11ShaderType::ePixel);
+  }
+
+
+  template<typename ContextType>
+  void D3D11CommonContext<ContextType>::EmitPredicateAction(
+          D3D11PredicateAction Command,
+          uint64_t             Cost,
+          D3D11Buffer*         TrackedBuffer) {
+    if constexpr (IsDeferred) {
+      // The command owns its backend slices independently from API objects.
+      // Keep unconditional state/query work in its original chunk stream.
+      FlushCsChunk();
+      GetTypedContext()->m_commandList->AddAction(std::move(Command), Cost, TrackedBuffer);
+    } else {
+      Com<D3D11Query, false> query(m_state.pr.predicateObject.ptr());
+      const auto ticket = query ? query->CaptureTicket() : D3D11QueryTicket();
+      D3D11_QUERY_DESC1 desc = { };
+      if (query)
+        query->GetDesc1(&desc);
+      if (!GetTypedContext()->EvaluatePredicateAction(query.ptr(), ticket, m_state.pr.predicateValue,
+          bool(desc.MiscFlags & D3D11_QUERY_MISC_PREDICATEHINT)))
+        return;
+      AddCost(Cost);
+      EmitCs(std::move(Command));
+      if (TrackedBuffer && TrackedBuffer->HasSequenceNumber())
+        GetTypedContext()->TrackBufferSequenceNumber(TrackedBuffer);
+    }
   }
 
 

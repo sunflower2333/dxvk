@@ -19,6 +19,7 @@ namespace dxvk {
     Predicate,
     QueryBegin,
     QueryEnd,
+    Action,
   };
 
   // QueryRef owns its query. End occurrence IDs are local recording identities,
@@ -29,6 +30,7 @@ namespace dxvk {
     QueryRef query = { };
     uint64_t chunkId = 0;
     uint64_t endOccurrence = 0;
+    uint64_t actionId = 0;
     int32_t predicateValue = 0;
     bool predicateHint = false;
     bool implicitBegin = false;
@@ -77,7 +79,14 @@ namespace dxvk {
       m_operations.push_back(std::move(operation));
     }
 
-    void append(const D3D11CommandOrder& other, uint64_t chunkBase) {
+    void addAction(uint64_t actionId) {
+      Operation operation;
+      operation.type = D3D11RecordedOperationType::Action;
+      operation.actionId = actionId;
+      m_operations.push_back(std::move(operation));
+    }
+
+    void append(const D3D11CommandOrder& other, uint64_t chunkBase, uint64_t actionBase = 0) {
       const uint64_t endBase = m_endOccurrences;
       for (const auto& source : other.m_operations) {
         Operation operation = source;
@@ -85,6 +94,8 @@ namespace dxvk {
           operation.chunkId = D3D11RelocatedChunkId(operation.chunkId, chunkBase);
         if (operation.type == D3D11RecordedOperationType::QueryEnd)
           operation.endOccurrence += endBase;
+        if (operation.type == D3D11RecordedOperationType::Action)
+          operation.actionId += actionBase;
         m_operations.push_back(std::move(operation));
       }
       m_endOccurrences += other.m_endOccurrences;

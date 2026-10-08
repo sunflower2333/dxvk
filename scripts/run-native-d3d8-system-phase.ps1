@@ -55,7 +55,7 @@ Require ($config.adapter_luid -ceq 'ec6b000000000000' -and $config.source_id -eq
 Require ($config.native_cpu.accepted -and $config.native_cpu.source -ceq $config.probe_source -and $config.native_cpu.original_archive_sha256 -ceq '9ab984590d37ba47a761d81ea76fbc42a8ed87666ca67ced1ef8f107e31b7ddc' -and $config.native_cpu.original_proof_sha256 -cmatch '^[0-9a-f]{64}$' -and $config.native_cpu.completion_archive_sha256 -cmatch '^[0-9a-f]{64}$' -and $config.native_cpu.posthash_original_sha256 -ceq 'd9e37a95907f0274ca4b962abba0e6b5052fcd96ea60a69e3a781ba0f74584eb') 'Accepted original split native CPU proof required'
 Require ((Hash $Authorization) -ceq $AuthorizationHash) 'Explicit phase authorization changed'
 $auth=Json $Authorization
-Require ($auth.authorized -and $auth.owner -cin @('/root','/root/verify_ewdk_build') -and $auth.phase -ceq $Phase -and $auth.manifest_sha256 -ceq $ManifestHash -and $auth.output -ceq $Output) 'Exact exclusive phase ownership required'
+Require ($auth.authorized -and $auth.owner -cin @('/root','/root/verify_ewdk_build','/root/verify_cpu09_completion') -and $auth.phase -ceq $Phase -and $auth.manifest_sha256 -ceq $ManifestHash -and $auth.output -ceq $Output) 'Exact exclusive phase ownership required'
 foreach ($name in @('VIOGPU_DXVK_RUNTIME_DIAGNOSTIC','VIOGPU_DXVK_D3D8_CORE_PATH','VIOGPU_DXVK_D3D8_CORE_SHA256','VIOGPU_DXVK_D3D8_CORE_COMMIT','VK_DRIVER_FILES','VK_ICD_FILENAMES')) {
   Require (!(Test-Path ('Env:'+$name))) 'Original diagnostic and Vulkan environment must be absent'
 }

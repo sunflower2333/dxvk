@@ -598,7 +598,7 @@ def verify_archive(archive, collection_path, manifest_path):
     auth_bytes = contents['authorization-original.json']
     require(auth_bytes == contents['output/authorization-original.json'] and start['authorization_sha256'] == result['authorization_sha256'] == digest(auth_bytes), 'original explicit phase authorization mismatch')
     auth = read_json(auth_bytes)
-    require(auth['authorized'] and auth['owner'] in ('/root', '/root/verify_ewdk_build') and auth['phase'] == phase and auth['manifest_sha256'] == digest(manifest_bytes) and auth['output'] == config['output'], 'authorization was for another phase/output')
+    require(auth['authorized'] and auth['owner'] in ('/root', '/root/verify_ewdk_build', '/root/verify_cpu09_completion') and auth['phase'] == phase and auth['manifest_sha256'] == digest(manifest_bytes) and auth['output'] == config['output'], 'authorization was for another phase/output')
     definitions = [contents[name] for name in ('task-definition-original.xml', 'task-definition-before-start.xml', 'task-definition-after.xml')]
     require(all(data == definitions[0] for data in definitions) and digest(definitions[0]) == config['task_definition_sha256'], 'original task definition changed')
     xml = ET.fromstring(definitions[0].decode('utf-8-sig'))

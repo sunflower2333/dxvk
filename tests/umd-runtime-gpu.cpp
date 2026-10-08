@@ -401,7 +401,9 @@ static void successfulSubmissionAmortization() {
   CHECK(calls == 1 && f->renders == 3 && !a.token && f->allocations.empty());
   service->run([] {});
   CHECK(calls == 1);
-  service->run([&] { CHECK(f->gpu->close() == S_OK); });
+  // Terminal KMD callbacks belong to this caller, as in Device::close().
+  // Backend jobs use service->run(), but direct RuntimeGpu::close() does not.
+  CHECK(f->gpu->close() == S_OK);
   service->close();
   service->requestAmortizedProcessing(); service->run([] {});
   CHECK(calls == 1 && f->allocations.empty() && f->contextCloses == 1);

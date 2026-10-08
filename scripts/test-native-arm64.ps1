@@ -45,6 +45,7 @@ $cases = [ordered]@{
     'dxvk-umd-cube-array-resource-test.exe' = 'PASS cube-array resource\r?\nprofiles=2\r?\ncases=7\r?\nchecks=\d+\r?\ntexels=3540\r?\nfailures=56'
     'dxvk-umd-cube-srv-mips-test.exe' = '(?m)^native D3D10\.1/D3D11 cube SRV mip ranges verified checks=\d+ views=102 words=2244 callbacks=36 WARP controls\r?$'
     'dxvk-umd-cube-array-mips-test.exe' = 'PASS CubeArrayMips\r?\ncases=5\r?\nchecks=\d+\r?\ntexels=30690\r?\nreadbacks=5'
+    'dxvk-umd-cube-array-targets-test.exe' = '(?m)^typed cube-array targets verified checks=\d+ views=24 snapshots=30 words=35700 callbacks=46 public_reference=1 hardware_admission=0\r?$'
     'dxvk-umd-d3d11-device-test.exe' = '(?m)^typed D3D10\.1/D3D11 fixture PASS checks=\d+ callbacks=\d+ SM5 graphics/queries/packed IA/streams/tessellation/classes WARP controls; native Turnip/runtime acceptance remains gated\r?$'
     'dxvk-umd-compute-container-test.exe' = 'compute container PASS checks=\d+ exact tokens/hash and malformed SM5 controls'
     'dxvk-umd-sm5-container-test.exe' = 'SM5 signatures/interfaces PASS checks=\d+ exact tokens/hash, GS streams, patch factors, typed/depth outputs, native table IDs'
@@ -74,6 +75,7 @@ $originalDirectories = @{
     'dxvk-umd-cube-array-resource-test.exe' = 'arm64-cube-array-resource-originals'
     'dxvk-umd-cube-srv-mips-test.exe' = 'arm64-cube-srv-mips-originals'
     'dxvk-umd-cube-array-mips-test.exe' = 'arm64-cube-array-mips-originals'
+    'dxvk-umd-cube-array-targets-test.exe' = 'arm64-cube-array-targets-originals'
 }
 foreach ($name in $cases.Keys) {
     $exe = Join-Path $root $name
@@ -126,6 +128,9 @@ foreach ($name in $cases.Keys) {
     } elseif ($name -ceq 'dxvk-umd-cube-array-mips-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-cube-array-mips-originals.py') $childDirectory --output (Join-Path $root 'arm64-cube-array-mips-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 cube-array mip original oracle failed' }
+    } elseif ($name -ceq 'dxvk-umd-cube-array-targets-test.exe') {
+        & python (Join-Path $PSScriptRoot '../tests/verify-cube-array-target-originals.py') --originals $childDirectory --stdout $out --output (Join-Path $root 'arm64-cube-array-targets-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 cube-array target original oracle failed' }
     }
     Get-FileHash -Algorithm SHA256 -LiteralPath $exe | Format-List | Out-File -Append (Join-Path $root 'arm64-hashes.txt')
 }

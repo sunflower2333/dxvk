@@ -84,6 +84,8 @@ ninja -C build-umd src/umd/dxvk-umd-volume-policy-test.exe src/umd/dxvk-umd-text
 if ($LASTEXITCODE) { throw 'Native volume policy and Texture3D fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-texturecube-test.exe src/umd/dxvk-umd-cube-array-policy-test.exe src/umd/dxvk-umd-cube-array-resource-test.exe src/umd/dxvk-umd-cube-srv-mips-test.exe src/umd/dxvk-umd-cube-array-mips-test.exe
 if ($LASTEXITCODE) { throw 'Native cube resource, view and mip fixture build failed' }
+ninja -C build-umd src/umd/dxvk-umd-cube-array-targets-test.exe
+if ($LASTEXITCODE) { throw 'Native cube-array RTV/DSV fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d11-device-test.exe src/umd/dxvk-umd-compute-container-test.exe src/umd/dxvk-umd-sm5-container-test.exe src/umd/dxvk-umd-legacy-api-test.exe src/umd/dxvk-umd-d3d8-sm1-test.exe
 if ($LASTEXITCODE) { throw 'Typed DX10/DX11 and DX8/SM5 compiler fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d11-compute-probe.exe src/umd/dxvk-umd-compute-oracle-test.exe
@@ -172,7 +174,7 @@ if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-cube-probe-oracle-test.exe cube-probe-oracle-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-so-oracle-test.exe so-oracle-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-volume-probe-oracle-test.exe volume-probe-oracle-test
-    foreach ($fixture in @('texturecube', 'cube-array-resource', 'cube-srv-mips', 'cube-array-mips')) {
+    foreach ($fixture in @('texturecube', 'cube-array-resource', 'cube-srv-mips', 'cube-array-mips', 'cube-array-targets')) {
         $cubeOriginals = Join-Path $OutputDirectory "$fixture-originals"
         New-Item -ItemType Directory -Path $cubeOriginals -ErrorAction Stop | Out-Null
         Invoke-BoundedFixture "build-umd/src/umd/dxvk-umd-$fixture-test.exe" "$fixture-test" $cubeOriginals
@@ -182,6 +184,8 @@ if ($arch -ne 'arm64') {
             & python (Join-Path $PSScriptRoot 'verify-native-cube-array-resource-originals.py') $cubeOriginals --stdout (Join-Path $OutputDirectory 'cube-array-resource-test.txt') --output (Join-Path $OutputDirectory 'cube-array-resource-originals-verified.json')
         } elseif ($fixture -ceq 'cube-srv-mips') {
             & python (Join-Path $PSScriptRoot '../tests/verify-cube-srv-mips-originals.py') $cubeOriginals --stdout (Join-Path $OutputDirectory 'cube-srv-mips-test.txt') | Set-Content (Join-Path $OutputDirectory 'cube-srv-mips-originals-verified.json') -Encoding UTF8
+        } elseif ($fixture -ceq 'cube-array-targets') {
+            & python (Join-Path $PSScriptRoot '../tests/verify-cube-array-target-originals.py') --originals $cubeOriginals --stdout (Join-Path $OutputDirectory 'cube-array-targets-test.txt') --output (Join-Path $OutputDirectory 'cube-array-targets-originals-verified.json')
         } else {
             & python (Join-Path $PSScriptRoot 'verify-native-cube-array-mips-originals.py') $cubeOriginals --output (Join-Path $OutputDirectory 'cube-array-mips-originals-verified.json')
         }
@@ -256,7 +260,7 @@ foreach ($name in @('dxvk-umd-runtime-backend-test.exe', 'dxvk-umd-d3d9-backend-
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect fixture architecture: $name" }
     Copy-Item $path $OutputDirectory
 }
-foreach ($name in @('dxvk-umd-texturecube-test.exe', 'dxvk-umd-cube-array-policy-test.exe', 'dxvk-umd-cube-array-resource-test.exe', 'dxvk-umd-cube-srv-mips-test.exe', 'dxvk-umd-cube-array-mips-test.exe')) {
+foreach ($name in @('dxvk-umd-texturecube-test.exe', 'dxvk-umd-cube-array-policy-test.exe', 'dxvk-umd-cube-array-resource-test.exe', 'dxvk-umd-cube-srv-mips-test.exe', 'dxvk-umd-cube-array-mips-test.exe', 'dxvk-umd-cube-array-targets-test.exe')) {
     $path = Join-Path 'build-umd/src/umd' $name
     $headers = & dumpbin /headers $path | Out-String
     if ($LASTEXITCODE -or $headers -notmatch "$machine machine") { throw "Incorrect cube fixture architecture: $name" }

@@ -8,6 +8,7 @@
 #include "umd_runtime_gpu.h"
 #include "umd_map.h"
 #include "umd_view.h"
+#include "umd_cube_target.h"
 #include "umd_texture1d.h"
 #include "umd_texture3d.h"
 #include "umd_transfer_policy.h"
@@ -1202,7 +1203,8 @@ SIZE_T APIENTRY targetSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATERENDERTARGE
   return sizeof(RenderTarget);
 }
 // Stage the actual texture target and its retirement owner together.
-void APIENTRY createTarget(D3D10DDI_HDEVICE h,
+template<bool CubeArrays>
+void APIENTRY createTargetForInterface(D3D10DDI_HDEVICE h,
     const D3D10DDIARG_CREATERENDERTARGETVIEW* args,
     D3D10DDI_HRENDERTARGETVIEW out, D3D10DDI_HRTRENDERTARGETVIEW) {
   auto device = get(h);
@@ -1225,7 +1227,11 @@ void APIENTRY createTarget(D3D10DDI_HDEVICE h,
         ComPtr<ID3D11Texture2D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;
         D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
-        if (!dxvk::umd::textureTargetView(*args, info, desc)) return E_INVALIDARG;
+        if constexpr (CubeArrays) {
+          if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURECUBE) {
+            if (!dxvk::umd::cubeArrayTargetViewDesc(args->TexCube, args->Format, info, desc)) return E_INVALIDARG;
+          } else if (!dxvk::umd::textureTargetView(*args, info, desc)) return E_INVALIDARG;
+        } else if (!dxvk::umd::textureTargetView(*args, info, desc)) return E_INVALIDARG;
       } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
         ComPtr<ID3D11Texture3D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;
@@ -1237,6 +1243,14 @@ void APIENTRY createTarget(D3D10DDI_HDEVICE h,
     });
   }
   device->error(hr);
+}
+void APIENTRY createTarget(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATERENDERTARGETVIEW* args,
+    D3D10DDI_HRENDERTARGETVIEW out, D3D10DDI_HRTRENDERTARGETVIEW runtime) {
+  createTargetForInterface<false>(h, args, out, runtime);
+}
+void APIENTRY createTargetCubeArrays(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATERENDERTARGETVIEW* args,
+    D3D10DDI_HRENDERTARGETVIEW out, D3D10DDI_HRTRENDERTARGETVIEW runtime) {
+  createTargetForInterface<true>(h, args, out, runtime);
 }
 void APIENTRY destroyTarget(D3D10DDI_HDEVICE h, D3D10DDI_HRENDERTARGETVIEW target) {
   auto object = get(target);
@@ -1255,7 +1269,8 @@ SIZE_T APIENTRY depthViewSize(D3D10DDI_HDEVICE, const D3D10DDIARG_CREATEDEPTHSTE
   return sizeof(DepthView);
 }
 // Keep depth view creation atomic for each supported texture dimension.
-void APIENTRY createDepthView(D3D10DDI_HDEVICE h,
+template<bool CubeArrays>
+void APIENTRY createDepthViewForInterface(D3D10DDI_HDEVICE h,
     const D3D10DDIARG_CREATEDEPTHSTENCILVIEW* args,
     D3D10DDI_HDEPTHSTENCILVIEW out, D3D10DDI_HRTDEPTHSTENCILVIEW) {
   auto device = get(h);
@@ -1275,7 +1290,9 @@ void APIENTRY createDepthView(D3D10DDI_HDEVICE h,
         ComPtr<ID3D11Texture2D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;
         D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
-        if (!dxvk::umd::textureCubeDepthView(*args, info, desc)) return E_INVALIDARG;
+        if constexpr (CubeArrays) {
+          if (!dxvk::umd::cubeArrayDepthViewDesc(args->TexCube, args->Format, 0, info, desc)) return E_INVALIDARG;
+        } else if (!dxvk::umd::textureCubeDepthView(*args, info, desc)) return E_INVALIDARG;
       } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
         ComPtr<ID3D11Texture2D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;
@@ -1300,6 +1317,14 @@ void APIENTRY createDepthView(D3D10DDI_HDEVICE h,
     });
   }
   device->error(hr);
+}
+void APIENTRY createDepthView(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEDEPTHSTENCILVIEW* args,
+    D3D10DDI_HDEPTHSTENCILVIEW out, D3D10DDI_HRTDEPTHSTENCILVIEW runtime) {
+  createDepthViewForInterface<false>(h, args, out, runtime);
+}
+void APIENTRY createDepthView10_1(D3D10DDI_HDEVICE h, const D3D10DDIARG_CREATEDEPTHSTENCILVIEW* args,
+    D3D10DDI_HDEPTHSTENCILVIEW out, D3D10DDI_HRTDEPTHSTENCILVIEW runtime) {
+  createDepthViewForInterface<true>(h, args, out, runtime);
 }
 void APIENTRY destroyDepthView(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILVIEW object) {
   auto view = get(object);
@@ -2786,6 +2811,7 @@ void populateDeviceFunctions(Table* table) {
     table->pfnCreateBlendState = deviceEntry<createBlend>;
     table->pfnRelocateDeviceFuncs = deviceEntry<relocateDeviceFunctions>;
   } else {
+    table->pfnCreateRenderTargetView = deviceEntry<createTargetCubeArrays>;
     table->pfnCalcPrivateBlendStateSize = deviceEntry<blendSize10_1>;
     table->pfnCreateBlendState = deviceEntry<createBlend10_1>;
     table->pfnResourceConvert = deviceEntry<convertResource, true>;
@@ -2796,7 +2822,7 @@ void populateDeviceFunctions(Table* table) {
       table->pfnCalcPrivateShaderResourceViewSize = deviceEntry<shaderViewSize10_1>;
       table->pfnCreateShaderResourceView = deviceEntry<createShaderView10_1>;
       table->pfnCalcPrivateDepthStencilViewSize = deviceEntry<depthViewSize>;
-      table->pfnCreateDepthStencilView = deviceEntry<createDepthView>;
+      table->pfnCreateDepthStencilView = deviceEntry<createDepthView10_1>;
       table->pfnCalcPrivateGeometryShaderWithStreamOutput = deviceEntry<geometryStreamSize>;
       table->pfnCreateGeometryShaderWithStreamOutput = deviceEntry<createGeometryStream>;
       table->pfnSetRenderTargets = deviceEntry<setRenderTargets>;

@@ -425,8 +425,39 @@ int32_t MWD_CALL RuntimeGpu::submit(void* ptr, const void* stream, uint32_t size
   request.pNewCommandBuffer = self.m_commands; request.NewCommandBufferSize = self.m_commandSize;
   request.pNewAllocationList = self.m_allocationList; request.NewAllocationListSize = self.m_allocationCount;
   request.pNewPatchLocationList = self.m_patchList; request.NewPatchLocationListSize = self.m_patchCount;
+  bool renderSnapshot = false;
+  if (self.m_diagnostics.wantsRenderSnapshot()) {
+    RuntimeGpuRenderReferenceDiagnostic values[RuntimeGpuDiagnostics::RenderReferenceLimit] = {};
+    // Signed native MSM layout: request36, BO16, Presumed offset8. Identify only
+    // that bounded layout for the BO field; a supplied patch slot is separate.
+    uint32_t native[9] = {};
+    if (size >= sizeof(native)) std::memcpy(native, packet + offset, sizeof(native));
+    const bool nativeLayout = size >= sizeof(native) && native[0] == 7 && native[1] == size
+      && native[6] == count && sizeof(native) + uint64_t(count) * 16 + uint64_t(native[7]) * 32 == size;
+    const uint32_t captured = count < RuntimeGpuDiagnostics::RenderReferenceLimit
+      ? count : RuntimeGpuDiagnostics::RenderReferenceLimit;
+    for (uint32_t i = 0; i < captured; ++i) {
+      auto& value = values[i];
+      const auto& allocation = self.m_allocationList[i];
+      const auto& patch = self.m_patchList[i];
+      value.allocationHandle = allocation.hAllocation; value.writeOperation = allocation.WriteOperation;
+      value.allocationIndex = patch.AllocationIndex; value.allocationOffset = patch.AllocationOffset;
+      value.patchOffset = patch.PatchOffset; value.relativePatchOffset = refs[i].patch_offset;
+      std::memcpy(&value.slot, packet + value.patchOffset, sizeof(value.slot));
+      const uint32_t presumedOffset = 44 + i * 16;
+      if (nativeLayout && presumedOffset <= size - sizeof(value.boPresumed)) {
+        value.boPresumedAvailable = true; value.boPresumedOffset = presumedOffset;
+        std::memcpy(&value.boPresumed, packet + offset + presumedOffset, sizeof(value.boPresumed));
+      }
+    }
+    renderSnapshot = self.m_diagnostics.recordRenderBefore(stderr, diagnostic, values, count);
+  }
   const HRESULT callbackHr = self.m_callbacks.pfnRenderCb(self.m_device, &request);
   hr = exact(callbackHr);
+  // Old command/list buffers may no longer be valid. Only the original callback
+  // result enters this after record; all metadata above is pre-callback input.
+  if (renderSnapshot) self.m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::RenderAfter,
+    "render-callback", hr, diagnostic, true, callbackHr);
   // Record the original callback result before cleanup or replacement-buffer
   // validation can replace the final failure. Positive non-S_OK stays visible.
   failure("render-callback", hr, UINT32_MAX, true, callbackHr);

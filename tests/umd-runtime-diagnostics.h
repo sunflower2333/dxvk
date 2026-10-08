@@ -76,5 +76,53 @@ inline unsigned runtimeDiagnosticsControls() {
   for (size_t i = 0; i < bytes; ++i) lines += output[i] == '\n';
   check(lines == 10);
   check(std::fclose(file) == 0);
+  // The metadata pair is opt-in and bounded separately from close/failure
+  // records. Its after record consumes scalar status, never old buffer memory.
+  file = nullptr;
+#ifdef _WIN32
+  check(::tmpfile_s(&file) == 0 && file != nullptr);
+#else
+  file = std::tmpfile(); check(file != nullptr);
+#endif
+  dxvk::umd::RuntimeGpuRenderReferenceDiagnostic references[RuntimeGpuDiagnostics::RenderReferenceLimit] = {};
+  for (uint32_t i = 0; i < RuntimeGpuDiagnostics::RenderReferenceLimit; ++i) {
+    auto& reference = references[i];
+    reference.allocationHandle = 0x12340000 + i; reference.writeOperation = i & 1;
+    reference.allocationIndex = i; reference.allocationOffset = i * 4096;
+    reference.relativePatchOffset = 44 + i * 16; reference.patchOffset = 256 + reference.relativePatchOffset;
+    reference.slot = 0x123456789abcdef0ull + i;
+    reference.boPresumedAvailable = i != 2; reference.boPresumedOffset = reference.relativePatchOffset;
+    reference.boPresumed = 0xfedcba9876543210ull + i;
+  }
+  RuntimeGpuDiagnostics metadata(true), bounded(true);
+  check(!disabled.wantsRenderSnapshot());
+  check(!disabled.recordRenderBefore(file, info, references, 6));
+  check(!disabled.record(file, Event::RenderAfter, "render-callback", 0, info, true, 0));
+  check(std::ftell(file) == 0);
+  check(metadata.wantsRenderSnapshot());
+  check(!metadata.recordRenderBefore(file, info, nullptr, 6));
+  check(metadata.wantsRenderSnapshot());
+  check(metadata.recordRenderBefore(file, info, references, 6));
+  check(!metadata.wantsRenderSnapshot());
+  check(metadata.record(file, Event::RenderAfter, "render-callback", int32_t(0x80004005u), info, true, int32_t(0x80004005u)));
+  check(!metadata.recordRenderBefore(file, info, references, 1024));
+  check(!metadata.record(file, Event::RenderAfter, "second-render", 0, info));
+  check(bounded.recordRenderBefore(file, info, references, 1024));
+  check(std::fflush(file) == 0);
+  std::rewind(file);
+  char metadataOutput[8192] = {};
+  const size_t metadataBytes = std::fread(metadataOutput, 1, sizeof(metadataOutput) - 1, file);
+  check(metadataBytes > 0 && !std::ferror(file) && std::feof(file));
+  check(std::strstr(metadataOutput, "captured=6 omitted=0") != nullptr);
+  check(std::strstr(metadataOutput, "captured=8 omitted=1016") != nullptr);
+  check(std::strstr(metadataOutput, "index=0 allocation_handle=12340000 write_operation=0 allocation_index=0 allocation_offset=0 patch_offset=300 relative_patch_offset=44 slot_u64=123456789abcdef0 bo_presumed_available=1 bo_presumed_offset=44 bo_presumed=fedcba9876543210") != nullptr);
+  check(std::strstr(metadataOutput, "index=1 allocation_handle=12340001 write_operation=1") != nullptr);
+  check(std::strstr(metadataOutput, "bo_presumed_available=0") != nullptr);
+  check(std::strstr(metadataOutput, "event=render-after stage=render-callback hr=80004005 callback=1 callback_hr=80004005") != nullptr);
+  check(!std::strstr(metadataOutput, "index=8 ") && !std::strstr(metadataOutput, "second-render"));
+  lines = 0;
+  for (size_t i = 0; i < metadataBytes; ++i) lines += metadataOutput[i] == '\n';
+  check(lines == 19); // Two before summaries, two counts, fourteen rows, one after.
+  check(std::fclose(file) == 0);
   return checks;
 }

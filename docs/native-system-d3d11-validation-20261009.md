@@ -68,7 +68,10 @@ SYSTEM `D3D11CreateDevice` with that adapter, driver type UNKNOWN, no software
 module, SINGLETHREADED and exactly one requested feature level, FL10_0. It checks
 the returned level, creation flags, device's actual adapter LUID, typed11
 negotiation, live runtime callback addresses and the exact loaded core/private
-loader/ICD paths. It rejects WARP and winevulkan modules.
+loader/ICD paths. It rejects WARP and any loaded `winevulkan.dll` or `vulkan-1.dll`
+whose path differs from the exact approved private loader. Genuine private
+Khronos loader bytes can be staged under `winevulkan.dll`; that basename alone
+does not indicate a software renderer.
 
 The offscreen oracle creates a 16 by 16 RGBA8 target and staging resource. It
 compiles the original SM4 vertex/pixel HLSL with the system compiler, explicitly
@@ -130,7 +133,7 @@ matching release CRT plus actual default-library closure. The probe uses dynamic
 system entry resolution, so no D3D11, DXGI or D3DCompiler import library is needed.
 No stage may execute the frontend, core or probe during CPU-only build admission.
 
-Local x64/x86 optimized official-header COFF verification and 58 independent
+Local x64/x86 optimized official-header COFF verification and 59 independent
 owned synthetic format rejection controls passed. The controls exercise reader
 validation only and are not native, shader-execution or GPU evidence. Native
 MSVC, ARM64X views, fresh current-core binding, actual limited USER runtime and

@@ -112,8 +112,20 @@ def main():
         path=raw/name; original=path.read_bytes(); damaged=bytearray(original); struct.pack_into('<I',damaged,24,len(damaged)+1)
         reject(name+'-container-length',lambda p=path,d=damaged:p.write_bytes(d),lambda p=path,d=original:p.write_bytes(d))
     final=verify(); assert final==baseline
+    # The original Khronos loader can be staged under this private basename.
+    # Its actual path must still be the exact approved operand, never foreign.
+    original_loader = loader
+    loader = folder + r'\winevulkan.dll'
+    manifest['privateLoader'] = manifest['loadedModules']['privateLoader'] = loader
+    write(); wine_tuple = verify(); assert wine_tuple['pixels'] == 512 and not wine_tuple['hardware_admission']
+    reject('wine-loader-foreign-path', lambda: manifest['loadedModules'].__setitem__('privateLoader', r'C:\Foreign\winevulkan.dll'),
+           lambda: manifest['loadedModules'].__setitem__('privateLoader', loader))
+    loader = original_loader
+    manifest['privateLoader'] = manifest['loadedModules']['privateLoader'] = loader
+    write(); assert verify() == baseline
     proof=dict(scope='owned-synthetic-format-controls-only',native_execution=False,hardware_admission=False,
                controls=controls,rejections=len(controls),baseline_literal_bytes=2048,
+               approved_wine_named_loader_tuple=True,
                reader_sha256=hashlib.sha256(reader_path.read_bytes()).hexdigest())
     with (output/'reader-controls-verified.json').open('x') as stream: json.dump(proof,stream,indent=2); stream.write('\n')
     print('SYSTEM_D3D11_READER_CONTROLS_PASS rejected='+str(len(controls))+' literal_bytes=2048 synthetic_only=1')

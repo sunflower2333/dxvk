@@ -318,7 +318,13 @@ int wmain(int argc, WCHAR** argv) {
     require(obtained == requested && device->GetFeatureLevel() == requested && device->GetCreationFlags() == D3D11_CREATE_DEVICE_SINGLETHREADED, "exact-logical-fl10_0-singlethreaded");
     diagnostics(front, core, true); exactLoaded(privateLoader, "actual-private-vulkan-loader", L"privateLoader");
     exactLoaded(icd, "actual-private-mesa-icd", L"icd");
-    require(!GetModuleHandleW(L"warp.dll") && !GetModuleHandleW(L"d3d10warp.dll") && !GetModuleHandleW(L"winevulkan.dll"), "no-software-runtime-modules");
+    require(!GetModuleHandleW(L"warp.dll") && !GetModuleHandleW(L"d3d10warp.dll"), "no-software-runtime-modules");
+    // The approved private Khronos loader may genuinely be named winevulkan.
+    // Accept only its exact owned path; an unrelated loader is never adopted.
+    for (const WCHAR* name : {L"winevulkan.dll", L"vulkan-1.dll"}) {
+      HMODULE module = GetModuleHandleW(name);
+      require(!module || !_wcsicmp(loaded(module).c_str(), privateLoader.c_str()), "no-unapproved-vulkan-loader");
+    }
     ComPtr<IDXGIDevice> dxgiDevice; exact(device.As(&dxgiDevice), "device-dxgi-interface");
     ComPtr<IDXGIAdapter> actual; exact(dxgiDevice->GetAdapter(&actual), "created-device-adapter");
     DXGI_ADAPTER_DESC actualDesc{}; exact(actual->GetDesc(&actualDesc), "created-device-description");

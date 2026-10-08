@@ -206,6 +206,11 @@ umd_cube_srv_mips_test = executable('dxvk-umd-cube-srv-mips-test',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
 
+umd_cube_array_targets_test = executable('dxvk-umd-cube-array-targets-test',
+  ['../../tests/umd-cube-array-targets.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
 umd_d3d11_device_test = executable('dxvk-umd-d3d11-device-test',
   ['../../tests/umd-d3d11-device.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],

@@ -196,6 +196,11 @@ void APIENTRY createDepthView11(D3D10DDI_HDEVICE h, const D3D11DDIARG_CREATEDEPT
             || !dxvk::umd::viewRange(args->Tex1D.FirstArraySlice, args->Tex1D.ArraySize, info.ArraySize)) return E_INVALIDARG;
         desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE1DARRAY;
         desc.Texture1DArray = {args->Tex1D.MipSlice, args->Tex1D.FirstArraySlice, args->Tex1D.ArraySize};
+      } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURECUBE) {
+        ComPtr<ID3D11Texture2D> texture;
+        if (FAILED(resource.As(&texture))) return E_INVALIDARG;
+        D3D11_TEXTURE2D_DESC info = {}; texture->GetDesc(&info);
+        if (!dxvk::umd::cubeArrayDepthViewDesc(args->TexCube, args->Format, args->Flags, info, desc)) return E_INVALIDARG;
       } else if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
         ComPtr<ID3D11Texture2D> texture;
         if (FAILED(resource.As(&texture))) return E_INVALIDARG;

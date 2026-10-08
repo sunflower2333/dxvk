@@ -24,6 +24,7 @@
 #include "umd_stream_output.h"
 #include "umd_output_merger.h"
 #include "umd_shared_surface.h"
+#include "umd_private_transfer.h"
 #include "umd_interface.h"
 #include "umd_d3d11_desc.h"
 #include "umd_input_format.h"
@@ -2599,14 +2600,18 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
       if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
       device->rotationScratch = scratch;
     }
-    context->CopyResource(scratch.Get(), chain.front().texture.Get());
-    if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
-    for (size_t i = 0; i + 1 < chain.size(); ++i) {
-      context->CopyResource(chain[i].texture.Get(), chain[i + 1].texture.Get());
-      if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
-    }
-    context->CopyResource(chain.back().texture.Get(), scratch.Get());
-    if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+    const HRESULT hr = dxvk::umd::submitPrivateTransfer(backend.Get(), context.Get(), stillLive,
+      [&](ID3D11DeviceContext* commands) -> HRESULT {
+        commands->CopyResource(scratch.Get(), chain.front().texture.Get());
+        if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+        for (size_t i = 0; i + 1 < chain.size(); ++i) {
+          commands->CopyResource(chain[i].texture.Get(), chain[i + 1].texture.Get());
+          if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+        }
+        commands->CopyResource(chain.back().texture.Get(), scratch.Get());
+        return stillLive() ? S_OK : DXGI_ERROR_DEVICE_REMOVED;
+      });
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
   }
   // Adjacent swaps implement [A,B,C] -> [B,C,A] with no allocation, release or
   // runtime callback after preflight. Runtime resource handles stay in place.
@@ -3029,19 +3034,27 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
       if (FAILED(hr)) return hr;
       surface->readback = readback;
     }
+    ComPtr<ID3D11Texture2D> resolved;
     if (sourceDesc.SampleDesc.Count > 1) {
       // Resolve into a GPU-only single-sample image; staging resources cannot
       // be resolve destinations. Keep Present honest for unsupported sRGB MSAA.
       if (sourceDesc.Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB) return DXGI_DDI_ERR_UNSUPPORTED;
       auto desc = sourceDesc; desc.SampleDesc = {1, 0};
-      ComPtr<ID3D11Texture2D> resolved;
       hr = backend->CreateTexture2D(&desc, nullptr, &resolved);
+      if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
       if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
       if (!resolved) return E_FAIL;
-      context->ResolveSubresource(resolved.Get(), 0, source.Get(), 0, sourceDesc.Format);
-      context->CopyResource(readback.Get(), resolved.Get());
-    } else context->CopyResource(readback.Get(), source.Get());
-    if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+    }
+    hr = dxvk::umd::submitPrivateTransfer(backend.Get(), context.Get(), stillLive,
+      [&](ID3D11DeviceContext* commands) -> HRESULT {
+        if (resolved) {
+          commands->ResolveSubresource(resolved.Get(), 0, source.Get(), 0, sourceDesc.Format);
+          if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+        }
+        commands->CopyResource(readback.Get(), resolved ? resolved.Get() : source.Get());
+        return stillLive() ? S_OK : DXGI_ERROR_DEVICE_REMOVED;
+      });
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
     D3D11_MAPPED_SUBRESOURCE map = {};
     // Synchronous Map is the GPU completion barrier before any guest CPU
     // publication. Correctness checkpoint; this is not a zero-copy path.

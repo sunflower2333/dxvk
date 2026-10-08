@@ -145,6 +145,12 @@ def verify(directory, stdout):
     reader = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(reader)
     proof['identity_copy'] = reader.verify(directory, stdout)
+    path = Path(__file__).with_name('verify-native-private-transfer-originals.py')
+    spec = importlib.util.spec_from_file_location('native_private_transfer_originals', path)
+    require(spec is not None and spec.loader is not None, 'Private transfer reader is absent')
+    reader = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reader)
+    proof['private_transfer'] = reader.verify(directory, stdout)
     return proof
 
 

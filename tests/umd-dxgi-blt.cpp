@@ -20,6 +20,9 @@
 static std::atomic<unsigned> checks{0};
 static unsigned snapshots, pixels, locks, unlocks, submissions, releases;
 static unsigned identitySnapshots, identityPixels;
+static unsigned transferSnapshots, transferPixels, transferPresents;
+static bool transferPresentActive;
+static D3DKMT_HANDLE transferPresented;
 static DWORD caller;
 static HRESULT lastError = S_OK, lockResult = S_OK, unlockResult = S_OK, submissionResult = S_OK;
 static LUID selected{0x12345678, -43};
@@ -84,7 +87,13 @@ static HRESULT APIENTRY unlock(HANDLE device, const D3DDDICB_UNLOCK* request) {
 }
 static HRESULT APIENTRY createContext(HANDLE, D3DDDICB_CREATECONTEXT* request) { request->hContext = &contextCookie; return S_OK; }
 static HRESULT APIENTRY destroyContext(HANDLE, const D3DDDICB_DESTROYCONTEXT*) { return S_OK; }
-static HRESULT APIENTRY present(HANDLE, DXGIDDICB_PRESENT* request) { CHECK(!request); return E_FAIL; }
+static HRESULT APIENTRY present(HANDLE device, DXGIDDICB_PRESENT* request) {
+  if (!transferPresentActive) { CHECK(!request); return E_FAIL; }
+  runtimeCaller(); CHECK(device == &deviceCookie && request);
+  CHECK(request->hSrcAllocation == transferPresented && !request->hDstAllocation);
+  CHECK(request->pDXGIContext == &coreCookie && request->hContext == &contextCookie);
+  ++transferPresents; return S_OK;
+}
 static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
   runtimeCaller(); CHECK(runtime.handle == &coreCookie); lastError = hr;
 }
@@ -611,6 +620,162 @@ static void identityProfile(unsigned index) {
     }
   }
 }
+// These public WARP predicates exercise the production internal transfer
+// ownership paths; DXVK's backend predicate implementation remains a separate
+// admission requirement. Ordinary application transfers must stay suppressed.
+struct TransferState {
+  using Device = Microsoft::WRL::ComPtr<ID3D11Device>;
+  ID3D11DeviceContext* context;
+  Device backend;
+  Microsoft::WRL::ComPtr<ID3D11Predicate> predicate;
+  Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex;
+  Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel;
+  Microsoft::WRL::ComPtr<ID3D11RasterizerState> raster;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> target;
+  Microsoft::WRL::ComPtr<ID3D11RenderTargetView> view;
+  const D3D11_VIEWPORT viewport{3, 4, 17, 19, .25f, .75f};
+  const D3D11_RECT scissor{31, 37, 41, 43};
+  explicit TransferState(ID3D11DeviceContext* value) : context(value) {
+    context->GetDevice(&backend);
+    std::vector<unsigned char> vs, ps; CHECK(dxvk::umd::bltShaderContainers(vs, ps));
+    CHECK(backend->CreateVertexShader(vs.data(), vs.size(), nullptr, &vertex) == S_OK);
+    CHECK(backend->CreatePixelShader(ps.data(), ps.size(), nullptr, &pixel) == S_OK);
+    D3D11_RASTERIZER_DESC rd{}; rd.FillMode = D3D11_FILL_SOLID;
+    rd.CullMode = D3D11_CULL_FRONT; rd.ScissorEnable = TRUE; rd.DepthClipEnable = TRUE;
+    CHECK(backend->CreateRasterizerState(&rd, &raster) == S_OK);
+    D3D11_TEXTURE2D_DESC td{}; td.Width = td.Height = 4;
+    td.MipLevels = td.ArraySize = td.SampleDesc.Count = 1;
+    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM; td.BindFlags = D3D11_BIND_RENDER_TARGET;
+    CHECK(backend->CreateTexture2D(&td, nullptr, &target) == S_OK);
+    CHECK(backend->CreateRenderTargetView(target.Get(), nullptr, &view) == S_OK);
+    context->RSSetViewports(1, &viewport); context->RSSetScissorRects(1, &scissor); context->RSSetState(raster.Get());
+    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+    context->VSSetShader(vertex.Get(), nullptr, 0); context->PSSetShader(pixel.Get(), nullptr, 0);
+    auto rt = view.Get(); context->OMSetRenderTargets(1, &rt, nullptr);
+    const D3D11_QUERY_DESC qd{D3D11_QUERY_OCCLUSION_PREDICATE, 0};
+    CHECK(backend->CreatePredicate(&qd, &predicate) == S_OK);
+    context->Begin(predicate.Get()); context->End(predicate.Get()); context->Flush();
+    BOOL visible = TRUE; HRESULT hr = S_FALSE; const auto started = GetTickCount64();
+    while (hr == S_FALSE && GetTickCount64() - started < 10000) {
+      hr = context->GetData(predicate.Get(), &visible, sizeof(visible), D3D11_ASYNC_GETDATA_DONOTFLUSH);
+      if (hr == S_FALSE) SwitchToThread();
+    }
+    CHECK(hr == S_OK && visible == FALSE);
+  }
+  void bind() { context->SetPredication(predicate.Get(), FALSE); }
+  void clear() { context->SetPredication(nullptr, FALSE); }
+  void preserved() {
+    using Microsoft::WRL::ComPtr;
+    ComPtr<ID3D11Predicate> pred; BOOL value = TRUE; context->GetPredication(&pred, &value);
+    CHECK(pred.Get() == predicate.Get() && value == FALSE);
+    UINT n = 1; D3D11_VIEWPORT vp{}; context->RSGetViewports(&n, &vp);
+    CHECK(n == 1 && !std::memcmp(&vp, &viewport, sizeof(vp)));
+    n = 1; D3D11_RECT rect{}; context->RSGetScissorRects(&n, &rect);
+    CHECK(n == 1 && !std::memcmp(&rect, &scissor, sizeof(rect)));
+    ComPtr<ID3D11RasterizerState> rs; context->RSGetState(&rs); CHECK(rs.Get() == raster.Get());
+    D3D11_PRIMITIVE_TOPOLOGY topology{}; context->IAGetPrimitiveTopology(&topology);
+    CHECK(topology == D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+    ComPtr<ID3D11VertexShader> vs; context->VSGetShader(&vs, nullptr, nullptr); CHECK(vs.Get() == vertex.Get());
+    ComPtr<ID3D11PixelShader> ps; context->PSGetShader(&ps, nullptr, nullptr); CHECK(ps.Get() == pixel.Get());
+    ComPtr<ID3D11RenderTargetView> rt; context->OMGetRenderTargets(1, &rt, nullptr); CHECK(rt.Get() == view.Get());
+  }
+  ~TransferState() { clear(); }
+};
+static uint32_t transferExpected(unsigned test, unsigned seed, unsigned x, unsigned y) {
+  return test == 4 ? 0xff0000ff : test == 5 ? 0xff281008 : identityColor(x, y, seed);
+}
+static void transferSave(const void* address, UINT pitch, UINT span, unsigned profile,
+    unsigned test, unsigned seed, const Backing* backing = nullptr) {
+  CHECK(address && pitch >= 28);
+  std::array<uint32_t, 35> actual{};
+  for (UINT y = 0; y < 5; ++y) std::memcpy(actual.data() + y * 7,
+    static_cast<const uint8_t*>(address) + size_t(y) * pitch, 28);
+  const uint32_t metadata[]{7, 5, test, seed, pitch, span, 28, profile};
+  char name[128]; std::snprintf(name, sizeof(name), "private-transfer-%u-%u.actual.bin", profile, test);
+  if (backing) {
+    CHECK(backing->info.pitch == 28 && backing->info.size == 140 && backing->data.size() == 172);
+    for (UINT i = 0; i < 16; ++i) CHECK(backing->data[i] == 0xa5 && backing->data[156 + i] == 0xa5);
+    save(name, backing->data.data(), backing->data.size());
+  } else save(name, actual.data(), sizeof(actual));
+  std::snprintf(name, sizeof(name), "private-transfer-%u-%u.metadata.u32.bin", profile, test);
+  save(name, metadata, sizeof(metadata));
+  for (UINT y = 0; y < 5; ++y) for (UINT x = 0; x < 7; ++x) {
+    const auto wanted = transferExpected(test, seed, x, y), observed = actual[y * 7 + x];
+    if (wanted != observed) std::fprintf(stderr,
+      "Private transfer mismatch profile=%u case=%u seed=%u x=%u y=%u actual=%08x expected=%08x\n",
+      profile, test, seed, x, y, observed, wanted);
+    CHECK(observed == wanted); ++transferPixels;
+  }
+  ++transferSnapshots;
+}
+template<typename F>
+static void transferRead(F& f, Texture<F>& texture, unsigned profile, unsigned test, unsigned seed) {
+  Texture<F> staging(f, 7, 5, texture.format, 0, 0, false, 1, 1, 1, true);
+  f.table.pfnResourceCopy(f.device, staging.handle, texture.handle); CHECK(lastError == S_OK);
+  D3D10DDI_MAPPED_SUBRESOURCE map{};
+  f.table.pfnStagingResourceMap(f.device, staging.handle, 0, D3D10_DDI_MAP_READ, 0, &map); CHECK(lastError == S_OK);
+  transferSave(map.pData, map.RowPitch, map.DepthPitch, profile, test, seed);
+  f.table.pfnStagingResourceUnmap(f.device, staging.handle, 0); CHECK(lastError == S_OK);
+}
+template<typename Table>
+static void privateTransferProfile(unsigned profile) {
+  using F = Fixture<Table>; using Microsoft::WRL::ComPtr;
+  F f; TransferState state(f.contextKey);
+  const UINT bind = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT;
+  Texture<F> first(f, 7, 5, DXGI_FORMAT_R8G8B8A8_UNORM, bind);
+  Texture<F> second(f, 7, 5, DXGI_FORMAT_R8G8B8A8_UNORM, bind);
+  Texture<F> third(f, 7, 5, DXGI_FORMAT_R8G8B8A8_UNORM, bind);
+  auto update = [&](Texture<F>& texture, unsigned seed) {
+    std::array<uint32_t, 35> words{};
+    for (UINT y = 0; y < 5; ++y) for (UINT x = 0; x < 7; ++x) words[y * 7 + x] = identityColor(x, y, seed);
+    f.table.pfnResourceUpdateSubresourceUP(f.device, texture.handle, 0, nullptr, words.data(), 28, 140); CHECK(lastError == S_OK);
+  };
+  update(first, 2); update(second, 4); update(third, 6);
+  const DXGI_DDI_HRESOURCE resources[]{first.dxgi(), second.dxgi(), third.dxgi()};
+  DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITIES rotation{};
+  rotation.hDevice = reinterpret_cast<DXGI_DDI_HDEVICE>(f.device.pDrvPrivate);
+  rotation.Resources = 3; rotation.pResources = resources;
+  D3D11_TEXTURE2D_DESC canaryDesc{}; canaryDesc.Width = 7; canaryDesc.Height = 5;
+  canaryDesc.MipLevels = canaryDesc.ArraySize = canaryDesc.SampleDesc.Count = 1;
+  canaryDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  std::array<uint32_t, 35> sentinel{}, replacement{}; sentinel.fill(0xff281008); replacement.fill(0xff050607);
+  const D3D11_SUBRESOURCE_DATA initial{sentinel.data(), 28, 140}, alternate{replacement.data(), 28, 140};
+  ComPtr<ID3D11Texture2D> canary, appSource;
+  CHECK(state.backend->CreateTexture2D(&canaryDesc, &initial, &canary) == S_OK);
+  CHECK(state.backend->CreateTexture2D(&canaryDesc, &alternate, &appSource) == S_OK);
+  state.bind(); CHECK(f.dxgi.pfnRotateResourceIdentities(&rotation) == S_OK); state.preserved();
+  state.context->CopyResource(canary.Get(), appSource.Get());
+  state.context->UpdateSubresource(canary.Get(), 0, nullptr, replacement.data(), 28, 140);
+  state.clear(); transferRead(f, first, profile, 0, 4); transferRead(f, second, profile, 1, 6);
+  transferRead(f, third, profile, 2, 2);
+  DXGI_DDI_ARG_PRESENT request{}; request.hDevice = rotation.hDevice;
+  request.hSurfaceToPresent = first.dxgi(); request.pDXGIContext = &coreCookie; request.Flags.Blt = 1;
+  transferPresentActive = true; transferPresented = second.allocation;
+  auto uploaded = [&](unsigned test, unsigned seed) {
+    const auto& backing = backings.at(transferPresented);
+    transferSave(backing.data.data() + 16, backing.info.pitch, UINT(backing.info.size), profile, test, seed, &backing);
+  };
+  state.bind(); CHECK(f.dxgi.pfnPresent(&request) == S_OK); state.preserved(); uploaded(3, 4);
+  state.clear(); Texture<F> msaa(f, 7, 5, DXGI_FORMAT_R8G8B8A8_UNORM, bind, 0, false, 4);
+  clearMultisample(f, msaa); auto multisample = request; multisample.hSurfaceToPresent = msaa.dxgi();
+  transferPresented = msaa.allocation; state.bind(); CHECK(f.dxgi.pfnPresent(&multisample) == S_OK);
+  state.preserved(); uploaded(4, 0); state.clear();
+  canaryDesc.Usage = D3D11_USAGE_STAGING; canaryDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  ComPtr<ID3D11Texture2D> readback; CHECK(state.backend->CreateTexture2D(&canaryDesc, nullptr, &readback) == S_OK);
+  state.context->CopyResource(readback.Get(), canary.Get()); D3D11_MAPPED_SUBRESOURCE map{};
+  CHECK(state.context->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &map) == S_OK);
+  transferSave(map.pData, map.RowPitch, map.DepthPitch, profile, 5, 0); state.context->Unmap(readback.Get(), 0);
+  update(first, 8); transferPresented = second.allocation; state.bind(); lockResult = E_OUTOFMEMORY;
+  const auto oldPresents = transferPresents;
+  CHECK(f.dxgi.pfnPresent(&request) == E_OUTOFMEMORY && transferPresents == oldPresents);
+  state.preserved(); uploaded(6, 4); lockResult = S_OK;
+  lockAction = [&] {
+    runtimeCaller(); CHECK(f.dxgi.pfnPresent(&request) == DXGI_ERROR_WAS_STILL_DRAWING);
+    CHECK(f.dxgi.pfnRotateResourceIdentities(&rotation) == DXGI_ERROR_WAS_STILL_DRAWING);
+  };
+  CHECK(f.dxgi.pfnPresent(&request) == S_OK && !lockAction); state.preserved(); uploaded(7, 8);
+  state.clear(); transferPresentActive = false;
+}
 static void identityBltPolicy() {
   D3D11_TEXTURE2D_DESC source{}; source.Width = 7; source.Height = 5;
   source.MipLevels = source.ArraySize = source.SampleDesc.Count = 1;
@@ -678,6 +843,9 @@ int main() {
   identityProfile<D3D10DDI_DEVICEFUNCS>(0); identityProfile<D3D10_1DDI_DEVICEFUNCS>(1); identityProfile<D3D11DDI_DEVICEFUNCS>(2);
   CHECK(identitySnapshots == 120 && identityPixels == 15624);
   std::printf("DXGI identity Blt PASS profiles=3 formats=4 snapshots=120 pixels=15624 hardware_admission=0\n");
+  privateTransferProfile<D3D10DDI_DEVICEFUNCS>(0); privateTransferProfile<D3D10_1DDI_DEVICEFUNCS>(1); privateTransferProfile<D3D11DDI_DEVICEFUNCS>(2);
+  CHECK(transferSnapshots == 24 && transferPixels == 840 && transferPresents == 9);
+  std::printf("DXGI private transfer PASS profiles=3 snapshots=24 pixels=840 hardware_admission=0\n");
   CHECK(snapshots == 30 && pixels == 1536 && backings.empty() && bridges.empty() && lastError == S_OK);
   std::printf("DXGI Blt PASS checks=%u profiles=3 snapshots=30 pixels=1536 hardware_admission=0\n", checks.load());
 }

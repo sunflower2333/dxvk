@@ -13,9 +13,14 @@
 
 namespace dxvk {
 
-  struct D3D11QueryDataTicket {
-    explicit D3D11QueryDataTicket(uint64_t id) : state(id) { }
+  class D3D11Query;
 
+  struct D3D11QueryDataTicket {
+    D3D11QueryDataTicket(const D3D11Query* owner, uint64_t id)
+    : queryOwner(owner), state(id) { }
+
+    // Identity only; the caller's Com query owner pins the API object.
+    const D3D11Query* const queryOwner;
     D3D11QueryTicketState state;
     std::array<Rc<DxvkQuery>, 2> query;
     std::array<Rc<DxvkEvent>, 1> event;
@@ -55,6 +60,8 @@ namespace dxvk {
     D3D11QueryTicket CaptureTicket() const {
       return m_currentTicket;
     }
+
+    HRESULT ReadPredicateTicket(const D3D11QueryTicket& ticket, BOOL* result);
     
     bool STDMETHODCALLTYPE DoBegin();
 

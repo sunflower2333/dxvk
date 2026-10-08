@@ -1,5 +1,6 @@
 #include "d3d11_device.h"
 #include "d3d11_query.h"
+#include "d3d11_predicate_ticket.h"
 #include <cassert>
 
 namespace dxvk {
@@ -16,7 +17,7 @@ namespace dxvk {
 
 
   D3D11QueryTicket D3D11Query::CreateTicket() {
-    auto ticket = std::make_shared<D3D11QueryDataTicket>(m_nextTicket++);
+    auto ticket = std::make_shared<D3D11QueryDataTicket>(this, m_nextTicket++);
     Rc<DxvkDevice> dxvkDevice = m_parent->GetDXVKDevice();
 
     switch (m_desc.Query) {
@@ -257,16 +258,55 @@ namespace dxvk {
     // let the caller react to it instead of just failing here.
     if (!IsScoped() || m_sequence.read().phase != D3D11QueryPhase::Begun)
       m_currentTicket = CreateTicket();
+    m_currentTicket->state.issueEnd();
     return m_sequence.end(IsScoped());
   }
 
 
   D3D11QueryTicket D3D11Query::DoDeferredEnd() {
     auto ticket = CreateTicket();
+    ticket->state.issueEnd();
     m_deferredTickets.push(ticket);
     m_sequence.deferEnd();
     m_currentTicket = std::move(ticket);
     return m_currentTicket;
+  }
+
+
+  HRESULT D3D11Query::ReadPredicateTicket(const D3D11QueryTicket& ticket, BOOL* result) {
+    const auto owner = ticket;
+    if (!owner || owner->queryOwner != this || !owner->query[0])
+      return DXGI_ERROR_INVALID_CALL;
+
+    D3D11PredicateKind kind = D3D11PredicateKind::Invalid;
+    switch (m_desc.Query) {
+      case D3D11_QUERY_OCCLUSION_PREDICATE:
+        kind = D3D11PredicateKind::Occlusion;
+        break;
+      case D3D11_QUERY_SO_OVERFLOW_PREDICATE:
+      case D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM0:
+      case D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM1:
+      case D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM2:
+      case D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM3:
+        kind = D3D11PredicateKind::StreamOverflow;
+        break;
+      default:
+        break;
+    }
+
+    bool value = false;
+    const auto status = D3D11ReadPredicateTicket(&owner->state, kind,
+      bool(m_desc.MiscFlags & D3D11_QUERY_MISC_PREDICATEHINT), result ? &value : nullptr,
+      [query = owner->query[0]] (DxvkQueryData& data) {
+        return query->getData(data);
+      });
+    if (status == DxvkGpuQueryStatus::Pending)
+      return S_FALSE;
+    if (status != DxvkGpuQueryStatus::Available)
+      return DXGI_ERROR_INVALID_CALL;
+    if (result)
+      *result = value;
+    return S_OK;
   }
 
 

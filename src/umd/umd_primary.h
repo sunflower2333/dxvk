@@ -10,7 +10,7 @@ static_assert(DXGI_DDI_MODE_ROTATION_IDENTITY == 1
   && DXGI_DDI_MODE_SCANLINE_ORDER_PROGRESSIVE == 1 && DXGI_DDI_MODE_SCALING_CENTERED == 2);
 static_assert(DXGI_FORMAT_R8G8B8A8_UNORM == 28 && DXGI_FORMAT_B8G8R8A8_UNORM == 87
   && DXGI_FORMAT_B8G8R8X8_UNORM == 88 && DXGI_FORMAT_R8G8B8A8_UNORM_SRGB == 29
-  && DXGI_FORMAT_B8G8R8A8_UNORM_SRGB == 91);
+  && DXGI_FORMAT_B8G8R8A8_UNORM_SRGB == 91 && DXGI_FORMAT_B8G8R8X8_UNORM_SRGB == 93);
 
 // This pointer is a separate runtime-owned input/output ABI. Never retain it
 // after creation, and contain a retired or guarded page without publishing.

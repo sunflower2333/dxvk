@@ -24,13 +24,13 @@ static void reject(PrimaryShape input, PrimaryStatus expected) {
 int main() {
   for (const uint32_t width : {1u, 3u, 17u, 127u, 1920u, 16384u})
     for (const uint32_t height : {1u, 2u, 31u, 1080u, 16384u})
-      for (const uint32_t format : {28u, 29u, 87u, 88u, 91u})
+      for (const uint32_t format : {28u, 29u, 87u, 88u, 91u, 93u})
         for (uint32_t flags = 0; flags <= 15; ++flags) {
           auto input = shape(width, height, format); input.flags = flags;
           // Independent cases from the SDK: stereo/indirect are unavailable;
-          // optional copies accept sRGB, real v0 primaries have three formats.
-          const bool valid = flags < 4 && (format == 28 || format == 87 || format == 88
-            || ((flags & 1) && format == 29));
+          // optional copies accept sRGB; real BGRA sRGB uses encoded BGRA8.
+          const bool valid = flags < 4 && (format == 28 || format == 87 || format == 88 || format == 91
+            || ((flags & 1) && (format == 29 || format == 93)));
           if (!valid) { reject(input, PrimaryStatus::Unsupported); continue; }
           PrimaryPlan plan;
           CHECK(primaryPlan(input, plan) == PrimaryStatus::Valid);
@@ -69,7 +69,7 @@ int main() {
     reject(input, PrimaryStatus::Unsupported);
   }
   for (uint32_t format = 0; format <= 190; ++format) {
-    if (format == 28 || format == 29 || format == 87 || format == 88 || format == 91) continue;
+    if (format == 28 || format == 29 || format == 87 || format == 88 || format == 91 || format == 93) continue;
     auto input = shape(8, 4, format); input.flags = 1; reject(input, PrimaryStatus::Unsupported);
   }
   // Optional primaries have no scanout refresh requirement. Exact byte

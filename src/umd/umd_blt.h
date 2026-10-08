@@ -1,6 +1,7 @@
 #pragma once
 // SPDX-License-Identifier: MIT
 #include "umd_blt_shader.h"
+#include "umd_present_format.h"
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <algorithm>
@@ -11,8 +12,10 @@ inline constexpr DXGI_FORMAT bltLinearFormat(DXGI_FORMAT format) {
   switch (format) {
     case DXGI_FORMAT_R8G8B8A8_UNORM:
     case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return DXGI_FORMAT_R8G8B8A8_UNORM;
-    case DXGI_FORMAT_B8G8R8A8_UNORM: return DXGI_FORMAT_B8G8R8A8_UNORM;
-    case DXGI_FORMAT_B8G8R8X8_UNORM: return DXGI_FORMAT_B8G8R8X8_UNORM;
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
+    case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: return DXGI_FORMAT_B8G8R8A8_UNORM;
+    case DXGI_FORMAT_B8G8R8X8_UNORM:
+    case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB: return DXGI_FORMAT_B8G8R8X8_UNORM;
     default: return DXGI_FORMAT_UNKNOWN;
   }
 }
@@ -51,15 +54,9 @@ inline HRESULT bltPlan(const D3D11_TEXTURE2D_DESC& src,
     return DXGI_ERROR_UNSUPPORTED;
   staged.resolve = (flags & 1) != 0;
   if (staged.resolve != (src.SampleDesc.Count > 1)) return E_INVALIDARG;
-  // The opened-primary fixture exercises a same-format, single-sample X8 copy.
-  // Keep its actual X8 format in both scratch textures; conversion and MSAA
-  // resolve need separate pixel acceptance before they can use this path.
-  if ((src.Format == DXGI_FORMAT_B8G8R8X8_UNORM || dst.Format == DXGI_FORMAT_B8G8R8X8_UNORM)
-      && (staged.resolve || src.Format != dst.Format)) return DXGI_ERROR_UNSUPPORTED;
-  // Encoded sRGB copies must not decode before filtering. Single-sample
-  // copies below reinterpret via compatible UNORM scratch. sRGB MSAA remains
-  // rejected until its encoded-domain resolve semantics are verified.
-  if (staged.resolve && src.Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+  // X8 stays X8 through scratch sampling (alpha reads as one). MSAA X8
+  // remains unavailable; its resolve support needs independent pixel proof.
+  if (staged.resolve && (presentX8Format(src.Format) || presentX8Format(dst.Format)))
     return DXGI_ERROR_UNSUPPORTED;
   if (src.Format != dst.Format && !(flags & 2)) return E_INVALIDARG;
   staged.sourceWidth = std::max(1u, src.Width >> (sourceSubresource % src.MipLevels));
@@ -68,9 +65,9 @@ inline HRESULT bltPlan(const D3D11_TEXTURE2D_DESC& src,
   const bool swapped = rotation == 2 || rotation == 4;
   if (!(flags & 4) && (staged.width != (swapped ? staged.sourceHeight : staged.sourceWidth)
       || staged.height != (swapped ? staged.sourceWidth : staged.sourceHeight))) return E_INVALIDARG;
-  // Compare the actual formats, not their normalized sampling formats: an
-  // encoded sRGB copy to UNORM still belongs to the conversion shader path.
-  staged.directCopy = rotation == 1 && !(flags & 5) && src.Format == dst.Format
+  // Same-layout sRGB/UNORM casts also preserve encoded bits and physical X.
+  // Conversion permission above is still mandatory for different formats.
+  staged.directCopy = rotation == 1 && !(flags & 5) && staged.sourceFormat == staged.destinationFormat
     && staged.sourceWidth == staged.width && staged.sourceHeight == staged.height;
   output = staged;
   return S_OK;
@@ -173,6 +170,8 @@ inline HRESULT bltTexture2D(ID3D11Device* device, ID3D11DeviceContext* context,
   if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
   if (!vs || !ps || !layout || !vb || !sampled || !rendered || !srv || !rtv || !sampler || !raster || !commands)
     return E_FAIL;
+  // Production PRESENT sources use a typeless cache. Resolving with its
+  // UNORM interpretation averages encoded bytes, never sRGB-decoded colors.
   if (plan.resolve) commands->ResolveSubresource(sampled.Get(), 0, source, sourceSubresource, plan.sourceFormat);
   else commands->CopySubresourceRegion(sampled.Get(), 0, 0, 0, 0, source, sourceSubresource, nullptr);
   ID3D11Buffer* buffers[] = {vb.Get()}; const UINT stride = sizeof(BltVertex), offset = 0;

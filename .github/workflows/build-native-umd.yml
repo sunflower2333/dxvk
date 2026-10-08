@@ -160,6 +160,8 @@ jobs:
             candidate/arm64-dxgi-shared-resolve-originals/**
             candidate/arm64-dxgi-blt-originals/**
             candidate/arm64-dxgi-primary-originals/**
+            candidate/arm64-dxgi-extended-blt-originals/**
+            candidate/arm64-dxgi-extended-primary-originals/**
             candidate/arm64-tex2d-srv-remaining-originals/**
             candidate/arm64-dxgi-open-primary-originals/**
             candidate/arm64-texture-uav-originals/**

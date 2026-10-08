@@ -86,7 +86,9 @@ $cases = [ordered]@{
     'dxvk-umd-allocation-terminal-test.exe' = '(?m)^DXGI terminal allocations PASS checks=\d+ owned=10 opened=1 transfers=4 attempts=10 released=9 failures=1 locks=3 unlocks=2 retired_lock_returns=1\r?$'
     'dxvk-umd-dxgi-shared-resolve-test.exe' = '(?m)^DXGI shared resolve PASS checks=\d+ profiles=3 snapshots=15 pixels=525 hardware_admission=0\r?$'
     'dxvk-umd-dxgi-blt-test.exe' = '(?m)^DXGI Blt PASS checks=\d+ profiles=3 snapshots=30 pixels=1536 hardware_admission=0\r?$'
-    'dxvk-umd-primary-policy-test.exe' = '(?m)^DXGI primary policy PASS checks=5637\r?$'
+    'dxvk-umd-primary-policy-test.exe' = '(?m)^DXGI primary policy PASS checks=6775\r?$'
+    'dxvk-umd-dxgi-extended-blt-test.exe' = '(?m)^DXGI extended Blt PASS profiles=3 formats=2 images=51 pixels=1116 hardware_admission=0\r?$'
+    'dxvk-umd-dxgi-extended-primary-test.exe' = '(?m)^DXGI extended primary PASS profiles=3 images=12 pixels=384 hardware_admission=0\r?$'
     'dxvk-umd-dxgi-primary-test.exe' = '(?m)^DXGI primary/display PASS checks=\d+ profiles=6 snapshots=24 pixels=768 hardware_admission=0\r?$'
     'dxvk-umd-srv-range-test.exe' = '(?m)^native SRV remaining range policy verified checks=436737\r?$'
     'dxvk-umd-tex2d-srv-remaining-test.exe' = '(?m)^native D3D10/D3D10\.1/D3D11 Texture2D SRV remaining ranges verified checks=\d+ views=504 words=5184 callbacks=63 WARP controls\r?$'
@@ -98,6 +100,8 @@ $cases = [ordered]@{
     'dxvk-umd-system-runtime-test.exe' = 'system runtime control PASS: WARP Draw/readback/Present/immediate teardown'
 }
 $originalDirectories = @{
+    'dxvk-umd-dxgi-extended-blt-test.exe' = 'arm64-dxgi-extended-blt-originals'
+    'dxvk-umd-dxgi-extended-primary-test.exe' = 'arm64-dxgi-extended-primary-originals'
     'dxvk-umd-texture-uav-test.exe' = 'arm64-texture-uav-originals'
     'dxvk-umd-resource-copy-cast-test.exe' = 'arm64-resource-copy-cast-originals'
     'dxvk-umd-bc-update-test.exe' = 'arm64-bc-update-originals'
@@ -225,3 +229,6 @@ foreach ($name in $cases.Keys) {
     }
     Get-FileHash -Algorithm SHA256 -LiteralPath $exe | Format-List | Out-File -Append (Join-Path $root 'arm64-hashes.txt')
 }
+
+& python (Join-Path $PSScriptRoot 'verify-native-extended-format-originals.py') (Join-Path $root 'arm64-dxgi-extended-blt-originals') (Join-Path $root 'arm64-dxgi-extended-primary-originals') --blt-stdout (Join-Path $root 'arm64-dxvk-umd-dxgi-extended-blt-test.exe.stdout.txt') --primary-stdout (Join-Path $root 'arm64-dxvk-umd-dxgi-extended-primary-test.exe.stdout.txt') --output (Join-Path $root 'arm64-dxgi-extended-format-originals-verified.json')
+if ($LASTEXITCODE) { throw 'ARM64 extended-format raw verification failed' }

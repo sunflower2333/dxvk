@@ -136,7 +136,7 @@ struct Fixture {
   dxvk::umd::RuntimeBackend bridge;
   ID3D11DeviceContext* contextKey = nullptr;
   bool live = true;
-  explicit Fixture(bool dxgi11 = true) {
+  explicit Fixture(bool dxgi11 = true, UINT pipeline = D3D11DDI_3DPIPELINELEVEL_11_0) {
     core10.pfnSetErrorCb = error; core11.pfnSetErrorCb = error;
     D3DDDI_DEVICECALLBACKS kernel{}; kernel.pfnAllocateCb = allocate; kernel.pfnDeallocateCb = deallocate;
     kernel.pfnLockCb = lock; kernel.pfnUnlockCb = unlock;
@@ -151,7 +151,7 @@ struct Fixture {
       args.p10_1DeviceFuncs = &table; args.pUMCallbacks = &core10;
     } else {
       args.Interface = D3D11_0_DDI_INTERFACE_VERSION; args.Version = D3D11_0_DDI_BUILD_VERSION << 16;
-      args.Flags = D3D11DDI_3DPIPELINELEVEL_11_0 << D3D11DDI_CREATEDEVICE_FLAG_3DPIPELINESUPPORT_SHIFT;
+      args.Flags = pipeline << D3D11DDI_CREATEDEVICE_FLAG_3DPIPELINESUPPORT_SHIFT;
       args.p11DeviceFuncs = &table; args.p11UMCallbacks = &core11;
     }
     if (dxgi11) args.Version |= std::is_same_v<Table, D3D11DDI_DEVICEFUNCS>
@@ -787,7 +787,7 @@ static void identityBltPolicy() {
   CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, 4, 1, plan) == S_OK && !plan.directCopy);
   CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, 0, 3, plan) == S_OK && !plan.directCopy);
   destination.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-  CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, 2, 1, plan) == S_OK && !plan.directCopy);
+  CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, 2, 1, plan) == S_OK && plan.directCopy);
 }
 static void x8BltPolicy() {
   D3D11_TEXTURE2D_DESC source{};
@@ -814,9 +814,9 @@ static void x8BltPolicy() {
     UINT flags = 0, right = 7, rotation = 1;
     HRESULT expected = DXGI_ERROR_UNSUPPORTED;
     if (test == 0) { src.SampleDesc.Count = 4; flags = 1; }
-    if (test == 1) { src.Format = DXGI_FORMAT_B8G8R8A8_UNORM; flags = 2; }
-    if (test == 2) { dst.Format = DXGI_FORMAT_B8G8R8A8_UNORM; flags = 2; }
-    if (test == 3) src.Format = DXGI_FORMAT_B8G8R8X8_UNORM_SRGB;
+    if (test == 1) { src.Format = DXGI_FORMAT_R16G16B16A16_FLOAT; flags = 2; }
+    if (test == 2) { dst.Format = DXGI_FORMAT_R16G16B16A16_FLOAT; flags = 2; }
+    if (test == 3) { src.Format = DXGI_FORMAT_B8G8R8X8_UNORM_SRGB; expected = E_INVALIDARG; }
     if (test == 4) dst.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
     if (test == 5) dst.BindFlags = 0;
     if (test == 6) { flags = 16; expected = E_INVALIDARG; }
@@ -848,4 +848,5 @@ int main() {
   std::printf("DXGI private transfer PASS profiles=3 snapshots=24 pixels=840 hardware_admission=0\n");
   CHECK(snapshots == 30 && pixels == 1536 && backings.empty() && bridges.empty() && lastError == S_OK);
   std::printf("DXGI Blt PASS checks=%u profiles=3 snapshots=30 pixels=1536 hardware_admission=0\n", checks.load());
+  return 0;
 }

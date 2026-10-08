@@ -241,7 +241,7 @@ struct Fixture {
   DXGI_DDI_BASE_CALLBACKS dxgiCallbacks{};
   D3D10DDI_CORELAYER_DEVICECALLBACKS core10{}; D3D11DDI_CORELAYER_DEVICECALLBACKS core11{};
   bool live = true;
-  explicit Fixture(bool primaryCallbacks = true) {
+  explicit Fixture(bool primaryCallbacks = true, UINT pipeline = D3D11DDI_3DPIPELINELEVEL_11_0) {
     runtimeValid = true; generation = 23; lockCountdown = 1;
     auto kernel = static_cast<D3DDDI_DEVICECALLBACKS*>(kernelStorage.bytes);
     kernel->pfnAllocateCb = allocate; kernel->pfnDeallocateCb = deallocate;
@@ -258,7 +258,7 @@ struct Fixture {
       args.p10_1DeviceFuncs = &table; args.pUMCallbacks = &core10;
     } else {
       args.Interface = D3D11_0_DDI_INTERFACE_VERSION; args.Version = D3D11_0_DDI_BUILD_VERSION << 16;
-      args.Flags = D3D11DDI_3DPIPELINELEVEL_11_0 << D3D11DDI_CREATEDEVICE_FLAG_3DPIPELINESUPPORT_SHIFT;
+      args.Flags = pipeline << D3D11DDI_CREATEDEVICE_FLAG_3DPIPELINESUPPORT_SHIFT;
       args.p11DeviceFuncs = &table; args.p11UMCallbacks = &core11;
     }
     if constexpr (modernDxgi) args.Version |= std::is_same_v<Table, D3D11DDI_DEVICEFUNCS>
@@ -690,4 +690,5 @@ int main() {
     && contexts == contextCloses && locks == unlocks + runtimeTerminalMapClosures
     && unlockAttempts == unlocks + unlockFailures && runtimeTerminalReleases == 3 && runtimeTerminalMapClosures == 2);
   std::printf("DXGI primary/display PASS checks=%u profiles=6 snapshots=24 pixels=768 hardware_admission=0\n", checks.load());
+  return 0;
 }

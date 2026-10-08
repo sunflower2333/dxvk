@@ -271,6 +271,7 @@ struct PresentSurface {
 struct Resource {
   Device* owner = nullptr;
   UINT nativeBindFlags = 0;
+  DXGI_FORMAT nativeFormat = DXGI_FORMAT_UNKNOWN;
   ComPtr<ID3D11Resource> backend;
   // Present callbacks can destroy and reclaim the runtime's Resource bytes.
   // A local Present owner keeps this allocation and readback alive separately.
@@ -818,6 +819,7 @@ HRESULT openResourceData(Device* device, const D3D10DDIARG_OPENRESOURCE* args,
   std::memcpy(&info, opened.pPrivateDriverData, sizeof info);
   const DXGI_FORMAT format = dxvk::umd::allocationFormat(info.format);
   if (format == DXGI_FORMAT_UNKNOWN) return DXGI_ERROR_UNSUPPORTED;
+  resource->nativeFormat = format;
   try {
     // Reserve the retirement node before any owner exists, for the same reason
     // creation does: destruction must not have to allocate.
@@ -835,7 +837,7 @@ HRESULT openResourceData(Device* device, const D3D10DDIARG_OPENRESOURCE* args,
     desc.Height = info.height;
     desc.MipLevels = 1;
     desc.ArraySize = 1;
-    desc.Format = format;
+    desc.Format = info.flags == 1 ? dxvk::umd::presentCacheFormat(format) : format;
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
@@ -858,6 +860,7 @@ HRESULT createResourceData(Device* device,
     const D3D10DDIARG_CREATERESOURCE* args, Resource* resource,
     D3D10DDI_HRTRESOURCE runtime, bool cubeArrays10_1 = false) {
   resource->owner = device;
+  resource->nativeFormat = args ? args->Format : DXGI_FORMAT_UNKNOWN;
   UINT miscFlags = 0;
   bool shared = false;
   if (!args || !args->pMipInfoList || !args->MipLevels || !args->ArraySize ||
@@ -952,7 +955,7 @@ HRESULT createResourceData(Device* device,
       desc.Height = args->pMipInfoList[0].TexelHeight;
       desc.MipLevels = args->MipLevels;
       desc.ArraySize = args->ArraySize;
-      desc.Format = args->Format;
+      desc.Format = presentable ? dxvk::umd::presentCacheFormat(args->Format) : args->Format;
       desc.SampleDesc = args->SampleDesc;
       desc.Usage = static_cast<D3D11_USAGE>(args->Usage);
       desc.MiscFlags = miscFlags;
@@ -966,8 +969,7 @@ HRESULT createResourceData(Device* device,
     if (hr == S_OK && !resource->backend) hr = E_FAIL;
     if (hr == S_OK && presentable && !shared) {
       resource->present = std::make_shared<PresentSurface>();
-      const auto format = args->Format == DXGI_FORMAT_B8G8R8X8_UNORM
-        ? args->Format : dxvk::umd::bltLinearFormat(args->Format);
+      const auto format = dxvk::umd::bltLinearFormat(args->Format);
       if (primary.scanout) hr = device->memory.allocatePrimary(resource->present->allocation, runtime.handle,
         args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight,
         format, primaryDesc.ModeDesc.RefreshRate.Numerator, primaryDesc.ModeDesc.RefreshRate.Denominator);
@@ -1111,6 +1113,11 @@ void APIENTRY createShaderView(D3D10DDI_HDEVICE h,
   auto device = get(h);
   if (!args) { device->error(E_INVALIDARG); return; }
   if (!owned(device, get(args->hDrvResource))) return;
+  const auto owner = get(args->hDrvResource);
+  if (!dxvk::umd::presentViewAllowed(owner->nativeFormat, args->Format,
+      (owner->nativeBindFlags & D3D10_DDI_BIND_PRESENT) != 0)) {
+    device->error(E_INVALIDARG); return;
+  }
   HRESULT hr;
   {
     auto resource = get(args->hDrvResource)->backend;
@@ -1276,6 +1283,11 @@ void APIENTRY createTargetForInterface(D3D10DDI_HDEVICE h,
   auto device = get(h);
   if (!args) { device->error(E_INVALIDARG); return; }
   if (!owned(device, get(args->hDrvResource))) return;
+  const auto owner = get(args->hDrvResource);
+  if (!dxvk::umd::presentViewAllowed(owner->nativeFormat, args->Format,
+      (owner->nativeBindFlags & D3D10_DDI_BIND_PRESENT) != 0)) {
+    device->error(E_INVALIDARG); return;
+  }
   HRESULT hr;
   {
     auto resource = get(args->hDrvResource)->backend;
@@ -2584,7 +2596,8 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
       const auto& firstAllocation = first.allocation;
       if (desc.Width != shape.Width || desc.Height != shape.Height
           || desc.MipLevels != shape.MipLevels || desc.ArraySize != shape.ArraySize
-          || desc.Format != shape.Format || desc.SampleDesc.Count != shape.SampleDesc.Count
+          || resource->nativeFormat != first.resource->nativeFormat
+          || desc.SampleDesc.Count != shape.SampleDesc.Count
           || desc.SampleDesc.Quality != shape.SampleDesc.Quality
           || desc.BindFlags != shape.BindFlags || desc.MiscFlags != shape.MiscFlags
           || bool(resource->shared) != bool(first.shared)
@@ -2893,6 +2906,7 @@ HRESULT bltData(Device* device, const DXGI_DDI_ARG_BLT& request) {
     ComPtr<ID3D11Texture2D> image;
     std::shared_ptr<dxvk::umd::SharedSurface> shared;
     UINT bindings = 0;
+    DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
   } source, destination;
   {
     std::lock_guard<std::mutex> lock(resourceStorageMutex);
@@ -2904,6 +2918,7 @@ HRESULT bltData(Device* device, const DXGI_DDI_ARG_BLT& request) {
       auto& participant = *pair.second;
       participant.storage = resource; participant.reservation = entry->second.reservation;
       participant.shared = resource->shared; participant.bindings = resource->nativeBindFlags;
+      participant.format = resource->nativeFormat;
       if (!resource->backend || FAILED(resource->backend.As(&participant.image))) return DXGI_DDI_ERR_UNSUPPORTED;
     }
   }
@@ -2914,6 +2929,8 @@ HRESULT bltData(Device* device, const DXGI_DDI_ARG_BLT& request) {
   if (request.Flags.Present && !destination.shared) return DXGI_DDI_ERR_UNSUPPORTED;
   D3D11_TEXTURE2D_DESC srcDesc{}, dstDesc{};
   source.image->GetDesc(&srcDesc); destination.image->GetDesc(&dstDesc);
+  if (source.format != DXGI_FORMAT_UNKNOWN) srcDesc.Format = source.format;
+  if (destination.format != DXGI_FORMAT_UNKNOWN) dstDesc.Format = destination.format;
   dxvk::umd::BltPlan plan;
   HRESULT hr = dxvk::umd::bltPlan(srcDesc, dstDesc, request.SrcSubresource, request.DstSubresource,
     request.DstLeft, request.DstTop, request.DstRight, request.DstBottom,
@@ -2998,6 +3015,7 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
     ComPtr<ID3D11Resource> image;
     ComPtr<ID3D11Device> backend;
     ComPtr<ID3D11DeviceContext> context;
+    DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
     {
       std::lock_guard<std::mutex> lock(deviceStorageMutex);
       if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
@@ -3015,6 +3033,7 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
       if (primaryOnly && !resource->present->backing().primary()) return DXGI_DDI_ERR_UNSUPPORTED;
       reservation = entry->second.reservation;
       surface = resource->present; image = resource->backend;
+      format = resource->nativeFormat;
     }
     // A callback may reenter Present while this surface's staging texture is
     // mapped. A second copy/map of that same readback is not legal.
@@ -3064,7 +3083,7 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
     auto readback = surface->readback;
     if (!readback) {
       auto desc = sourceDesc;
-      if (desc.Format != DXGI_FORMAT_B8G8R8X8_UNORM) desc.Format = dxvk::umd::bltLinearFormat(desc.Format);
+      desc.Format = dxvk::umd::bltLinearFormat(format);
       desc.SampleDesc = {1, 0};
       desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0;
       desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ; desc.MiscFlags = 0;
@@ -3075,10 +3094,11 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
     }
     ComPtr<ID3D11Texture2D> resolved;
     if (sourceDesc.SampleDesc.Count > 1) {
-      // Resolve into a GPU-only single-sample image; staging resources cannot
-      // be resolve destinations. Keep Present honest for unsupported sRGB MSAA.
-      if (sourceDesc.Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB) return DXGI_DDI_ERR_UNSUPPORTED;
+      // The typeless PRESENT cache is resolved in encoded UNORM space into
+      // a GPU image, before copying its exact bytes to CPU-readable staging.
+      if (dxvk::umd::presentX8Format(format)) return DXGI_DDI_ERR_UNSUPPORTED;
       auto desc = sourceDesc; desc.SampleDesc = {1, 0};
+      desc.Format = dxvk::umd::bltLinearFormat(format);
       hr = backend->CreateTexture2D(&desc, nullptr, &resolved);
       if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
       if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
@@ -3087,7 +3107,7 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
     hr = dxvk::umd::submitPrivateTransfer(backend.Get(), context.Get(), stillLive,
       [&](ID3D11DeviceContext* commands) -> HRESULT {
         if (resolved) {
-          commands->ResolveSubresource(resolved.Get(), 0, source.Get(), 0, sourceDesc.Format);
+          commands->ResolveSubresource(resolved.Get(), 0, source.Get(), 0, dxvk::umd::bltLinearFormat(format));
           if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
         }
         commands->CopyResource(readback.Get(), resolved ? resolved.Get() : source.Get());

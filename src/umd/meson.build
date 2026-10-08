@@ -386,3 +386,13 @@ umd_d3d10_distance_stream_test = executable('dxvk-umd-d3d10-distance-stream-test
   ['../../tests/umd-d3d10-distance-stream.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_contract.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler'), cpp.find_library('d3d10_1')])
+
+# Independent typed backbuffer format/encoded-domain and primary wire proof.
+umd_dxgi_extended_blt_test = executable('dxvk-umd-dxgi-extended-blt-test',
+  ['../../tests/umd-dxgi-extended-blt.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+   'umd_shader11.cpp', 'umd_allocation.cpp', 'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+umd_dxgi_extended_primary_test = executable('dxvk-umd-dxgi-extended-primary-test',
+  ['../../tests/umd-dxgi-extended-primary.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+   'umd_shader11.cpp', 'umd_allocation.cpp', 'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)

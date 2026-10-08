@@ -29,10 +29,10 @@ inline PrimaryStatus primaryPlan(const PrimaryShape& shape, PrimaryPlan& output)
   if (shape.source || (shape.flags & 12u) || shape.rotation > 1
       || shape.scanline > 1 || shape.scaling == 2) return PrimaryStatus::Unsupported;
   const bool optional = (shape.flags & 1u) != 0;
-  // DXGI_FORMAT values: RGBA8/BGRA8/BGRX8 UNORM; optional copy also accepts
-  // RGBA8 encoded sRGB bytes. A real primary has an exact v0 scanout format.
+  // BGRA sRGB scanout uses the same encoded v0 BGRA8 bytes, without a gamma
+  // transform. BGRX sRGB has no scanout bit; it is an optional copy only.
   const bool linear = shape.format == 28 || shape.format == 87 || shape.format == 88;
-  if (!linear && !(optional && shape.format == 29))
+  if (!linear && shape.format != 91 && !(optional && (shape.format == 29 || shape.format == 93)))
     return PrimaryStatus::Unsupported;
   if (!optional && (!shape.numerator || !shape.denominator)) return PrimaryStatus::Invalid;
   PrimaryPlan plan;

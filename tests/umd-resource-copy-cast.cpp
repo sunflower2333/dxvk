@@ -16,12 +16,22 @@
 using Microsoft::WRL::ComPtr;
 static unsigned checks, callbacks, backendCalls, readbacks, observedBytes, rejections;
 static HRESULT lastError = S_OK;
+static HRESULT apiResult = S_OK;
 static DWORD callerThread;
+static const char* phase = "startup";
+static UINT profile, kind, sourceFormat, destinationFormat, operation, control = UINT(-1), subresource = UINT(-1);
 static const LUID expectedLuid{0x187bb593,-78};
 static ComPtr<ID3D11DeviceContext> createdContext;
 static std::ofstream manifest;
-#define CHECK(x) do { ++checks; if (!(x)) { std::fprintf(stderr,"Resource copy cast failure line=%d: %s checks=%u callbacks=%u HRESULT=%08lx\n",__LINE__,#x,checks,callbacks,static_cast<unsigned long>(lastError)); std::exit(1); } } while (0)
+#define CHECK(x) do { ++checks; if (!(x)) { std::fprintf(stderr,"Resource copy cast failure line=%d: %s checks=%u callbacks=%u HRESULT=%08lx api_HRESULT=%08lx phase=%s profile=%u kind=%u source_format=%u destination_format=%u operation=%u control=%u subresource=%u observations=%u rejections=%u\n",__LINE__,#x,checks,callbacks,static_cast<unsigned long>(lastError),static_cast<unsigned long>(apiResult),phase,profile,kind,sourceFormat,destinationFormat,operation,control,subresource,readbacks,rejections); std::exit(1); } } while (0)
+struct Phase {
+  const char* previous = phase;
+  const UINT previousSubresource = subresource;
+  explicit Phase(const char* name) { phase=name; subresource=UINT(-1); }
+  ~Phase() { phase=previous; subresource=previousSubresource; }
+};
 static void ok() { CHECK(lastError == S_OK); }
+static void apiOk(HRESULT result) { apiResult=result; CHECK(result==S_OK); }
 static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime,HRESULT result) {
   CHECK(runtime.handle && GetCurrentThreadId() == callerThread && FAILED(result));
   ++callbacks; lastError = result;
@@ -59,6 +69,7 @@ struct Fixture {
     return fn(out10.table);
   }
   explicit Fixture(UINT p) : profile(p) {
+    Phase step("device-create"); ::profile=p;
     core10.pfnSetErrorCb=core11.pfnSetErrorCb=error;
     const HRESULT result = profile ? VioGpuDxvkCreateDdiTestDevice11(&expectedLuid,device,{&core11},&core11,&out11.table,D3D_FEATURE_LEVEL_11_0)
       : VioGpuDxvkCreateDdiTestDevice10_1(&expectedLuid,device,{&core10},&core10,&out10.table);
@@ -122,6 +133,7 @@ struct Resource {
   ComPtr<ID3D11Resource> reference;
   Resource(Fixture& owner,const Description& d,const Pixels* pixels,bool staging=false,bool immutable=false)
     : f(owner),desc(d),storage(f.call([&](auto& t) { return t.pfnCalcPrivateResourceSize(f.device,nullptr); })),handle{storage.data()} {
+    Phase step(staging ? "staging-create" : immutable ? "immutable-create" : "resource-create");
     std::vector<D3D10_DDIARG_SUBRESOURCE_UP> native(d.count());
     std::vector<D3D11_SUBRESOURCE_DATA> api(d.count());
     if (pixels) for (UINT sub=0;sub<d.count();++sub) {
@@ -139,21 +151,22 @@ struct Resource {
     f.create(args,handle); ok(); storage.guards();
     const UINT cpu=staging ? D3D11_CPU_ACCESS_READ : 0;
     const auto data=pixels ? api.data() : nullptr;
+    phase="public-resource-create";
     if (!d.kind) {
       D3D11_BUFFER_DESC a{d.width,usage,bindings,cpu,0,0}; ComPtr<ID3D11Buffer> resource;
-      CHECK(f.backend->CreateBuffer(&a,data,&resource)==S_OK); reference=resource;
+      apiOk(f.backend->CreateBuffer(&a,data,&resource)); reference=resource;
     } else if (d.kind==1) {
       D3D11_TEXTURE1D_DESC a{d.width,d.mips,d.arrays,d.format,usage,bindings,cpu,0}; ComPtr<ID3D11Texture1D> resource;
-      CHECK(f.backend->CreateTexture1D(&a,data,&resource)==S_OK); reference=resource;
+      apiOk(f.backend->CreateTexture1D(&a,data,&resource)); reference=resource;
     } else if (d.kind==2) {
       D3D11_TEXTURE2D_DESC a{d.width,d.height,d.mips,d.arrays,d.format,{1,0},usage,bindings,cpu,0}; ComPtr<ID3D11Texture2D> resource;
-      CHECK(f.backend->CreateTexture2D(&a,data,&resource)==S_OK); reference=resource;
+      apiOk(f.backend->CreateTexture2D(&a,data,&resource)); reference=resource;
     } else {
       D3D11_TEXTURE3D_DESC a{d.width,d.height,d.depth,d.mips,d.format,usage,bindings,cpu,0}; ComPtr<ID3D11Texture3D> resource;
-      CHECK(f.backend->CreateTexture3D(&a,data,&resource)==S_OK); reference=resource;
+      apiOk(f.backend->CreateTexture3D(&a,data,&resource)); reference=resource;
     }
   }
-  ~Resource() { reference.Reset(); f.call([&](auto& t) { t.pfnDestroyResource(f.device,handle); }); ok(); storage.guards(); }
+  ~Resource() { Phase step("resource-destroy"); reference.Reset(); f.call([&](auto& t) { t.pfnDestroyResource(f.device,handle); }); ok(); storage.guards(); }
 };
 static void save(UINT id,const char* suffix,const std::vector<unsigned char>& bytes) {
   char name[96]; CHECK(std::snprintf(name,sizeof(name),"copy-cast-%03u-%s.bin",id,suffix)>0);
@@ -162,18 +175,23 @@ static void save(UINT id,const char* suffix,const std::vector<unsigned char>& by
   output.close(); CHECK(!output.fail());
 }
 static std::vector<unsigned char> read(Resource& source,bool native,const Pixels& expected) {
+  Phase step(native ? "native-readback" : "public-readback");
   auto& f=source.f; const auto& d=source.desc;
   Resource stage(f,d,nullptr,true);
+  phase=native ? "native-stage-copy" : "public-stage-copy";
   if (native) { f.call([&](auto& t) { t.pfnResourceCopy(f.device,stage.handle,source.handle); }); ok(); }
   else f.context->CopyResource(stage.reference.Get(),source.reference.Get());
   std::vector<unsigned char> result;
   for (UINT sub=0;sub<d.count();++sub) {
+    subresource=sub;
     D3D11_MAPPED_SUBRESOURCE mapped{};
+    phase=native ? "native-stage-map" : "public-stage-map";
     if (native) {
       D3D10DDI_MAPPED_SUBRESOURCE n{};
       f.call([&](auto& t) { t.pfnStagingResourceMap(f.device,stage.handle,sub,D3D10_DDI_MAP_READ,0,&n); }); ok();
       mapped={n.pData,n.RowPitch,n.DepthPitch};
-    } else CHECK(f.context->Map(stage.reference.Get(),sub,D3D11_MAP_READ,0,&mapped)==S_OK);
+    } else apiOk(f.context->Map(stage.reference.Get(),sub,D3D11_MAP_READ,0,&mapped));
+    phase=native ? "native-readback-bytes" : "public-readback-bytes";
     CHECK(mapped.pData); const auto& s=d.shapes[sub%d.mips];
     const UINT row=s.TexelWidth*d.texel;
     CHECK(!d.kind || mapped.RowPitch>=row);
@@ -184,6 +202,7 @@ static std::vector<unsigned char> read(Resource& source,bool native,const Pixels
       CHECK(!std::memcmp(bytes,oracle,row));
       result.insert(result.end(),bytes,bytes+row);
     }
+    phase=native ? "native-stage-unmap" : "public-stage-unmap";
     if (native) { f.call([&](auto& t) { t.pfnStagingResourceUnmap(f.device,stage.handle,sub); }); ok(); }
     else f.context->Unmap(stage.reference.Get(),sub);
   }
@@ -195,9 +214,11 @@ static void observe(Resource& destination,const Pixels& expected,DXGI_FORMAT sou
   observedBytes+=static_cast<UINT>(native.size()); const auto& d=destination.desc;
   manifest<<id<<' '<<destination.f.profile<<' '<<d.kind<<' '<<UINT(sourceFormat)<<' '<<UINT(d.format)<<' '
     <<operation<<' '<<d.width<<' '<<d.height<<' '<<d.depth<<' '<<d.mips<<' '<<d.arrays<<' '<<d.texel<<' '<<seed<<' '<<native.size()<<'\n';
-  CHECK(manifest.good());
+  manifest.flush(); CHECK(manifest.good());
 }
 static void perform(Fixture& f,UINT kind,DXGI_FORMAT srcFormat,DXGI_FORMAT dstFormat,UINT operation) {
+  Phase step("positive-copy"); ::profile=f.profile; ::kind=kind; sourceFormat=UINT(srcFormat);
+  destinationFormat=UINT(dstFormat); ::operation=operation; control=UINT(-1);
   Description sourceDesc(kind,srcFormat),destDesc(kind,dstFormat);
   auto original=initial(sourceDesc,0x17),expected=initial(destDesc,0xa3);
   Resource source(f,sourceDesc,&original),destination(f,destDesc,&expected);
@@ -229,9 +250,12 @@ static void perform(Fixture& f,UINT kind,DXGI_FORMAT srcFormat,DXGI_FORMAT dstFo
   CHECK(read(source,true,original)==read(source,false,original));
 }
 static void negativeControls(Fixture& f,Fixture& foreign,UINT kind) {
+  Phase step("negative-control"); ::profile=f.profile; ::kind=kind; sourceFormat=destinationFormat=UINT(DXGI_FORMAT_R32_UINT);
+  operation=4; control=UINT(-1);
   Description d(kind,DXGI_FORMAT_R32_UINT); auto expected=initial(d,0xa3),original=initial(d,0x17);
   Resource destination(f,d,&expected),source(f,d,&original),other(foreign,d,&original);
   auto reject=[&](auto&& fn) {
+    ++control;
     const UINT before=callbacks; fn();
     CHECK(callbacks==before+1 && lastError==dxvk::umd::ddiResult(E_INVALIDARG)); lastError=S_OK; ++rejections;
     CHECK(read(destination,true,expected)==read(destination,false,expected));
@@ -264,10 +288,16 @@ static void negativeControls(Fixture& f,Fixture& foreign,UINT kind) {
   const std::array<D3D10_DDI_BOX,6> empty{{{2,0,0,1,1,1},{0,2,0,1,1,1},{0,0,2,1,1,1},
     {1,0,0,1,1,1},{0,1,0,1,1,1},{0,0,1,1,1,1}}};
   for (const auto& box:empty) {
+    ++control; Phase emptyStep("empty-native");
     const UINT before=callbacks;
     f.call([&](auto& t) { t.pfnResourceConvertRegion(f.device,destination.handle,0,0,0,0,source.handle,0,&box); }); ok();
     CHECK(callbacks==before);
-    const D3D11_BOX publicBox{UINT(box.left),UINT(box.top),UINT(box.front),UINT(box.right),UINT(box.bottom),UINT(box.back)};
+    // Exercise the six literal equal/reversed DDI boxes above. The public
+    // control uses a bounded equal-axis empty box: WARP can consume a
+    // reversed unsigned extent instead of treating it as the documented
+    // no-op, removing the reference device before the next staging create.
+    const D3D11_BOX publicBox{0,0,0,0,1,1};
+    phase="empty-public";
     f.context->CopySubresourceRegion(destination.reference.Get(),0,0,0,0,source.reference.Get(),0,&publicBox);
     CHECK(read(destination,true,expected)==read(destination,false,expected));
   }

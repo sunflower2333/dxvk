@@ -6,14 +6,9 @@
 #include "../d3d10/d3d10_query.h"
 
 #include "d3d11_device_child.h"
+#include "d3d11_query_sequence.h"
 
 namespace dxvk {
-  
-  enum D3D11_VK_QUERY_STATE : uint32_t {
-    D3D11_VK_QUERY_INITIAL,
-    D3D11_VK_QUERY_BEGUN,
-    D3D11_VK_QUERY_ENDED,
-  };
   
   class D3D11Query : public D3D11DeviceChild<ID3D11Query1> {
     constexpr static uint32_t MaxGpuQueries = 2;
@@ -49,8 +44,7 @@ namespace dxvk {
             UINT                              GetDataFlags);
     
     void DoDeferredEnd() {
-      m_state = D3D11_VK_QUERY_ENDED;
-      m_resetCtr.fetch_add(1);
+      m_sequence.deferEnd();
     }
 
     bool IsScoped() const {
@@ -101,7 +95,7 @@ namespace dxvk {
     
     D3D11_QUERY_DESC1  m_desc;
 
-    D3D11_VK_QUERY_STATE m_state;
+    D3D11QuerySequence m_sequence;
     
     std::array<Rc<DxvkQuery>, MaxGpuQueries> m_query;
     std::array<Rc<DxvkEvent>, MaxGpuEvents>  m_event;
@@ -110,8 +104,6 @@ namespace dxvk {
 
     uint32_t m_stallMask = 0;
     bool     m_stallFlag = false;
-
-    std::atomic<uint32_t> m_resetCtr = { 0u };
 
     D3DDestructionNotifier m_destructionNotifier;
 

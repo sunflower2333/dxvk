@@ -8,7 +8,6 @@ namespace dxvk {
     const D3D11_QUERY_DESC1& desc)
   : D3D11DeviceChild<ID3D11Query1>(device),
     m_desc(desc),
-    m_state(D3D11_VK_QUERY_INITIAL),
     m_d3d10(this),
     m_destructionNotifier(this) {
     Rc<DxvkDevice> dxvkDevice = m_parent->GetDXVKDevice();
@@ -218,37 +217,32 @@ namespace dxvk {
         ctx->endQuery(m_query[0]);
     }
 
-    m_resetCtr.fetch_sub(1);
+    m_sequence.completeEnd();
   }
   
   
   bool STDMETHODCALLTYPE D3D11Query::DoBegin() {
-    if (!IsScoped() || m_state == D3D11_VK_QUERY_BEGUN)
-      return false;
-
-    m_state = D3D11_VK_QUERY_BEGUN;
-    return true;
+    return m_sequence.begin(IsScoped());
   }
 
   bool STDMETHODCALLTYPE D3D11Query::DoEnd() {
     // Apparently the D3D11 runtime implicitly begins the query
     // if it is in the wrong state at the time End is called, so
     // let the caller react to it instead of just failing here.
-    bool result = m_state == D3D11_VK_QUERY_BEGUN || !IsScoped();
-
-    m_state = D3D11_VK_QUERY_ENDED;
-    m_resetCtr.fetch_add(1);
-    return result;
+    return m_sequence.end(IsScoped());
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D11Query::GetData(
           void*                             pData,
           UINT                              GetDataFlags) {
-    if (m_state != D3D11_VK_QUERY_ENDED)
+    const auto issue = m_sequence.read();
+    if (!issue.stable)
+      return S_FALSE;
+    if (issue.phase != D3D11QueryPhase::Ended)
       return DXGI_ERROR_INVALID_CALL;
 
-    if (m_resetCtr != 0u)
+    if (issue.pending)
       return S_FALSE;
 
     if (m_desc.Query == D3D11_QUERY_EVENT) {
@@ -258,6 +252,9 @@ namespace dxvk {
         return DXGI_ERROR_INVALID_CALL;
       
       bool signaled = status == DxvkGpuEventStatus::Signaled;
+
+      if (!m_sequence.current(issue))
+        return S_FALSE;
 
       if (pData != nullptr)
         *static_cast<BOOL*>(pData) = signaled;
@@ -277,6 +274,9 @@ namespace dxvk {
           return S_FALSE;
       }
       
+      if (!m_sequence.current(issue))
+        return S_FALSE;
+
       if (pData == nullptr)
         return S_OK;
       

@@ -57,7 +57,7 @@ foreach ($case in @('unused-stale-backup','unused-matching-backup','partial-writ
     $original=Original 11
     [DxvkBindingNative01]::Current=Original 22
     [DxvkBindingNative01]::RestoreCalls=0
-    $value=[pscustomobject]@{control=$control;original=$original;owner_pid=$PID;registry_subkey='MEMORY-ONLY';native_slot=$nativeSlot;mutex=('Local\VioGpuBindingPhaseControl-'+[Guid]::NewGuid().ToString('N'))}
+    $value=[pscustomobject]@{api=@('9','10','11')[$nativeSlot];control=$control;original=$original;owner_pid=$PID;registry_subkey='MEMORY-ONLY';native_slot=$nativeSlot;mutex=('Local\VioGpuBindingPhaseControl-'+[Guid]::NewGuid().ToString('N'))}
     if ($case -in @('unused-matching-backup','intent-before-write','foreign-intent','foreign-slot')) { [DxvkBindingNative01]::Current=Original 11 }
     if ($case -in @('partial-write','intent-before-write','foreign-intent','foreign-slot')) {
         $owner=$PID; if ($case -eq 'foreign-intent') { $owner++ }

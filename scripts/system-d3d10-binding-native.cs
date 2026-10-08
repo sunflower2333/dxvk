@@ -163,6 +163,16 @@ public static class DxvkBindingNative01 {
     public static DxvkBindingRawValue01 ReplaceNativeSlot(DxvkBindingRawValue01 original, string candidate, int nativeSlot) {
         if (nativeSlot < 0 || nativeSlot > 2 || original == null || original.View != 0x100 || original.Name != "UserModeDriverName")
             throw new ArgumentException("Only native DX9/D10/D11 registration slots are supported");
+        return ReplaceTupleSlot(original,candidate,nativeSlot);
+    }
+    // API8 uses the ordinary I386 runtime. The native controller still writes
+    // the explicit native registry view, but selects the WoW value's slot0.
+    public static DxvkBindingRawValue01 ReplaceWowLegacy(DxvkBindingRawValue01 original,string candidate) {
+        if (original == null || original.View != 0x100 || original.Name != "UserModeDriverNameWoW")
+            throw new ArgumentException("Only exact WoW legacy slot0 is supported");
+        return ReplaceTupleSlot(original,candidate,0);
+    }
+    static DxvkBindingRawValue01 ReplaceTupleSlot(DxvkBindingRawValue01 original,string candidate,int nativeSlot) {
         string[] paths=ParseTuple(original); RequireAbsolute(candidate);
         byte[] insert = new UnicodeEncoding(false, false, true).GetBytes(candidate);
         int start=0;
@@ -174,16 +184,46 @@ public static class DxvkBindingNative01 {
         Array.Copy(original.Data, end, bytes, start+insert.Length, original.Data.Length-end);
         return new DxvkBindingRawValue01 { View=original.View, Name=original.Name, Exists=true, Type=7, Data=bytes };
     }
+    public static string BindingValueName(string api,string architecture) {
+        if (api == "8" && architecture == "x86") return "UserModeDriverNameWoW";
+        if ((api == "9" || api == "9ex" || api == "10" || api == "11") && (architecture == "arm64" || architecture == "x64")) return "UserModeDriverName";
+        throw new ArgumentException("Reviewed API and exact probe architecture required");
+    }
+    public static void RequireWowMutation(DxvkBindingRawValue01[] before,DxvkBindingRawValue01[] after,DxvkBindingRawValue01 candidate) {
+        if (before == null || after == null || before.Length != 6 || after.Length != 6 || candidate == null || candidate.View != 0x100 || candidate.Name != "UserModeDriverNameWoW")
+            throw new ArgumentException("Exact raw6 WoW mutation proof required");
+        for (int i=0;i<6;i++) {
+            if (i == 1) { if (!Same(candidate,after[i])) throw new InvalidOperationException("Exact WoW slot0 candidate readback differs"); }
+            else if (i == 4) {
+                var alias=new DxvkBindingRawValue01 { View=0x200,Name=candidate.Name,Exists=candidate.Exists,Type=candidate.Type,Data=candidate.Data };
+                if (!Same(before[i],after[i]) && !Same(alias,after[i])) throw new InvalidOperationException("WoW alias must be original or exact candidate bytes");
+            } else if (!Same(before[i],after[i])) throw new InvalidOperationException("Native or installed-driver raw value changed during WoW experiment");
+        }
+    }
+    public static string LuidBytesForProbe(string luid) {
+        if (luid == null || luid.Length != 17 || luid[8] != ':') throw new ArgumentException("Exact LUID required");
+        uint high=UInt32.Parse(luid.Substring(0,8),System.Globalization.NumberStyles.HexNumber),low=UInt32.Parse(luid.Substring(9,8),System.Globalization.NumberStyles.HexNumber);
+        if ((high|low) == 0 || !BitConverter.IsLittleEndian) throw new ArgumentException("Nonzero little endian LUID required");
+        return BitConverter.ToString(BitConverter.GetBytes(low)).Replace("-","").ToLowerInvariant()+BitConverter.ToString(BitConverter.GetBytes(high)).Replace("-","").ToLowerInvariant();
+    }
+    public static string ProbeArchitectureForApi(string api,byte[] bytes) {
+        if (api != "8") { string native=ProbeArchitecture(bytes); BindingValueName(api,native); return native; }
+        if (ProbeMachine(bytes) != 0x14c) throw new ArgumentException("API8 requires the original I386 ordinary probe");
+        return "x86";
+    }
     public static string ProbeArchitecture(byte[] bytes) {
+        uint machine=ProbeMachine(bytes);
+        if (machine == 0xaa64) return "arm64";
+        if (machine == 0x8664) return "x64";
+        throw new ArgumentException("Only native ARM64/x64 ordinary validation probes are supported");
+    }
+    static uint ProbeMachine(byte[] bytes) {
         if (bytes == null || bytes.Length < 64 || bytes[0] != 0x4d || bytes[1] != 0x5a)
             throw new ArgumentException("Actual probe PE header required");
         uint offset=(uint)(bytes[60] | bytes[61]<<8 | bytes[62]<<16 | bytes[63]<<24);
         if (offset < 64 || offset > bytes.Length-6 || bytes[offset] != 0x50 || bytes[offset+1] != 0x45 || bytes[offset+2] != 0 || bytes[offset+3] != 0)
             throw new ArgumentException("Bounded actual PE signature required");
-        uint machine=(uint)(bytes[offset+4] | bytes[offset+5]<<8);
-        if (machine == 0xaa64) return "arm64";
-        if (machine == 0x8664) return "x64";
-        throw new ArgumentException("Only native ARM64/x64 ordinary validation probes are supported");
+        return (uint)(bytes[offset+4] | bytes[offset+5]<<8);
     }
 
     [StructLayout(LayoutKind.Sequential)] struct Luid { public uint Low; public int High; }
@@ -226,7 +266,7 @@ public static class DxvkBindingNative01 {
         return result;
     }
     public static void RequireLifecycleMode(bool enabled, bool apply, string api, string phase, bool externalWait) {
-        bool legacy = api == "9" || api == "9ex";
+        bool legacy = api == "8" || api == "9" || api == "9ex";
         bool reviewed = (legacy && (phase == "offscreen" || phase == "present"))
             || ((api == "10" || api == "11") && phase == "offscreen");
         if (enabled && (!apply || !reviewed || externalWait))

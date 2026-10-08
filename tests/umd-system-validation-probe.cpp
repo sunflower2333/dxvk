@@ -117,20 +117,21 @@ struct KmtAdapter {
 };
 std::wstring effectiveName(KmtAdapter& adapter, UINT api) {
   D3DKMT_UMDFILENAMEINFO name{};
-  name.Version = api == 10 ? KMTUMDVERSION_DX10 : KMTUMDVERSION_DX11;
+  name.Version = api == 10 || api == 101 ? KMTUMDVERSION_DX10 : KMTUMDVERSION_DX11;
   adapter.info(KMTQAITYPE_UMDRIVERNAME, &name, sizeof(name));
   UINT size = 0;
   while (size < MAX_PATH && name.UmdFileName[size]) ++size;
   require(size && size < MAX_PATH, "bounded-kmt-umd-name");
   return absolute(name.UmdFileName);
 }
-std::unique_ptr<VioGpuSystemValidationEntryInfo> frontendInfo(const std::wstring& front, const std::wstring& core) {
+std::unique_ptr<VioGpuSystemValidationEntryInfo> frontendInfo(const std::wstring& front, const std::wstring& core, UINT api) {
   HMODULE module = GetModuleHandleW(basename(front).c_str());
   require(module && !_wcsicmp(loaded(module).c_str(), front.c_str()), "factory-loaded-exact-frontend");
   auto info = std::make_unique<VioGpuSystemValidationEntryInfo>(); info->size = sizeof(*info);
   exact(symbol<VioGpuSystemValidationReadEntry>(module, "VioGpuDxvkValidationEntryInfo")(info.get()), "frontend-readonly-info");
-  require(info->legacyInterface == 0x000a0001 && info->calls > 0 && info->successfulCalls > 0
-    && info->lastInterface == 0x000a0001 && info->lastResult == S_OK, "actual-private-entry-forwarding");
+  const UINT expectedInterface = api == 101 ? D3D10_1_DDI_INTERFACE_VERSION : D3D10_0_DDI_INTERFACE_VERSION;
+  require(info->legacyInterface == expectedInterface && info->calls > 0 && info->successfulCalls > 0
+    && info->lastInterface == expectedInterface && info->lastResult == S_OK, "actual-private-entry-forwarding");
   require(!_wcsicmp(info->corePath, core.c_str()), "frontend-exact-core-path");
   HMODULE backend = GetModuleHandleW(basename(core).c_str());
   require(backend && !_wcsicmp(loaded(backend).c_str(), core.c_str()), "actual-loaded-core-path");
@@ -177,7 +178,7 @@ struct Api11 {
 };
 
 template<typename Api> void render(typename Api::Device* device, typename Api::Context* context,
-    IDXGISwapChain* swapchain, HMODULE compiler, const std::wstring& directory) {
+    IDXGISwapChain* swapchain, HMODULE compiler, const std::wstring& directory, UINT api) {
   ComPtr<typename Api::Texture> target, staging;
   exact(swapchain->GetBuffer(0, IID_PPV_ARGS(&target)), "system-swapchain-buffer");
   typename Api::TextureDesc desc{}; target->GetDesc(&desc);
@@ -225,7 +226,7 @@ template<typename Api> void render(typename Api::Device* device, typename Api::C
     result.presentRemoved = device->GetDeviceRemovedReason(); exact(result.presentRemoved, "actual-device-removal-present");
   }
   context->OMSetRenderTargets(0, nullptr, nullptr);
-  std::printf("SYSTEM_RUNTIME_VALIDATION_DRAW_READBACK_PRESENT api=%u pixels=512 presents=2 software_fallback=0\n", std::is_same_v<Api, Api10> ? 10u : 11u);
+  std::printf("SYSTEM_RUNTIME_VALIDATION_DRAW_READBACK_PRESENT api=%u pixels=512 presents=2 software_fallback=0\n", api);
 }
 
 void entryNegative(const WCHAR* path) {
@@ -253,8 +254,9 @@ int wmain(int argc, WCHAR** argv) {
     catch (const Failure& failure) { std::fprintf(stderr, "SYSTEM_VALIDATION_FAIL stage=%s hr=%08lx\n", failure.stage, static_cast<unsigned long>(failure.hr)); return 1; }
   }
   // Required operands prevent implicit/default-adapter or module selection.
-  if (argc != 8) { std::fputs("usage: probe <10|11> <high:low-LUID> <absolute-frontend> <absolute-core> <fresh-output-dir> <hold-event-name> <hold-ms>\n", stderr); return 2; }
+  if (argc != 8) { std::fputs("usage: probe <10|10.1|11> <high:low-LUID> <absolute-frontend> <absolute-core> <fresh-output-dir> <hold-event-name> <hold-ms>\n", stderr); return 2; }
   ComPtr<ID3D10Device> device10;
+  ComPtr<ID3D10Device1> device10_1;
   ComPtr<ID3D11Device> device11;
   ComPtr<ID3D11DeviceContext> context11;
   ComPtr<IDXGISwapChain> swapchain;
@@ -263,7 +265,7 @@ int wmain(int argc, WCHAR** argv) {
   int exit = 1;
   DWORD holdMs = 0;
   try {
-    const UINT api = !std::wcscmp(argv[1], L"10") ? 10u : !std::wcscmp(argv[1], L"11") ? 11u : 0u;
+    const UINT api = !std::wcscmp(argv[1], L"10") ? 10u : !std::wcscmp(argv[1], L"10.1") ? 101u : !std::wcscmp(argv[1], L"11") ? 11u : 0u;
     require(api != 0, "explicit-system-api");
     const LUID expectedLuid = parseLuid(argv[2]);
     const auto front = absolute(argv[3]), core = absolute(argv[4]), directory = absolute(argv[5]);
@@ -280,7 +282,7 @@ int wmain(int argc, WCHAR** argv) {
     require(CreateDirectoryW(directory.c_str(), nullptr) != FALSE, "fresh-original-directory", HRESULT_FROM_WIN32(GetLastError()));
     require(!GetModuleHandleW(basename(front).c_str()) && !GetModuleHandleW(basename(core).c_str()), "candidate-not-manually-preloaded");
     HMODULE dxgi = systemModule(L"dxgi.dll");
-    HMODULE runtime = systemModule(api == 10 ? L"d3d10.dll" : L"d3d11.dll");
+    HMODULE runtime = systemModule(api == 10 ? L"d3d10.dll" : api == 101 ? L"d3d10_1.dll" : L"d3d11.dll");
     HMODULE gdi = systemModule(L"gdi32.dll");
     HMODULE compiler = systemModule(L"d3dcompiler_47.dll");
     ComPtr<IDXGIFactory1> factory;
@@ -318,14 +320,18 @@ int wmain(int argc, WCHAR** argv) {
     require(!_wcsicmp(effective.c_str(), front.c_str()), "effective-kmt-frontend-selection-required");
     if (api == 10) {
       exact(symbol<decltype(&D3D10CreateDevice)>(runtime, "D3D10CreateDevice")(adapter.Get(), D3D10_DRIVER_TYPE_HARDWARE, nullptr, 0, D3D10_SDK_VERSION, &device10), "ordinary-system-d3d10-create-device");
+    } else if (api == 101) {
+      exact(symbol<decltype(&D3D10CreateDevice1)>(runtime, "D3D10CreateDevice1")(adapter.Get(), D3D10_DRIVER_TYPE_HARDWARE, nullptr, 0, D3D10_FEATURE_LEVEL_10_1, D3D10_1_SDK_VERSION, &device10_1), "ordinary-system-d3d10_1-create-device");
+      require(device10_1 && device10_1->GetFeatureLevel() == D3D10_FEATURE_LEVEL_10_1, "exact-d3d10_1-feature-level");
+      exact(device10_1.As(&device10), "exact-d3d10_1-base-device");
     } else {
       const D3D_FEATURE_LEVEL requested = D3D_FEATURE_LEVEL_10_0; D3D_FEATURE_LEVEL obtained{};
       exact(symbol<decltype(&D3D11CreateDevice)>(runtime, "D3D11CreateDevice")(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0, &requested, 1, D3D11_SDK_VERSION, &device11, &obtained, &context11), "ordinary-system-d3d11-create-device");
       require(obtained == requested, "exact-d3d11-feature-level-10_0");
     }
-    auto info = frontendInfo(front, core);
+    auto info = frontendInfo(front, core, api);
     ComPtr<IDXGIDevice> dxgiDevice;
-    exact(api == 10 ? device10.As(&dxgiDevice) : device11.As(&dxgiDevice), "actual-device-dxgi-interface");
+    exact(api == 10 || api == 101 ? device10.As(&dxgiDevice) : device11.As(&dxgiDevice), "actual-device-dxgi-interface");
     ComPtr<IDXGIAdapter> actualAdapter; exact(dxgiDevice->GetAdapter(&actualAdapter), "actual-device-adapter");
     DXGI_ADAPTER_DESC actualDesc{}; exact(actualAdapter->GetDesc(&actualDesc), "actual-device-adapter-desc");
     require(sameLuid(actualDesc.AdapterLuid, selected.AdapterLuid) && actualDesc.VendorId == 0x1af4 && actualDesc.DeviceId == 0x1050, "created-device-selected-luid");
@@ -336,16 +342,18 @@ int wmain(int argc, WCHAR** argv) {
     DXGI_SWAP_CHAIN_DESC desc{}; desc.BufferDesc.Width = Width; desc.BufferDesc.Height = Height;
     desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
     desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; desc.BufferCount = 1; desc.OutputWindow = window; desc.Windowed = TRUE; desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-    exact(factory->CreateSwapChain(api == 10 ? static_cast<IUnknown*>(device10.Get()) : static_cast<IUnknown*>(device11.Get()), &desc, &swapchain), "ordinary-system-create-swapchain");
-    if (api == 10) render<Api10>(device10.Get(), device10.Get(), swapchain.Get(), compiler, directory);
-    else render<Api11>(device11.Get(), context11.Get(), swapchain.Get(), compiler, directory);
+    exact(factory->CreateSwapChain(api == 10 || api == 101 ? static_cast<IUnknown*>(device10.Get()) : static_cast<IUnknown*>(device11.Get()), &desc, &swapchain), "ordinary-system-create-swapchain");
+    if (api == 10 || api == 101) render<Api10>(device10.Get(), device10.Get(), swapchain.Get(), compiler, directory, api);
+    else render<Api11>(device11.Get(), context11.Get(), swapchain.Get(), compiler, directory, api);
     require(!_wcsicmp(effectiveName(kmt, api).c_str(), front.c_str()), "effective-name-stable-through-render");
     std::string manifest = "{\"schema\":1,\"api\":" + std::to_string(api) + ",\"width\":16,\"height\":16,\"frames\":2,\"pixels\":512,\"presents\":2,\"vendor\":6900,\"device\":4176,\"luidHigh\":" + std::to_string(UINT(expectedLuid.HighPart))
       + ",\"luidLow\":" + std::to_string(expectedLuid.LowPart) + ",\"generation\":" + std::to_string(identity.generation)
       + ",\"capabilities\":" + std::to_string(identity.capabilities) + ",\"frontend\":" + jsonString(front) + ",\"core\":" + jsonString(core)
       + ",\"entryCalls\":" + std::to_string(info->calls) + ",\"successfulEntryCalls\":" + std::to_string(info->successfulCalls)
       + ",\"entryInterface\":" + std::to_string(info->lastInterface) + ",\"entryVersion\":" + std::to_string(info->lastVersion)
-      + ",\"entryResult\":0,\"softwareFallback\":false,\"unregisteredValidationCandidate\":true,\"productionAdmission\":false,\"registrationChangedByProbe\":false,\"frameResults\":[";
+      + ",\"entryResult\":0,\"softwareFallback\":false,\"unregisteredValidationCandidate\":true,\"productionAdmission\":false,\"registrationChangedByProbe\":false";
+    if (api == 101) manifest += ",\"profile\":\"10_1\",\"factory\":\"D3D10CreateDevice1\",\"featureLevel\":" + std::to_string(UINT(device10_1->GetFeatureLevel()));
+    manifest += ",\"frameResults\":[";
     for (size_t index = 0; index < frameResults.size(); ++index) {
       if (index) manifest += ',';
       const auto& result = frameResults[index];
@@ -370,7 +378,7 @@ int wmain(int argc, WCHAR** argv) {
     if (WaitForSingleObject(hold, holdMs) != WAIT_OBJECT_0) { std::fputs("SYSTEM_VALIDATION_FAIL stage=hold-release-timeout\n", stderr); exit = 1; }
     CloseHandle(hold);
   }
-  swapchain.Reset(); context11.Reset(); device11.Reset(); device10.Reset();
+  swapchain.Reset(); context11.Reset(); device11.Reset(); device10.Reset(); device10_1.Reset();
   if (window) DestroyWindow(window);
   return exit;
 }

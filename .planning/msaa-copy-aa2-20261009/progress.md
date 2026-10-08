@@ -1,0 +1,5 @@
+# Progress
+
+2026-10-09: isolated worktree on frozen aa2 MAIN. Read exact retained originals and actual SDK/source; no duplicate fetch or target calls. Reported HRESULT and staging/check113 source point to ROOT before proposing the minimal fixture correction; ROOT approved it. Explicit READ/WRITE translation applied; all production and native/sample/pixel/query/thread/error assertions unchanged. One focused x86 strict SDK COFF validation and fresh native packet remain.
+
+One affected x86 Clang actual SDK compile passed with stdout/stderr0, PID4014506 returned/exited and absent. Object189308/SHA969fb6d6340183ece2c0f8cc6ab352ffcd314d55b920894c38d50cad79760110 is real I386 COFF; one LLVM header reopen exited0/reaped with stderr0. Frozen/current fixture join and explicit-only diff verified. Focused source/strict proof4402/SHA3487db8365791700406833167cabb41488e7ab2ce098a6624b5b6b4304f19554. No production, policy suite, native execution or target reruns. Original failure remains immutable; corrected Windows/WARP matrix and raw reader are pending ROOT after Api9 recovery.

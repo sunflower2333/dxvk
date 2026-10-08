@@ -118,8 +118,8 @@ public static class DxvkApprovedPayloadPolicy01 {
     }
     public static DxvkApprovedPayload01 ValidateDocuments(string tupleJson,string resultJson,string configJson,
             string header,string optionsJson,string machinesJson,string icdJson,DxvkApprovedSelection01 selection) {
-        Require(selection != null && (selection.Api == "9" || selection.Api == "9ex" || selection.Api == "10" || selection.Api == "11"),"Exact supported API required");
-        Require(selection.Architecture == "arm64" || selection.Architecture == "x64","Exact probe architecture required");
+        Require(selection != null && (selection.Api == "8" || selection.Api == "9" || selection.Api == "9ex" || selection.Api == "10" || selection.Api == "11"),"Exact supported API required");
+        Require((selection.Api == "8" && selection.Architecture == "x86") || (selection.Api != "8" && (selection.Architecture == "arm64" || selection.Architecture == "x64")),"Exact API/probe architecture required");
         var tuple=Parse(tupleJson);
         Keys(tuple,"schema","source_commit","ci_run","ci_run_attempt","ci_repository","arch","ci_result","core","build_configuration","canonical_source","configuration_files","private_loader","icd_json","icd_metadata","icd_library","dependencies");
         Require(Str(Get(tuple,"schema")) == "system-runtime-approved-payload-v1","Reviewed payload schema required");
@@ -159,13 +159,15 @@ public static class DxvkApprovedPayloadPolicy01 {
         Require(definitions == "#define DXVK_PRIVATE_VULKAN_LOADER \""+loaderName+"\"","Original generated private loader header differs");
         var parser=new JavaScriptSerializer();
         object[] options=Arr(parser.DeserializeObject(optionsJson)); Option(options,"umd_vulkan_loader",loaderName); Option(options,"umd_library_name","viogpudxvk"); Option(options,"enable_umd",true);
-        var machines=Parse(machinesJson); Require(Str(Get(Obj(Get(machines,"host")),"cpu_family")) == (arch == "arm64" ? "aarch64" : "x86_64"),"Original Meson host architecture differs");
+        var machines=Parse(machinesJson); Require(Str(Get(Obj(Get(machines,"host")),"cpu_family")) == (arch == "arm64" ? "aarch64" : arch == "x86" ? "x86" : "x86_64"),"Original Meson host architecture differs");
         var icdFile=Pin(Get(tuple,"icd_json")); Selected(icdFile,selection.IcdJson,selection.IcdJsonSha256);
         var icd=Parse(icdJson); Require(Equal(icd,Get(tuple,"icd_metadata")),"Exact approved ICD metadata differs");
         Keys(icd,"file_format_version","ICD"); string format=Str(Get(icd,"file_format_version"));
         Require(format == "1.0.0" || format == "1.0.1","Supported approved ICD format required");
-        var metadata=Obj(Get(icd,"ICD")); Keys(metadata,"api_version","library_arch","library_path");
-        Require(Regex.IsMatch(Str(Get(metadata,"api_version")),"^[0-9]+\\.[0-9]+\\.[0-9]+$") && Str(Get(metadata,"library_arch")) == "64","Exact approved 64-bit ICD metadata required");
+        var metadata=Obj(Get(icd,"ICD"));
+        if (arch == "x86") Keys(metadata,"api_version","library_path");
+        else { Keys(metadata,"api_version","library_arch","library_path"); Require(Str(Get(metadata,"library_arch")) == "64","Exact approved 64-bit ICD metadata required"); }
+        Require(Regex.IsMatch(Str(Get(metadata,"api_version")),"^[0-9]+\\.[0-9]+\\.[0-9]+$"),"Exact approved ICD API metadata required");
         string libraryPath=Str(Get(metadata,"library_path"));
         if (libraryPath.StartsWith(".\\",StringComparison.Ordinal)) {
             Require(Regex.IsMatch(libraryPath,@"^\.\\[A-Za-z0-9_.-]+\.dll$"),"Only one exact local ICD DLL basename is supported");
@@ -195,6 +197,12 @@ public static class DxvkApprovedPayloadPolicy01 {
         Require(new FileInfo(file.Path).Length == file.Bytes && FileSha(file.Path) == file.Sha256,"Actual approved file bytes differ: "+file.Path);
     }
     static string Text(DxvkApprovedFile01 file) { RequireFile(file); return File.ReadAllText(file.Path,new UTF8Encoding(false,true)); }
+    public static void RequireI386Module(byte[] bytes) {
+        Require(bytes != null && bytes.Length >= 64 && bytes[0] == 0x4d && bytes[1] == 0x5a,"Actual I386 module DOS header required");
+        uint offset=(uint)(bytes[60] | bytes[61]<<8 | bytes[62]<<16 | bytes[63]<<24);
+        Require(offset >= 64 && offset <= bytes.Length-6 && bytes[offset] == 0x50 && bytes[offset+1] == 0x45 && bytes[offset+2] == 0 && bytes[offset+3] == 0
+            && bytes[offset+4] == 0x4c && bytes[offset+5] == 1,"Actual I386 module PE machine required");
+    }
     public static DxvkApprovedPayload01 ValidateFiles(string tuplePath,string tupleSha,DxvkApprovedSelection01 selection) {
         Absolute(tuplePath); Require(FileSha(tuplePath) == tupleSha && Regex.IsMatch(tupleSha ?? "","^[0-9a-f]{64}$"),"ROOT-approved tuple file hash required");
         string tupleJson=File.ReadAllText(tuplePath,new UTF8Encoding(false,true)); var tuple=Parse(tupleJson);
@@ -204,10 +212,20 @@ public static class DxvkApprovedPayloadPolicy01 {
         string machines=Text(Pin(Get(Indexed(Get(tuple,"configuration_files"),"member",ConfigMembers[2]),"file")));
         var approved=ValidateDocuments(tupleJson,result,config,header,options,machines,icd,selection);
         foreach (var file in approved.Files) RequireFile(file);
+        // The retained original I386 ICD JSON has no library_arch member.
+        // Prove bitness from pinned module bytes without editing its metadata.
+        if (approved.Architecture == "x86") foreach (var module in approved.ModuleFiles) { RequireI386Module(File.ReadAllBytes(module.Path)); RequireFile(module); }
         Require(FileSha(tuplePath) == tupleSha,"Approved tuple changed during validation"); return approved;
     }
-    public static void RequireModules(DxvkApprovedFile01[] required,DxvkApprovedFile01[] observed) {
-        Require(required != null && required.Length >= 4 && observed != null,"Exact held module census required");
+    public static void RequireModules(DxvkApprovedFile01[] required,DxvkApprovedFile01[] observed) { RequireModuleRows(required,observed,4); }
+    public static void RequireModulesForApi(string api,DxvkApprovedFile01[] required,DxvkApprovedFile01[] observed) {
+        Require(api == "8" || api == "9" || api == "9ex" || api == "10" || api == "11","Reviewed module API required");
+        // API8 binds the original I386 core directly, so it has no separately
+        // loaded validation frontend. Core/loader/ICD remain mandatory.
+        RequireModuleRows(required,observed,api == "8" ? 3 : 4);
+    }
+    static void RequireModuleRows(DxvkApprovedFile01[] required,DxvkApprovedFile01[] observed,int minimum) {
+        Require(required != null && required.Length >= minimum && observed != null,"Exact held module census required");
         var names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var wanted in required) {
             Absolute(wanted.Path); Require(names.Add(Leaf(wanted.Path)),"Duplicate required module name");

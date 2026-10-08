@@ -4,7 +4,9 @@ param(
     [ValidateSet('Controller','Watchdog','Worker')][string]$Role='Controller',
     [string]$Config='', [string]$ConfigSha256='', [string]$RunRoot='',
     [string]$InstanceId='', [string]$Luid='',
-    [ValidateSet('9','9ex','10','11')][string]$Api='10',
+    [ValidateSet('8','9','9ex','10','11')][string]$Api='10',
+    [string]$D8SourceId='',
+    [ValidateSet('10_0','10_1')][string]$D10Profile='10_0',
     [ValidateSet('offscreen','present')][string]$D9Phase='offscreen',
     [ValidateSet('offscreen','present')][string]$D11Phase='offscreen',
     [string]$PrivateLoader='', [string]$PrivateLoaderSha256='',
@@ -43,7 +45,7 @@ function Held-ModuleCensus($Child,$Value) {
     # Retain actual paths even if strict module selection rejects a fallback.
     # This pending observation never substitutes for the completed census.
     Write-Json (Join-Path $Value.output 'held-module-observation.json') ([ordered]@{schema=1;pid=$Child.Id;start_utc=$start;retained_handle=$handle.ToInt64();source_commit=$Value.payload_source;ci_run=$Value.payload_ci_run;approved_payload_sha256=$Value.approved_payload_sha256;required=$required.ToArray();actual=$actual.ToArray();validation_pending=$true;passed=$false;gpu_calls=0;registry_mutations=0;hardware_admission=$false})
-    [DxvkApprovedPayloadPolicy01]::RequireModules($required.ToArray(),$actual.ToArray())
+    [DxvkApprovedPayloadPolicy01]::RequireModulesForApi($Value.api,$required.ToArray(),$actual.ToArray())
     if ($Child.HasExited -or $Child.StartTime.ToUniversalTime().ToString('o') -cne $start -or $Child.MainModule.FileName -ine $Value.probe) { throw 'Original held process changed during module census' }
     [ordered]@{schema=1;pid=$Child.Id;start_utc=$start;retained_handle=$handle.ToInt64();source_commit=$Value.payload_source;ci_run=$Value.payload_ci_run;approved_payload_sha256=$Value.approved_payload_sha256;required=$required.ToArray();actual=$actual.ToArray();passed=$true;gpu_calls=0;registry_mutations=0;hardware_admission=$false}
 }
@@ -65,7 +67,37 @@ function Quote([string]$Value) {
     '"'+$Value+'"'
 }
 function Require-D11Phase([string]$Api,[string]$Phase) {
-    if ($Api -cnotin @('9','9ex','10','11') -or $Phase -cnotin @('offscreen','present') -or ($Api -cne '11' -and $Phase -cne 'offscreen')) { throw 'D11 Present phase requires API11 and an exact reviewed phase' }
+    if ($Api -cnotin @('8','9','9ex','10','11') -or $Phase -cnotin @('offscreen','present') -or ($Api -cne '11' -and $Phase -cne 'offscreen')) { throw 'D11 Present phase requires API11 and an exact reviewed phase' }
+}
+function D8-Names($Value,[string]$Stage,[string]$CurrentLuid,[string[]]$Expected) {
+    if ($Value.api -cne '8' -or $Stage -cnotmatch '^[a-z-]+$' -or $Expected.Count -ne 3) { throw 'Exact API8 read-only names phase required' }
+    Check-File $Value.probe $Value.probe_sha256
+    Check-File $Value.runner $Value.runner_sha256
+    if (-not ('DxvkRawProcessF4_02' -as [type])) { Add-Type -Path $Value.runner }
+    if ($script:LifecycleJobHandle -eq 0) { $script:LifecycleJobHandle=[DxvkBindingNative01]::OwnWorkerLifetime() }
+    $prefix=Join-Path $Value.control ('d8-names-'+$Stage+'-'+$PID+'-'+[Guid]::NewGuid().ToString('N'))
+    $out=$prefix+'.stdout.raw'; $err=$prefix+'.stderr.raw'
+    $arguments='--system-names '+[DxvkBindingNative01]::LuidBytesForProbe($CurrentLuid)+' '+(Quote $Expected[0])+' '+(Quote $Expected[1])+' '+(Quote $Expected[2])+' '+(Quote $prefix)
+    $row=[DxvkRawProcessF4_02]::Run($Value.probe,$arguments,$Value.output,$out,$err,20000)
+    Write-Json ($prefix+'.process.json') (Process-Receipt $row $Value.runner_sha256)
+    if (!$row.Exited -or !$row.ExitCodeAvailable -or $row.ExitCode -ne 0 -or $row.TimedOut -or $row.ChildStillRunning -or !$row.PipesDrained -or $row.Failure -or $row.StderrBytes -ne 0) { throw 'Actual original I386 read-only effective names producer failed' }
+    $text=[DxvkBindingNative01]::ReadClosedText($prefix+'.names.json')
+    if ($null -eq $text) { throw 'Closed original I386 effective names JSON required' }
+    $proof=$text | ConvertFrom-Json
+    $fields=@($proof.PSObject.Properties.Name | Sort-Object) -join ','
+    if ($fields -cne 'core_loads,identity,luid16,names,registry_writes,runtime_calls,schema' -or $proof.schema -cne 'ordinary-system-d3d8-names-v1' -or $proof.luid16 -cne [DxvkBindingNative01]::LuidBytesForProbe($CurrentLuid) -or $proof.names.Count -ne 3 -or $proof.runtime_calls -ne 0 -or $proof.core_loads -ne 0 -or $proof.registry_writes -ne 0) { throw 'Exact original I386 names receipt identity required' }
+    $paired=[DxvkBindingNative01]::RuntimeIdentity160([byte[]]$proof.identity,$CurrentLuid)
+    [DxvkBindingNative01]::RequireIdentityMatch($paired,[DxvkBindingNative01]::CurrentIdentity())
+    for ($index=0;$index -lt 3;++$index) {
+        $name=$proof.names[$index]
+        if ($name.version -ne $index -or $name.status -ne 0 -or $name.name -ine $Expected[$index] -or $name.expected -ine $Expected[$index] -or $name.words.Count -ne 260) { throw 'Actual I386 effective WoW slot differs' }
+    }
+    $stdout=[DxvkBindingNative01]::ReadSharedText($out)
+    if ($stdout -cnotmatch '(?m)^D3D8_SYSTEM_NAMES_COMPLETE versions=3 runtime_calls=0 core_loads=0 registry_writes=0\r?$') { throw 'Actual I386 read-only names completion marker required' }
+    [ordered]@{schema=1;phase=$Stage;actor_pid=$PID;current_luid=$CurrentLuid;expected=$Expected;owner_job_handle=$script:LifecycleJobHandle;process=(Process-Receipt $row $Value.runner_sha256);names=$proof;json_sha256=(Hash ($prefix+'.names.json'));passed=$true;runtime_calls=0;core_loads=0;registry_writes=0;hardware_admission=$false}
+}
+function Require-D10Profile([string]$Api,[string]$Profile) {
+    if ($Profile -cnotin @('10_0','10_1') -or ($Api -cne '10' -and $Profile -cne '10_0')) { throw 'Exact D10.1 profile requires API10; other APIs retain their default' }
 }
 function D11-ValidationMarker([string]$Phase) {
     Require-D11Phase '11' $Phase
@@ -260,7 +292,7 @@ function Settle-Lifecycle($Value,$RawSettlement) {
     # Failed forward Stop/Start can leave no current paired identity. Exact
     # installed instance/class/KMD, raw restore and closed producers authorize
     # the reverse recovery; full readiness is mandatory AFTER that operation.
-    try { $state=Wait-LifecycleState $Value; [DxvkBindingNative01]::RequireLifecycleNames($state.identity.Luid,[string[]]$Value.original_slots,$state.names); $alreadyOriginal=$true } catch { $beforeFailure=$_.Exception.Message }
+    try { $state=Wait-LifecycleState $Value; [DxvkBindingNative01]::RequireLifecycleNames($state.identity.Luid,[string[]]$Value.original_slots,$state.names); if ($Value.api -ceq '8') { $wowBefore=D8-Names $Value 'before-reverse' $state.identity.Luid ([string[]]$Value.original_wow_slots) }; $alreadyOriginal=$true } catch { $beforeFailure=$_.Exception.Message }
     if (!$alreadyOriginal) {
         $intent=Join-Path $Value.control 'reverse-lifecycle-intent.json'
         if (!(Test-Path -LiteralPath $intent)) { Write-MutationIntent $intent ([ordered]@{schema=1;owner_pid=$Value.owner_pid;instance=$Value.instance;registry_subkey=$Value.registry_subkey;original_backup_luid=$Value.luid;raw_restored_sha256=(Hash (Join-Path $Value.control 'restored.json'));utc=[DateTime]::UtcNow.ToString('o')}) }
@@ -268,8 +300,10 @@ function Settle-Lifecycle($Value,$RawSettlement) {
     }
     [DxvkBindingNative01]::RequireLifecycleNames($state.identity.Luid,[string[]]$Value.original_slots,$state.names)
     [DxvkBindingNative01]::RequireSnapshot((Raw-Rows $Value.original),[DxvkBindingNative01]::Snapshot($Value.registry_subkey))
+    $wowRestored=$null; if ($Value.api -ceq '8') { $wowRestored=D8-Names $Value 'restored' $state.identity.Luid ([string[]]$Value.original_wow_slots) }
     $desktop=Wait-LifecycleDesktop $Value
     $proof=[ordered]@{schema=1;actor_pid=$PID;original_backup_luid=$Value.luid;forward_probe_luid=$null;restored_luid=$state.identity.Luid;raw_settlement=[ordered]@{raw_tuple_restored=$RawSettlement.raw_tuple_restored;mutation_intent_present=$RawSettlement.mutation_intent_present;proof_sha256=(Hash (Join-Path $Value.control 'restored.json'))};cleanup=$cleanup;reverse=$reverse;before_reverse_readiness_failure=$beforeFailure;already_effective_original=$alreadyOriginal;state=$state;desktop=$desktop;effective_original_names_restored=$true;hardware_admission=$false}
+    if ($Value.api -ceq '8') { $proof.wow_restoration=$wowRestored }
     $forward=Join-Path $Value.control 'lifecycle-forward.json'
     if (Test-Path -LiteralPath $forward) { $forwardState=Get-Content -LiteralPath $forward -Raw -Encoding UTF8 | ConvertFrom-Json; $proof.forward_probe_luid=$forwardState.state.identity.Luid }
     $path=Join-Path $Value.control ('lifecycle-restored-'+$PID+'.json')
@@ -291,7 +325,9 @@ function Restore-Tuple($Value,[string]$Reason) {
         $replay=Test-Path -LiteralPath $intent
         if ($replay) {
             $phase=Get-Content -LiteralPath $intent -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($phase.schema -ne 2 -or $phase.owner_pid -ne $Value.owner_pid -or $phase.registry_subkey -cne $Value.registry_subkey -or $phase.selected_native_slot -ne $Value.native_slot -or $Value.native_slot -notin @(0,1,2) -or $phase.only_native_tuple_slot -ne $true) { throw 'Protected mutation intent differs from this backup owner/selected slot' }
+            if ($Value.api -ceq '8') {
+                if ($phase.schema -ne 3 -or $phase.owner_pid -ne $Value.owner_pid -or $phase.registry_subkey -cne $Value.registry_subkey -or $phase.selected_wow_slot -ne 0 -or $phase.selected_value_name -cne 'UserModeDriverNameWoW' -or $phase.selected_view -ne 0x100 -or $phase.only_wow_legacy_slot -ne $true -or $Value.binding_value_name -cne 'UserModeDriverNameWoW') { throw 'Protected API8 WoW mutation intent differs from this backup owner' }
+            } elseif ($phase.schema -ne 2 -or $phase.owner_pid -ne $Value.owner_pid -or $phase.registry_subkey -cne $Value.registry_subkey -or $phase.selected_native_slot -ne $Value.native_slot -or $Value.native_slot -notin @(0,1,2) -or $phase.only_native_tuple_slot -ne $true) { throw 'Protected mutation intent differs from this backup owner/selected slot' }
             # Intent is durable BEFORE RegSet; a partial/failed write still needs
             # raw replay. Never replay an unused pre-write backup on cancellation.
             [DxvkBindingNative01]::Restore($Value.registry_subkey,$rows)
@@ -339,7 +375,7 @@ function Close-HeldProbeIfWorkerLost($Value) {
     } finally { if ($child) { $child.Dispose() } }
 }
 
-if ($Role -ceq 'Controller') { Require-D11Phase $Api $D11Phase }
+if ($Role -ceq 'Controller') { Require-D11Phase $Api $D11Phase; Require-D10Profile $Api $D10Profile }
 $native=Join-Path $PSScriptRoot 'system-d3d10-binding-native.cs'
 if ($Role -ne 'Controller') {
     Check-File $Config $ConfigSha256
@@ -349,6 +385,7 @@ if ($Role -ne 'Controller') {
     # before the watchdog can restore; the worker checks every selected input.
     if ($Role -eq 'Worker') {
         Require-D11Phase $value.api $value.d11_phase
+        Require-D10Profile $value.api $value.d10_profile
         foreach ($file in $value.files) { Check-File $file.path $file.sha256 }
         foreach ($pair in @(@($value.probe,$value.probe_sha256),@($value.front,$value.front_sha256),@($value.core,$value.core_sha256))) { Check-File $pair[0] $pair[1] }
     }
@@ -362,7 +399,7 @@ if ($Role -ne 'Controller') {
 }
 Add-Type -Path $native
 if ($Role -ceq 'Controller') {
-    $lifecyclePhase=$D11Phase; if ($Api -in @('9','9ex')) { $lifecyclePhase=$D9Phase }
+    $lifecyclePhase=$D11Phase; if ($Api -in @('8','9','9ex')) { $lifecyclePhase=$D9Phase }
     [DxvkBindingNative01]::RequireLifecycleMode($RootAuthorizeLifecycleRestart.IsPresent,$ApplyReviewedTuple.IsPresent,$Api,$lifecyclePhase,$WaitForReviewedRefresh.IsPresent)
 }
 if ($Role -ne 'Controller') {
@@ -436,7 +473,7 @@ public static class DxvkBindingAsync01 {
             if ($value.api -ceq '11') { $negativeMarker='SYSTEM_D3D11_VALIDATION_NEGATIVE_PASS checks=9 core_loaded=0 registry_changes=0 gpu_calls=0' }
             if (!$negative.Exited -or !$negative.ExitCodeAvailable -or $negative.ExitCode -ne 0 -or $negative.TimedOut -or $negative.ChildStillRunning -or !$negative.PipesDrained -or $negative.Failure -or $negative.StderrBytes -ne 0 -or $negativeText -cnotmatch ('(?m)^'+[regex]::Escape($negativeMarker)+'\r?$')) { throw 'Actual native typed entry controls failed before binding' }
             $status.native_entry_negative_passed=$true
-        } else { $status.native_entry_negative_executed=$false; $status.native_entry_negative_contract='Frozen739de05 ordinary D9 probe has no typed entry-negative mode' }
+        } else { $status.native_entry_negative_executed=$false; $status.native_entry_negative_contract='Frozen739de05 ordinary D9 probe has no typed entry-negative mode'; if ($value.api -ceq '8') { $status.native_entry_negative_contract='Original I386 ordinary API8 probe has no typed entry-negative mode' } }
         $probeLuid=$value.luid
         $before=[DxvkBindingNative01]::Names($value.luid); Check-Names $before $value.luid
         for ($index=0;$index -lt 3;++$index) { if ($before.Names[$index].Name -ine $value.original_slots[$index]) { throw 'Actual original KMT names differ from the three-slot tuple' } }
@@ -457,16 +494,33 @@ public static class DxvkBindingAsync01 {
         }
         $bound=[DxvkBindingNative01]::Names($probeLuid); Check-Names $bound $probeLuid
         Write-Json (Join-Path $value.output 'kmt-bound.json') $bound
-        $status.effective_candidate_selected=$bound.Names[$value.native_slot].Name -ieq $value.front
+        if ($value.api -ceq '8') {
+            [DxvkBindingNative01]::RequireLifecycleNames($probeLuid,[string[]]$value.original_slots,$bound)
+            if ($forward.wow_names.passed -ne $true -or $forward.wow_names.current_luid -cne $probeLuid -or $forward.wow_names.expected[0] -ine $value.core) { throw 'Protected actual I386 WoW candidate selection required' }
+            $status.effective_candidate_selected=$true; $status.wow_candidate_names=$forward.wow_names
+        } else { $status.effective_candidate_selected=$bound.Names[$value.native_slot].Name -ieq $value.front }
         # Existing proven runtime-lifecycle payload contract, confined to this
         # worker and its owned probe; no desktop/system environment changes.
-        $env:VK_DRIVER_FILES=$value.vulkan_icd; $env:VK_ICD_FILENAMES=$value.vulkan_icd
-        $env:VK_LOADER_DEBUG='error,warn,driver'; $env:DXVK_LOG_PATH=$value.output; $env:DXVK_LOG_LEVEL='info'; $env:TU_WDDM_DIAGNOSTICS='1'
-        $status.vulkan_environment=[ordered]@{VK_DRIVER_FILES=$value.vulkan_icd;VK_ICD_FILENAMES=$value.vulkan_icd;TU_WDDM_DIAGNOSTICS='1';scope='worker/owned child only'}
+        if ($value.api -ceq '8') {
+            if ($null -ne [Environment]::GetEnvironmentVariable('VK_DRIVER_FILES','Process') -or $null -ne [Environment]::GetEnvironmentVariable('VK_ICD_FILENAMES','Process')) { throw 'Ordinary API8 probe requires absent inherited Vulkan selectors' }
+            $status.vulkan_environment=[ordered]@{selectors_absent=$true;scope='original I386 probe owns its exact selector set/restore'}
+        } else {
+            $env:VK_DRIVER_FILES=$value.vulkan_icd; $env:VK_ICD_FILENAMES=$value.vulkan_icd
+            $env:VK_LOADER_DEBUG='error,warn,driver'; $env:DXVK_LOG_PATH=$value.output; $env:DXVK_LOG_LEVEL='info'; $env:TU_WDDM_DIAGNOSTICS='1'
+            # Exact Api10/11 success execution retains the strict zero-stderr gate.
+            # Api9 diagnostic attempts keep the existing first-submit telemetry.
+            if ($value.api -ceq '10') { $env:TU_WDDM_DIAGNOSTICS='0'; $status.d10_profile=$value.d10_profile }
+            elseif ($value.api -ceq '11') { $env:TU_WDDM_DIAGNOSTICS='0' }
+            $status.vulkan_environment=[ordered]@{VK_DRIVER_FILES=$value.vulkan_icd;VK_ICD_FILENAMES=$value.vulkan_icd;TU_WDDM_DIAGNOSTICS=$env:TU_WDDM_DIAGNOSTICS;scope='worker/owned child only'}
+        }
         $stdout=Join-Path $value.output 'probe.stdout.raw'; $stderr=Join-Path $value.output 'probe.stderr.raw'
         $raw=Join-Path $value.output 'originals'
-        if ($value.api -ceq '10') {
-            $args='10 '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
+        if ($value.api -ceq '8') {
+            $args='--system-'+$value.d9_phase+' '+(Quote $value.core)+' '+$value.core_sha256+' '+$value.payload_source+' '+[DxvkBindingNative01]::LuidBytesForProbe($probeLuid)+' '+$value.d8_source_id+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
+        } elseif ($value.api -ceq '10') {
+            Require-D10Profile $value.api $value.d10_profile
+            if ($value.d10_profile -ceq '10_1') { $args='10.1 '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000' }
+            else { $args='10 '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000' }
         } elseif ($value.api -ceq '11') {
             $args=$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $value.vulkan_icd)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
         } else {
@@ -486,7 +540,13 @@ public static class DxvkBindingAsync01 {
                 $closed=[DxvkBindingNative01]::ReadClosedText($raw+'.held.json')
                 if ($null -ne $closed) {
                     $held=$closed | ConvertFrom-Json
-                    if ($value.api -ceq '11') {
+                    if ($value.api -ceq '8') {
+                        $fields=@($held.PSObject.Properties.Name | Sort-Object) -join ','
+                        if ($fields -cne 'device_alive,hold_event,modules_exact,output,pending_exit,pid,pixels_passed,restoration_proved_by_event,schema,selector_installed,stage,timeout_ms' -or $held.schema -cne 'ordinary-system-d3d8-held-v1' -or $held.pid -isnot [int] -or $held.pid -le 0 -or $held.timeout_ms -ne 60000 -or $held.pending_exit -notin @(0,1) -or $held.hold_event -cne $value.hold_event -or $held.output -ine $raw -or $held.restoration_proved_by_event -ne $false -or $held.selector_installed -ne $false -or $held.stage -isnot [string]) { throw 'Exact closed ordinary API8 hold checkpoint required' }
+                        foreach ($field in @('pixels_passed','device_alive','modules_exact','selector_installed','restoration_proved_by_event')) { if ($held.$field -isnot [bool]) { throw 'Actual API8 hold booleans required' } }
+                        if ($held.pending_exit -eq 0 -and (!$held.pixels_passed -or !$held.device_alive -or !$held.modules_exact)) { throw 'API8 successful hold requires actual pixels/live device/exact modules' }
+                        $heldPid=[int]$held.pid; $pendingExit=[int]$held.pending_exit; $status.d8_closed_checkpoint=$held
+                    } elseif ($value.api -ceq '11') {
                         $fields=@($held.PSObject.Properties.Name | Sort-Object) -join ','
                         if ($fields -cne 'api,event,factoryCalled,factoryResult,output,pid,pixelsPassed,result,schema,stage,timeout_ms' -or $held.schema -ne 1 -or $held.api -ne 11 -or $held.pid -le 0 -or $held.pid -gt [int]::MaxValue -or $held.timeout_ms -ne 60000 -or $held.event -cne $value.hold_event -or $held.output -ine $raw -or $held.factoryCalled -isnot [bool] -or $held.pixelsPassed -isnot [bool] -or $held.stage -isnot [string]) { throw 'Exact closed dedicated D11 hold checkpoint required' }
                         foreach ($number in @($held.schema,$held.api,$held.pid,$held.timeout_ms,$held.factoryResult,$held.result)) {
@@ -519,7 +579,9 @@ public static class DxvkBindingAsync01 {
                         $pendingExit=1; $status.held_module_census_passed=$false; $status.held_module_census_failure=$_.Exception.ToString()
                         Write-Json (Join-Path $value.output 'held-module-census.json') ([ordered]@{schema=1;pid=$child.Id;start_utc=$child.StartTime.ToUniversalTime().ToString('o');retained_handle=$handle.ToInt64();passed=$false;failure=$status.held_module_census_failure;hardware_admission=$false})
                     }
-                    Write-Json (Join-Path $value.output 'worker-held.json') ([ordered]@{pid=$child.Id;start_utc=$child.StartTime.ToUniversalTime().ToString('o');retained_handle=$handle.ToInt64();pending_exit=$pendingExit;stdout_bytes=(Get-Item -LiteralPath $stdout).Length;api=$value.api;native_slot=$value.native_slot})
+                    $heldRecord=[ordered]@{pid=$child.Id;start_utc=$child.StartTime.ToUniversalTime().ToString('o');retained_handle=$handle.ToInt64();pending_exit=$pendingExit;stdout_bytes=(Get-Item -LiteralPath $stdout).Length;api=$value.api}
+                    if ($value.api -ceq '8') { $heldRecord.selected_wow_slot=0; $heldRecord.selected_value_name='UserModeDriverNameWoW' } else { $heldRecord.native_slot=$value.native_slot }
+                    Write-Json (Join-Path $value.output 'worker-held.json') $heldRecord
                 } finally { $child.Dispose() }
                 $publishedPid=$heldPid; $published=$true
             }
@@ -548,7 +610,15 @@ public static class DxvkBindingAsync01 {
             $status.held_identity_joined_to_original_runner=$true
         }
         if (!$published -or !$released -or !$status.held_module_census_passed -or $row.Pid -ne $publishedPid -or !$row.Exited -or !$row.ExitCodeAvailable -or $row.ExitCode -ne 0 -or $row.TimedOut -or $row.ChildStillRunning -or !$row.PipesDrained -or $row.Failure -or !$status.effective_candidate_selected -or (!(Lifecycle-Enabled $value) -and !$status.effective_original_names_restored)) { throw 'Actual factory/selection/held/modules/restore process gate failed; raw failure retained' }
-        if ($value.api -ceq '11') {
+        if ($value.api -ceq '8') {
+            $finished=[DxvkBindingNative01]::ReadSharedText($stdout)
+            $presents=0; $screenPixels=0; if ($value.d9_phase -ceq 'present') { $presents=1; $screenPixels=64 }
+            $render='D3D8_SYSTEM_RENDER PASS stages=7 pixels=448 presents='+$presents+' screen_pixels='+$screenPixels+' selector_installed=0'
+            $complete='D3D8_COMPLETE mode=system-'+$value.d9_phase+' adapters=[1-9][0-9]* create_device=1 presents='+$presents+' registry_writes=0'
+            if ($finished -cnotmatch ('(?m)^'+[regex]::Escape($render)+'\r?$') -or $finished -cnotmatch ('(?m)^'+$complete+'\r?$') -or $finished -cnotmatch '(?m)^D3D8_SYSTEM_HELD_END wait=0 pending_exit=0 restoration_proved_by_event=0\r?$' -or $finished -cnotmatch '(?m)^D3D8_SYSTEM_EVENT_RELEASE released=1\r?$' -or $row.StderrBytes -ne 0) { throw 'Actual ordinary API8 render/hold/envrestore/release markers failed; independent raw reader remains required' }
+            foreach ($role in @(0,1,2)) { if ($finished -cnotmatch ('(?m)^D3D8_SYSTEM_MODULE_RELEASE role='+$role+' released=1\r?$')) { throw 'Actual ordinary API8 owned private module release required' } }
+            $status.d8_phase=$value.d9_phase
+        } elseif ($value.api -ceq '11') {
             $finished=[DxvkBindingNative01]::ReadSharedText($stdout)
             $marker=D11-ValidationMarker $value.d11_phase
             if ($finished -cnotmatch ('(?m)^'+[regex]::Escape($marker)+'\r?$') -or $finished -cnotmatch ('(?m)^SYSTEM_D3D11_HELD pid='+$publishedPid+' timeout_ms=60000 pixels_passed=1 stage= hr=00000000\r?$') -or $row.StderrBytes -ne 0) { throw 'Actual dedicated D11 selected-phase factory/readback/release markers failed; independent raw reader remains required' }
@@ -580,12 +650,16 @@ $driver=[string](Get-PnpDeviceProperty -InstanceId $InstanceId -KeyName 'DEVPKEY
 if ($driver -cnotmatch '^\{4d36e968-e325-11ce-bfc1-08002be10318\}\\[0-9]{4}$') { throw 'Exact display-adapter class binding required' }
 $subkey='SYSTEM\CurrentControlSet\Control\Class\'+$driver
 $nativeSlot=1; if ($Api -ceq '11') { $nativeSlot=2 } elseif ($Api -cne '10') { $nativeSlot=0 }
+$bindingValueName='UserModeDriverName'; if ($Api -ceq '8') { $bindingValueName='UserModeDriverNameWoW' }
 if (!$ApplyReviewedTuple) {
     $readonly=[DxvkBindingNative01]::Snapshot($subkey)
     $readonlyNames=[DxvkBindingNative01]::Names($Luid); Check-Names $readonlyNames $Luid
-    Write-Json (Join-Path $RunRoot 'readonly-original.json') ([ordered]@{schema=1;instance=$InstanceId;driver=$driver;luid=$Luid;api=$Api;native_slot=$nativeSlot;registry_subkey=$subkey;original=$readonly;names=$readonlyNames;hardware_admission=$false;mutation=$false})
+    $readonlyRecord=[ordered]@{schema=1;instance=$InstanceId;driver=$driver;luid=$Luid;api=$Api;native_slot=$nativeSlot;registry_subkey=$subkey;original=$readonly;names=$readonlyNames;hardware_admission=$false;mutation=$false}
+    if ($Api -ceq '8') { $readonlyRecord.Remove('native_slot'); $readonlyRecord.selected_wow_slot=0; $readonlyRecord.selected_value_name='UserModeDriverNameWoW'; $readonlyRecord.wow_tuple=[DxvkBindingNative01]::Tuple($readonly[1]) }
+    Write-Json (Join-Path $RunRoot 'readonly-original.json') $readonlyRecord
     exit 0
 }
+if ($Api -ceq '8' -and (!$RootAuthorizeLifecycleRestart -or $D8SourceId -cnotmatch '^(0|[1-9][0-9]{0,9})$' -or [uint64]$D8SourceId -gt [uint32]::MaxValue -or !$RunRoot.StartsWith('C:\Users\Public\DxvkD8Lifecycle-',[StringComparison]::OrdinalIgnoreCase))) { throw 'API8 requires ROOT lifecycle mode, explicit source ID and exact D8 run prefix' }
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 if (!([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Explicit tuple experiment requires administrator controller' }
 $lease=[Threading.Mutex]::new($false,'Global\VioGpuD10ValidationAdapterLease01'); $leaseHeld=$false
@@ -598,7 +672,9 @@ if (@(Get-ScheduledTask | Where-Object {$_.TaskName -like 'VioGpu-D10-System-Val
 $original=[DxvkBindingNative01]::Snapshot($subkey)
 $slots=[DxvkBindingNative01]::Tuple($original[0])
 $names=[DxvkBindingNative01]::Names($Luid); Check-Names $names $Luid
-Write-Json (Join-Path $RunRoot 'apply-original.json') ([ordered]@{schema=1;instance=$InstanceId;driver=$driver;luid=$Luid;api=$Api;native_slot=$nativeSlot;registry_subkey=$subkey;original=$original;names=$names;exclusive_adapter_lease_held=$true;hardware_admission=$false;mutation=$false})
+$applyRecord=[ordered]@{schema=1;instance=$InstanceId;driver=$driver;luid=$Luid;api=$Api;native_slot=$nativeSlot;registry_subkey=$subkey;original=$original;names=$names;exclusive_adapter_lease_held=$true;hardware_admission=$false;mutation=$false}
+if ($Api -ceq '8') { $applyRecord.Remove('native_slot'); $applyRecord.selected_wow_slot=0; $applyRecord.selected_value_name='UserModeDriverNameWoW' }
+Write-Json (Join-Path $RunRoot 'apply-original.json') $applyRecord
 foreach ($pair in @(@($Probe,$ProbeSha256),@($Front,$FrontSha256),@($Core,$CoreSha256),@($TokenScript,$TokenScriptSha256))) { Check-File $pair[0] $pair[1]; [DxvkBindingNative01]::RequireAbsolute($pair[0]) }
 $driverState=Driver-State $InstanceId
 Check-File $DriverSys $DriverSysSha256
@@ -609,7 +685,9 @@ $runnerSha='7def540f912623e6e4a4925bf3e747e0cf617327367d659bc2cd8e41a9c69513'
 # closed held JSON provides readiness without reading buffered short stdout.
 if ($Api -ceq '11') { $runnerSha='d8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad' }
 Check-File $Runner $runnerSha
-if ($Api -ceq '10') {
+if ($Api -ceq '8') {
+    if ($Front -ine $Core -or $FrontSha256 -cne $CoreSha256 -or (Split-Path $Core -Leaf) -cne 'viogpudxvk.dll' -or [DxvkBindingNative01]::ProbeArchitectureForApi('8',[IO.File]::ReadAllBytes($Probe)) -cne 'x86' -or [DxvkBindingNative01]::ProbeArchitectureForApi('8',[IO.File]::ReadAllBytes($Core)) -cne 'x86') { throw 'API8 requires matching original I386 probe and direct original core with no separate frontend' }
+} elseif ($Api -ceq '10') {
     if ((Split-Path $Core -Leaf) -cne 'viogpudxvk.dll' -or (Split-Path $Core -Parent) -ine (Split-Path $Front -Parent)) { throw 'D10 requires its exact sibling native core' }
 } elseif ($Api -ceq '11') {
     $d11Architecture=[DxvkBindingNative01]::ProbeArchitecture([IO.File]::ReadAllBytes($Probe))
@@ -625,11 +703,12 @@ if ($Api -ceq '10') {
 $payloadSource=Join-Path $PSScriptRoot 'system-runtime-approved-payload.cs'
 Add-Type -Path $payloadSource -ReferencedAssemblies @('System.dll','System.Core.dll','System.Web.Extensions.dll')
 $selection=[DxvkApprovedSelection01]::new()
-$selection.Api=$Api; $selection.Architecture=[DxvkBindingNative01]::ProbeArchitecture([IO.File]::ReadAllBytes($Probe))
+$selection.Api=$Api; $selection.Architecture=[DxvkBindingNative01]::ProbeArchitectureForApi($Api,[IO.File]::ReadAllBytes($Probe))
 $selection.Core=$Core; $selection.CoreSha256=$CoreSha256; $selection.PrivateLoader=$PrivateLoader; $selection.PrivateLoaderSha256=$PrivateLoaderSha256
 $selection.IcdJson=$VulkanIcd; $selection.IcdJsonSha256=$VulkanIcdSha256; $selection.IcdLibrarySha256=$VulkanLibrarySha256; $selection.VulkanLoaderSha256=$VulkanLoaderSha256
 $approved=[DxvkApprovedPayloadPolicy01]::ValidateFiles($ApprovedPayload,$ApprovedPayloadSha256,$selection)
 $vulkanLibrary=$approved.IcdLibrary; $vulkanLoader=$approved.PrivateLoader
+if ($Api -ceq '8') { $root='C:\Users\Public\DxvkD3D8Candidate-'+$approved.SourceCommit.Substring(0,7)+'-'+$approved.CiRun; if ($Core -ine ($root+'\viogpudxvk.dll') -and $Core -ine ($root+'-icd02\viogpudxvk.dll')) { throw 'API8 directcore path must match its exact selected published source/run' } }
 Write-Json (Join-Path $RunRoot 'approved-payload-verified.json') ([ordered]@{schema=1;approved_payload=$ApprovedPayload;approved_payload_sha256=$ApprovedPayloadSha256;source_commit=$approved.SourceCommit;ci_run=$approved.CiRun;arch=$approved.Architecture;files=$approved.Files;metadata_only=$true;native_module_calls=0;hardware_admission=$false})
 $explorer=@(Get-Process explorer -IncludeUserName); $dwm=@(Get-Process dwm)
 if ($explorer.Count -ne 1 -or $dwm.Count -ne 1 -or !$explorer[0].UserName -or $explorer[0].SessionId -le 0 -or $dwm[0].SessionId -ne $explorer[0].SessionId) { throw 'Exactly one existing interactive desktop required' }
@@ -651,6 +730,9 @@ foreach ($copy in @(@($PSCommandPath,$controllerScript),@($native,$nativeCopy),@
 $self=(Get-Process -Id $PID)
 $value=[ordered]@{schema=2;api=$Api;native_slot=$nativeSlot;d9_phase=$D9Phase;private_loader=$vulkanLoader;vulkan_library=$vulkanLibrary;owner_pid=$PID;owner_start_ticks=$self.StartTime.ToUniversalTime().Ticks;deadline_utc=[DateTime]::UtcNow.AddSeconds(120).ToString('o');registry_subkey=$subkey;original=$original;original_slots=$slots;luid=$Luid;control=$control;output=$output;mutex=('Global\VioGpuD10Binding-'+$runId);task_name=$taskName;restore_task_name=($taskName+'-restore');desktop_sid=$sid.Value;desktop_session=$explorer[0].SessionId;desktop_dwm_pid=$dwm[0].Id;desktop_explorer_pid=$explorer[0].Id;probe=$Probe;probe_sha256=$ProbeSha256;front=$Front;front_sha256=$FrontSha256;core=$Core;core_sha256=$CoreSha256;runner=$runnerCopy;runner_sha256=$runnerSha;token_script=$tokenCopy;vulkan_icd=$VulkanIcd;hold_event=('Local\VioGpuD10Validation-'+$runId)}
 $value.d11_phase=$D11Phase
+[DxvkBindingNative01]::BindingValueName($Api,$selection.Architecture) | Out-Null
+if ($Api -ceq '8') { $value.Remove('native_slot'); $value.selected_wow_slot=0; $value.binding_value_name='UserModeDriverNameWoW'; $value.original_wow_slots=[DxvkBindingNative01]::Tuple($original[1]); $value.d8_source_id=$D8SourceId; $value.hold_event='Local\VioGpuD8Validation-'+$runId }
+$value.d10_profile=$D10Profile
 $value.lifecycle_mode=$RootAuthorizeLifecycleRestart.IsPresent
 if ($value.lifecycle_mode) {
     $script:LifecycleJobHandle=[DxvkBindingNative01]::OwnWorkerLifetime()
@@ -667,12 +749,15 @@ if ($value.lifecycle_mode) {
 }
 $value.files=@($controllerScript,$nativeCopy,$runnerCopy,$tokenCopy,$Probe,$Front,$Core,$DriverSys,$VulkanIcd,$vulkanLibrary,$vulkanLoader | ForEach-Object { [ordered]@{path=$_;sha256=(Hash $_)} })
 $value.payload_source=$approved.SourceCommit; $value.payload_ci_run=$approved.CiRun; $value.approved_payload_sha256=$ApprovedPayloadSha256
-$value.module_files=@([ordered]@{Path=$Front;Bytes=(Get-Item -LiteralPath $Front).Length;Sha256=$FrontSha256})+@($approved.ModuleFiles)
+$value.module_files=@($approved.ModuleFiles); if ($Api -cne '8') { $value.module_files=@([ordered]@{Path=$Front;Bytes=(Get-Item -LiteralPath $Front).Length;Sha256=$FrontSha256})+@($approved.ModuleFiles) }
+if ($Api -ceq '8') { $value.original_wow_names=D8-Names $value 'original' $Luid ([string[]]$value.original_wow_slots) }
 $value.files+=@([ordered]@{path=$payloadCopy;sha256=(Hash $payloadCopy)},[ordered]@{path=$ApprovedPayload;sha256=$ApprovedPayloadSha256})
 $value.files+=@($approved.Files | ForEach-Object { [ordered]@{path=$_.Path;sha256=$_.Sha256} })
 $configFile=Join-Path $control 'config.json'; Write-Json $configFile $value; $configHash=Hash $configFile
-$sourceProfile='unregistered-validation8eeb20'; if ($Api -ceq '11') { $sourceProfile='dedicated-SYSTEM-D11-FL10_0-validation' } elseif ($Api -cne '10') { $sourceProfile='ordinary-D9-probe739de05' }
+$sourceProfile='unregistered-validation8eeb20'; if ($Api -ceq '11') { $sourceProfile='dedicated-SYSTEM-D11-FL10_0-validation' } elseif ($Api -ceq '8') { $sourceProfile='ordinary-SYSTEM-D8-I386-direct-core' } elseif ($Api -cne '10') { $sourceProfile='ordinary-D9-probe739de05' }
+if ($Api -ceq '10' -and $D10Profile -ceq '10_1') { $sourceProfile='ordinary-SYSTEM-D10.1-validation' }
 $lifecycleWorker=$null; $watchdog=$null; $registered=$false; $restoreRegistered=$false; $status=[ordered]@{schema=1;source=$sourceProfile;api=$Api;native_slot=$nativeSlot;registry_restored=$false;hardware_admission=$false;production_admission=$false;default_replacement=$false}
+if ($Api -ceq '8') { $status.Remove('native_slot'); $status.selected_wow_slot=0; $status.selected_value_name='UserModeDriverNameWoW' }
 try {
     $power=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     # A service-owned task avoids inheriting an SSH session's process job.
@@ -717,14 +802,19 @@ try {
         try { $locked=$mutex.WaitOne(5000) } catch [Threading.AbandonedMutexException] { $locked=$true }
         if (!$locked -or (Test-Path -LiteralPath (Join-Path $control 'restored.json')) -or [DateTime]::UtcNow -ge [DateTime]::Parse($value.deadline_utc).ToUniversalTime()) { throw 'Binding cannot start after watchdog restoration/deadline' }
         [DxvkBindingNative01]::RequireSnapshot($original,[DxvkBindingNative01]::Snapshot($subkey))
-        $replacement=[DxvkBindingNative01]::ReplaceNativeSlot($original[0],$Front,$nativeSlot)
         # Same restore mutex covers recheck, durable intent and the first write.
         # Owner loss after intent but before/during RegSet conservatively restores.
-        Write-MutationIntent (Join-Path $control 'mutation-intent.json') ([ordered]@{schema=2;owner_pid=$PID;registry_subkey=$subkey;selected_native_slot=$nativeSlot;only_native_tuple_slot=$true;utc=[DateTime]::UtcNow.ToString('o')})
+        if ($Api -ceq '8') {
+            $replacement=[DxvkBindingNative01]::ReplaceWowLegacy($original[1],$Core)
+            Write-MutationIntent (Join-Path $control 'mutation-intent.json') ([ordered]@{schema=3;owner_pid=$PID;registry_subkey=$subkey;selected_wow_slot=0;selected_value_name='UserModeDriverNameWoW';selected_view=0x100;only_wow_legacy_slot=$true;utc=[DateTime]::UtcNow.ToString('o')})
+        } else {
+            $replacement=[DxvkBindingNative01]::ReplaceNativeSlot($original[0],$Front,$nativeSlot)
+            Write-MutationIntent (Join-Path $control 'mutation-intent.json') ([ordered]@{schema=2;owner_pid=$PID;registry_subkey=$subkey;selected_native_slot=$nativeSlot;only_native_tuple_slot=$true;utc=[DateTime]::UtcNow.ToString('o')})
+        }
         [DxvkBindingNative01]::Write($subkey,$replacement)
-        if (![DxvkBindingNative01]::Same($replacement,[DxvkBindingNative01]::Read($subkey,0x100,'UserModeDriverName'))) { throw 'Exact selected native-slot write did not read back' }
-        # WoW and installed-driver values are never edited. SYSTEM views can alias.
-        foreach ($index in @(1,2,4,5)) { if (![DxvkBindingNative01]::Same($original[$index],([DxvkBindingNative01]::Snapshot($subkey))[$index])) { throw 'Untouched WoW/installed tuple changed' } }
+        if (![DxvkBindingNative01]::Same($replacement,[DxvkBindingNative01]::Read($subkey,0x100,$bindingValueName))) { throw 'Exact selected registration slot write did not read back' }
+        if ($Api -ceq '8') { [DxvkBindingNative01]::RequireWowMutation($original,[DxvkBindingNative01]::Snapshot($subkey),$replacement) }
+        else { foreach ($index in @(1,2,4,5)) { if (![DxvkBindingNative01]::Same($original[$index],([DxvkBindingNative01]::Snapshot($subkey))[$index])) { throw 'Untouched WoW/installed tuple changed' } } }
         Write-Json (Join-Path $control 'candidate-tuple-written.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);luid=$Luid;instance=$InstanceId;external_refresh_wait=$WaitForReviewedRefresh.IsPresent})
         $status.registry_changed=$true
     } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
@@ -733,11 +823,17 @@ try {
         try {
             try { $locked=$mutex.WaitOne(5000) } catch [Threading.AbandonedMutexException] { $locked=$true }
             if (!$locked -or (Test-Path -LiteralPath (Join-Path $control 'restored.json'))) { throw 'Lifecycle restart cannot race rescue restoration' }
-            if (![DxvkBindingNative01]::Same($replacement,[DxvkBindingNative01]::Read($subkey,0x100,'UserModeDriverName'))) { throw 'Candidate changed before exact-instance forward restart' }
+            if (![DxvkBindingNative01]::Same($replacement,[DxvkBindingNative01]::Read($subkey,0x100,$bindingValueName))) { throw 'Candidate changed before exact-instance forward restart' }
             Write-MutationIntent (Join-Path $control 'forward-lifecycle-intent.json') ([ordered]@{schema=1;owner_pid=$PID;instance=$InstanceId;registry_subkey=$subkey;original_backup_luid=$Luid;utc=[DateTime]::UtcNow.ToString('o')})
-            $forward=Lifecycle-Restart $value 'forward'; $expected=[string[]]$slots.Clone(); $expected[$nativeSlot]=$Front
+            $forward=Lifecycle-Restart $value 'forward'; $expected=[string[]]$slots.Clone(); $wowForward=$null
+            if ($Api -ceq '8') {
+                $wowExpected=[string[]]$value.original_wow_slots.Clone(); $wowExpected[0]=$Core
+                $wowForward=D8-Names $value 'forward' $forward.state.identity.Luid $wowExpected
+            } else { $expected[$nativeSlot]=$Front }
             [DxvkBindingNative01]::RequireLifecycleNames($forward.state.identity.Luid,$expected,$forward.state.names)
-            Write-Json (Join-Path $control 'lifecycle-forward.json') ([ordered]@{schema=1;owner_pid=$PID;instance=$InstanceId;original_backup_luid=$Luid;state=$forward.state;restart=$forward.receipt})
+            $forwardRecord=[ordered]@{schema=1;owner_pid=$PID;instance=$InstanceId;original_backup_luid=$Luid;state=$forward.state;restart=$forward.receipt}
+            if ($Api -ceq '8') { $forwardRecord.wow_names=$wowForward }
+            Write-Json (Join-Path $control 'lifecycle-forward.json') $forwardRecord
             $status.original_backup_luid=$Luid; $status.forward_probe_luid=$forward.state.identity.Luid
         } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
     }
@@ -760,8 +856,9 @@ try {
     try {
         try { $locked=$mutex.WaitOne(5000) } catch [Threading.AbandonedMutexException] { $locked=$true }
         if (!$locked -or (Test-Path -LiteralPath (Join-Path $control 'restored.json')) -or [DateTime]::UtcNow -ge [DateTime]::Parse($value.deadline_utc).ToUniversalTime()) { throw 'Probe cannot start after rescue restoration' }
-        if (![DxvkBindingNative01]::Same($replacement,[DxvkBindingNative01]::Read($subkey,0x100,'UserModeDriverName'))) { throw 'Candidate tuple changed during refresh checkpoint' }
-        Write-Json (Join-Path $control 'bound.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);api=$Api;selected_native_slot=$nativeSlot;only_native_tuple_slot_edited=$true;adapter_wide=$true})
+        if (![DxvkBindingNative01]::Same($replacement,[DxvkBindingNative01]::Read($subkey,0x100,$bindingValueName))) { throw 'Candidate tuple changed during refresh checkpoint' }
+        if ($Api -ceq '8') { Write-Json (Join-Path $control 'bound.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);api=$Api;selected_wow_slot=0;selected_value_name='UserModeDriverNameWoW';only_wow_legacy_slot_edited=$true;native_values_untouched=$true;adapter_wide=$true}) }
+        else { Write-Json (Join-Path $control 'bound.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);api=$Api;selected_native_slot=$nativeSlot;only_native_tuple_slot_edited=$true;adapter_wide=$true}) }
     } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
     $clock.Restart()
     while (!(Test-Path -LiteralPath (Join-Path $output 'worker-held.json'))) { if ((Test-Path -LiteralPath (Join-Path $output 'worker-result.json')) -or $clock.ElapsedMilliseconds -gt 80000) { throw 'Actual probe did not reach bounded hold' }; Start-Sleep -Milliseconds 100 }

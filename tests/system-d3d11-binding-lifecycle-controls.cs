@@ -8,13 +8,13 @@ public static class SystemD11LifecycleControls01 {
  static void U32(byte[] b,int offset,uint value){Array.Copy(BitConverter.GetBytes(value),0,b,offset,4);}
  static DxvkBindingNames01 Names(string luid,string[] names){var v=new DxvkBindingNames01{Luid=luid,Names=new DxvkBindingName01[3]};for(int i=0;i<3;i++)v.Names[i]=new DxvkBindingName01{Version=(uint)i,Name=names[i]};return v;}
  public static int Main(){
-  foreach(string api in new[]{"9","9ex","10","11"})foreach(string phase in new[]{"offscreen","present"})foreach(bool apply in new[]{false,true})foreach(bool wait in new[]{false,true}){
+  foreach(string api in new[]{"8","9","9ex","10","11"})foreach(string phase in new[]{"offscreen","present"})foreach(bool apply in new[]{false,true})foreach(bool wait in new[]{false,true}){
    DxvkBindingNative01.RequireLifecycleMode(false,apply,api,phase,wait);Check(true);
-   bool reviewed=(api=="9" || api=="9ex") || phase=="offscreen";
+   bool reviewed=(api=="8" || api=="9" || api=="9ex") || phase=="offscreen";
    if(apply && reviewed && !wait){DxvkBindingNative01.RequireLifecycleMode(true,apply,api,phase,wait);Check(true);}else Reject(delegate{DxvkBindingNative01.RequireLifecycleMode(true,apply,api,phase,wait);});
   }
-  foreach(string invalidApi in new string[]{null,"","8","12"})Reject(delegate{DxvkBindingNative01.RequireLifecycleMode(true,true,invalidApi,"offscreen",false);});
-  foreach(string api in new[]{"9","9ex","10","11"})foreach(string invalidPhase in new string[]{null,"","invalid"})Reject(delegate{DxvkBindingNative01.RequireLifecycleMode(true,true,api,invalidPhase,false);});
+  foreach(string invalidApi in new string[]{null,"","7","12"})Reject(delegate{DxvkBindingNative01.RequireLifecycleMode(true,true,invalidApi,"offscreen",false);});
+  foreach(string api in new[]{"8","9","9ex","10","11"})foreach(string invalidPhase in new string[]{null,"","invalid"})Reject(delegate{DxvkBindingNative01.RequireLifecycleMode(true,true,api,invalidPhase,false);});
   foreach(uint high in new uint[]{0,0xabcdef01})foreach(uint low in new uint[]{1,0xffffffff})foreach(ulong caps in new ulong[]{0,0xffffffffffffffff}){
    string luid=high.ToString("x8")+":"+low.ToString("x8");var raw=Raw(high,low,2,caps);var v=DxvkBindingNative01.RuntimeIdentity160(raw,luid);
    Check(v.Luid==luid && v.Generation==2 && v.Capabilities==caps && v.Raw.Length==160);raw[40]=7;Check(v.Raw[40]==0);

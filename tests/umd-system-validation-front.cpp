@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// UNREGISTERED D10.0 development entry. No production admission changes.
+// UNREGISTERED exact D10.0 or D10.1 development entry. No production admission changes.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -12,6 +12,11 @@
 #include "umd-system-validation-entry.h"
 
 namespace {
+#if defined(VIOGPU_SYSTEM_VALIDATION_D10_1)
+constexpr UINT ValidationInterface = D3D10_1_DDI_INTERFACE_VERSION;
+#else
+constexpr UINT ValidationInterface = D3D10_0_DDI_INTERFACE_VERSION;
+#endif
 #if defined(_M_ARM64) && !defined(_M_ARM64EC)
 constexpr WCHAR CoreName[] = L"viogpudxvk.dll";
 #elif defined(_M_X64) || defined(_M_ARM64EC)
@@ -25,7 +30,7 @@ INIT_ONCE coreOnce = INIT_ONCE_STATIC_INIT;
 HMODULE coreModule;
 PFND3D10DDI_OPENADAPTER coreEntry;
 SRWLOCK infoLock = SRWLOCK_INIT;
-VioGpuSystemValidationEntryInfo info{sizeof(info), D3D10_0_DDI_INTERFACE_VERSION, 0, 0, E_FAIL, 0, 0, {}};
+VioGpuSystemValidationEntryInfo info{sizeof(info), ValidationInterface, 0, 0, E_FAIL, 0, 0, {}};
 struct Paths { WCHAR expected[32768]; WCHAR actual[32768]; };
 
 HRESULT win32Result() {
@@ -81,7 +86,7 @@ HRESULT record(UINT interfaceVersion, UINT version, HRESULT result) {
 extern "C" HRESULT APIENTRY OpenAdapter10(D3D10DDIARG_OPENADAPTER* args) {
   if (!args) return E_INVALIDARG;
   const UINT interfaceVersion = args->Interface, version = args->Version;
-  if (interfaceVersion != D3D10_0_DDI_INTERFACE_VERSION)
+  if (interfaceVersion != ValidationInterface)
     return record(interfaceVersion, version, DXGI_ERROR_UNSUPPORTED);
   if (!InitOnceExecuteOnce(&coreOnce, loadCore, nullptr, nullptr))
     return record(interfaceVersion, version, win32Result());

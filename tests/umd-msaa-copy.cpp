@@ -112,7 +112,9 @@ struct Texture {
     D3D10DDI_MIPINFO mip{width,height,1,width,height,1};
     D3D10DDIARG_CREATERESOURCE a{}; a.pMipInfoList=&mip; a.ResourceDimension=D3D10DDIRESOURCE_TEXTURE2D;
     a.Usage=static_cast<D3D10_DDI_RESOURCE_USAGE>(usage); a.BindFlags=bindings;
-    a.MapFlags=desc.CPUAccessFlags; a.Format=format; a.SampleDesc=desc.SampleDesc; a.MipLevels=1; a.ArraySize=3;
+    a.MapFlags=((desc.CPUAccessFlags&D3D11_CPU_ACCESS_READ) ? D3D10_DDI_CPU_ACCESS_READ : 0u)
+      | ((desc.CPUAccessFlags&D3D11_CPU_ACCESS_WRITE) ? D3D10_DDI_CPU_ACCESS_WRITE : 0u);
+    a.Format=format; a.SampleDesc=desc.SampleDesc; a.MipLevels=1; a.ArraySize=3;
     f.create(a,handle); ok(); storage.guards();
     step="public-texture-create"; apiOk(f.backend->CreateTexture2D(&desc,nullptr,&reference));
     D3D11_TEXTURE2D_DESC actual{}; reference->GetDesc(&actual); CHECK(fields(actual)==fields(desc));

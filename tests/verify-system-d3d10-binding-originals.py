@@ -33,18 +33,23 @@ def verify(directory, stdout_path, process_path, api, luid_high, luid_low, front
     assert process['runner_sha256'] == '7def540f912623e6e4a4925bf3e747e0cf617327367d659bc2cd8e41a9c69513'
     manifest = json.loads((directory / 'manifest.json').read_text())
     fixed = dict(schema=1, api=api, width=16, height=16, frames=2, pixels=512, presents=2,
-                 vendor=0x1af4, device=0x1050, luidHigh=luid_high, luidLow=luid_low, entryInterface=0x000a0001, entryResult=0)
+                 vendor=0x1af4, device=0x1050, luidHigh=luid_high, luidLow=luid_low, entryInterface=0x000a0002 if api == 101 else 0x000a0001, entryResult=0)
     extra = {'generation', 'capabilities', 'frontend', 'core', 'entryCalls', 'successfulEntryCalls', 'entryVersion',
              'softwareFallback', 'unregisteredValidationCandidate', 'productionAdmission', 'registrationChangedByProbe', 'frameResults', 'systemModules'}
+    if api == 101:
+        extra |= {'profile', 'factory', 'featureLevel'}
     assert set(manifest) == set(fixed) | extra
-    assert api == 10 and (luid_high or luid_low)
+    assert api in (10, 101) and (luid_high or luid_low)
+    if api == 101:
+        assert manifest['profile'] == '10_1' and manifest['factory'] == 'D3D10CreateDevice1'
+        assert type(manifest['featureLevel']) is int and manifest['featureLevel'] == 0xa100
     assert 0 <= luid_high <= (1 << 32)-1 and 0 <= luid_low <= (1 << 32)-1
     assert all(type(manifest[key]) is int and manifest[key] == value for key, value in fixed.items())
     for key in ('generation', 'entryCalls', 'successfulEntryCalls'):
         assert type(manifest[key]) is int and 0 < manifest[key] <= (1 << 64) - 1
     assert manifest['successfulEntryCalls'] <= manifest['entryCalls'] <= (1 << 31)-1
     assert type(manifest['capabilities']) is int and 0 <= manifest['capabilities'] <= (1 << 64)-1
-    assert type(manifest['entryVersion']) is int and 4 <= manifest['entryVersion'] >> 16 <= 0xffff
+    assert type(manifest['entryVersion']) is int and (1 if api == 101 else 4) <= manifest['entryVersion'] >> 16 <= 0xffff
     assert manifest['softwareFallback'] is False and manifest['productionAdmission'] is False
     assert manifest['registrationChangedByProbe'] is False and manifest['unregisteredValidationCandidate'] is True
     assert type(manifest['frameResults']) is list and len(manifest['frameResults']) == 2
@@ -55,7 +60,7 @@ def verify(directory, stdout_path, process_path, api, luid_high, luid_low, front
     assert windows_path(manifest['frontend']) == windows_path(frontend)
     assert windows_path(manifest['core']) == windows_path(core)
     modules = manifest['systemModules']
-    assert set(modules) == {'dxgi.dll', 'gdi32.dll', 'd3dcompiler_47.dll', 'd3d10.dll' if api == 10 else 'd3d11.dll'}
+    assert set(modules) == {'dxgi.dll', 'gdi32.dll', 'd3dcompiler_47.dll', 'd3d10.dll' if api == 10 else 'd3d10_1.dll'}
     for name, path in modules.items():
         assert windows_path(path) == windows_path(ntpath.join(system_directory, name))
     originals = []
@@ -82,7 +87,7 @@ def main():
     parser = argparse.ArgumentParser()
     for name in ('directory', 'stdout', 'process', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
-    parser.add_argument('--api', type=int, choices=(10,), required=True)
+    parser.add_argument('--api', type=int, choices=(10, 101), required=True)
     for name in ('luid-high', 'luid-low'):
         parser.add_argument('--' + name, type=lambda value: int(value, 16), required=True)
     for name in ('frontend', 'core', 'system-directory'):

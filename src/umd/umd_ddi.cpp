@@ -3279,16 +3279,16 @@ HRESULT createDdiDevice(
   if (!device->backend || !device->context) return E_FAIL;
   populateDeviceFunctions(table);
   if (dxgiTable) {
-    dxgiTable->pfnBlt = blt;
     *dxgiTable = {};
+    dxgiTable->pfnBlt = blt;
     dxgiTable->pfnRotateResourceIdentities = rotateResourceIdentities;
     dxgiTable->pfnQueryResourceResidency = queryResourceResidency;
     dxgiTable->pfnSetResourcePriority = setResourcePriority;
     if (device->memory.available()) dxgiTable->pfnPresent = present;
   }
   if (dxgiTable11) {
-    dxgiTable11->pfnBlt = blt;
     *dxgiTable11 = {};
+    dxgiTable11->pfnBlt = blt;
     dxgiTable11->pfnRotateResourceIdentities = rotateResourceIdentities;
     dxgiTable11->pfnQueryResourceResidency = queryResourceResidency;
     dxgiTable11->pfnSetResourcePriority = setResourcePriority;

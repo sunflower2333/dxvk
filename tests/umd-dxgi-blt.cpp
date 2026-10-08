@@ -160,7 +160,14 @@ struct Fixture {
       : legacy.guards[0] == 0x13579u && legacy.guards[1] == 0x24680u && !dxgi.pfnResolveSharedResource);
     constructingRuntime = nullptr;
     for (const auto& entry : bridges) if (entry.second == &bridge) contextKey = entry.first;
-    CHECK(contextKey); CHECK(dxgi11 ? bool(dxgi.pfnBlt) : bool(legacy.table.pfnBlt));
+    CHECK(contextKey);
+    if (dxgi11) {
+      CHECK(dxgi.pfnBlt != nullptr);
+      CHECK(dxgi.pfnBlt(nullptr) == E_INVALIDARG);
+    } else {
+      CHECK(legacy.table.pfnBlt != nullptr);
+      CHECK(legacy.table.pfnBlt(nullptr) == E_INVALIDARG);
+    }
   }
   HRESULT blt(DXGI_DDI_ARG_BLT request) {
     request.hDevice = reinterpret_cast<DXGI_DDI_HDEVICE>(device.pDrvPrivate);

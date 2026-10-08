@@ -48,6 +48,8 @@ $cases = [ordered]@{
     'dxvk-umd-cube-array-mips-test.exe' = 'PASS CubeArrayMips\r?\ncases=5\r?\nchecks=\d+\r?\ntexels=30690\r?\nreadbacks=5'
     'dxvk-umd-cube-array-targets-test.exe' = '(?m)^typed cube-array targets verified checks=\d+ views=24 snapshots=30 words=35700 callbacks=46 public_reference=1 hardware_admission=0\r?$'
     'dxvk-umd-d3d11-device-test.exe' = '(?m)^typed D3D10\.1/D3D11 fixture PASS checks=\d+ callbacks=\d+ SM5 graphics/queries/packed IA/streams/tessellation/classes WARP controls; native Turnip/runtime acceptance remains gated\r?$'
+    'dxvk-umd-uav-texture-policy-test.exe' = '(?m)^D3D11 texture UAV shape policy verified checks=49631\r?$'
+    'dxvk-umd-texture-uav-test.exe' = '(?m)^D3D11 texture UAVs verified checks=\d+ views=72 words=10752 callbacks=88 original_files=384 WARP controls hardware_admission=0\r?$'
     'dxvk-umd-compute-container-test.exe' = 'compute container PASS checks=\d+ exact tokens/hash and malformed SM5 controls'
     'dxvk-umd-sm5-container-test.exe' = 'SM5 signatures/interfaces PASS checks=\d+ exact tokens/hash, GS streams, patch factors, typed/depth outputs, native table IDs'
     'dxvk-umd-legacy-api-test.exe' = 'legacy8/9 API bounds PASS checks=\d+; renderer framing follows, admission unchanged'
@@ -82,6 +84,7 @@ $cases = [ordered]@{
     'dxvk-umd-system-runtime-test.exe' = 'system runtime control PASS: WARP Draw/readback/Present/immediate teardown'
 }
 $originalDirectories = @{
+    'dxvk-umd-texture-uav-test.exe' = 'arm64-texture-uav-originals'
     'dxvk-umd-tex2d-srv-remaining-test.exe' = 'arm64-tex2d-srv-remaining-originals'
     'dxvk-umd-dxgi-blt-test.exe' = 'arm64-dxgi-blt-originals'
     'dxvk-umd-dxgi-primary-test.exe' = 'arm64-dxgi-primary-originals'
@@ -133,7 +136,10 @@ foreach ($name in $cases.Keys) {
     if ($process.ExitCode -ne 0 -or $text -notmatch $cases[$name]) {
         throw "$name failed: exit=$($process.ExitCode) $(Get-Content -LiteralPath $err -Raw)"
     }
-    if ($name -ceq 'dxvk-umd-dxgi-shared-resolve-test.exe') {
+    if ($name -ceq 'dxvk-umd-texture-uav-test.exe') {
+        & python (Join-Path $PSScriptRoot '../tests/verify-texture-uav-originals.py') --directory $childDirectory --output (Join-Path $root 'arm64-texture-uav-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 texture UAV descriptor/compute/clear originals failed' }
+    } elseif ($name -ceq 'dxvk-umd-dxgi-shared-resolve-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-shared-resolve-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-dxgi-shared-resolve-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 shared-resource handoff originals failed' }
     } elseif ($name -ceq 'dxvk-umd-dxgi-blt-test.exe') {

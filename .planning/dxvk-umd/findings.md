@@ -1,67 +1,84 @@
 # Findings
 
-## Current checkpoint: 2026-10-08 typed DX8 lock fixture and native builds
+## Current checkpoint: 2026-10-08 X8 presentable resources and native CRT linking
 
-Latest accepted core source18452d7 / NativeUMD37743643139 passed all six jobs.
-ROOT00139eed independently joined five genuine ZIPs/14168 members,1012 Git
-blobs/five links, six logs and150 native fixture executions. This remains
-CPU/reference evidence; ordinary VM hardware and default replacement are pending.
+Latest accepted core remains18452d7 / NativeUMD37743643139, all six jobs
+successful. ROOT00139eed joins five genuine ZIPs/14168 members,1012 Git blobs,
+five links and150 actual native fixtures. Ordinary VM replacement remains
+pending; the installed default UMD is Mesa.
 
-Published b1aba7267b33427b3ff91759e69d3d929790b7f5 integrated opened-primary
-f94d6e3, INDEX creation-hint2752ed5, current-core phase helpers9d4d12d and flat
-ARM64X response4a08cc3. Its sole NativeUMD37749231896 is terminal FAILURE:
-identity/shader/ARM64 backend passed, x86/x64 D3D9 fixture check375853/line2328
-failed, and ARM64 runtime was SKIPPED. ROOT reopened the terminal APIs,
-both genuine failure ZIPs/62 members and retained native process/raw pipes.
-The new test labelled lock union value4 as Discard; SDK defines NoOverwrite4
-and Discard8. Preserve this failed run; its success collector never executed.
+Published a6ca946d21572a23a49d7edc396179cccc1be88a / soleNativeUMD37753759333
+is terminal FAILURE. The corrected typed INDEX16/32 lock fixture now passes
+597007 checks on both x86/x64. Each job reaches18 passing fixtures before
+opened-primary fails at line281 with887a0004; ARM64 runtime is skipped. ROOT
+replayer3074934 reopens the same506 original ZIP members, actual API/logs,
+seven closed GH transports and1023 Git blobs/five links. Only profile0/format1
+BGRA output exists: four images/140 pixels plus padding per architecture.
+The failure is not successful CI52/core admission; its success collector never
+executed. The raw constructor assertion cannot distinguish opened/staging/source
+creation. Source inspection identifies a deterministic rejection of format2
+B8G8R8X8_UNORM presentable creation without a primary descriptor, followed by
+the same unsupported Blt format; this explanation is an inference.
+Local Microsoft DDI documentation explicitly permits X8 display-source Blt.
+DX10 owns the bounded production X8 creation/same-format Blt correction;
+all existing three-format pixel/negative/lifetime oracles remain required.
 
-Exact one-file test-only1d1ece18 is integrated as09d88f05. ROOT63faab55
-reopened169 original pins,46 Git sources/16 dependencies, eight closed local
-children and two strict optimized I386/AMD64 COFFs. Named Discard/NoOverwrite
-cover INDEX16/32 and retain locked bind/draw rejection, unlock recovery and
-balanced lifetime. Production81438/ff393e5e remains exact. Main integration
-receipt preserves this scope. The next meaningful consolidated push keeps
-1023 Git blobs/five links and52 ARM cases/39 shipping fixtures; no extra
-workflow dispatch. Actual new native execution/core admission remains pending.
+CPU05 actual ARM64 CL/native LINK/ARM64EC CL passed; the corrected flat14
+ARM64X LINK now fails4294: missing native load-config symbol, with LNK1218
+under unchanged/WX. ROOT3064127 rejoins185 actual files/1456 checks and
+accepts only original failure/explicit releasefdd4dbf0. The actual native
+full-path response contains only the native object and ARM64kernel32.lib,
+omitting CRT default-library inputs. Candidate bd601ea explicitly resolves
+and pins four static CRT libraries in the original ARM64 LIB directory order,
+requires their presence in the actual captured response, then preserves them
+in the flat hybrid link. Native6-input/18-argument CPU06 parsing/linking/header/
+import/export/view validation remains pending; no warning is suppressed.
 
-DX8 held-frontend HAL remains accepted93fdbf8a. Public CreateDevice failed
-first at INDEX16 flags02100044/format101 with80070057; failed offscreen
-originals/release remain85c7c07b. The creation-only hint fix must reach a
-successful CI core, fresh private staging/names/HAL,448 offscreen pixels and
-64 screen pixels before any ordinary runtime replacement.
+DX10 current184 native CPU08 strict build remains ROOTbd3e58aa accepted:
+4141 oracle checks/five malformed CLI controls, original probe194048/b51f7c6a
+and archive1247319/7d41cba4. USER06 helper prefix now actually passes native
+Parse8/Add-Type/ServiceAssembly Running4/pending-input rejection. ROOT3074935
+replays46 same originals/7 retained native children exactly, and b34ccbee
+independently accepts8 host/8 outer closures and explicit release45c8fbf8.
+Protected34 values/SYS/binding/service/desktop are unchanged; full raw frame
+difference is timestamp only. No core/probe/KMT/GPU/task ran in this prefix.
 
-EWDK CPU04 actually passed ARM64 CL/native LINK/ARM64EC CL then failed
-ARM64X LINK1104 on nested @RSP. ROOT7458f01f accepts original failure and
-closure, not hybrid success. The reviewed flat producer preserves all input
-objects/libraries/options,13 to14 arguments. CPU05 preparation replay
-PID3057298 closed0 with549 checks; ROOTb39d7b38 joins82 frozen references,
-52 package members, seven raw Git inputs,73 selected copies and303 preserved
-CPU04 files. Exclusive port_dx11 CPU05 grantc3b0d54a binds latest accepted
-CPU08 explicit release. Actual upload/stage/native Parse6/Add-Type and pure
-data-array14/six malformed controls passed. Native compiler/link/view results
-and final independent original review/release remain pending.
+ROOT3076088 independently reopens71 input roles/81 stage files and fresh actual
+management frame. ROOT3076294 seals the genuine final self-review as role72:
+sealed-role72-ROOT01 has82 stage files, input ready=true, hardware_authorized=false.
+The1792-pixel real KMT dual-profile protocol is being reviewed/frozen before
+fresh exclusive target execution. Historical05ff/d7 pixels and binary provenance
+remain historical. Target is released to ROOT; no overlapping target owners.
 
-DX10 current184 CPU08 strict native ARM64 build is independently accepted
-ROOTbd3e58aa: actual archive7d41cba4/98 files,15 Git inputs/23 SDK headers,
-seven libraries/four tools, two COFF/two PE,4141 oracle andfive malformed CLI
-passes. ROOT original-reader replayPID3048760 closed0 and independently
-joined fresh15 native/11 host/nine outer closures, unchanged SYS/service/
-binding/desktop and explicit release6f958b76. No core or graphics CLI ran.
-Current184 USER hardware preparation is local; fresh helper AST/self-role72
-review and real1792 pixels remain pending. Historical05ff binary provenance
-is not relabelled as current184.
+Reviewed X8 source159e0e2 and diagnosticaddf2db are integrated as54eb93c and
+488b484; native CRTbd601ea as c559f73 and texture UAVed8492b as c9f79a4.
+The UAV fix preserves single Texture1D/2D versus actual array dimensions and
+buffer units. ROOT3085770 directly reviewed its original source/local packet;
+ROOT3086077 independently replayed the original X8 source controls. The old
+X8 diagnostic compiler receipts lack separate start originals; retain that
+limitation. Fresh ROOT3100472 now captures actual starts/raw closure/reaping
+for six merged-source optimized official SDK compilations: production UMD,
+texture UAV and opened-primary fixtures, x64/x86 each. All six exit0 with
+empty diagnostics; all362 actual selected compiler dependencies are unchanged.
+Proof19292/b7965934fd746ad0d445c23d8861630a115f84ca2cde463111a2cbd815c87c8d
+is artifacts/root-merged-x8-uav-20261008-01/merged-source-compilation-verified.json.
+This proves local compilation, not native execution or hardware admission.
 
-DX11 isolated next source work targets incorrect nonarray texture UAV
-selection and compute/clear/readback coverage; buffer FirstElement units
-stay unchanged after conflicting documentation and actual Microsoft UMD
-source were cross-checked. Source/native evidence remains separately pending.
+New harness retains all52 old ARM cases, adds two UAV cases (54 total), and
+ships the two new EXEs (mandatory shipping model39 to41). Native x64/x86/ARM
+runs retain384 raw UAV files and invoke their independent compute/clear/
+public-description reader. ROOT complete diff and peer48a8e494 review preserve
+old bounded runner/calls/oracles; real new native execution remains pending.
+Only the existing NativeUMD push workflow is active. One consolidated source
+push is next; no additional dispatch or workflow reactivation.
 
-VM default UMD remains Mesa. D10/D11 production mask0x17f and ordinary
-version/feature discovery remain gated. Complete resources/shaders/MRT,
-stream-output/predication/opened sharing/primary/threading and D11 interface,
-immediate/compute-UAV/tessellation semantics still need ordinary system-runtime
-hardware proof, followed by DWM and dynamic Explorer validation.
+DX8 heldfrontend HAL remains accepted93fdbf8a; failed public offscreen85c7c07b
+still has no448-pixel/64-screen proof. The creation-hint correction needs a
+successful current core and fresh staging/names/HAL/offscreen/Present sequence.
+D10/D11 requirements0x17f and ordinary version/feature discovery remain gated.
+Complete system-runtime resource/shader/MRT/SO/predication/shared/primary/
+threading and D11 immediate/compute-UAV/tessellation/interface hardware proof,
+then DWM and dynamic Explorer validation, are still required for replacement.
 
 ## Historical evidence and checkpoints
 

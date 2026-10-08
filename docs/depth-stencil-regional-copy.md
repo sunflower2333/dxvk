@@ -1,0 +1,28 @@
+Depth/stencil `ResourceCopyRegion` preserves resource bits and copies a complete source subresource. A nonempty depth-bound copy requires a null source box and zero destination X/Y/Z. Its two resources must have compatible formats in the same DXGI typeless family, matching resource dimensionality, distinct selected subresources, valid indices and source/destination fit. The destination cannot be immutable. Neither selected subresource may be mapped; the runtime's valid-call contract supplies that restriction.
+
+The interface matters separately from the embedded backend feature level:
+
+| Native interface | Depth/stencil destination | Multisampled copy |
+| --- | --- | --- |
+| D3D10.0 | Forbidden; depth/stencil may be a source, including copying to staging | Forbidden |
+| D3D10.1 | Permitted | Same sample count and quality, whole subresource |
+| D3D11 at FL10_0 or above | Permitted | Same sample count and quality, whole subresource |
+
+Single-sampled copies require equal counts; their quality values do not have to match. Existing multisample regional-copy validation requires equal extents. The depth-bound path adds no unsupported equal-size rule for single-sampled resources: it retains complete-source fit validation. D3D10.0 distinguishes the original TexCube/Tex2D resource types; D3D10.1/11 normalize cube textures to the actual Texture2D backend kind.
+
+The storage groups are R16_TYPELESS (D16_UNORM and the existing scalar R16 formats), R32_TYPELESS (D32_FLOAT and existing scalar R32 formats), R24G8_TYPELESS (D24_UNORM_S8_UINT and its depth/stencil plane formats), and R32G8X24_TYPELESS (D32_FLOAT_S8X24_UINT and its plane formats). Compatibility uses the existing resource-copy family rules; backend resource creation independently determines whether a concrete format/usage/binding is legal. New storage sizes are opt-in metadata in `CopyRegion`, so they do not admit depth/stencil `UpdateSubresource`, CPU transfers, or Texture3D formats. Full-resource copy, capability masks and scalar transfer-format sizing are unchanged.
+
+The typed fixture uses real D3D10.0, D3D10.1 and D3D11 DDIs, with D3D11 deliberately at logical FL10_0 to distinguish the interface from the feature level. All three share an actual public WARP implementation device at FL11_0; separately created public resource pairs serve as the copy controls. It tests the two packed depth/stencil families, two mip levels and two array slices. All source and destination storage bytes, including stencil and zero X24 bytes, are retained without masking. Copied subresources and untouched mip/array data have independently computed raw oracles. Invalid controls exercise boxes, offsets, bounds, format families, sample mismatch, immutable destinations and D3D10.0 DS destinations; empty/reversed boxes retain the existing no-op contract.
+
+The fixture's 50 snapshots contain 4100 logical pixels, 24600 bytes per native/public role, and exactly 150 retained files. The reader requires the unique fixture marker and validates both native and public bytes against its fixed recipe; it never treats agreement between the two outputs as an oracle. Reader synthetic controls also use an independent integer-byte generator. Compilation and synthetic controls are local verification only. Actual native WARP execution, positive multisampled DS readbacks and ordinary-system-runtime/hardware admission require separate evidence.
+
+Texture1D depth/stencil storage is included in the production metadata opt-in, using the same complete-source, null-box and zero-offset rule. The Microsoft Texture1D descriptor explicitly permits depth/stencil binding; D16_UNORM and D32_FLOAT have required Texture1D and depth/stencil-target support, while their Texture3D support is forbidden. The packed Texture2D fixture does not prove this path. A mandatory followup before claiming complete depth-copy coverage is an actual native/public Texture1D D16/D32 fixture with two mips and two array slices, D3D10.0 source-to-staging and D3D10.1/D3D11 depth destinations, exact source/untouched-destination bytes, and box/offset/bounds/family rejection controls. D3D11 must again use logical FL10_0. A plain R16/R32 scalar resource is classified by its actual depth/stencil binding, not merely by belonging to a family that also contains depth formats.
+
+Primary contracts:
+
+- Local Microsoft DDI checkout: `reference/codes/windows-driver-docs-ddi/wdk-ddi-src/content/d3d10umddi/nc-d3d10umddi-pfnd3d10ddi_resourcecopyregion.md`, especially its D3D10.1 copying restrictions and the 10.0/10.1 dimensionality distinction.
+- [Microsoft ID3D10Device::CopySubresourceRegion](https://learn.microsoft.com/en-us/windows/win32/api/d3d10/nf-d3d10-id3d10device-copysubresourceregion), including the 10.0/10.1 differences and whole-subresource DS restriction.
+- [Microsoft ID3D11DeviceContext::CopySubresourceRegion](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copysubresourceregion), including the 9_x-only source restriction and the general DS/MSAA whole-subresource rule.
+- [Microsoft D3D11_TEXTURE1D_DESC](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_texture1d_desc) and [FL11.0 format support](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/format-support-for-direct3d-11-0-feature-level-hardware), including the D16_UNORM and D32_FLOAT resource targets.
+
+The archived D3D11.3 functional specification retains older D3D10.0 prose forbidding DS destinations and multisampled copies. Its vintage paragraph is not used to override the explicit later-version DDI/API contracts above.

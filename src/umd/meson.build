@@ -296,6 +296,11 @@ umd_resource_copy_cast_test = executable('dxvk-umd-resource-copy-cast-test',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
 
+umd_depth_stencil_copy_test = executable('dxvk-umd-depth-stencil-copy-test',
+  ['../../tests/umd-depth-stencil-copy.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
 umd_msaa_copy_policy_test = executable('dxvk-umd-msaa-copy-policy-test',
   '../../tests/umd-msaa-copy-policy.cpp')
 

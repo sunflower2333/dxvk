@@ -18,6 +18,7 @@
 #include "umd_transfer_policy.h"
 #include "umd_transfer_format.h"
 #include "umd_resource_copy.h"
+#include "umd_depth_stencil_copy.h"
 #include "umd_block_transfer.h"
 #include "umd_sample_copy.h"
 #include "umd_generate_mips.h"
@@ -1492,13 +1493,15 @@ struct SubresourceInfo {
   UINT width = 0, height = 1, depth = 1, texelBytes = 1;
   UINT blockBytes = 0;
   UINT samples = 1, quality = 0;
+  bool cube = false;
   D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
   DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
   D3D11_USAGE usage = D3D11_USAGE_DEFAULT;
   UINT bindings = 0;
 };
 bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info,
-    bool allowBlockCompressed = false, bool allowMultisampledColorCopy = false) {
+    bool allowBlockCompressed = false, bool allowMultisampledColorCopy = false,
+    bool allowDepthStencilCopy = false) {
   resource->backend->GetType(&info.dimension);
   if (info.dimension == D3D11_RESOURCE_DIMENSION_BUFFER) {
     if (index) return false;
@@ -1518,6 +1521,8 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info,
     info.height = 1;
     info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
     info.texelBytes = dxvk::umd::transferTexelBytes(info.format);
+    if (!info.texelBytes && allowDepthStencilCopy)
+      info.texelBytes = dxvk::umd::depthStencilCopyBytes(info.format);
     return info.texelBytes != 0;
   }
   if (info.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
@@ -1533,7 +1538,10 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info,
     info.height = desc.Height >> mip; if (!info.height) info.height = 1;
     info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
     info.samples = desc.SampleDesc.Count; info.quality = desc.SampleDesc.Quality;
+    info.cube = (desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) != 0;
     info.texelBytes = dxvk::umd::transferTexelBytes(info.format);
+    if (!info.texelBytes && allowDepthStencilCopy)
+      info.texelBytes = dxvk::umd::depthStencilCopyBytes(info.format);
     // BC metadata is opt-in. Uploads and regional copies each validate their
     // own byte span or source/destination block geometry.
     if (allowBlockCompressed) info.blockBytes = dxvk::umd::transferBlockBytes(info.format);
@@ -1571,10 +1579,15 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
   // checks; the runtime still supplies valid owned resource handles.
   if (input && (input->left >= input->right || input->top >= input->bottom || input->front >= input->back)) return;
   SubresourceInfo source, destination; D3D11_BOX box;
-  if (!subresourceInfo(get(src), srcIndex, source, true, true)
-      || !subresourceInfo(get(dst), dstIndex, destination, true, true)
+  if (!subresourceInfo(get(src), srcIndex, source, true, true, true)
+      || !subresourceInfo(get(dst), dstIndex, destination, true, true, true)
       || source.dimension != destination.dimension || !dxvk::umd::copyFormatsCompatible(destination.format, source.format)
-      || ((source.bindings | destination.bindings) & D3D11_BIND_DEPTH_STENCIL)
+      || !dxvk::umd::depthStencilRegionCopyContract(
+          (source.bindings & D3D11_BIND_DEPTH_STENCIL) != 0,
+          (destination.bindings & D3D11_BIND_DEPTH_STENCIL) != 0,
+          device->nativeTable11 || device->featureLevel >= D3D_FEATURE_LEVEL_10_1,
+          source.samples, destination.samples,
+          input != nullptr, x, y, z, source.cube, destination.cube)
       || !dxvk::umd::sampleRegionCopyContract({source.width, source.height, source.samples, source.quality},
           {destination.width, destination.height, destination.samples, destination.quality}, input != nullptr, x, y, z)
       || destination.usage == D3D11_USAGE_IMMUTABLE || !subresourceBox(source, input, box)) {

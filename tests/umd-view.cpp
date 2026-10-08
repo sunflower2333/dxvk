@@ -115,13 +115,35 @@ int main() {
   CHECK(mipGenerationStatus(automaticMip, invalidMipView) == E_INVALIDARG);
   invalidMipView = srv; invalidMipView.Texture2DArray.ArraySize = UINT(-1);
   CHECK(mipGenerationStatus(automaticMip, invalidMipView) == E_INVALIDARG);
-  auto bad = native; bad.Tex2D.ArraySize = UINT(-1);
+  // DDI counts of -1 select the remaining range; backend descriptors carry
+  // resolved finite counts, including when the range starts after index0.
+  auto remaining = native; remaining.Tex2D.ArraySize = UINT(-1);
+  CHECK(textureShaderView(remaining, resource, srv));
+  CHECK(srv.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2DARRAY
+    && srv.Texture2DArray.FirstArraySlice == 1 && srv.Texture2DArray.ArraySize == 1
+    && srv.Texture2DArray.MostDetailedMip == 1 && srv.Texture2DArray.MipLevels == 1);
+  remaining = native; remaining.Tex2D.MipLevels = UINT(-1);
+  CHECK(textureShaderView(remaining, resource, srv));
+  CHECK(srv.Texture2DArray.FirstArraySlice == 1 && srv.Texture2DArray.ArraySize == 1
+    && srv.Texture2DArray.MostDetailedMip == 1 && srv.Texture2DArray.MipLevels == 1);
+  remaining.Tex2D.ArraySize = UINT(-1);
+  remaining.Tex2D.FirstArraySlice = remaining.Tex2D.MostDetailedMip = 0;
+  CHECK(textureShaderView(remaining, resource, srv));
+  CHECK(srv.Texture2DArray.FirstArraySlice == 0 && srv.Texture2DArray.ArraySize == 2
+    && srv.Texture2DArray.MostDetailedMip == 0 && srv.Texture2DArray.MipLevels == 2);
+  auto bad = native; bad.Tex2D.ArraySize = 2;
+  CHECK(!textureShaderView(bad, resource, srv));
+  bad = native; bad.Tex2D.ArraySize = 0;
+  CHECK(!textureShaderView(bad, resource, srv));
+  bad = native; bad.Tex2D.FirstArraySlice = resource.ArraySize; bad.Tex2D.ArraySize = UINT(-1);
   CHECK(!textureShaderView(bad, resource, srv));
   bad = native; bad.Tex2D.FirstArraySlice = UINT(-1);
   CHECK(!textureShaderView(bad, resource, srv));
   bad = native; bad.Tex2D.MipLevels = 2;
   CHECK(!textureShaderView(bad, resource, srv));
   bad = native; bad.Tex2D.MipLevels = 0;
+  CHECK(!textureShaderView(bad, resource, srv));
+  bad = native; bad.Tex2D.MostDetailedMip = resource.MipLevels; bad.Tex2D.MipLevels = UINT(-1);
   CHECK(!textureShaderView(bad, resource, srv));
   bad = native; bad.Tex2D.MostDetailedMip = UINT(-1);
   CHECK(!textureShaderView(bad, resource, srv));
@@ -316,6 +338,28 @@ int main() {
   native.Tex2D.MostDetailedMip = 0;
   CHECK(textureShaderView(native, multisample, srv));
   CHECK(srv.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2DMSARRAY);
+  remaining = native; remaining.Tex2D.MipLevels = remaining.Tex2D.ArraySize = UINT(-1);
+  D3D11_SHADER_RESOURCE_VIEW_DESC remainingMsView = {};
+  CHECK(textureShaderView(remaining, multisample, remainingMsView));
+  CHECK(remainingMsView.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2DMSARRAY
+    && remainingMsView.Texture2DMSArray.FirstArraySlice == 1
+    && remainingMsView.Texture2DMSArray.ArraySize == 1);
+  remaining.Tex2D.FirstArraySlice = 0;
+  CHECK(textureShaderView(remaining, multisample, remainingMsView));
+  CHECK(remainingMsView.Texture2DMSArray.FirstArraySlice == 0
+    && remainingMsView.Texture2DMSArray.ArraySize == 2);
+  bad = native; bad.Tex2D.ArraySize = 2;
+  CHECK(!textureShaderView(bad, multisample, remainingMsView));
+  bad = native; bad.Tex2D.ArraySize = 0;
+  CHECK(!textureShaderView(bad, multisample, remainingMsView));
+  bad = native; bad.Tex2D.FirstArraySlice = multisample.ArraySize; bad.Tex2D.ArraySize = UINT(-1);
+  CHECK(!textureShaderView(bad, multisample, remainingMsView));
+  bad = native; bad.Tex2D.MipLevels = 2;
+  CHECK(!textureShaderView(bad, multisample, remainingMsView));
+  bad = native; bad.Tex2D.MipLevels = 0;
+  CHECK(!textureShaderView(bad, multisample, remainingMsView));
+  bad = native; bad.Tex2D.MostDetailedMip = multisample.MipLevels; bad.Tex2D.MipLevels = UINT(-1);
+  CHECK(!textureShaderView(bad, multisample, remainingMsView));
   shaderView.Reset();
   CHECK(device->CreateShaderResourceView(msTexture.Get(), &srv, &shaderView) == S_OK);
   native.Tex2D.MostDetailedMip = 1;

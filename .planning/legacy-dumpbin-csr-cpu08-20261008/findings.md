@@ -1,0 +1,5 @@
+# Findings
+
+CPU07 archive42294914/SHA8258bfbdb52ba084590fb016879030f0e97254856682e419fa8d1b5a26c1d20b contains189 files. Original forensic review312985/512e0a17 accepted actual failure and closed ownership; explicit release841/9954eb58. All five attempted tool stages returned0; source stopped after both dumpbins because long member path regex did not match. Hybrid LINK was never attempted.
+
+ARM dumpbin original1285873/9bf530c1 contains A641 machine, external definitions512/513 for #_mm_getcsr/#_mm_setcsr, plain weak alias rows632/634 and immediately following Default index512/513 Anti dependency. /HEADERS reports long-name archive entries by offsets; no arm64ec/widemath path text appears. Exact mounted library1136438/e140f4af contains real A641 widemath600921/bb3b1af7, actual COFF indices1298/1299 and matching weak auxiliary targets. Corrected source keeps machine and exact CSR checks, adds unique-definition/alias and exact observed index coupling; no guessed filename rendering. CPU07 remains failed, not hybrid proof.

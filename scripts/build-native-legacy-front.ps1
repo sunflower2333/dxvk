@@ -230,13 +230,23 @@ try {
     Invoke-FrontTool 'soft-intrinsics-arm64' 'dumpbin.exe' @('/headers','/symbols','/linkermember:2',('"' + $softIntrinsicPath + '"'))
     Invoke-FrontTool 'soft-intrinsics-x64' 'dumpbin.exe' @('/headers','/symbols','/linkermember:2',('"' + $softIntrinsicX64Path + '"'))
     $softSymbols = [IO.File]::ReadAllText((Join-Path $output 'soft-intrinsics-arm64.stdout.raw'))
-    if ($softSymbols -notmatch '(?im)^\s*A641 machine' -or $softSymbols -notmatch '(?i)arm64ec[\\/]widemath\.obj') {
-        throw 'Original soft-intrinsic archive has no ARM64EC widemath member'
+    # /HEADERS /SYMBOLS names long archive entries by an offset, not a path.
+    # Require the observed EC machine and correlate the actual symbol indices.
+    $ecPattern = '(?ms)^\s*A641 machine[^\r\n]*\r?\n.*?(?=^\s*[0-9A-F]{3,4} machine|\z)'
+    $ecMembers = [Regex]::Matches($softSymbols, $ecPattern)
+    if ($ecMembers.Count -ne 1) {
+        throw 'Original soft-intrinsic archive has no ARM64EC machine'
     }
+    $softSymbols = $ecMembers[0].Value
     foreach ($name in @('_mm_getcsr','_mm_setcsr')) {
         $escaped = [Regex]::Escape($name)
-        if ($softSymbols -notmatch ('(?m)^.*\bSECT[0-9A-F]+\s+.*\bExternal\s+\|\s*#' + $escaped + '\s*$') -or
-            $softSymbols -notmatch ('(?m)^.*\bUNDEF\s+.*\bWeakExternal\s+\|\s*' + $escaped + '\s*$')) {
+        $definitionPattern = '(?m)^([0-9A-F]+)\s+.*\bSECT[0-9A-F]+\s+.*\bExternal\s+\|\s*#' + $escaped + '\s*$'
+        $aliasPattern = '(?m)^[0-9A-F]+\s+.*\bUNDEF\s+.*\bWeakExternal\s+\|\s*' + $escaped + '\s*\r?\n\s*Default index\s+([0-9A-F]+)\s+Anti dependency\s*$'
+        $definitions = [Regex]::Matches($softSymbols, $definitionPattern)
+        $aliases = [Regex]::Matches($softSymbols, $aliasPattern)
+        if ($definitions.Count -ne 1 -or $aliases.Count -ne 1 -or
+            [Convert]::ToUInt32($definitions[0].Groups[1].Value, 16) -ne
+            [Convert]::ToUInt32($aliases[0].Groups[1].Value, 16)) {
             throw "Original soft-intrinsic CSR definition/alias missing: $name"
         }
     }

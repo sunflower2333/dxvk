@@ -237,6 +237,12 @@ umd_dxgi_open_primary_test = executable('dxvk-umd-dxgi-open-primary-test',
    'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies)
 
+umd_dxgi_optional_shared_primary_test = executable('dxvk-umd-dxgi-optional-shared-primary-test',
+  ['../../tests/umd-dxgi-optional-shared-primary.cpp', 'umd_adapter.cpp', 'umd_contract.cpp',
+   'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp', 'umd_allocation.cpp',
+   'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
 umd_runtime_gpu_test = executable('dxvk-umd-runtime-gpu-test',
   '../../tests/umd-runtime-gpu.cpp', 'umd_runtime_gpu.cpp', 'umd_runtime_query.cpp',
   'umd_ddi.cpp', 'umd_allocation.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',

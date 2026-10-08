@@ -1,4 +1,62 @@
+# Current continuation checkpoint (2026-10-08)
+
+ROOT admits CPU09 source/local originals a5b76176 and delegates exact native
+CPU build8c647ba1 to EWDK. Actual5COFF/4PE compiled and readonly process/file
+identity diagnostic closed0; stale helper marker aborts before remaining CPU
+fixtures. Original122-file TAR9ab98459 retained; same-attempt posthash observer
+and explicit ownership release pending. No core/factory/validKMT/GPU/default.
+ROOT admits terminal cleanup b7 local originals03128797 and integrates ae69df3,
+DX8 e3→afa1ebb and ARM64X2e/2c→f8e8317/078b1fc locally. Main shipping-list
+conflict resolved by exact union; full e3 helper provider pins/CLI restored after
+source audit. All43 ARM cases preserved+one44; main93 phasecontrolsPASS.
+ROOT admits ARM64X prepared packet f8ab881e with actual selected37input joins;
+actual seven-stage hybrid build/view acceptance remain pending. One combined
+push after narrow CPU marker correction; published57 failure originals retained,
+no oldCI retry. Default runtime remains the installed viogpud3d line.
+
 # Progress
+
+2026-10-08 de72 original recovery02 PASS: collectcd7bcad4 closes all3 API,
+fiveZIP andsixlog subprocesses, download333/383/331sec. ROOT72723054 directly
+joins9380 originals/969Git+5links/fourcanonical/123actualclosednativefixtures,
+18cube and3volume readers, allPASS. ROOT standardcore originale05dcef3
+independently reads all3 rawZIP/API digests, executable standard OpenAdapter/
+OpenAdapter10_2/private legacy entries, no applicationfactories/security0 and
+actual CodeView/MSF7 PDB GUID+age. Newx86 core5517312/ba60b53f; ARM6279168/
+45934284; x645931008/803265b5. Agents receive exact originalsource/run/path/
+SHA; no target staging/loading yet. Initial reader draft private-export label
+was corrected against originalGit DEF before execution; actual reviewPASS.
+Main57 CI37713183282 final FAILURE: x86/x64typedresidency fail, ARMbackend
+compilePASS, nativeARMexecutionSKIPPED. Preserve fullfailed APIs/diagnostics;
+legacy de72 candidate remains independent. ARM64X forwarding/build-only
+slice2e875aad frozen locally; ROOT manually reads allCPP/producer/docs and
+requests source/tool packet, no native execution/registration yet.
+
+2026-10-08 actual CI43 x86 failure confirmed: originaljob113103594071/log
+851213/SHA31669a43, collector PID2746686 closed0/stderr0. Real residency
+transaction102085 PASS; typedDXGI fixture line335 requires owned.empty() &&
+!callbackAction && errors==0 and FAILS. This matches pinned ownedallocation
+outliving Device::close/serviceclose. DX10 separately implements terminal
+allocation ledger cleanup on DestroyDevice caller; preserve assertion and all
+failed original bytes. de72 all6PASS remains independent legacy candidate.
+
+2026-10-08 01:44 UTC continuation: published main57b3131 is clean; sole43-case
+CI37713183282 runs once, no manual dispatch. Standardentryde72dc2
+CI37711793677 all6 SUCCESS. Original collector01 retained three450sec killed
+partialZIPs (x64/arm64/x86; no CI failure), both small archives complete.
+Freshcollector02 changes only outputroot and bounded download timeout900;
+ROOTprepared originalsourcee2f9b327/readers9a4e6ecd, active local downloads.
+ROOT additionally prepares pure originalPEexport/CodeView/MSF7 PDB identity
+reader for all3 genuine newcores; no module load or target call.
+EWDK constructor correction remainslocal: permit system8 internal initialization,
+immutable version/interface/flags contract, typed draw/Clear/Blt/Present denies,
+HALfailure exit1, freshcore tuple from separately admitted phase manifest.
+CPU09 preparation no longer waits for core ZIP; source freeze/nativepacket next.
+DX11 actualARM64X compiler/linker producer and normal System32 D3D9 probe
+remainlocal and unregistered. DX10 audit found terminal allocation ownership
+can outlive RuntimeService close; separate narrow ledger/teardown fix requested
+before shared Resolve integration. Actual target owner ROOT idle; no default
+replacement or success/hardware claim. All original failures remain retained.
 
 2026-10-08 latest: actual enum789c3d73 child0 observationally completes, but
 strict855 original reader rejects before HAL admission. Direct3DCreate8 calls

@@ -8,6 +8,33 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
+
+Local integration now includes terminal allocation cleanup ae69df3 (frozen
+b7f5afd), DX8 internal factory enumeration afa1ebb (frozen e3ac126), and
+ARM64X legacy frontend f8e8317/078b1fc (frozen2e875aa/2c25bd5). ROOT03128797
+reopens502 original files/76Git/335compiler/10COFF/14closed local children;
+original residency assertion remains unchanged. Main integration preserves
+all43 ARM cases and adds terminal44; actual93 protocol controls PASS.
+Full frozen e3 helper restored after merge audit found dropped provider pins
+and two malformed CLI cases. Native CPU09 has actual5COFF/4PE and readonly
+identity diagnostic PASS but helper failed on stale D3D8_PROCESS_MACHINE
+marker; original122-file TAR9ab98459 retained, remaining35CPU children pending.
+EWDK owns target while retaining bounded posthash observer of the same attempt;
+next completion-only recipe needs review, no unchanged rebuild. Native ARM64X
+packet ROOTf8ab881e joins12TAR/4Git/37current14.50+28000 tool/header/lib pins,
+8 additional captures pending in actual attempt; no target authorization yet.
+No default driver registration changed; genuine HAL/offscreen/Present open.
+One combined push/newCI44 follows the narrow marker correction.
+
+Published main57b3131 native43-case CI37713183282 completedFAILURE: actual
+x86/x64 residency assertion line335 owned.empty(), ARMcompilePASS and
+ARMnativeexecutionSKIPPED. ROOTd4e38995 retains both genuine failure ZIPs,
+86original members/24closed fixture children/22PASS+2FAIL; no rerun of57.
+Standardentryde72dc2 CI37711793677 allsixSUCCESS; original recovery02
+PASScd7bcad4 and ROOT72723054joins9380originals/123nativefixtures.
+ROOTe05dcef3 admits three originalstandard-entry exports/PDB GUIDage.
+Newx86ba60b53f remains unstaged; all hardware/default acceptanceopen.
+
 Latest checkpoint: original I386 candidate staging PASS, ROOT independently
 joins17 original files and accepts release19d2203c with ROOT346022f6. Four
 original ZIP payloads at the owned d7 candidate directory remain distinct from

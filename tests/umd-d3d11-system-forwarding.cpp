@@ -113,6 +113,11 @@ int main() {
   CHECK(functions.pfnCreateDevice(adapterHandle, &createRequest) == E_FAIL && oldErrors == 1 && newErrors == 0);
   liveCore.pfnSetErrorCb = newError; createResult = S_OK;
   CHECK(functions.pfnCreateDevice(adapterHandle, &createRequest) == S_OK && oldErrors == 1 && newErrors == 1);
+  // Windows 7 uses the same exact typed11 callback ABI. The frontend must
+  // preserve its original interface value and capture the live core pointer.
+  createRequest.Interface = D3D11_0_7_DDI_INTERFACE_VERSION;
+  createRequest.Version = (D3D11_0_7_DDI_BUILD_VERSION << 16) | DXGI_RESOLVE_SHARED_RESOURCE;
+  CHECK(functions.pfnCreateDevice(adapterHandle, &createRequest) == S_OK && newErrors == 2);
   CHECK(functions.pfnCloseAdapter(adapterHandle) == S_OK);
   CHECK(functions.pfnGetCaps(adapterHandle, &capRequest) == E_INVALIDARG && mask == 0xfeedbeef);
   auto snapshot = std::make_unique<VioGpuD11EntryInfo>(); snapshot->size = sizeof(*snapshot);
@@ -120,6 +125,16 @@ int main() {
   for (UINT i = 0; i < snapshot->eventCount; ++i) CHECK(snapshot->events[i].completed && snapshot->events[i].sequence == i + 1);
   CHECK(snapshot->events[4].call == VioGpuD11Call::Caps && snapshot->events[4].caps == 0);
   CHECK(snapshot->events[5].call == VioGpuD11Call::Caps && snapshot->events[5].caps == 1);
+  bool win7Create = false;
+  for (UINT i = 0; i < snapshot->eventCount; ++i) {
+    const auto& event = snapshot->events[i];
+    if (event.call == VioGpuD11Call::Create && event.interfaceVersion == D3D11_0_7_DDI_INTERFACE_VERSION) {
+      CHECK(event.result == S_OK && event.version == createRequest.Version);
+      CHECK(event.kernelCallbacks == address(&liveKernel) && event.coreCallbacks == address(&liveCore));
+      win7Create = true;
+    }
+  }
+  CHECK(win7Create);
   std::printf("SYSTEM_D3D11_FORWARDING_CPU_PASS checks=%u live_callback_updates=1 core_stub=1 driver_runtime_gpu=0\n", checks);
   return 0;
 }

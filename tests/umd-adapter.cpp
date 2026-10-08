@@ -495,13 +495,13 @@ static void creationFixture(UINT interfaceVersion, UINT version, UINT flags, Cre
 
 static void nativeInterfaces() {
   const UINT interfaces[] = {D3D10_0_DDI_INTERFACE_VERSION, D3D10_1_DDI_INTERFACE_VERSION,
-    D3D11_0_DDI_INTERFACE_VERSION};
+    D3D11_0_DDI_INTERFACE_VERSION, D3D11_0_7_DDI_INTERFACE_VERSION};
   for (UINT interfaceVersion : interfaces) {
     const UINT build = buildFor(interfaceVersion);
     CHECK(!dxvk::umd::supportedNativeInterface(interfaceVersion, ((build - 1) << 16) | 0xffff));
     CHECK(dxvk::umd::supportedNativeInterface(interfaceVersion, ((build + 1) << 16) | 0xffff));
     for (UINT flags = 0; flags < 256; ++flags) {
-      const bool expected = interfaceVersion == D3D11_0_DDI_INTERFACE_VERSION
+      const bool expected = dxvk::umd::nativeInterface(interfaceVersion) == dxvk::umd::NativeInterface::D3D11
         ? flags == 0 || flags == 2 || flags == 4 || flags == 0x10 || flags == 0x12 || flags == 0x14
         : flags == 0;
       CHECK(dxvk::umd::supportedNativeInterface(interfaceVersion, build << 16, flags) == expected);
@@ -512,7 +512,7 @@ static void nativeInterfaces() {
       CHECK(dxvk::umd::nativeDxgiUses1_1(interfaceVersion, version) == (revision != 0));
       const UINT flags[] = {0, 0x10, 2, 0x12, 4, 0x14};
       for (UINT flag : flags) {
-        if (interfaceVersion != D3D11_0_DDI_INTERFACE_VERSION && flag) continue;
+        if (dxvk::umd::nativeInterface(interfaceVersion) != dxvk::umd::NativeInterface::D3D11 && flag) continue;
         for (CreationCase action : {CreationCase::Success, CreationCase::BackendFailure,
           CreationCase::AllocationFailure, CreationCase::PositiveStatus, CreationCase::CloseBeforeBackend,
           CreationCase::CloseAfterBackend, CreationCase::ResetAfterBackend,
@@ -523,6 +523,8 @@ static void nativeInterfaces() {
   }
   CHECK(dxvk::umd::nativeFeatureLevel(D3D10_1_DDI_INTERFACE_VERSION) == D3D_FEATURE_LEVEL_10_1);
   CHECK(dxvk::umd::nativeFeatureLevel(D3D11_0_DDI_INTERFACE_VERSION, 4) == D3D_FEATURE_LEVEL_11_0);
+  CHECK(dxvk::umd::nativeFeatureLevel(D3D11_0_7_DDI_INTERFACE_VERSION, 4) == D3D_FEATURE_LEVEL_11_0);
+  CHECK(!dxvk::umd::supportedNativeInterface(D3D11_0_vista_DDI_INTERFACE_VERSION, 0xffffffff));
   CHECK(!dxvk::umd::supportedNativeInterface(D3D10_0_x_DDI_INTERFACE_VERSION, 0xffffffff));
   CHECK(!dxvk::umd::supportedNativeInterface(D3D11_1_DDI_INTERFACE_VERSION, 0xffffffff));
 
@@ -540,16 +542,16 @@ static void nativeInterfaces() {
   CHECK(VioGpuDxvkOpenAdapter10_2ForTest(&open) == S_OK);
   CHECK(functions->pfnCreateDevice && !alternate.pfnCreateDevice);
   UINT32 count = 0;
-  GuardedBytes versionStorage(3 * sizeof(UINT64)); versionStorage.fill(0xa5);
+  GuardedBytes versionStorage(4 * sizeof(UINT64)); versionStorage.fill(0xa5);
   auto versions = versionStorage.as<UINT64>(); const auto versionBefore = versionStorage.snapshot();
-  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, nullptr) == S_OK && count == 3);
+  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, nullptr) == S_OK && count == 4);
   count = 0;
   queryHook = [&] { count = UINT32_MAX; };
   CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, versions) == E_OUTOFMEMORY);
-  CHECK(count == 3 && versionStorage.matches(versionBefore));
+  CHECK(count == 4 && versionStorage.matches(versionBefore));
   CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, versions) == S_OK);
   CHECK(versions[0] == D3D10_0_DDI_SUPPORTED && versions[1] == D3D10_1_DDI_SUPPORTED
-    && versions[2] == D3D11_0_DDI_SUPPORTED);
+    && versions[2] == D3D11_0_DDI_SUPPORTED && versions[3] == D3D11_0_7_DDI_SUPPORTED);
   GuardedBytes capsStorage(sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS)); capsStorage.fill(0xa5);
   UINT alternateCaps = 0x12345678;
   D3D10_2DDIARG_GETCAPS caps = {};
@@ -564,7 +566,7 @@ static void nativeInterfaces() {
     CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &nested, nullptr) == DXGI_ERROR_WAS_STILL_DRAWING);
     CHECK(nested == 99);
   };
-  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, nullptr) == S_OK && count == 3);
+  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, nullptr) == S_OK && count == 4);
   count = 77;
   queryHook = [&] { CHECK(functions->pfnCloseAdapter(open.hAdapter) == S_OK); };
   CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, nullptr) == DXGI_ERROR_DEVICE_REMOVED);
@@ -634,15 +636,16 @@ static void validationNegotiation() {
   }
   CHECK(VioGpuDxvkOpenAdapter11Fl10_0ForValidation(&open) == S_OK);
   UINT32 count = 77;
-  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, nullptr) == S_OK && count == 1);
-  GuardedBytes versions(sizeof(UINT64)); versions.fill(0xa5);
+  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, nullptr) == S_OK && count == 2);
+  GuardedBytes versions(2 * sizeof(UINT64)); versions.fill(0xa5);
   const auto versionBefore = versions.snapshot();
   count = 0;
   queryHook = [&] { count = UINT32_MAX; };
   CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, versions.as<UINT64>()) == E_OUTOFMEMORY);
-  CHECK(count == 1 && versions.matches(versionBefore));
+  CHECK(count == 2 && versions.matches(versionBefore));
   CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, versions.as<UINT64>()) == S_OK);
-  CHECK(count == 1 && *versions.as<UINT64>() == D3D11_0_DDI_SUPPORTED);
+  CHECK(count == 2 && versions.as<UINT64>()[0] == D3D11_0_DDI_SUPPORTED
+    && versions.as<UINT64>()[1] == D3D11_0_7_DDI_SUPPORTED);
 
   GuardedBytes capsStorage(sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS));
   D3D10_2DDIARG_GETCAPS caps = {};
@@ -727,14 +730,16 @@ static void validationNegotiation() {
   CHECK(capsStorage.matches(capsBefore));
   CHECK(functions->pfnCreateDevice(open.hAdapter, &create) == E_INVALIDARG);
 
-  for (UINT revision : {0u, UINT(DXGI_RESOLVE_SHARED_RESOURCE)}) {
-    for (UINT flags : {0u, UINT(D3D11DDI_CREATEDEVICE_FLAG_SINGLETHREADED)}) {
-      for (CreationCase action : {CreationCase::Success, CreationCase::BackendFailure,
-        CreationCase::AllocationFailure, CreationCase::PositiveStatus, CreationCase::CloseBeforeBackend,
-        CreationCase::CloseAfterBackend, CreationCase::ResetAfterBackend,
-        CreationCase::QueryFailureAfterBackend, CreationCase::QueryExceptionAfterBackend})
-        creationFixture(D3D11_0_DDI_INTERFACE_VERSION, (D3D11_0_DDI_BUILD_VERSION << 16) | revision,
-          flags, action, true);
+  for (UINT interfaceVersion : {UINT(D3D11_0_DDI_INTERFACE_VERSION), UINT(D3D11_0_7_DDI_INTERFACE_VERSION)}) {
+    for (UINT revision : {0u, UINT(DXGI_RESOLVE_SHARED_RESOURCE)}) {
+      for (UINT flags : {0u, UINT(D3D11DDI_CREATEDEVICE_FLAG_SINGLETHREADED)}) {
+        for (CreationCase action : {CreationCase::Success, CreationCase::BackendFailure,
+          CreationCase::AllocationFailure, CreationCase::PositiveStatus, CreationCase::CloseBeforeBackend,
+          CreationCase::CloseAfterBackend, CreationCase::ResetAfterBackend,
+          CreationCase::QueryFailureAfterBackend, CreationCase::QueryExceptionAfterBackend})
+          creationFixture(interfaceVersion, (buildFor(interfaceVersion) << 16) | revision,
+            flags, action, true);
+      }
     }
   }
   // The tag belongs to an adapter token; it cannot spill into either old entry.
@@ -743,7 +748,7 @@ static void validationNegotiation() {
   CHECK(functions->pfnGetCaps(generic, &caps) == S_OK);
   CHECK(capsStorage.as<D3D11DDI_3DPIPELINESUPPORT_CAPS>()->Caps == 0);
   count = 77;
-  CHECK(functions->pfnGetSupportedVersions(generic, &count, nullptr) == S_OK && count == 3);
+  CHECK(functions->pfnGetSupportedVersions(generic, &count, nullptr) == S_OK && count == 4);
   CHECK(functions->pfnCloseAdapter(generic) == S_OK);
   CHECK(OpenAdapter10_2(&open) == S_OK);
   count = 77;

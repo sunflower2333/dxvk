@@ -36,7 +36,7 @@ bool admitted(const Adapter& adapter, UINT interfaceVersion, UINT flags = 0) {
   // Only the dedicated SYSTEM-validation entry may break the ordinary-proof
   // dependency cycle. Its tag remains owned by this adapter until CloseAdapter.
   if (adapter.validation11Fl10_0)
-    return interfaceVersion == D3D11_0_DDI_INTERFACE_VERSION
+    return dxvk::umd::nativeInterface(interfaceVersion) == dxvk::umd::NativeInterface::D3D11
       && !(flags & ~D3D11DDI_CREATEDEVICE_FLAG_SINGLETHREADED);
   return (!adapter.legacyInterface || adapter.legacyInterface == interfaceVersion)
     && (adapter.development || dxvk::umd::runtimeSupportsNativeInterface(interfaceVersion, flags));
@@ -220,11 +220,12 @@ HRESULT APIENTRY supportedVersions(D3D10DDI_HADAPTER handle, UINT32* entries, UI
   HRESULT hr = state(adapter);
   if (FAILED(hr)) return hr;
   const UINT32 capacity = versions ? *entries : 0;
-  UINT64 supported[3] = {};
+  UINT64 supported[4] = {};
   UINT32 required = 0;
   if (admitted(*adapter, D3D10_0_DDI_INTERFACE_VERSION)) supported[required++] = D3D10_0_DDI_SUPPORTED;
   if (admitted(*adapter, D3D10_1_DDI_INTERFACE_VERSION)) supported[required++] = D3D10_1_DDI_SUPPORTED;
   if (admitted(*adapter, D3D11_0_DDI_INTERFACE_VERSION)) supported[required++] = D3D11_0_DDI_SUPPORTED;
+  if (admitted(*adapter, D3D11_0_7_DDI_INTERFACE_VERSION)) supported[required++] = D3D11_0_7_DDI_SUPPORTED;
   hr = current(adapter);
   if (FAILED(hr)) return hr;
   std::lock_guard<std::mutex> lock(adaptersMutex);

@@ -10,7 +10,8 @@ inline NativeInterface nativeInterface(UINT interfaceVersion) noexcept {
   switch (interfaceVersion) {
     case D3D10_0_DDI_INTERFACE_VERSION: return NativeInterface::D3D10;
     case D3D10_1_DDI_INTERFACE_VERSION: return NativeInterface::D3D10_1;
-    case D3D11_0_DDI_INTERFACE_VERSION: return NativeInterface::D3D11;
+    case D3D11_0_DDI_INTERFACE_VERSION:
+    case D3D11_0_7_DDI_INTERFACE_VERSION: return NativeInterface::D3D11;
     default: return NativeInterface::Unsupported;
   }
 }
@@ -20,7 +21,10 @@ inline bool supportedNativeInterface(UINT interfaceVersion, UINT version, UINT f
   switch (nativeInterface(interfaceVersion)) {
     case NativeInterface::D3D10: build = D3D10_0_DDI_BUILD_VERSION; break;
     case NativeInterface::D3D10_1: build = D3D10_1_DDI_BUILD_VERSION; break;
-    case NativeInterface::D3D11: build = D3D11_0_DDI_BUILD_VERSION; break;
+    case NativeInterface::D3D11:
+      build = interfaceVersion == D3D11_0_7_DDI_INTERFACE_VERSION
+        ? D3D11_0_7_DDI_BUILD_VERSION : D3D11_0_DDI_BUILD_VERSION;
+      break;
     default: return false;
   }
   if ((version >> 16) < build) return false;

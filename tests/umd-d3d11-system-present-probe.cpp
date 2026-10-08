@@ -150,7 +150,8 @@ std::string diagnostics(const std::wstring& frontend, const std::wstring& core, 
   std::string text = "{\"schema\":1,\"core\":" + json(info->corePath) + ",\"liveAdapters\":" + std::to_string(info->liveAdapters) + ",\"events\":[";
   for (UINT i = 0; i < info->eventCount; ++i) {
     const auto& e = info->events[i]; require(e.completed && e.sequence == i + 1, "completed-ordered-negotiation");
-    if (e.call == VioGpuD11Call::Create && e.result == S_OK && e.interfaceVersion == D3D11_0_DDI_INTERFACE_VERSION
+    if (e.call == VioGpuD11Call::Create && e.result == S_OK
+        && (e.interfaceVersion == D3D11_0_DDI_INTERFACE_VERSION || e.interfaceVersion == D3D11_0_7_DDI_INTERFACE_VERSION)
         && D3D11DDI_EXTRACT_3DPIPELINELEVEL_FROM_FLAGS(e.flags) == D3D11DDI_3DPIPELINELEVEL_10_0
         && e.kernelCallbacks && e.coreCallbacks) created11 = true;
     if (i) text += ',';

@@ -49,7 +49,7 @@ def main():
         result = dict(sequence=0,call=kind,result=0,interface=0,version=0,flags=0,type=0,dataSize=0,capacity=0,count=0,caps=0,
                       argument=1,adapter=2,runtimeAdapter=0,kernelCallbacks=0,coreCallbacks=0,returnSize=0,versions=[])
         result.update(values); return result
-    events = [event(0,runtimeAdapter=3),event(1,count=1,capacity=1,versions=[reader.SUPPORTED11]),
+    events = [event(0,runtimeAdapter=3),event(1,count=2,capacity=2,versions=reader.SUPPORTED11_REVISIONS.copy()),
               event(2,type=130,dataSize=4,caps=1),event(2,type=128,dataSize=4),event(2,type=129,dataSize=4),
               event(3,interface=reader.DDI11,version=0x20009,flags=16,returnSize=256),
               event(4,interface=reader.DDI11,version=0x20009,flags=16,kernelCallbacks=4,coreCallbacks=5)]
@@ -127,6 +127,28 @@ def main():
         path=raw/name; original=path.read_bytes(); damaged=bytearray(original); struct.pack_into('<I',damaged,24,len(damaged)+1)
         reject(name+'-container-length',lambda p=path,d=damaged:p.write_bytes(d),lambda p=path,d=original:p.write_bytes(d))
     final=verify(); assert final==baseline
+    # Both SDK DDI11 revisions retain exact typed CreateDevice, flags and live
+    # callbacks. Version-list corruption and all other DDIs remain rejected.
+    saved_negotiation, saved_after = copy.deepcopy(negotiation), copy.deepcopy(after)
+    for revision in (reader.DDI11, reader.DDI11_WIN7):
+        for data in (negotiation, after):
+            for entry in data['events']:
+                if entry['call'] in (3, 4):
+                    entry['interface'] = revision
+        write(); observed = verify()
+        assert observed['pixels'] == 512 and observed['typed_ddi'] == revision and not observed['hardware_admission']
+        for index, key, bad in [(1,'count',1), (1,'capacity',1),
+                (1,'versions',[reader.SUPPORTED11,reader.SUPPORTED11]),
+                (1,'versions',[reader.SUPPORTED11_WIN7,reader.SUPPORTED11]),
+                (1,'versions',[reader.SUPPORTED11_WIN7]),
+                (5,'interface',0x000b0009), (6,'interface',0x000b000f),
+                (6,'version',0x0001ffff), (6,'flags',0x20), (6,'result',-1)]:
+            old=negotiation['events'][index][key]
+            reject('revision-'+hex(revision)+'-'+str(index)+'-'+key+'-'+str(bad),
+                lambda i=index,k=key,b=bad:negotiation['events'][i].__setitem__(k,b),
+                lambda i=index,k=key,v=old:negotiation['events'][i].__setitem__(k,v))
+    negotiation, after = saved_negotiation, saved_after
+    write(); assert verify() == baseline
     # The original Khronos loader can be staged under this private basename.
     # Its actual path must still be the exact approved operand, never foreign.
     original_loader = loader

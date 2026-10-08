@@ -143,7 +143,8 @@ HRESULT APIENTRY create(D3D10DDI_HADAPTER handle, D3D10DDIARG_CREATEDEVICE* args
   if (args) {
     event.interfaceVersion = args->Interface; event.version = args->Version; event.flags = args->Flags;
     event.kernelCallbacks = address(args->pKTCallbacks);
-    if (args->Interface == D3D11_0_DDI_INTERFACE_VERSION) event.coreCallbacks = address(args->p11UMCallbacks);
+    if (args->Interface == D3D11_0_DDI_INTERFACE_VERSION || args->Interface == D3D11_0_7_DDI_INTERFACE_VERSION)
+      event.coreCallbacks = address(args->p11UMCallbacks);
     else if (args->Interface == D3D10_0_DDI_INTERFACE_VERSION || args->Interface == D3D10_1_DDI_INTERFACE_VERSION)
       event.coreCallbacks = address(args->pUMCallbacks);
   }

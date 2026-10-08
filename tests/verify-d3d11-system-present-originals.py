@@ -9,7 +9,10 @@ import re
 import struct
 
 DDI11 = 0x000b000a
+DDI11_WIN7 = 0x000b000b
 SUPPORTED11 = (DDI11 << 32) | (2 << 16)
+SUPPORTED11_WIN7 = (DDI11_WIN7 << 32) | (2 << 16)
+SUPPORTED11_REVISIONS = [SUPPORTED11, SUPPORTED11_WIN7]
 RUNNER = 'd8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad'
 MARKER = 'SYSTEM_D3D11_PRESENT_VALIDATION_PASS feature_level=10_0 typed_ddi=11 pixels=512 presents=2 software_fallback=0 production_admission=0 registry_changes=0'
 
@@ -71,9 +74,9 @@ def negotiation(data, core, closed):
         elif kind != 0:
             assert event['adapter'] in handles
         if kind == 1 and event['result'] == 0:
-            assert event['count'] == 1
+            assert event['count'] == len(SUPPORTED11_REVISIONS)
             if event['versions']:
-                assert event['capacity'] >= 1 and event['versions'] == [SUPPORTED11]
+                assert event['capacity'] >= len(SUPPORTED11_REVISIONS) and event['versions'] == SUPPORTED11_REVISIONS
                 version_list = True
         if kind == 2 and event['result'] == 0:
             assert event['dataSize'] == 4
@@ -85,7 +88,7 @@ def negotiation(data, core, closed):
             else:
                 raise AssertionError('unknown successful caps response')
         if kind in (3, 4):
-            assert event['interface'] == DDI11 and 2 <= event['version'] >> 16 <= 0xffff
+            assert event['interface'] in (DDI11, DDI11_WIN7) and 2 <= event['version'] >> 16 <= 0xffff
             # Exact existing typed11 flags: level10_0 is zero, SINGLETHREADED
             # may be present. No other feature level/threading flags admitted.
             assert not event['flags'] & ~0x10
@@ -192,7 +195,7 @@ def verify(directory, stdout_path, process_path, held_path, luid_high, luid_low,
         raw = (directory / name).read_bytes()
         originals.append(dict(name=name, bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
     return dict(verified=True, scope='ordinary-SYSTEM-D3D11-FL10_0-windowed-present-originals', pixels=512, literal_bytes=2048,
-                typed_ddi=DDI11, creates=len(creates), originals=originals,
+                typed_ddi=creates[0]['interface'], creates=len(creates), originals=originals,
                 held_original=dict(bytes=held_path.stat().st_size, sha256=hashlib.sha256(held_path.read_bytes()).hexdigest()),
                 hardware_admission=False, registration_restoration=False, production_admission=False, present_proof=True, presents=2, desktop_pixels=False, dwm_hardware=False)
 

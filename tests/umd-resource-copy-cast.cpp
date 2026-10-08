@@ -19,11 +19,13 @@ static HRESULT lastError = S_OK;
 static HRESULT apiResult = S_OK;
 static DWORD callerThread;
 static const char* phase = "startup";
+static const char* submission = "none";
+static HRESULT deviceRemoved = S_OK;
 static UINT profile, kind, sourceFormat, destinationFormat, operation, control = UINT(-1), subresource = UINT(-1);
 static const LUID expectedLuid{0x187bb593,-78};
 static ComPtr<ID3D11DeviceContext> createdContext;
 static std::ofstream manifest;
-#define CHECK(x) do { ++checks; if (!(x)) { std::fprintf(stderr,"Resource copy cast failure line=%d: %s checks=%u callbacks=%u HRESULT=%08lx api_HRESULT=%08lx phase=%s profile=%u kind=%u source_format=%u destination_format=%u operation=%u control=%u subresource=%u observations=%u rejections=%u\n",__LINE__,#x,checks,callbacks,static_cast<unsigned long>(lastError),static_cast<unsigned long>(apiResult),phase,profile,kind,sourceFormat,destinationFormat,operation,control,subresource,readbacks,rejections); std::exit(1); } } while (0)
+#define CHECK(x) do { ++checks; if (!(x)) { std::fprintf(stderr,"Resource copy cast failure line=%d: %s checks=%u callbacks=%u HRESULT=%08lx api_HRESULT=%08lx phase=%s profile=%u kind=%u source_format=%u destination_format=%u operation=%u control=%u subresource=%u observations=%u rejections=%u submission=%s device_removed_checkpoint=%08lx\n",__LINE__,#x,checks,callbacks,static_cast<unsigned long>(lastError),static_cast<unsigned long>(apiResult),phase,profile,kind,sourceFormat,destinationFormat,operation,control,subresource,readbacks,rejections,submission,static_cast<unsigned long>(deviceRemoved)); std::exit(1); } } while (0)
 struct Phase {
   const char* previous = phase;
   const UINT previousSubresource = subresource;
@@ -219,6 +221,7 @@ static void observe(Resource& destination,const Pixels& expected,DXGI_FORMAT sou
 static void perform(Fixture& f,UINT kind,DXGI_FORMAT srcFormat,DXGI_FORMAT dstFormat,UINT operation) {
   Phase step("positive-copy"); ::profile=f.profile; ::kind=kind; sourceFormat=UINT(srcFormat);
   destinationFormat=UINT(dstFormat); ::operation=operation; control=UINT(-1);
+  submission="positive-resources"; deviceRemoved=S_OK;
   Description sourceDesc(kind,srcFormat),destDesc(kind,dstFormat);
   auto original=initial(sourceDesc,0x17),expected=initial(destDesc,0xa3);
   Resource source(f,sourceDesc,&original),destination(f,destDesc,&expected);
@@ -232,12 +235,13 @@ static void perform(Fixture& f,UINT kind,DXGI_FORMAT srcFormat,DXGI_FORMAT dstFo
     const UINT srcSub=kind ? 1 : 0,dstSub=kind && kind!=3 ? 3 : 0;
     const UINT x=kind ? 3 : 80,y=kind>1 ? 1 : 0,z=kind==3 ? 1 : 0;
     D3D10_DDI_BOX box{kind ? 1 : 16,0,0,kind ? 3 : 48,kind>1 ? 2 : 1,kind==3 ? 2 : 1};
+    const bool attributeVolumeCast=kind==3 &&
+      (srcFormat==DXGI_FORMAT_R9G9B9E5_SHAREDEXP || dstFormat==DXGI_FORMAT_R9G9B9E5_SHAREDEXP);
+    if (attributeVolumeCast) submission="native-region-before-public";
     f.call([&](auto& t) {
       if (operation==3) t.pfnResourceConvertRegion(f.device,destination.handle,dstSub,x,y,z,source.handle,srcSub,&box);
       else t.pfnResourceCopyRegion(f.device,destination.handle,dstSub,x,y,z,source.handle,srcSub,&box);
     }); ok();
-    const D3D11_BOX apiBox{UINT(box.left),UINT(box.top),UINT(box.front),UINT(box.right),UINT(box.bottom),UINT(box.back)};
-    f.context->CopySubresourceRegion(destination.reference.Get(),dstSub,x,y,z,source.reference.Get(),srcSub,&apiBox);
     const auto& src=sourceDesc.shapes[srcSub%sourceDesc.mips]; const auto& dst=destDesc.shapes[dstSub%destDesc.mips];
     for (UINT dz=0;dz<UINT(box.back-box.front);++dz) for (UINT dy=0;dy<UINT(box.bottom-box.top);++dy)
       for (UINT dx=0;dx<UINT(box.right-box.left);++dx) {
@@ -245,9 +249,27 @@ static void perform(Fixture& f,UINT kind,DXGI_FORMAT srcFormat,DXGI_FORMAT dstFo
         const size_t to=((size_t(z+dz)*dst.TexelHeight+y+dy)*dst.TexelWidth+x+dx)*destDesc.texel;
         std::memcpy(expected[dstSub].data()+to,original[srcSub].data()+from,sourceDesc.texel);
       }
+    // Force the native 3D R9 exception copy through staging Map before the
+    // independent public void copy can affect this fixture's shared WARP device.
+    // These extra reads do not add observations or alter any literal oracle.
+    if (attributeVolumeCast) {
+      deviceRemoved=f.backend->GetDeviceRemovedReason(); CHECK(deviceRemoved==S_OK);
+      CHECK(!read(destination,true,expected).empty());
+      deviceRemoved=f.backend->GetDeviceRemovedReason(); CHECK(deviceRemoved==S_OK);
+      std::printf("Resource copy cast native-before-public PASS profile=%u kind=%u source_format=%u destination_format=%u operation=%u device_removed=%08lx\n",
+        f.profile,kind,UINT(srcFormat),UINT(dstFormat),operation,static_cast<unsigned long>(deviceRemoved));
+      CHECK(std::fflush(stdout)==0);
+      submission="public-region-after-native-readback";
+    }
+    const D3D11_BOX apiBox{UINT(box.left),UINT(box.top),UINT(box.front),UINT(box.right),UINT(box.bottom),UINT(box.back)};
+    f.context->CopySubresourceRegion(destination.reference.Get(),dstSub,x,y,z,source.reference.Get(),srcSub,&apiBox);
+    if (attributeVolumeCast) {
+      deviceRemoved=f.backend->GetDeviceRemovedReason(); CHECK(deviceRemoved==S_OK);
+    }
   }
   observe(destination,expected,srcFormat,operation);
   CHECK(read(source,true,original)==read(source,false,original));
+  submission="none";
 }
 static void negativeControls(Fixture& f,Fixture& foreign,UINT kind) {
   Phase step("negative-control"); ::profile=f.profile; ::kind=kind; sourceFormat=destinationFormat=UINT(DXGI_FORMAT_R32_UINT);

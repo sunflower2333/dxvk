@@ -419,23 +419,13 @@ void APIENTRY relocateDeviceFunctions10_1(D3D10DDI_HDEVICE h, D3D10_1DDI_DEVICEF
 void APIENTRY relocateDeviceFunctions11(D3D10DDI_HDEVICE h, D3D11DDI_DEVICEFUNCS* functions) {
   if (!functions) get(h)->error(E_INVALIDARG);
 }
-// A real bit-copy implements identity conversion. Format conversion still
-// needs a rendering pass; reject it explicitly instead of issuing an invalid
-// public CopyResource call whose void return could look like success.
-bool conversionIdentity(Device* device, D3D10DDI_HRESOURCE dst, UINT dstIndex,
-    D3D10DDI_HRESOURCE src, UINT srcIndex) {
-  if (!owned(device, get(dst)) || !owned(device, get(src))) return false;
-  SubresourceInfo destination, source;
-  if (!subresourceInfo(get(dst), dstIndex, destination) || !subresourceInfo(get(src), srcIndex, source)
-      || destination.format != source.format || destination.dimension != source.dimension) {
-    device->error(DXGI_ERROR_UNSUPPORTED); return false;
-  }
-  return true;
-}
+// The native Convert slots use the same format-cast bit-copy contract as
+// ResourceCopy. All descriptors/ranges are validated by the shared handlers;
+// these slots never interpret UINT/FLOAT/SRGB bytes as numeric conversion.
 void APIENTRY convertResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, D3D10DDI_HRESOURCE src) {
-  if (conversionIdentity(get(h), dst, 0, src, 0)) copyResource(h, dst, src);
+  copyResource(h, dst, src);
 }
 void APIENTRY convertResourceRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstIndex,
     UINT x, UINT y, UINT z, D3D10DDI_HRESOURCE src, UINT srcIndex, const D3D10_DDI_BOX* box) {
-  if (conversionIdentity(get(h), dst, dstIndex, src, srcIndex)) copyRegion(h, dst, dstIndex, x, y, z, src, srcIndex, box);
+  copyRegion(h, dst, dstIndex, x, y, z, src, srcIndex, box);
 }

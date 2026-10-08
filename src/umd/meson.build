@@ -266,6 +266,14 @@ umd_texture_uav_test = executable('dxvk-umd-texture-uav-test',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
 
+umd_copy_format_test = executable('dxvk-umd-copy-format-test',
+  '../../tests/umd-copy-format.cpp')
+
+umd_resource_copy_cast_test = executable('dxvk-umd-resource-copy-cast-test',
+  ['../../tests/umd-resource-copy-cast.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
+
 umd_texture3d_test = executable('dxvk-umd-texture3d-test',
   ['../../tests/umd-texture3d.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],

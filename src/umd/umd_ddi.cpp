@@ -15,6 +15,7 @@
 #include "umd_texture3d.h"
 #include "umd_transfer_policy.h"
 #include "umd_transfer_format.h"
+#include "umd_resource_copy.h"
 #include "umd_generate_mips.h"
 #include "umd_blt.h"
 #include "umd_state.h"
@@ -1387,17 +1388,8 @@ void APIENTRY clearDepthView(D3D10DDI_HDEVICE h, D3D10DDI_HDEPTHSTENCILVIEW obje
 void APIENTRY copyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, D3D10DDI_HRESOURCE src) {
   auto device = get(h);
   if (!owned(device, get(dst)) || !owned(device, get(src))) return;
-  D3D11_RESOURCE_DIMENSION dstKind, srcKind;
-  get(dst)->backend->GetType(&dstKind); get(src)->backend->GetType(&srcKind);
-  if (dstKind == D3D11_RESOURCE_DIMENSION_TEXTURE3D || srcKind == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
-    ComPtr<ID3D11Texture3D> destination, source;
-    if (get(dst)->backend.Get() == get(src)->backend.Get()
-        || FAILED(get(dst)->backend.As(&destination)) || FAILED(get(src)->backend.As(&source))) {
-      device->error(E_INVALIDARG); return;
-    }
-    D3D11_TEXTURE3D_DESC dstDesc = {}, srcDesc = {};
-    destination->GetDesc(&dstDesc); source->GetDesc(&srcDesc);
-    if (!dxvk::umd::texture3DCopy(dstDesc, srcDesc)) { device->error(E_INVALIDARG); return; }
+  if (!dxvk::umd::resourceCopyCompatible(get(dst)->backend.Get(), get(src)->backend.Get())) {
+    device->error(E_INVALIDARG); return;
   }
   if (!readSharedSurface(device, get(src)->shared)) return;
   device->context->CopyResource(get(dst)->backend.Get(), get(src)->backend.Get());
@@ -1523,9 +1515,13 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
     UINT x, UINT y, UINT z, D3D10DDI_HRESOURCE src, UINT srcIndex, const D3D10_DDI_BOX* input) {
   auto device = get(h);
   if (!owned(device, get(dst)) || !owned(device, get(src))) return;
+  // The DDI defines reversed as well as equal bounds as an empty no-op.
+  // Preserve the destination and shared ownership state before any geometry
+  // checks; the runtime still supplies valid owned resource handles.
+  if (input && (input->left >= input->right || input->top >= input->bottom || input->front >= input->back)) return;
   SubresourceInfo source, destination; D3D11_BOX box;
   if (!subresourceInfo(get(src), srcIndex, source) || !subresourceInfo(get(dst), dstIndex, destination)
-      || source.dimension != destination.dimension || source.format != destination.format
+      || source.dimension != destination.dimension || !dxvk::umd::copyFormatsCompatible(destination.format, source.format)
       || ((source.bindings | destination.bindings) & D3D11_BIND_DEPTH_STENCIL)
       || destination.usage == D3D11_USAGE_IMMUTABLE || !subresourceBox(source, input, box)) {
     device->error(E_INVALIDARG); return;

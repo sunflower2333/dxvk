@@ -88,6 +88,70 @@ Complete system-runtime resource/shader/MRT/SO/predication/shared/primary/
 threading and D11 immediate/compute-UAV/tessellation/interface hardware proof,
 then DWM and dynamic Explorer validation, are still required for replacement.
 
+## Active execution update: integrated CI60 candidate and accepted isolated D10 hardware
+
+The consolidated candidate includes SO e208191, same-family bit-copy e2cf240,
+shared presentation bcf2ec9, BC1-5 updates b5e7200, identity X8 Blt c06479d,
+D3D8 fresh descendant preparation 135f273, decoded D10/10.1 shaders baee5b4,
+integer RTV scalar linkage a331718, six-test harness 9fcc83d and internal shared
+transfer predication isolation 31397d0. Public admission masks remain closed.
+ROOT queued source/original joins3193292/0 cover commits31fb/c138/a5c:
+30258/6ba2f36d. Final shared-transfer joins3206993/0:13485/f2c7cbb0.
+ROOT source review caught missing clip/cull SO ordinals; final c138 includes
+that correction. Separate integer RTV fix removes the obsolete float-only
+binding guard and commits all eight realized scalar classes atomically.
+
+ROOT3196251/0 completes20 actual strict optimized SDK x86/x64 compiles and20
+LLVM COFF reopens with actual dependency closure captured before/after:
+170769/5b42fd1e. Earlier3194813 preserves20 successful compiles but its observer
+omitted four assert/stream header pins; that failed attestation is retained,
+not relabeled. After shared-helper integration ROOT3207022/0 separately
+compiles the two changed units for both architectures and reopens all4COFFs.
+ROOT3199835/0 independently replays frozen harness originals:16913/169710ea,
+60 ARM cases,47 mandatory fixtures,70 total shipped executables. All54 old
+case bodies/markers and bounded ownership runners remain. New raw readers
+cover copy640+manifest,BC2520,shader49; old recursive UAV/opened-primary/Blt
+and shared-resolve paths remain, with the new shared predicate phase42 files.
+Actual native CI60 execution and new source/core admission remain pending.
+
+Published32b7bbb / soleNativeUMD37761389362 is terminal FAILURE: identity,
+shader and ARM backend pass; x86/x64 fail at opened-primary line74, first X8
+Present shared-word equality after Blt S_OK. ARM runtime is skipped. ROOT3157240
+independently replays518 ZIP members,38 native children,7GH transports and
+1033 source blobs/5links; proof31842/7b244c84. Seven passing images245 pixels
+per architecture remain; failing word was not saved and no alpha cause proved.
+The next publication is one consolidated push through the sole active workflow.
+
+USER06 same-attempt archive195973674/28e1e4b4 is now complete. SCP3122155/-9
+and relative-path SFTP3157163/1 originals remain unchanged. Recovery02 owned
+3172010/0 and its four actual transports complete the absolute /C:/ tail and
+three external tar sidecars; ROOT collection amendment2595/4766b34e permits
+only recovery, never a workload rerun. Original reader03/owner04 completes
+3187393/0, pixel reader3187435/0; proof45357/7d738dce and explicit release
+24653/d37eaf72. ROOT3190874/0 independently replays the unchanged literal
+oracle1792 pixels,4draws,2profiles,7images,9native children,14host transports.
+ROOT3197235/0 accepts source184/CI37743643139 hardware and explicit release:
+1683/f72b5d74. Real isolated KMT hardware passes; ordinary system runtime,
+production profile admission and default Mesa replacement remain unaccepted.
+
+CPU06 reader02 preparation ROOT3157241/0 preserves135 focused controls,
+1535/c7fbd196. Fresh ROOT authorization2809/a351fe15 binds descriptor07f86969,
+unchanged bundle52/source73, corrected f958 reader and latest d37eaf72 release.
+ROOT now exclusively owns target CPU execution. Upload3198504/0, stage3199557/0,
+parse3200169/0 and copy3201851/0 pass. Build3201913/1 is an actual failed producer;
+views are skipped. Same-attempt collect3201946/0 and transfer3202068/0 retain
+41953468-byte archive; observe/original review/release continue. No compiler
+failure is repaired, retried or promoted to success within that attempt.
+Queued bounded KMD fdfd8f9 packet4fafdf5b remains local preparation, unsigned,
+uninstalled and historical; its native execution waits for actual CPU06 release.
+
+Remaining replacement work includes successful current-core CI/original review,
+fresh DX8 AST5/staging/names/HAL/offscreen448/Present64, ordinary hardware
+DX9/D10/D11 resource/shader/MRT/SO/predication/shared/primary/threading coverage,
+D11 immediate/compute/UAV/tessellation/interfaces, DWM and dynamic Explorer.
+Depth-only/null-PS D10 draws and actual renderer predication are separate source
+work in progress. This checkpoint does not open0x17f/0x37f or replace Mesa.
+
 ## Historical evidence and checkpoints
 
 D10/D11 replacement status: the mandatory D10 callback table is complete,

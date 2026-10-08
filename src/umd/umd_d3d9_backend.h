@@ -141,7 +141,8 @@ public:
   HRESULT setRenderTarget(D3D9SurfaceResource* target);
   HRESULT setDepthStencil(D3D9SurfaceResource* depth);
   HRESULT clear(DWORD flags, D3DCOLOR color, float depth, DWORD stencil,
-                UINT count, const RECT* rects, bool computeRects);
+                 UINT count, const RECT* rects, bool computeRects);
+  HRESULT colorFill(D3D9SurfaceResource& surface, const RECT& area, D3DCOLOR color);
   HRESULT copySurface(D3D9SurfaceResource& destination, const RECT& destinationRect,
                       D3D9SurfaceResource& source, const RECT& sourceRect,
                       const D3D9SurfaceUpload* upload = nullptr);

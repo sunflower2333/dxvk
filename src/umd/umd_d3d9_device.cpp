@@ -520,6 +520,26 @@ HRESULT APIENTRY clear(HANDLE handle, const D3DDDIARG_CLEAR* args, UINT count, c
   });
 }
 
+HRESULT APIENTRY colorFill(HANDLE handle, const D3DDDIARG_COLORFILL* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  if (input.Flags.Value & ~UINT(1)) return E_INVALIDARG;
+  // PresentToDwm describes a DWM present operation, not an ordinary image fill.
+  // This legacy table has no corresponding begin/end presentation ownership.
+  if (input.Flags.PresentToDwm) return D3DERR_NOTAVAILABLE;
+  return operation(handle, [&](Device& device) -> HRESULT {
+    auto item = surface(device, input.hResource, input.SubResourceIndex);
+    if (!item || item->locked || item->desc.depthStencil || item->desc.systemMemory
+        || !validArea(input.DstRect, item->desc)) return E_INVALIDARG;
+    const HRESULT hr = device.backend->colorFill(*item->backend, input.DstRect, input.Color);
+    if (hr != S_OK) return hr;
+    // The renderer can pump runtime callbacks. Do not report completion for an
+    // identity retired while that call was in flight.
+    const auto runtime = device.gpu->backend();
+    return runtime.create.callbacks->status(runtime.create.owner);
+  });
+}
+
 HRESULT APIENTRY blt(HANDLE handle, const D3DDDIARG_BLT* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
@@ -1613,6 +1633,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnSetRenderTarget = setRenderTarget;
   table.pfnSetDepthStencil = setDepthStencil;
   table.pfnClear = clear;
+  table.pfnColorFill = colorFill;
   table.pfnBlt = blt;
   table.pfnBufBlt = bufferBlt;
   table.pfnLock = lockResource;

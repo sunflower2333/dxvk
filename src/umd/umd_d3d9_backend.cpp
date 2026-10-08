@@ -313,6 +313,10 @@ HRESULT D3D9Backend::setDepthStencil(D3D9SurfaceResource* depth) {
   return m_state->d3d->SetDepthStencilSurface(depth ? depth->m_state->surface.ptr() : nullptr);
 }
 
+HRESULT D3D9Backend::colorFill(D3D9SurfaceResource& surface, const RECT& area, D3DCOLOR color) {
+  return m_state->d3d->ColorFill(surface.m_state->surface.ptr(), &area, color);
+}
+
 HRESULT D3D9Backend::createTexture(const D3D9SurfaceDesc* levels, UINT count,
     std::unique_ptr<D3D9TextureResource>& output,
     std::vector<std::unique_ptr<D3D9SurfaceResource>>& outputSurfaces) {

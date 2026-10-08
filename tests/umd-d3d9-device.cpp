@@ -77,6 +77,9 @@ struct Fixture {
   bool nullSurface = false, badMapping = false;
   bool lastComputeRects = false, teardownDiscard = false;
   HRESULT depthResult = S_OK, clearResult = S_OK;
+  HRESULT colorFillResult = S_OK;
+  unsigned colorFills = 0;
+  std::function<void()> colorFillHook;
   unsigned depthSets = 0;
   DWORD clearFlags = 0, clearStencil = 0;
   float clearDepth = 0.0f;
@@ -867,6 +870,18 @@ HRESULT dxvk::umd::D3D9Backend::copySurface(D3D9SurfaceResource& destination, co
   }
   return S_OK;
 }
+HRESULT dxvk::umd::D3D9Backend::colorFill(D3D9SurfaceResource& surface, const RECT& area, D3DCOLOR color) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  auto& state = *surface.m_state;
+  CHECK(!state.locked && !state.desc.depthStencil && !state.desc.systemMemory);
+  ++f->colorFills;
+  if (f->colorFillResult != S_OK) return f->colorFillResult;
+  for (LONG y = area.top; y < area.bottom; ++y)
+    for (LONG x = area.left; x < area.right; ++x)
+      std::memcpy(state.bytes.data() + (size_t(y) * state.desc.width + UINT(x)) * 4, &color, 4);
+  if (f->colorFillHook) { auto hook = std::move(f->colorFillHook); hook(); }
+  return S_OK;
+}
 HRESULT dxvk::umd::D3D9Backend::createTexture(const D3D9SurfaceDesc* levels, UINT count,
     std::unique_ptr<D3D9TextureResource>& output,
     std::vector<std::unique_ptr<D3D9SurfaceResource>>& surfaces) {
@@ -993,6 +1008,7 @@ static void createDevice() {
   expectedTable.pfnSetRenderTarget = f->table.pfnSetRenderTarget;
   expectedTable.pfnSetDepthStencil = f->table.pfnSetDepthStencil;
   expectedTable.pfnClear = f->table.pfnClear;
+  expectedTable.pfnColorFill = f->table.pfnColorFill;
   expectedTable.pfnBlt = f->table.pfnBlt;
   expectedTable.pfnBufBlt = f->table.pfnBufBlt;
   expectedTable.pfnLock = f->table.pfnLock;
@@ -1307,6 +1323,131 @@ static D3DDDIARG_CREATERESOURCE depthArgs(HANDLE cookie, D3DDDI_SURFACEINFO* inf
   args.Flags.RenderTarget = 0; args.Flags.ZBuffer = 1;
   args.Format = static_cast<D3DDDIFORMAT>(format);
   return args;
+}
+
+static void colorFillContracts() {
+  for (const auto api : {dxvk::umd::LegacyD3DApi::D3D8, dxvk::umd::LegacyD3DApi::D3D9})
+  for (const auto format : {D3DFMT_A8R8G8B8, D3DFMT_X8R8G8B8})
+  for (const bool target : {false, true}) {
+    Fixture fixture; initialize(fixture, api); createDevice();
+    CHECK(f->table.pfnColorFill);
+    char cookie, boundCookie;
+    D3DDDI_SURFACEINFO info = {8,6,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto create = resourceArgs(&cookie, &info, 1, target);
+    create.Pool = D3DDDIPOOL_VIDEOMEMORY;
+    create.Format = static_cast<D3DDDIFORMAT>(format);
+    CHECK(f->table.pfnCreateResource(f->device, &create) == S_OK);
+    const HANDLE destination = create.hResource;
+    auto bound = resourceArgs(&boundCookie, &info, 1, true);
+    CHECK(f->table.pfnCreateResource(f->device, &bound) == S_OK);
+    D3DDDIARG_SETRENDERTARGET bind = {0,bound.hResource,0};
+    CHECK(f->table.pfnSetRenderTarget(f->device, &bind) == S_OK);
+    D3DDDIARG_COLORFILL fill = {};
+    fill.hResource = destination; fill.DstRect = {0,0,8,6}; fill.Color = 0xff092713;
+    const auto original = snapshot(fill);
+    CHECK(f->table.pfnColorFill(f->device, &fill) == S_OK && snapshot(fill) == original);
+    fill.DstRect = {1,1,6,4}; fill.Color = 0x5a2b3c4d;
+    CHECK(f->table.pfnColorFill(f->device, &fill) == S_OK);
+    fill.DstRect = {4,2,8,6}; fill.Color = 0xc7132946;
+    CHECK(f->table.pfnColorFill(f->device, &fill) == S_OK);
+    auto verify = [&](HANDLE resource, bool untouched) {
+      D3DDDIARG_LOCK map = {}; map.hResource = resource; map.Flags.ReadOnly = 1;
+      CHECK(f->table.pfnLock(f->device, &map) == S_OK && map.pSurfData && map.Pitch == 32);
+      for (UINT y = 0; y < 6; ++y) for (UINT x = 0; x < 8; ++x) {
+        UINT observed = 0;
+        std::memcpy(&observed, static_cast<const uint8_t*>(map.pSurfData) + y * map.Pitch + x * 4, 4);
+        const UINT expected = untouched ? 0u : x >= 4 && y >= 2 ? 0xc7132946u
+          : x >= 1 && x < 6 && y >= 1 && y < 4 ? 0x5a2b3c4du : 0xff092713u;
+        const UINT mask = format == D3DFMT_X8R8G8B8 && !untouched ? 0x00ffffffu : UINT_MAX;
+        CHECK((observed & mask) == (expected & mask));
+      }
+      D3DDDIARG_UNLOCK unlock = {}; unlock.hResource = resource;
+      CHECK(f->table.pfnUnlock(f->device, &unlock) == S_OK);
+    };
+    verify(destination, false); verify(bound.hResource, true);
+    const auto valid = fill;
+    const unsigned calls = f->colorFills;
+    for (const RECT area : {RECT{-1,0,8,6},RECT{0,-1,8,6},RECT{0,0,9,6},RECT{0,0,8,7},
+        RECT{3,1,2,4},RECT{1,4,3,2},RECT{0,0,0,6},RECT{0,0,8,0}}) {
+      fill = valid; fill.DstRect = area; const auto before = snapshot(fill);
+      CHECK(f->table.pfnColorFill(f->device, &fill) == E_INVALIDARG && snapshot(fill) == before);
+    }
+    fill = valid; fill.Flags.PresentToDwm = 1;
+    CHECK(f->table.pfnColorFill(f->device, &fill) == D3DERR_NOTAVAILABLE);
+    fill = valid; fill.Flags.Value = 2;
+    CHECK(f->table.pfnColorFill(f->device, &fill) == E_INVALIDARG);
+    fill = valid; fill.SubResourceIndex = 1;
+    CHECK(f->table.pfnColorFill(f->device, &fill) == E_INVALIDARG);
+    fill = valid; fill.hResource = &cookie;
+    CHECK(f->table.pfnColorFill(f->device, &fill) == E_INVALIDARG);
+    CHECK(f->table.pfnColorFill(f->device, nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnColorFill(&f->deviceCookie, &valid) == E_INVALIDARG);
+    D3DDDIARG_LOCK map = {}; map.hResource = destination; map.Flags.ReadOnly = 1;
+    CHECK(f->table.pfnLock(f->device, &map) == S_OK);
+    CHECK(f->table.pfnColorFill(f->device, &valid) == E_INVALIDARG);
+    D3DDDIARG_UNLOCK unlock = {}; unlock.hResource = destination;
+    CHECK(f->table.pfnUnlock(f->device, &unlock) == S_OK && f->colorFills == calls);
+    for (const HRESULT error : {E_OUTOFMEMORY,S_FALSE,DXGI_ERROR_UNSUPPORTED}) {
+      f->colorFillResult = error;
+      CHECK(f->table.pfnColorFill(f->device, &valid)
+        == (error == S_FALSE ? E_FAIL : error == DXGI_ERROR_UNSUPPORTED ? D3DERR_NOTAVAILABLE : error));
+    }
+    f->colorFillResult = S_OK; verify(destination, false); verify(bound.hResource, true);
+    CHECK(f->table.pfnDestroyResource(f->device, destination) == S_OK);
+    CHECK(f->table.pfnColorFill(f->device, &valid) == E_INVALIDARG);
+    CHECK(f->table.pfnDestroyResource(f->device, bound.hResource) == S_OK);
+    closeDevice(); closeAdapter();
+  }
+  for (const bool depth : {false, true}) {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie; D3DDDI_SURFACEINFO info = {8,6,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
+    auto resource = depth ? depthArgs(&cookie, &info, D3DFMT_D16) : resourceArgs(&cookie, &info, 1);
+    CHECK(f->table.pfnCreateResource(f->device, &resource) == S_OK);
+    D3DDDIARG_COLORFILL fill = {}; fill.hResource = resource.hResource; fill.DstRect = {0,0,8,6};
+    CHECK(f->table.pfnColorFill(f->device, &fill) == E_INVALIDARG && f->colorFills == 0);
+    CHECK(f->table.pfnDestroyResource(f->device, resource.hResource) == S_OK);
+    closeDevice(); closeAdapter();
+  }
+  {
+    Fixture fixture; initialize(fixture); createDevice();
+    char cookie; D3DDDI_SURFACEINFO levels[2] = {{8,6,1,nullptr,0,0},{4,3,1,nullptr,0,0}};
+    auto resource = resourceArgs(&cookie, levels, 2);
+    resource.Pool = D3DDDIPOOL_VIDEOMEMORY; resource.Flags.Texture = 1;
+    resource.Flags.RenderTarget = 1; resource.MipLevels = 2;
+    resource.MultisampleType = D3DDDIMULTISAMPLE_NONE; resource.MultisampleQuality = 0;
+    CHECK(f->table.pfnCreateResource(f->device, &resource) == S_OK);
+    D3DDDIARG_COLORFILL fill = {}; fill.hResource = resource.hResource;
+    fill.SubResourceIndex = 1; fill.DstRect = {1,0,4,2}; fill.Color = 0xff326d19;
+    CHECK(f->table.pfnColorFill(f->device, &fill) == S_OK && f->colorFills == 1);
+    char readbackCookie;
+    auto readback = resourceArgs(&readbackCookie, levels + 1, 1);
+    CHECK(f->table.pfnCreateResource(f->device, &readback) == S_OK);
+    D3DDDIARG_BLT copy = {}; copy.hSrcResource = resource.hResource;
+    copy.SrcSubResourceIndex = 1; copy.hDstResource = readback.hResource;
+    copy.SrcRect = copy.DstRect = {0,0,4,3};
+    CHECK(f->table.pfnBlt(f->device, &copy) == S_OK);
+    D3DDDIARG_LOCK map = {}; map.hResource = readback.hResource; map.Flags.ReadOnly = 1;
+    CHECK(f->table.pfnLock(f->device, &map) == S_OK && map.pSurfData && map.Pitch == 16);
+    for (UINT y = 0; y < 3; ++y) for (UINT x = 0; x < 4; ++x) {
+      UINT value = 0; std::memcpy(&value, static_cast<const uint8_t*>(map.pSurfData) + y * map.Pitch + x * 4, 4);
+      CHECK(value == (x >= 1 && y < 2 ? 0xff326d19u : 0u));
+    }
+    D3DDDIARG_UNLOCK unlock = {}; unlock.hResource = readback.hResource;
+    CHECK(f->table.pfnUnlock(f->device, &unlock) == S_OK);
+    CHECK(f->table.pfnDestroyResource(f->device, readback.hResource) == S_OK);
+    const auto saved = fill;
+    f->colorFillHook = [&] { f->queryHook = [&] {
+      CHECK(f->table.pfnColorFill(f->device, &saved) == D3DERR_WASSTILLDRAWING);
+      CHECK(f->table.pfnDestroyResource(f->device, resource.hResource) == D3DERR_WASSTILLDRAWING);
+      fill.Color = 0; fill.DstRect = {0,0,0,0};
+    }; };
+    CHECK(f->table.pfnColorFill(f->device, &fill) == S_OK && f->colorFills == 2);
+    f->colorFillHook = [&] { f->queryHook = [&] { ++f->generation; }; };
+    CHECK(f->table.pfnColorFill(f->device, &saved) == D3DERR_DEVICELOST && f->colorFills == 3);
+    CHECK(f->table.pfnColorFill(f->device, &saved) == D3DERR_DEVICELOST && f->colorFills == 3);
+    closeDevice(); closeAdapter();
+  }
+  std::puts("D3D8/9 ColorFill typed forwarding verified rectangle pixels, bindings, rejects and callback retirement; controlled backend only");
 }
 
 static void discardTargetContracts() {
@@ -3859,6 +4000,7 @@ static void legacyDeviceContracts() {
 
 int main() {
   validationContracts();
+  colorFillContracts();
   legacyDeviceContracts();
   deviceFunctionBounds();
   creationFlagContracts();

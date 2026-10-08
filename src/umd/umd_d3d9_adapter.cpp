@@ -76,7 +76,7 @@ HRESULT current(const std::shared_ptr<Adapter>& adapter) noexcept {
 // This is the subset implemented by the native DDI, rather than the larger
 // private DXVK renderer's caps. OpenAdapter exposes only this legacy profile.
 // In particular: one RT, static/dynamic 2D mip chains, no cube/volume/MSAA/instancing,
-// no stretched/color-fill plain surfaces, autogen, shared resources or gamma.
+// no stretched plain surfaces, autogen, shared resources or gamma.
 constexpr FORMATOP formats[] = {
   {D3DDDIFMT_X8R8G8B8, FORMATOP_TEXTURE | FORMATOP_OFFSCREEN_RENDERTARGET
     | FORMATOP_DISPLAYMODE | FORMATOP_3DACCELERATION, 0, 0, 0},

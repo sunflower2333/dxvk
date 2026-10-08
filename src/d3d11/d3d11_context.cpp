@@ -1237,17 +1237,24 @@ namespace dxvk {
     if (unlikely(!ThreadGroupCountX || !ThreadGroupCountY || !ThreadGroupCountZ))
       return;
 
-    AddCost(GpuCostEstimate::Dispatch);
-
     if (unlikely(HasDirtyComputeBindings()))
       ApplyDirtyComputeBindings();
 
-    EmitCs([=] (DxvkContext* ctx) {
+    auto command = [=] (DxvkContext* ctx) {
       ctx->dispatch(
         ThreadGroupCountX,
         ThreadGroupCountY,
         ThreadGroupCountZ);
-    });
+    };
+
+    if constexpr (IsDeferred) {
+      EmitPredicateAction(std::move(command), GpuCostEstimate::Dispatch, nullptr);
+    } else if (m_state.pr.predicateObject) {
+      EmitPredicateAction(std::move(command), GpuCostEstimate::Dispatch, nullptr);
+    } else {
+      AddCost(GpuCostEstimate::Dispatch);
+      EmitCs(std::move(command));
+    }
   }
 
 
@@ -1258,15 +1265,22 @@ namespace dxvk {
     D3D10DeviceLock lock = LockContext();
     SetDrawBuffers(pBufferForArgs, nullptr);
 
-    AddCost(GpuCostEstimate::DispatchIndirect);
-
     if (unlikely(HasDirtyComputeBindings()))
       ApplyDirtyComputeBindings();
 
-    EmitCs([cOffset = AlignedByteOffsetForArgs]
+    auto command = [cOffset = AlignedByteOffsetForArgs]
     (DxvkContext* ctx) {
       ctx->dispatchIndirect(cOffset);
-    });
+    };
+
+    if constexpr (IsDeferred) {
+      EmitPredicateAction(std::move(command), GpuCostEstimate::DispatchIndirect, nullptr);
+    } else if (m_state.pr.predicateObject) {
+      EmitPredicateAction(std::move(command), GpuCostEstimate::DispatchIndirect, nullptr);
+    } else {
+      AddCost(GpuCostEstimate::DispatchIndirect);
+      EmitCs(std::move(command));
+    }
   }
 
 

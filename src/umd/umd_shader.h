@@ -42,11 +42,12 @@ bool resolveGeometryInputs(const uint32_t* code, size_t words,
   const ShaderSignatureEntry* inputs, size_t inputCount,
   std::vector<ShaderSignatureEntry>& resolved);
 
-// Match producer outputs to the active PS by register/mask, including
-// SV_Position. Unconsumed generic outputs use a raw32 interface.
+// Match producer outputs to the next stage by register/mask. SV_Position is
+// required only for rasterized output: SO and the VS feeding a GS may carry
+// data-only registers. Unconsumed generic outputs use a raw32 interface.
 bool linkVertexOutputs(const ShaderSignatureEntry* outputs, size_t outputCount,
   const ShaderSignatureEntry* inputs, size_t inputCount,
-  std::vector<ShaderSignatureEntry>& linked);
+  std::vector<ShaderSignatureEntry>& linked, bool rasterizedOutput = true);
 
 // SM4.0/4.1 VS/GS/PS development profile. VS input types come from the bound
 // layout, GS inputs from resolveGeometryInputs, generic outputs from the
@@ -55,11 +56,13 @@ bool linkVertexOutputs(const ShaderSignatureEntry* outputs, size_t outputCount,
 // SM4.1 PS sample-index inputs and sample interpolation retain their built-in
 // or interpolated semantics. Integer/depth outputs and other additional
 // system values remain unsupported.
-// Tokens remain unchanged; this does not advertise a native feature level.
+// Non-rasterized VS/GS output may omit position; if present it must still
+// have its full four-component mask. Tokens remain unchanged; this does not
+// advertise a native feature level.
 bool buildShaderContainer(ShaderStage stage, const uint32_t* code, size_t words,
   const ShaderSignatureEntry* inputs, size_t inputCount,
   const ShaderSignatureEntry* outputs, size_t outputCount,
-  std::vector<unsigned char>& container);
+  std::vector<unsigned char>& container, bool rasterizedOutput = true);
 
 // Compute has no IA/varying signatures. Validate bounded SM5.0 instructions
 // with the upstream parser and retain the original code in a SHEX container.

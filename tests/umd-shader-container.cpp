@@ -254,6 +254,37 @@ int main() {
     check(!buildShaderContainer(ShaderStage::Vertex, code, 3, &wrong, 1, &output, 1, binary));
   for (auto wrong : {ShaderSignatureEntry{0,0,15}, {1,32,15}, {1,0,1}, {1,0,31}})
     check(!buildShaderContainer(ShaderStage::Vertex, code, 3, &input, 1, &wrong, 1, binary));
+  // A position-free producer is valid for SO and while feeding a GS,
+  // but the same signature remains invalid at the rasterization boundary.
+  ShaderSignatureEntry dataOutput = {0,3,15,ShaderScalar::Uint32};
+  ShaderSignatureEntry dataInput = dataOutput;
+  std::vector<ShaderSignatureEntry> dataLinked;
+  check(!linkVertexOutputs(&dataOutput,1,&dataInput,1,dataLinked) && dataLinked.empty());
+  check(linkVertexOutputs(&dataOutput,1,&dataInput,1,dataLinked,false) && dataLinked.size() == 1);
+  check(dataLinked[0].systemValue == 0 && dataLinked[0].registerIndex == 3
+    && dataLinked[0].mask == 15 && dataLinked[0].scalar == ShaderScalar::Uint32);
+  for (auto stage : {ShaderStage::Vertex,ShaderStage::Geometry}) {
+    const uint32_t dataCode[] = {(uint32_t(stage) << 16) | 0x40,3,0x0100003e};
+    check(!buildShaderContainer(stage,dataCode,3,nullptr,0,&dataOutput,1,binary) && binary.empty());
+    check(buildShaderContainer(stage,dataCode,3,nullptr,0,&dataOutput,1,binary,false));
+    dxbc_spv::dxbc::Container dataContainer(binary.data(),binary.size());
+    check(dataContainer.validateHash());
+    check(std::memcmp(dataContainer.getCodeChunk().getData(8),dataCode,sizeof(dataCode)) == 0);
+    dxbc_spv::dxbc::Signature dataSignature(dataContainer.getOutputSignatureChunk());
+    check(dataSignature.begin() != dataSignature.end()
+      && dataSignature.begin()->getSystemValue() == dxbc_spv::dxbc::SignatureSysval::eNone
+      && dataSignature.begin()->getRegisterIndex() == 3
+      && dataSignature.begin()->getScalarType() == dxbc_spv::ir::ScalarType::eU32);
+    for (auto badOutput : {ShaderSignatureEntry{1,0,3},ShaderSignatureEntry{0,32,15},
+        ShaderSignatureEntry{0,3,0,ShaderScalar::Uint32},ShaderSignatureEntry{2,3,15}})
+      check(!buildShaderContainer(stage,dataCode,3,nullptr,0,&badOutput,1,binary,false) && binary.empty());
+  }
+  dataInput.mask = 16;
+  check(!linkVertexOutputs(&dataOutput,1,&dataInput,1,dataLinked,false) && dataLinked.empty());
+  dataInput = dataOutput; dataInput.registerIndex = 7;
+  check(!linkVertexOutputs(&dataOutput,1,&dataInput,1,dataLinked,false) && dataLinked.empty());
+  dataOutput = {1,0,3};
+  check(!linkVertexOutputs(&dataOutput,1,nullptr,0,dataLinked,false) && dataLinked.empty());
   ShaderSignatureEntry typedInputs[] = {{0,0,3,ShaderScalar::Float32},
     {0,3,1,ShaderScalar::Uint32}, {0,7,1,ShaderScalar::Sint32}};
   check(buildShaderContainer(ShaderStage::Vertex, code, 3, typedInputs, 3, &output, 1, binary));

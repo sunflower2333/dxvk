@@ -1716,7 +1716,8 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
     }
     std::vector<unsigned char> bytecode;
     if (!dxvk::umd::buildShaderContainer(stage, code, code[1], validationInputs.data(),
-        validationInputs.size(), validationOutputs.data(), validationOutputs.size(), bytecode)) {
+        validationInputs.size(), validationOutputs.data(), validationOutputs.size(), bytecode,
+        stage != dxvk::umd::ShaderStage::Vertex && !streamOutput)) {
       device->error(E_INVALIDARG); return;
     }
     HRESULT hr = S_OK;
@@ -2232,7 +2233,7 @@ bool prepareGeometryShader(Device* device) {
   std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
   const auto pixel = shader->withStreamOutput ? nullptr : device->pixelShader;
   if (!dxvk::umd::linkVertexOutputs(shader->outputs.data(), shader->outputs.size(),
-      pixel ? pixel->inputs.data() : nullptr, pixel ? pixel->inputs.size() : 0, outputs)) {
+      pixel ? pixel->inputs.data() : nullptr, pixel ? pixel->inputs.size() : 0, outputs, !shader->withStreamOutput)) {
     device->error(E_INVALIDARG); return false;
   }
   std::array<dxvk::umd::ShaderScalar,32> outputTypes = {};
@@ -2240,7 +2241,7 @@ bool prepareGeometryShader(Device* device) {
   if (!shader->geometry || shader->compiledOutputTypes != outputTypes) {
     std::vector<unsigned char> bytecode;
     if (!dxvk::umd::buildShaderContainer(shader->stage, shader->code.data(), shader->code.size(),
-        shader->inputs.data(), shader->inputs.size(), outputs.data(), outputs.size(), bytecode)) {
+        shader->inputs.data(), shader->inputs.size(), outputs.data(), outputs.size(), bytecode, !shader->withStreamOutput)) {
       device->error(E_INVALIDARG); return false;
     }
     ComPtr<ID3D11GeometryShader> compiled;
@@ -2297,7 +2298,7 @@ bool prepareVertexShader(Device* device) {
     const auto next = device->geometryShader ? device->geometryShader : device->pixelShader;
     std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
     if (!dxvk::umd::linkVertexOutputs(shader->outputs.data(), shader->outputs.size(),
-        next->inputs.data(), next->inputs.size(), outputs)) {
+        next->inputs.data(), next->inputs.size(), outputs, !device->geometryShader)) {
       device->error(E_INVALIDARG); return false;
     }
     std::array<dxvk::umd::ShaderScalar,32> outputTypes = {}, inputTypes = {};
@@ -2312,7 +2313,7 @@ bool prepareVertexShader(Device* device) {
       }
       std::vector<unsigned char> bytecode;
       if (!dxvk::umd::buildShaderContainer(shader->stage, shader->code.data(), shader->code.size(),
-          inputs.data(), inputs.size(), outputs.data(), outputs.size(), bytecode)) { device->error(E_INVALIDARG); return false; }
+          inputs.data(), inputs.size(), outputs.data(), outputs.size(), bytecode, !device->geometryShader)) { device->error(E_INVALIDARG); return false; }
       ComPtr<ID3D11VertexShader> compiled;
       const HRESULT hr = device->backend->CreateVertexShader(bytecode.data(), bytecode.size(), nullptr, &compiled);
       if (FAILED(hr)) { device->error(hr); return false; }

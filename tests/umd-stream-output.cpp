@@ -40,6 +40,7 @@ int main(int argc, char** argv) {
   callerThread = GetCurrentThreadId();
   LUID luid{};
 #ifdef VIOGPU_STREAM_OUTPUT_WARP
+  (void)argv;
   CHECK(argc == 1);
   std::puts("STREAM_OUTPUT_BACKEND WARP fixture; actual native DDI, independent rasterizer");
 #else
@@ -367,6 +368,127 @@ Output second(uint id : SV_VertexID) {
       CHECK(reinterpret_cast<const UINT*>(static_cast<const char*>(map.pData)+y*map.RowPitch)[x] == expected);
     f.pfnStagingResourceUnmap(device,pixels,0); ok(); ++draws;
   }
+  // SO-only GS and null-GS passthrough may emit data without SV_Position.
+  // Reusing the resulting cached VS for rasterization must still be rejected.
+  constexpr char dataSource[] = R"(
+struct Data { uint4 payload : TEXCOORD0; };
+Data data_vs(uint id : SV_VertexID) {
+  Data value; value.payload = uint4(0x11223344 + id,0x87654321,0x7fc01234,0x80000000);
+  return value;
+}
+[maxvertexcount(3)]
+void data_gs(triangle Data input[3], inout TriangleStream<Data> stream) {
+  [unroll] for (uint i = 0; i < 3; ++i) {
+    Data value; value.payload = input[i].payload ^ uint4(0x01020304,0x10203040,0x00112233,0x55667788);
+    stream.Append(value);
+  }
+  stream.RestartStrip();
+}
+struct Positioned { float4 position : SV_Position; };
+[maxvertexcount(3)]
+void raster_gs(triangle Data input[3], inout TriangleStream<Positioned> stream) {
+  [unroll] for (uint i = 0; i < 3; ++i) {
+    const uint id = input[i].payload.x - 0x11223344;
+    const float2 xy = float2((id << 1) & 2, id & 2);
+    Positioned value; value.position = float4(xy * float2(2,-2) + float2(-1,1),0,1);
+    stream.Append(value);
+  }
+  stream.RestartStrip();
+}
+)";
+  const D3D10DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY dataDeclaration = {0,0,15};
+  auto dataShader = [&](UINT mode) {
+    const bool geometryShader = mode != 0;
+    std::vector<UINT> tokens;
+    ComPtr<ID3DBlob> original;
+    CHECK(compileHlslTokens(dataSource,mode == 2 ? "raster_gs" : geometryShader ? "data_gs" : "data_vs",
+      geometryShader ? "gs_4_0" : "vs_4_0",tokens,&original));
+    ComPtr<ID3D11ShaderReflection> reflection;
+    CHECK(SUCCEEDED(D3DReflect(original->GetBufferPointer(),original->GetBufferSize(),
+      __uuidof(ID3D11ShaderReflection),&reflection)));
+    D3D11_SHADER_DESC desc{}; CHECK(SUCCEEDED(reflection->GetDesc(&desc)));
+    CHECK(desc.OutputParameters == 1);
+    std::vector<D3D10DDIARG_SIGNATURE_ENTRY> inputs, outputs;
+    for (bool input : {true,false}) for (UINT i = 0; i < (input ? desc.InputParameters : desc.OutputParameters); ++i) {
+      D3D11_SIGNATURE_PARAMETER_DESC entry{};
+      CHECK(SUCCEEDED(input ? reflection->GetInputParameterDesc(i,&entry) : reflection->GetOutputParameterDesc(i,&entry)));
+      (input ? inputs : outputs).push_back({D3D10_SB_NAME(entry.SystemValueType),entry.Register,entry.Mask});
+    }
+    CHECK(outputs[0].SystemValue == (mode == 2 ? D3D10_SB_NAME_POSITION : D3D10_SB_NAME_UNDEFINED)
+      && outputs[0].Register == 0 && outputs[0].Mask == 15);
+    D3D10DDIARG_STAGE_IO_SIGNATURES signature = {inputs.data(),UINT(inputs.size()),outputs.data(),UINT(outputs.size())};
+    if (mode == 1) {
+      D3D10DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT stream = {tokens.data(),&dataDeclaration,1,16};
+      shaders.emplace_back(f.pfnCalcPrivateGeometryShaderWithStreamOutput(device,&stream,&signature));
+      auto result = shaders.back().handle<D3D10DDI_HSHADER>();
+      f.pfnCreateGeometryShaderWithStreamOutput(device,&stream,result,{},&signature); ok(); return result;
+    }
+    shaders.emplace_back(f.pfnCalcPrivateShaderSize(device,tokens.data(),&signature));
+    auto result = shaders.back().handle<D3D10DDI_HSHADER>();
+    if (mode == 2) f.pfnCreateGeometryShader(device,tokens.data(),result,{},&signature);
+    else f.pfnCreateVertexShader(device,tokens.data(),result,{},&signature);
+    ok(); return result;
+  };
+  const auto dataVertex = dataShader(0), dataGeometry = dataShader(1), dataRasterGeometry = dataShader(2);
+  D3D10DDIARG_SIGNATURE_ENTRY dataEntry = {D3D10_SB_NAME_UNDEFINED,0,15};
+  const D3D10DDIARG_STAGE_IO_SIGNATURES dataSignature = {nullptr,0,&dataEntry,1};
+  const D3D10DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT dataPassDesc = {nullptr,&dataDeclaration,1,16};
+  shaders.emplace_back(f.pfnCalcPrivateGeometryShaderWithStreamOutput(device,&dataPassDesc,&dataSignature));
+  const auto dataPassGeometry = shaders.back().handle<D3D10DDI_HSHADER>();
+  f.pfnCreateGeometryShaderWithStreamOutput(device,&dataPassDesc,dataPassGeometry,{},&dataSignature); ok();
+  const auto dataOutput = buffer(256);
+  f.pfnVsSetShader(device,dataVertex); f.pfnPsSetShader(device,{});
+  f.pfnIaSetInputLayout(device,{}); f.pfnSetRenderTargets(device,nullptr,0,0,{});
+  f.pfnSetViewports(device,0,1,nullptr); ok();
+  for (UINT iteration = 0; iteration < 3; ++iteration) {
+    const bool transformed = iteration != 1;
+    f.pfnGsSetShader(device,transformed ? dataGeometry : dataPassGeometry);
+    f.pfnSoSetTargets(device,1,0,&dataOutput,&zero); ok();
+    f.pfnQueryBegin(device,statistics); f.pfnQueryBegin(device,pipeline);
+    f.pfnDraw(device,3,0); ok();
+    f.pfnQueryEnd(device,pipeline); f.pfnQueryEnd(device,statistics); ok(); unbind();
+    const auto result = words(dataOutput);
+    const UINT mutations[] = {0x01020304,0x10203040,0x00112233,0x55667788};
+    for (UINT v = 0; v < 3; ++v) for (UINT c = 0; c < 4; ++c) {
+      const UINT expected[] = {0x11223344 + v,0x87654321,0x7fc01234,0x80000000};
+      CHECK(result[v*4+c] == (expected[c] ^ (transformed ? mutations[c] : 0)));
+    }
+    for (UINT i = 12; i < 64; ++i) CHECK(result[i] == 0xcccccccc);
+    readQuery(statistics,&stats,sizeof(stats));
+    CHECK(stats.NumPrimitivesWritten == 1 && stats.PrimitivesStorageNeeded == 1);
+    readQuery(pipeline,&counters.data,sizeof(counters.data));
+    CHECK(counters.before == 0xcafebabefeedfaceull && counters.after == counters.before);
+    CHECK(counters.data.IAVertices == 3 && counters.data.IAPrimitives == 1 && counters.data.PSInvocations == 0);
+    if (iteration == 1) {
+      // All ordinary raster prerequisites are present, including a PS that
+      // consumes no varyings. Absence of position is the rejected condition.
+      f.pfnGsSetShader(device,{}); f.pfnPsSetShader(device,pixel);
+      f.pfnSetRenderTargets(device,&view,1,0,{}); f.pfnSetViewports(device,1,0,&viewport); ok();
+      f.pfnClearRenderTargetView(device,view,black); ok();
+      f.pfnDraw(device,3,0); invalid();
+      f.pfnResourceCopy(device,pixels,target); ok();
+      D3D10DDI_MAPPED_SUBRESOURCE map{};
+      f.pfnStagingResourceMap(device,pixels,0,D3D10_DDI_MAP_READ,0,&map); ok();
+      CHECK(map.pData && map.RowPitch >= 64);
+      for (UINT y = 0; y < 16; ++y) for (UINT x = 0; x < 16; ++x)
+        CHECK(reinterpret_cast<const UINT*>(static_cast<const char*>(map.pData)+y*map.RowPitch)[x] == 0xff000000);
+      f.pfnStagingResourceUnmap(device,pixels,0); ok();
+      CHECK(words(dataOutput) == result);
+      // A real GS may generate position from this same data-only VS.
+      f.pfnGsSetShader(device,dataRasterGeometry); f.pfnDraw(device,3,0); ok();
+      f.pfnResourceCopy(device,pixels,target); ok();
+      map = {}; f.pfnStagingResourceMap(device,pixels,0,D3D10_DDI_MAP_READ,0,&map); ok();
+      CHECK(map.pData && map.RowPitch >= 64);
+      for (UINT y = 0; y < 16; ++y) for (UINT x = 0; x < 16; ++x)
+        CHECK(reinterpret_cast<const UINT*>(static_cast<const char*>(map.pData)+y*map.RowPitch)[x] == 0xff0000ff);
+      f.pfnStagingResourceUnmap(device,pixels,0); ok();
+      CHECK(words(dataOutput) == result);
+      f.pfnPsSetShader(device,{}); f.pfnSetRenderTargets(device,nullptr,0,0,{});
+      f.pfnSetViewports(device,0,1,nullptr); ok();
+    }
+  }
+  std::puts("STREAM_OUTPUT position-free GS/passthrough bytes/statistics/raster-rejection/generation PASS cases=3 words-per-case=64");
+  f.pfnGsSetShader(device,{});
   D3D10DDI_HRESOURCE none{}; f.pfnIaSetVertexBuffers(device,0,1,&none,&zero,&zero);
   f.pfnIaSetInputLayout(device,{}); f.pfnSetRenderTargets(device,nullptr,0,0,{});
   f.pfnVsSetShader(device,{}); f.pfnPsSetShader(device,{});

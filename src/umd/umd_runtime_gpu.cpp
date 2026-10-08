@@ -97,6 +97,16 @@ RuntimeGpuDiagnosticInfo RuntimeGpu::traceInfo() const {
   info.context = m_info.context_id; info.queue = m_info.queue_id;
   return info;
 }
+RuntimeGpuDiagnosticInfo RuntimeGpu::traceCloseInfo() const {
+  auto info = traceInfo();
+  if (!m_diagnostics.enabled()) return info;
+  info.activeCalls = m_active;
+  for (const auto& entry : m_allocations) {
+    if (entry.second->handle) ++info.allocations;
+    if (entry.second->locked) ++info.lockedAllocations;
+  }
+  return info;
+}
 HRESULT RuntimeGpu::traceFailure(const char* stage, HRESULT hr,
     const RuntimeGpuDiagnosticInfo& info, bool callback, HRESULT callbackHr) {
   if (FAILED(hr)) m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::Failure,
@@ -465,6 +475,8 @@ int32_t MWD_CALL RuntimeGpu::status(void* ptr) {
 HRESULT RuntimeGpu::close() {
   std::lock_guard<std::recursive_mutex> lock(m_mutex);
   if (!m_live || m_closing) return S_OK;
+  m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::CloseEntered,
+    "close", S_OK, traceCloseInfo());
   m_closing = true;
   HRESULT result = S_OK;
   // A runtime callback can retire the device synchronously. In that case final
@@ -476,15 +488,26 @@ HRESULT RuntimeGpu::close() {
       const HRESULT hr = release(*entry.second);
       if (FAILED(hr) && SUCCEEDED(result)) result = hr;
     }
+    m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::AllocationCleanupFinished,
+      "close-allocations", result, traceCloseInfo());
     if (m_context) {
       D3DDDICB_DESTROYCONTEXT request = {}; request.hContext = m_context;
-      const HRESULT hr = exact(m_callbacks.pfnDestroyContextCb(m_device, &request));
+      const auto diagnostic = traceCloseInfo();
+      m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::DestroyContextEntered,
+        "close-context", S_OK, diagnostic);
+      const HRESULT callbackHr = m_callbacks.pfnDestroyContextCb(m_device, &request);
+      const HRESULT hr = exact(callbackHr);
+      m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::DestroyContextFinished,
+        "close-context", hr, diagnostic, true, callbackHr);
       if (FAILED(hr) && SUCCEEDED(result)) result = hr;
     }
   }
+  const auto diagnostic = traceCloseInfo();
   m_live = false; m_context = nullptr; m_device = nullptr; m_callbacks = {};
   m_info = {}; m_commands = nullptr; m_allocationList = nullptr; m_patchList = nullptr;
   m_commandSize = m_allocationCount = m_patchCount = 0;
+  m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::CloseFinished,
+    "close", result, diagnostic);
   return result;
 }
 }

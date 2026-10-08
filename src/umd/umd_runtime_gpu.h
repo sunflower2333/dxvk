@@ -55,6 +55,7 @@ private:
   HRESULT identity();
   HRESULT context();
   RuntimeGpuDiagnosticInfo traceInfo() const;
+  RuntimeGpuDiagnosticInfo traceCloseInfo() const;
   HRESULT traceFailure(const char* stage, HRESULT hr,
     const RuntimeGpuDiagnosticInfo& info, bool callback = false, HRESULT callbackHr = S_OK);
   HRESULT traceFailure(const char* stage, HRESULT hr, bool callback = false, HRESULT callbackHr = S_OK) {

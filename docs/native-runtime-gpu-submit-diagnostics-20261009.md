@@ -16,7 +16,8 @@ Those originals do not establish an owner-lifetime defect or a GPU timeout.
 
 Set TU_WDDM_DIAGNOSTICS to exactly1 before creating a runtime GPU owner to
 enable VIOGPU_RUNTIME_GPU stderr records. Each owner emits at most its first
-context-ready, submit-entered, submit-succeeded and failure. The failure
+context-ready, submit-entered, submit-succeeded, failure and five close
+boundary records. The failure
 stage distinguishes dispatch, generic callback results, context callbacks/validation, status, submit
 arguments/buffers/reference/alias/identity, RenderCb and replacement buffers.
 Fields retain the normalized HRESULT at the recorded failure stage, whether
@@ -24,6 +25,33 @@ that stage invoked a callback,
 its original HRESULT including positive non-S_OK, generation, context and
 queue IDs, reference/stream counts, locked-reference count and rejected index.
 Index4294967295 means no particular reference. No borrowed payload is dumped.
+
+The close boundaries are close-entered, allocation-cleanup-finished,
+destroy-context-entered, destroy-context-finished and close-finished. They
+remain visible after a submission failure. Allocation cleanup reports the
+first failure returned by the existing release loop; the context result also
+retains the original DestroyContextCb HRESULT before normalization. The final
+close result preserves the existing precedence of an earlier cleanup failure.
+Every record includes live allocation handle count, locked allocation count
+and active callback count. The disabled trace does not walk allocation owners.
+
+Allocation-cleanup-finished means the existing loop returned, including when
+a release failed; its HRESULT and remaining handles disclose that failure.
+When active callbacks cause the existing close path to skip cleanup, the
+entered/final records disclose active_calls and residual owners and no
+allocation/context cleanup records are emitted. Close-finished records the
+existing logical close, not successful kernel cleanup. Context and generation
+are captured before callbacks or close erase them. A missing boundary can
+localize a stopped call only after confirming this source and diagnostic flag.
+
+The ordinary SYSTEM D9 hardware02 attempt using selected aa2a2da reached
+RenderCb and received original 80004005 with six references, a 228-byte native
+stream and five locked references. The public CreateDevice call did not
+produce a return record or reach the probe hold. Its later native observer
+reported complete, released context10 teardown and zero Render failure fields;
+those facts do not establish the Render refusal's kernel status or a locked
+allocation cause. The close records add finite localization for that remaining
+uncertainty without changing callback behavior.
 
 The submit-entered record is made before argument validation. The successful
 record requires the unchanged callback, replacement-buffer, owner and identity

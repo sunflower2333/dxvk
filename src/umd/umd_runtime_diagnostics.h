@@ -11,11 +11,16 @@ struct RuntimeGpuDiagnosticInfo {
   uint64_t generation = 0;
   uint32_t context = 0, queue = 0, references = 0, streamBytes = 0;
   uint32_t lockedReferences = 0, index = UINT32_MAX;
+  uint32_t allocations = 0, lockedAllocations = 0, activeCalls = 0;
 };
 
 class RuntimeGpuDiagnostics {
 public:
-  enum class Event { ContextReady, SubmitEntered, SubmitSucceeded, Failure };
+  enum class Event {
+    ContextReady, SubmitEntered, SubmitSucceeded, Failure,
+    CloseEntered, AllocationCleanupFinished, DestroyContextEntered,
+    DestroyContextFinished, CloseFinished
+  };
   explicit RuntimeGpuDiagnostics(bool enabled = false) : m_enabled(enabled) { }
   bool enabled() const { return m_enabled; }
   static bool enabledFlag(const char* flag) {
@@ -31,17 +36,27 @@ public:
     const uint32_t bit = 1u << uint32_t(event);
     if (!m_enabled || !output || (m_recorded & bit)) return false;
     m_recorded |= bit;
-    const char* name = event == Event::Failure ? "failure"
-      : event == Event::ContextReady ? "context-ready"
-      : event == Event::SubmitEntered ? "submit-entered" : "submit-succeeded";
+    const char* name = "";
+    switch (event) {
+      case Event::ContextReady: name = "context-ready"; break;
+      case Event::SubmitEntered: name = "submit-entered"; break;
+      case Event::SubmitSucceeded: name = "submit-succeeded"; break;
+      case Event::Failure: name = "failure"; break;
+      case Event::CloseEntered: name = "close-entered"; break;
+      case Event::AllocationCleanupFinished: name = "allocation-cleanup-finished"; break;
+      case Event::DestroyContextEntered: name = "destroy-context-entered"; break;
+      case Event::DestroyContextFinished: name = "destroy-context-finished"; break;
+      case Event::CloseFinished: name = "close-finished"; break;
+    }
     std::fprintf(output,
       "VIOGPU_RUNTIME_GPU event=%s stage=%s hr=%08x callback=%u callback_hr=%08x"
       " generation=%llu context=%u queue=%u references=%u stream_bytes=%u"
-      " locked_references=%u index=%u\n",
+      " locked_references=%u index=%u allocations=%u locked_allocations=%u active_calls=%u\n",
       name, stage, unsigned(uint32_t(status)), unsigned(callback),
       unsigned(uint32_t(callbackStatus)), static_cast<unsigned long long>(info.generation),
       unsigned(info.context), unsigned(info.queue), unsigned(info.references),
-      unsigned(info.streamBytes), unsigned(info.lockedReferences), unsigned(info.index));
+      unsigned(info.streamBytes), unsigned(info.lockedReferences), unsigned(info.index),
+      unsigned(info.allocations), unsigned(info.lockedAllocations), unsigned(info.activeCalls));
     return true;
   }
 

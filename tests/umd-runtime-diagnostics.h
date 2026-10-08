@@ -33,6 +33,7 @@ inline unsigned runtimeDiagnosticsControls() {
   info.references = 6; info.streamBytes = 228; info.lockedReferences = 3; info.index = 4;
   RuntimeGpuDiagnostics disabled;
   check(!disabled.record(file, Event::Failure, "disabled", int32_t(0x80004005u), info));
+  check(!disabled.record(file, Event::CloseEntered, "disabled-close", 0, info));
   check(std::ftell(file) == 0);
   RuntimeGpuDiagnostics first(true), second(true);
   check(first.record(file, Event::ContextReady, "context", 0, info));
@@ -43,6 +44,16 @@ inline unsigned runtimeDiagnosticsControls() {
   check(!first.record(file, Event::Failure, "cleanup", int32_t(0x887a0005u), info, true, -1));
   check(first.record(file, Event::SubmitSucceeded, "submit", 0, info, true, 0));
   check(!first.record(file, Event::SubmitSucceeded, "second-success", 0, info, true, 0));
+  // Cleanup records remain visible after the first submission failure. A raw
+  // callback status must not replace the close operation's accumulated error.
+  info.allocations = 6; info.lockedAllocations = 5; info.activeCalls = 0;
+  const Event closeEvents[] = {Event::CloseEntered, Event::AllocationCleanupFinished,
+    Event::DestroyContextEntered, Event::DestroyContextFinished, Event::CloseFinished};
+  for (Event event : closeEvents) {
+    const bool callback = event == Event::DestroyContextFinished;
+    check(first.record(file, event, "close-control", int32_t(0x8007000eu), info, callback, callback ? 1 : 0));
+    check(!first.record(file, event, "second-close", 0, info));
+  }
   // Suppression belongs to the owner, not the process or its callback table.
   info.context = 23;
   check(second.record(file, Event::Failure, "submit-reference", int32_t(0x80070057u), info));
@@ -56,10 +67,14 @@ inline unsigned runtimeDiagnosticsControls() {
   check(std::strstr(output, "event=submit-entered") != nullptr && std::strstr(output, "event=submit-succeeded") != nullptr);
   check(std::strstr(output, "stage=submit-reference hr=80070057 callback=0 callback_hr=00000000") != nullptr);
   check(std::strstr(output, "context=23") != nullptr);
-  check(!std::strstr(output, "disabled") && !std::strstr(output, "second-") && !std::strstr(output, "cleanup"));
+  check(std::strstr(output, "event=close-entered") != nullptr && std::strstr(output, "event=close-finished") != nullptr);
+  check(std::strstr(output, "event=allocation-cleanup-finished") != nullptr && std::strstr(output, "event=destroy-context-entered") != nullptr);
+  check(std::strstr(output, "event=destroy-context-finished stage=close-control hr=8007000e callback=1 callback_hr=00000001") != nullptr);
+  check(std::strstr(output, "allocations=6 locked_allocations=5 active_calls=0") != nullptr);
+  check(!std::strstr(output, "disabled") && !std::strstr(output, "second-") && !std::strstr(output, "stage=cleanup"));
   unsigned lines = 0;
   for (size_t i = 0; i < bytes; ++i) lines += output[i] == '\n';
-  check(lines == 5);
+  check(lines == 10);
   check(std::fclose(file) == 0);
   return checks;
 }

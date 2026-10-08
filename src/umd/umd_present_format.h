@@ -24,9 +24,17 @@ constexpr bool presentX8Format(DXGI_FORMAT format) {
       || format == DXGI_FORMAT_B8G8R8X8_UNORM_SRGB;
 }
 
+// Preserve the original typed default interpretation. Defaulting against the
+// internal typeless cache would lose the runtime's actual resource format.
+constexpr DXGI_FORMAT presentViewFormat(DXGI_FORMAT resource, DXGI_FORMAT view) {
+  return view == DXGI_FORMAT_UNKNOWN && presentCacheFormat(resource) != resource
+    ? resource : view;
+}
+
 // A mutable private image must not expand the runtime's view family. Ordinary
 // fully typed textures still allow only the original interpretation.
 constexpr bool presentViewAllowed(DXGI_FORMAT resource, DXGI_FORMAT view, bool present) {
+  view = presentViewFormat(resource, view);
   if (presentCacheFormat(resource) == resource) return true;
   if (!present) return resource == view;
   const auto family = copyFormatFamily(resource);

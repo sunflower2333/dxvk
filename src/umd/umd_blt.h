@@ -133,10 +133,28 @@ inline HRESULT bltTexture2D(ID3D11Device* device, ID3D11DeviceContext* context,
   scratchDesc.Width = plan.sourceWidth; scratchDesc.Height = plan.sourceHeight;
   scratchDesc.MipLevels = scratchDesc.ArraySize = scratchDesc.SampleDesc.Count = 1;
   scratchDesc.Format = plan.sourceFormat; scratchDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-  ComPtr<ID3D11Texture2D> sampled, rendered;
+  ComPtr<ID3D11Texture2D> sampled, rendered, encodedMultisample;
   hr = device->CreateTexture2D(&scratchDesc, nullptr, &sampled);
   if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  if (plan.resolve) {
+    D3D11_TEXTURE2D_DESC sourceDesc{}; source->GetDesc(&sourceDesc);
+    // Fully typed sRGB cannot ResolveSubresource under a UNORM format. Copy
+    // the same-family physical samples first; this changes no color values.
+    // PRESENT caches are already typeless and need no extra image.
+    if (sourceDesc.Format != plan.sourceFormat
+        && sourceDesc.Format != presentCacheFormat(plan.sourceFormat)) {
+      if (!copyFormatsCompatible(sourceDesc.Format, plan.sourceFormat))
+        return DXGI_ERROR_UNSUPPORTED;
+      auto encodedDesc = scratchDesc;
+      encodedDesc.SampleDesc = sourceDesc.SampleDesc;
+      encodedDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+      hr = device->CreateTexture2D(&encodedDesc, nullptr, &encodedMultisample);
+      if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      if (!encodedMultisample) return E_FAIL;
+    }
+  }
   scratchDesc.Width = plan.width; scratchDesc.Height = plan.height;
   scratchDesc.Format = plan.destinationFormat; scratchDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
   hr = device->CreateTexture2D(&scratchDesc, nullptr, &rendered);
@@ -170,9 +188,12 @@ inline HRESULT bltTexture2D(ID3D11Device* device, ID3D11DeviceContext* context,
   if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
   if (!vs || !ps || !layout || !vb || !sampled || !rendered || !srv || !rtv || !sampler || !raster || !commands)
     return E_FAIL;
-  // Production PRESENT sources use a typeless cache. Resolving with its
-  // UNORM interpretation averages encoded bytes, never sRGB-decoded colors.
-  if (plan.resolve) commands->ResolveSubresource(sampled.Get(), 0, source, sourceSubresource, plan.sourceFormat);
+  if (encodedMultisample) commands->CopySubresourceRegion(encodedMultisample.Get(), 0,
+    0, 0, 0, source, sourceSubresource, nullptr);
+  // UNORM interpretation averages encoded samples, never decoded colors.
+  if (plan.resolve) commands->ResolveSubresource(sampled.Get(), 0,
+    encodedMultisample ? encodedMultisample.Get() : source,
+    encodedMultisample ? 0 : sourceSubresource, plan.sourceFormat);
   else commands->CopySubresourceRegion(sampled.Get(), 0, 0, 0, 0, source, sourceSubresource, nullptr);
   ID3D11Buffer* buffers[] = {vb.Get()}; const UINT stride = sizeof(BltVertex), offset = 0;
   commands->IASetInputLayout(layout.Get()); commands->IASetVertexBuffers(0, 1, buffers, &stride, &offset);

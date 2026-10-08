@@ -1114,6 +1114,9 @@ void APIENTRY createShaderView(D3D10DDI_HDEVICE h,
   if (!args) { device->error(E_INVALIDARG); return; }
   if (!owned(device, get(args->hDrvResource))) return;
   const auto owner = get(args->hDrvResource);
+  auto normalized = *args;
+  normalized.Format = dxvk::umd::presentViewFormat(owner->nativeFormat, args->Format);
+  args = &normalized;
   if (!dxvk::umd::presentViewAllowed(owner->nativeFormat, args->Format,
       (owner->nativeBindFlags & D3D10_DDI_BIND_PRESENT) != 0)) {
     device->error(E_INVALIDARG); return;
@@ -1284,6 +1287,9 @@ void APIENTRY createTargetForInterface(D3D10DDI_HDEVICE h,
   if (!args) { device->error(E_INVALIDARG); return; }
   if (!owned(device, get(args->hDrvResource))) return;
   const auto owner = get(args->hDrvResource);
+  auto normalized = *args;
+  normalized.Format = dxvk::umd::presentViewFormat(owner->nativeFormat, args->Format);
+  args = &normalized;
   if (!dxvk::umd::presentViewAllowed(owner->nativeFormat, args->Format,
       (owner->nativeBindFlags & D3D10_DDI_BIND_PRESENT) != 0)) {
     device->error(E_INVALIDARG); return;

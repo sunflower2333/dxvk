@@ -22,6 +22,7 @@ static std::atomic<unsigned> checks{0};
 static unsigned snapshots, pixels, pairAllocations, renders, modes, presents, releases, contexts, contextCloses, locks, unlocks, unlockAttempts, unlockFailures;
 static unsigned runtimeTerminalReleases, runtimeTerminalMapClosures;
 static DWORD caller;
+static ID3D11DeviceContext* primaryRendererContext;
 static bool runtimeValid = true, malformedRender, nonExactAllocate, allocationFails;
 static unsigned malformedAllocation;
 static HRESULT lastError = S_OK, modeResult = S_OK, renderResult = S_OK, lockResult = S_OK, unlockResult = S_OK;
@@ -217,8 +218,9 @@ static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT result) {
 HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
     ID3D11Device** device, ID3D11DeviceContext** context, const RuntimeBackend*) noexcept {
   CHECK(!std::memcmp(&luid, &selected, sizeof(luid)));
-  return D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
+  const HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
     &level, 1, D3D11_SDK_VERSION, device, nullptr, context);
+  primaryRendererContext = hr == S_OK ? *context : nullptr; return hr;
 }
 HRESULT dxvk::umd::isStagingResourceBusy(ID3D11DeviceContext*, ID3D11Resource*, BOOL*) noexcept { return E_NOTIMPL; }
 HRESULT dxvk::umd::flushRuntimeSubmission(ID3D11DeviceContext* context) noexcept { context->Flush(); return S_OK; }
@@ -303,12 +305,12 @@ struct Texture {
   D3D10DDI_HRESOURCE handle{storage.bytes}; char runtime{}; bool live = false;
   DXGI_DDI_PRIMARY_DESC primary{};
   D3DKMT_HANDLE allocation = 0;
-  Texture(F& f, DXGI_FORMAT format, bool optional = false, unsigned malformed = 0)
+  Texture(F& f, DXGI_FORMAT format, bool optional = false, unsigned malformed = 0, UINT extraBind = 0)
   : fixture(f), storage(f.table.pfnCalcPrivateResourceSize(f.device, nullptr)) {
     D3D10DDI_MIPINFO shapes[2]{{8, 4, 1, 8, 4, 1}, {4, 2, 1, 4, 2, 1}};
     typename F::Desc args{}; args.pMipInfoList = shapes; args.MipLevels = args.ArraySize = 1;
     args.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D; args.Usage = D3D10_DDI_USAGE_DEFAULT;
-    args.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT;
+    args.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT | extraBind;
     args.Format = format; args.SampleDesc = {1, 0}; args.pPrimaryDesc = &primary;
     primary.Flags = optional ? DXGI_DDI_PRIMARY_OPTIONAL : 0; primary.DriverFlags = 0x12345678;
     primary.ModeDesc = {8, 4, format, {60000, 1001}, DXGI_DDI_MODE_SCANLINE_ORDER_PROGRESSIVE,

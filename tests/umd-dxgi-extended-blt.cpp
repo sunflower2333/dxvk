@@ -79,6 +79,18 @@ static Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> extendedSrv(F& f, Textur
   Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> result; f.contextKey->PSGetShaderResources(0, 1, &result);
   CHECK(result); f.contextKey->ClearState(); f.table.pfnDestroyShaderResourceView(f.device, view); return result;
 }
+static void drawMaskedSamples(ID3D11DeviceContext* context, ID3D11RenderTargetView* rtv) {
+  Microsoft::WRL::ComPtr<ID3D11Device> device; context->GetDevice(&device);
+  for (unsigned white = 0; white < 2; ++white) {
+    const uint32_t pixel = white ? 0xffffffff : 0xff000000;
+    D3D11_TEXTURE2D_DESC desc{}; desc.Width = desc.Height = desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA initial{&pixel, 4, 4}; Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    CHECK(device->CreateTexture2D(&desc, &initial, &texture) == S_OK);
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv; CHECK(device->CreateShaderResourceView(texture.Get(), nullptr, &srv) == S_OK);
+    drawSampled(context, srv.Get(), rtv, 6, 4, white ? 10 : 5);
+  }
+}
 template<typename Table>
 static void extendedProfile(unsigned profile, UINT pipeline) {
   using F = Fixture<Table>; F f(true, pipeline);
@@ -105,8 +117,12 @@ static void extendedProfile(unsigned profile, UINT pipeline) {
     FLOAT value[]{.5f, 0, 1, .25f};
     const auto linear = format ? DXGI_FORMAT_B8G8R8X8_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
     extendedClear(f, source, linear, value); extendedRead(f, source, profile, format, 5);
-    extendedClear(f, source, formats[format], value); extendedRead(f, source, profile, format, 6);
-    auto srv = extendedSrv(f, source, formats[format]);
+    extendedClear(f, source, formats[format], value);
+    extendedClear(f, source, DXGI_FORMAT_UNKNOWN, value); extendedRead(f, source, profile, format, 6);
+    auto typedSrv = extendedSrv(f, source, formats[format]);
+    D3D11_SHADER_RESOURCE_VIEW_DESC typedDesc{}; typedSrv->GetDesc(&typedDesc); CHECK(typedDesc.Format == formats[format]);
+    auto srv = extendedSrv(f, source, DXGI_FORMAT_UNKNOWN);
+    D3D11_SHADER_RESOURCE_VIEW_DESC defaultDesc{}; srv->GetDesc(&defaultDesc); CHECK(defaultDesc.Format == formats[format]);
     Texture<F> sampled(f, 6, 4, DXGI_FORMAT_R8G8B8A8_UNORM, bind);
     D3D10DDIARG_CREATERENDERTARGETVIEW targetArgs{}; targetArgs.hDrvResource = sampled.handle;
     targetArgs.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D; targetArgs.Format = sampled.format; targetArgs.Tex2D.ArraySize = 1;
@@ -141,26 +157,52 @@ static void extendedProfile(unsigned profile, UINT pipeline) {
   extendedBind(f, view);
   Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv; f.contextKey->OMGetRenderTargets(1, &rtv, nullptr); CHECK(rtv);
   Microsoft::WRL::ComPtr<ID3D11Device> device; f.contextKey->GetDevice(&device);
-  for (unsigned white = 0; white < 2; ++white) {
-    const uint32_t pixel = white ? 0xffffffff : 0xff000000;
-    D3D11_TEXTURE2D_DESC desc{}; desc.Width = desc.Height = desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
-    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    D3D11_SUBRESOURCE_DATA initial{&pixel, 4, 4}; Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-    CHECK(device->CreateTexture2D(&desc, &initial, &texture) == S_OK);
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv; CHECK(device->CreateShaderResourceView(texture.Get(), nullptr, &srv) == S_OK);
-    drawSampled(f.contextKey, srv.Get(), rtv.Get(), 6, 4, white ? 10 : 5);
-  }
+  drawMaskedSamples(f.contextKey, rtv.Get());
   Texture<F> resolved(f, 6, 4, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, bind);
   DXGI_DDI_ARG_BLT request{}; request.hSrcResource = msaa.dxgi(); request.hDstResource = resolved.dxgi();
   request.DstRight = 6; request.DstBottom = 4; request.Rotate = DXGI_DDI_MODE_ROTATION_IDENTITY; request.Flags.Resolve = 1;
   CHECK(f.blt(request) == S_OK); extendedRead(f, resolved, profile, 0, 8);
   f.table.pfnDestroyRenderTargetView(f.device, view); f.contextKey->ClearState();
+  {
+    Texture<F> ordinary(f, 6, 4, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, bind, 0, false, 4);
+    auto typedArgs = args; typedArgs.hDrvResource = ordinary.handle; typedArgs.Format = DXGI_FORMAT_UNKNOWN;
+    Storage typedStorage(f.table.pfnCalcPrivateRenderTargetViewSize(f.device, &typedArgs));
+    D3D10DDI_HRENDERTARGETVIEW typedView{typedStorage.bytes};
+    f.table.pfnCreateRenderTargetView(f.device, &typedArgs, typedView, {}); CHECK(lastError == S_OK);
+    extendedBind(f, typedView); Microsoft::WRL::ComPtr<ID3D11RenderTargetView> typedRtv;
+    f.contextKey->OMGetRenderTargets(1, &typedRtv, nullptr); CHECK(typedRtv);
+    D3D11_RENDER_TARGET_VIEW_DESC typedViewDesc{}; typedRtv->GetDesc(&typedViewDesc);
+    CHECK(typedViewDesc.Format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
+    Microsoft::WRL::ComPtr<ID3D11Resource> image; typedRtv->GetResource(&image);
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> typedSource; CHECK(image.As(&typedSource) == S_OK);
+    D3D11_TEXTURE2D_DESC typedDesc{}; typedSource->GetDesc(&typedDesc);
+    CHECK(typedDesc.Format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB && typedDesc.SampleDesc.Count == 4
+      && typedDesc.SampleDesc.Quality == 0 && typedDesc.Width == 6 && typedDesc.Height == 4
+      && typedDesc.MipLevels == 1 && typedDesc.ArraySize == 1);
+    drawMaskedSamples(f.contextKey, typedRtv.Get());
+    Texture<F> target(f, 6, 4, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, bind);
+    auto forbidden = request; forbidden.hSrcResource = ordinary.dxgi(); forbidden.hDstResource = target.dxgi();
+    CHECK(f.blt(forbidden) == DXGI_DDI_ERR_UNSUPPORTED); // BIND_PRESENT admission is unchanged.
+    extendedRead(f, target, profile, 0, 10);
+    auto targetSrv = extendedSrv(f, target, DXGI_FORMAT_UNKNOWN); targetSrv->GetResource(&image);
+    D3D11_SHADER_RESOURCE_VIEW_DESC targetViewDesc{}; targetSrv->GetDesc(&targetViewDesc);
+    CHECK(targetViewDesc.Format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> typedTarget; CHECK(image.As(&typedTarget) == S_OK);
+    D3D11_TEXTURE2D_DESC targetDesc{}; typedTarget->GetDesc(&targetDesc);
+    CHECK(targetDesc.Format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
+    dxvk::umd::BltPlan typedPlan;
+    CHECK(dxvk::umd::bltPlan(typedDesc, targetDesc, 0, 0, 0, 0, 6, 4, 1, 1, typedPlan) == S_OK);
+    CHECK(dxvk::umd::bltTexture2D(device.Get(), f.contextKey, typedSource.Get(), typedTarget.Get(),
+      0, 0, 0, 0, 1, typedPlan, [] { return true; }) == S_OK);
+    extendedRead(f, target, profile, 0, 9);
+    f.table.pfnDestroyRenderTargetView(f.device, typedView); f.contextKey->ClearState();
+  }
 }
 int main() {
   caller = GetCurrentThreadId();
   extendedProfile<D3D10_1DDI_DEVICEFUNCS>(0, D3D11DDI_3DPIPELINELEVEL_10_1);
   extendedProfile<D3D11DDI_DEVICEFUNCS>(1, D3D11DDI_3DPIPELINELEVEL_10_0);
   extendedProfile<D3D11DDI_DEVICEFUNCS>(2, D3D11DDI_3DPIPELINELEVEL_10_1);
-  CHECK(extendedImages == 51 && extendedPixels == 1116 && backings.empty() && bridges.empty() && lastError == S_OK);
-  std::printf("DXGI extended Blt PASS profiles=3 formats=2 images=51 pixels=1116 hardware_admission=0\n");
+  CHECK(extendedImages == 57 && extendedPixels == 1260 && backings.empty() && bridges.empty() && lastError == S_OK);
+  std::printf("DXGI extended Blt PASS profiles=3 formats=2 images=57 pixels=1260 hardware_admission=0\n");
 }

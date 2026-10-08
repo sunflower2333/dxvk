@@ -1,6 +1,91 @@
 # Current continuation checkpoint (2026-10-08)
 
-## Current checkpoint: physical BC correction and native runtime continuation
+## Current checkpoint: native DX9/DX11 builds and CI68 shader correction
+
+VM default UMD remains Mesa. Ordinary SYSTEM DX8-11 hardware creation, draw,
+readback, Present and DWM/Explorer replacement are incomplete. ROOT alone owns
+target calls; preserve the single registered8192MiB VM. Production capability
+masks and default registration are unchanged. Historical18452/CI37743643139
+hardware evidence does not admit current ports or a current core.
+
+Published0ccc3a2fb228afd9cb8a224c7aaa473177d56610 triggered one Native UMD run
+37814911005. CI67 is completed FAILURE: identity/shader-cpu/ARM64backend pass,
+x86/x64backend fail in d3d10-system-shader-test, ARM64runtime SKIPPED. Both
+original failure ZIPs and18026members are retained and reviewed, with all owned
+local readers closed. Proof21657/SHA0cd6018b is at
+artifacts/dxvk-trunk-integration-20261008/ci67-status-port_dx11-01/
+CI67-failed-originals-and-owned-read-closure-reviewed-01.json. Both shader tasks
+exit-1073740791, no timeout; lastError!=ddiResult(hr80070057). Exact FXC replay
+isolates scalar PS SV_PrimitiveID packed at v2.y: production profile incorrectly
+requires component mask1. Reviewed79898e is merged as94f58db. It admits exactly one-hot scalar UINT32
+register components while preserving dedicatedx, version/type/stage limits,
+HLSL, raw pixel and negative HRESULT oracles. Exact failed VS/GS/PS tokens
+replay successfully; focused615 controls and four strictx86/x64 COFFs pass.
+Independent3727241/0 finite sourcepeer PASS pins five Git/current/TAR files. The frozen success
+collector and success reader are UNEXECUTED; no current core admission.
+
+Native D10CPU03 remains accepted17tools/fourCOFF/fourPE, ARM64X5d410dbc plus
+ARM64/x64 probes, release3800/SHA71941132. Native D9CPU02 now passes10tools,
+twoCOFF/twoPE, selected538rows/317unique stable; ROOT3692291/0/66.090s.
+Archive6413451/SHA507b957f has89originals. Finite3698174/0 proof9042/
+SHA96f02722 joins14native lifetimes+observer/9transports/7parents/realouter.
+Explicit ROOT release6850/SHAcb6e3f25 closes CPU02. Both native probe images
+were only built; no factory, frontend/core module or GPU call occurred.
+
+Native D11CPU01 source786 now passes all17tools, zero warnings, fourCOFF/
+fourPE, selected139rows/118unique/30headers stable. ROOT3699709/0/80.328s;
+archive12135355/SHAb389e43d,151originals/162members. ARM64X frontend1464832/
+SHA7b5a6094 exposes OpenAdapter10_2 and VioGpuDxvkD11ValidationInfo, actual
+CHPEv2/dynamic1224+8 mapped. Finite3704530/0 proof37491/SHA4987a8ca at
+artifacts/system-runtime-validation-20261009/
+independent-D11-success-build-host01-review-01/
+D11-native-build-originals-and-closure-reviewed.json joins21absent exactnative
+lifetimes+observer/11transports/7parents and REAL closedROOTouter. All pending
+counts0. ROOTrelease3712944/0 writes2472/SHAdd09c9e6. Frozen positive reader01
+incorrectly omits the realouter while claiming finalized; it remains UNEXECUTED
+and unusable as release proof. No native compiler/probe rerun occurred.
+
+Native BGRA189 is now independently accepted and released: ROOT3684203/0,
+9tools, threeCOFF/threePE; original BGRA literalreader171raw/1836pixels and new
+encoded reader24raw/3072pixels/12672bytes pass exactly once. Finite3691530/0
+proof11997/SHA68e87b5a joins originals/ownership/static34+SYS+desktop. Explicit
+release1346/SHA51abf6c2 closes the WARP reference-only attempt. Generic inverse
+bit exactness remains false; current embedded GPU acceptance is pending.
+
+ROOT actual D10module-negative attempt now passes ARM64+x64 fivechecks each,
+core_loaded0, using the exact CPU03 three binaries and no core payload. Outer
+3713844/0/58.931s owns all ten phases; unchanged reader3714896/0 joins8native
+children/11transports/10phaseparents/static34+SYS+desktop. Independent3719885/0 finite proof24030/SHA4f8939a2 joins the realouter/reader
+and all closed lifetimes. ROOT3721492/0 file-only release953/SHA25edc0e5
+closes the attempt.
+Originals: artifacts/system-runtime-validation-20261008/
+native-d10-entry-negative-0f4f5e-01/native-execution-01. No registry mutation,
+KMT probe, factory or GPU workload ran during this negative gate.
+
+Current local MAIN94f58db38e8e1c4691505a673b760243f9c48425 adds the reviewed
+final binding020f line atomically as34c2a83 and Present8d0 as8f8edc1; no push
+has occurred since0ccc. Binding pure93 local metadata controls/sourcepeer pass,
+exact CI source/config/core/private-loader/ICD/dependency tuple and held module
+census PID/start join are required. Native020f PS5.1 extended18restore scenarios, eightAST files and93tuple
+controls are frozenCPU-only at artifacts/system-binding-native-preflight-
+20261009/020f66e-01; actual native execution remains pending. NoApply/core/hardware
+admission. Presentsource2strict optimizedSDKCOFF+93synthetic reader rejects and
+peer02 pass; actual Present CPU host04 ROOT3726163/1 stops at native PS5.1 AST parsing
+before any compiler: derived producer line50–51 starts -and on a new line.
+Collection/transfer/separate observation are complete; failed originals and
+realouter closure are under finite review. A minimal syntax correction and
+fresh native attempt are being prepared from the actual786CPU17 prerequisite. Actual twoPresent/DWM proof
+remains pending; offscreen source/oracle remains frozen.
+
+Next: publish this reviewed shader correction, binding and Present source in
+one push, then record the actual sole NativeUMD run. Finish fresh CPU-only
+binding and Present builds, preserving the failed AST originals.
+Then require all six actual CI jobs SUCCESS and genuine core/config originals,
+readonly actual private Vulkan inventory, ROOT-approved current module tuple,
+and bounded ordinary SYSTEM D10/D9/D8/D11 held render/readback/Present/rawrestore
+attempts. Mesa/DWM replacement follows successful actual hardware gates.
+
+## Previous checkpoint: physical BC correction and native runtime continuation
 
 VM default UMD remains Mesa. Ordinary SYSTEM DX8-11 hardware creation, draw,
 readback, Present and DWM/Explorer replacement are incomplete. ROOT alone owns

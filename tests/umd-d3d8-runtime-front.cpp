@@ -18,6 +18,8 @@
 #include <vector>
 #include "umd-d3d8-runtime-policy.h"
 #include "umd-d3d8-runtime-callbacks.h"
+#include "umd-d3d8-runtime-enumeration.h"
+#include "umd-d3d8-runtime-hardware.h"
 #include "umd-d3d8-system-identity.h"
 #include "../src/umd/umd_runtime_imports.h"
 
@@ -278,6 +280,14 @@ HRESULT APIENTRY devicePresent(HANDLE handle, const D3DDDIARG_PRESENT* args) {
   trace("SYSTEM_D3D8_PRESENT_END device=%p hr=%08lx", handle, static_cast<unsigned long>(hr));
   return hr;
 }
+HRESULT enumerationDenied(HANDLE handle) {
+  const auto owner = retainDevice(handle);
+  if (!owner || owner->destroying.load()
+      || owner->adapter->mode != policy::Mode::EnumerateDevice) return E_INVALIDARG;
+  trace("SYSTEM_D3D8_ENUMERATION_FORBIDDEN device=%p forwarded=0 hr=%08lx",
+    handle, static_cast<unsigned long>(D3DERR_NOTAVAILABLE));
+  return D3DERR_NOTAVAILABLE;
+}
 HRESULT APIENTRY deviceDestroy(HANDLE handle) {
   const auto owner = retainDevice(handle);
   if (!owner || owner->destroying.exchange(true)) return E_INVALIDARG;
@@ -316,6 +326,13 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
       handle, static_cast<unsigned long>(D3DERR_NOTAVAILABLE));
     return D3DERR_NOTAVAILABLE;
   }
+  if (adapter->mode == policy::Mode::EnumerateDevice
+      && !policy::enumerationContract(input.Interface, adapter->version,
+                                     input.Version, input.Flags.Value)) {
+    trace("SYSTEM_D3D8_ENUMERATION_CONTRACT_REJECTED adapter=%p core_create_calls=0 hr=%08lx",
+      handle, static_cast<unsigned long>(E_INVALIDARG));
+    return E_INVALIDARG;
+  }
   // Keep the exact core pins immutable across OpenAdapter and device creation.
   if (environment(policy::corePathName, 259) != adapter->corePath
       || environment(policy::coreSha256Name, 64) != adapter->coreSha256
@@ -334,6 +351,13 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
   } guard{args, input.pCallbacks, callbacks};
   trace("SYSTEM_D3D8_CALLBACK_TABLE runtime=%p adapter_runtime=%p original=%p wrapped=%p bytes=%zu owned_snapshot=1 borrowed_table_reread=0",
     input.hDevice, adapter->runtime, input.pCallbacks, &callbacks->wrapped, Callbacks::callbackBytes);
+  trace("SYSTEM_D3D8_CALLBACK_PRESENCE runtime=%p allocate=%u deallocate=%u lock=%u unlock=%u create_context=%u destroy_context=%u escape=%u render=%u present=%u residency=%u",
+    input.hDevice, unsigned(callbacks->functions.pfnAllocateCb != nullptr),
+    unsigned(callbacks->functions.pfnDeallocateCb != nullptr), unsigned(callbacks->functions.pfnLockCb != nullptr),
+    unsigned(callbacks->functions.pfnUnlockCb != nullptr), unsigned(callbacks->functions.pfnCreateContextCb != nullptr),
+    unsigned(callbacks->functions.pfnDestroyContextCb != nullptr), unsigned(callbacks->functions.pfnEscapeCb != nullptr),
+    unsigned(callbacks->functions.pfnRenderCb != nullptr), unsigned(callbacks->functions.pfnPresentCb != nullptr),
+    unsigned(callbacks->functions.pfnQueryResidencyCb != nullptr));
   args->pCallbacks = &callbacks->wrapped;
   const HRESULT hr = adapter->original.pfnCreateDevice(handle, args);
   trace("SYSTEM_D3D8_CREATE_RETURN runtime=%p driver=%p hr=%08lx interface=8 core_create_calls=1",
@@ -357,8 +381,31 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
   input.pDeviceFuncs->pfnDestroyResource = deviceDestroyResource;
   input.pDeviceFuncs->pfnPresent = devicePresent;
   input.pDeviceFuncs->pfnDestroyDevice = deviceDestroy;
+  if (adapter->mode == policy::Mode::EnumerateDevice) {
+    // Patch only a local copy of the published Vista prefix. Never touch a
+    // runtime's current-SDK tail, and never turn a missing entry into support.
+    D3DDDI_DEVICEFUNCS publication{};
+    std::memcpy(&publication, input.pDeviceFuncs, functionBytes);
+    const uint32_t mask = dxvk::test::EnumerationDevice8<enumerationDenied>::publish(publication);
+    std::memcpy(input.pDeviceFuncs, &publication, functionBytes);
+    trace("SYSTEM_D3D8_ENUMERATION_BOUNDARY device=%p blocked_mask=%08x bytes=%zu public_create_device=0 draw_forwarding=0 present_forwarding=0",
+      args->hDevice, mask, functionBytes);
+  }
   guard.published = true;
   trace("SYSTEM_D3D8_DEVICE_FUNCTIONS bytes=%zu interface=%u published=1", functionBytes, unsigned(D3D_UMD_INTERFACE_VERSION_VISTA));
+  if (adapter->mode == policy::Mode::EnumerateDevice) {
+    const auto folder = adapter->corePath.substr(0, adapter->corePath.find_last_of(L'\\') + 1);
+    if (!policy::D3d8HardwarePins::loadedAtFolder(folder, trace)) {
+      // The published diagnostic owner performs cleanup while its callbacks
+      // stay live. A failed teardown keeps that owner for failure evidence.
+      const HRESULT destroyed = deviceDestroy(args->hDevice);
+      trace("SYSTEM_D3D8_ENUMERATION_PAYLOADS_FAILED device=%p cleanup_hr=%08lx",
+        args->hDevice, static_cast<unsigned long>(destroyed));
+      return E_FAIL;
+    }
+    trace("SYSTEM_D3D8_ENUMERATION_PRIVATE_PAYLOADS device=%p checked_after_create=1 machine=014c forbidden_loader=0",
+      args->hDevice);
+  }
   return S_OK;
 }
 HRESULT APIENTRY closeAdapter(HANDLE handle) {
@@ -401,7 +448,7 @@ extern "C" HRESULT APIENTRY OpenAdapter(D3DDDIARG_OPENADAPTER* args) {
   if (FAILED(pinned.result)) return pinned.result;
   const HMODULE core = pinned.module;
   const auto loaded = modulePath(core);
-  const FARPROC symbol = GetProcAddress(core, "VioGpuDxvkOpenAdapter9ForTest");
+  const FARPROC symbol = GetProcAddress(core, "OpenAdapter");
   using Open = HRESULT (APIENTRY*)(D3DDDIARG_OPENADAPTER*);
   Open open = nullptr; static_assert(sizeof(open) == sizeof(symbol));
   std::memcpy(&open, &symbol, sizeof(open));
@@ -431,6 +478,9 @@ extern "C" HRESULT APIENTRY OpenAdapter(D3DDDIARG_OPENADAPTER* args) {
   *input.pAdapterFuncs = publication;
   args->hAdapter = local.hAdapter;
   args->DriverVersion = local.DriverVersion;
+  if (mode == policy::Mode::EnumerateDevice)
+    trace("SYSTEM_D3D8_ENUMERATION_MODE adapter=%p version=%u captured_mode=3 core_entry=OpenAdapter render_permission=0",
+      local.hAdapter, input.Version);
   return S_OK;
   } catch (...) { return E_OUTOFMEMORY; }
 }

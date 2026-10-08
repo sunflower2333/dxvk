@@ -17,7 +17,7 @@ function Hash([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA25
 $manifestPath = Join-Path $Inputs 'native-system-d3d8-device-x86-source-01.json'
 $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
 if ((Hash $manifestPath) -cne $ManifestSHA256 -or
-    $manifest.source_commit -cne $SourceCommit -or $manifest.inputs.Count -ne 33 -or
+    $manifest.source_commit -cne $SourceCommit -or $manifest.inputs.Count -ne 35 -or
     $manifest.raw_process_helper_sha256 -cne 'd8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad') {
   throw 'Exact selected frozen manifest required'
 }

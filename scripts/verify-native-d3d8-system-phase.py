@@ -254,45 +254,133 @@ def verify_runtime_module_callers(rows):
     return {'module_identities': identities, 'callers': callers, 'opens': [(position, opened[2]) for position, opened in opens]}
 
 
-def verify_enumeration(text):
+def verify_enumeration(text, luid='ec6b000000000000', source=0, core_identity=None):
+    """Actual HAL enumeration requires an internal driver device on system D3D8.
+
+    This predicate permits real backend construction/initialization, including
+    its reported Render callbacks. Public API device creation, runtime workload
+    entry points and Present remain forbidden. It is not a pixel/hardware gate.
+    """
     rows = lines(text)
     runtime_identity = verify_runtime_module_callers(rows)
-    require(all(readonly == '1' for _, readonly in runtime_identity['opens']), 'enumeration must retain readonly Interface8 opens')
-    require(not re.search(r'^(?:D3D8_(?:ERROR|FAILED|UNAVAILABLE)\b|SYSTEM_D3D8_(?:CREATE|DEVICE|LIFETIME)(?:_|\b))', text, re.M), 'enumeration attempted device or reported failure')
+    require(all(readonly == '0' for _, readonly in runtime_identity['opens']),
+            'enumeration must use the immutable constructor permission, not old readonly mode')
+    require(not re.search(r'^(?:D3D8_(?:ERROR|FAILED|UNAVAILABLE)\b|SYSTEM_D3D8_(?:CREATE_BLOCKED|DEVICE_DESTROY_FAILED|ENUMERATION_FORBIDDEN|ENUMERATION_CONTRACT_REJECTED|ENUMERATION_PAYLOADS_FAILED)\b)', text, re.M),
+            'enumeration reported a failed or forbidden operation')
+    match_identity(rows, luid, source)
     runtime = re.fullmatch(r'D3D8_RUNTIME path=(.+) machine=014c pointer_bytes=4 sdk_version=220 caps_bytes=212',
                            single(rows, 'D3D8_RUNTIME '))
     modules = [row for row in runtime_identity['module_identities']['modules'] if row['name'] == 'd3d8.dll']
     require(runtime and all(runtime[1].casefold() == row['explicit'].casefold() for row in modules),
             'genuine system8 runtime path must match rejoined explicit I386 files')
+    require(single(rows, 'D3D8_ENUMERATION_CONSTRUCTION ')
+        == 'D3D8_ENUMERATION_CONSTRUCTION allowed=1 public_create_device=0 draw=0 presents=0 core_entry=OpenAdapter',
+        'explicit constructor-only scope missing')
     adapters = re.findall(r'^D3D8_ADAPTER index=\d+ identifier_hr=00000000 caps_hr=00000000 vendor=1af4 device=1050 devcaps=([0-9a-f]{8}) vs=fffe0101 ps=ffff0104 constants=96$', text, re.M)
-    require(len(adapters) == 1 and int(adapters[0], 16) & 0x90000 == 0x90000, 'actual bounded Interface8 HAL caps required')
-    opens = runtime_identity['opens']
-    ends = re.findall(r'^SYSTEM_D3D8_OPEN_END hr=00000000 interface=8 driver_version=12 adapter=\S+ core=(.+) expected_ci_source_commit=([0-9a-f]{40}) machine=014c core_create_calls=0$', text, re.M)
-    require(len(ends) == len(opens) and all(commit == CORE_SOURCE for _, commit in ends), 'actual typed adapter admission failed')
-    expected_core = r'C:\Users\Public\DxvkD3D8Candidate-d7e5c7d-37648387721\viogpudxvk.dll'
-    require(all(path == expected_core for path, _ in ends), 'actual adapter core path mismatch')
-    require(single(rows, 'SYSTEM_D3D8_CORE_PIN ') == f'SYSTEM_D3D8_CORE_PIN path={expected_core} sha256={PAYLOADS["core"][1]} expected_ci_source_commit={CORE_SOURCE} machine=014c file_locked=1 core_unchanged=1', 'original locked I386 core pin mismatch')
-    caps = re.findall(r'^SYSTEM_D3D8_CAPS12 id=(\d+) bytes=212 device_type=1 devcaps=([0-9a-f]{8}) caps2=[0-9a-f]{8} primitive=[0-9a-f]{8} vs=fffe0101 constants=96 ps=ffff0104$', text, re.M)
-    require(caps, 'actual CAPS12 forwarding missing')
-    for ident, devcaps in caps:
-        require(int(devcaps, 16) & 0x90000 == 0x90000, 'HAL caps projection mismatch')
+    require(len(adapters) == 1 and int(adapters[0], 16) & 0x90000 == 0x90000,
+            'actual bounded Interface8 HAL caps required')
+    core_identity = core_identity or {'source': CORE_SOURCE, 'run': RUN, 'sha256': PAYLOADS['core'][1]}
+    require(set(core_identity) == {'source', 'run', 'sha256'}
+        and re.fullmatch(r'[0-9a-f]{40}', core_identity['source'])
+        and re.fullmatch(r'[0-9a-f]{64}', core_identity['sha256'])
+        and type(core_identity['run']) is int and core_identity['run'] > 0, 'exact independently admitted core tuple required')
+    core_source, core_run, core_sha = (core_identity[key] for key in ('source', 'run', 'sha256'))
+    expected_core = rf'C:\Users\Public\DxvkD3D8Candidate-{core_source[:7]}-{core_run}\viogpudxvk.dll'
+    opened = re.findall(r'^SYSTEM_D3D8_OPEN_END hr=00000000 interface=8 driver_version=12 adapter=(\S+) core=(.+) expected_ci_source_commit=([0-9a-f]{40}) machine=014c core_create_calls=0$', text, re.M)
+    require(len(opened) == len(runtime_identity['opens']) and all(commit == core_source and path == expected_core for _, path, commit in opened),
+            'actual standard typed adapter admission failed')
+    modes = re.findall(r'^SYSTEM_D3D8_ENUMERATION_MODE adapter=(\S+) version=(\d+) captured_mode=3 core_entry=OpenAdapter render_permission=0$', text, re.M)
+    require(len(modes) == len(opened) and {row[0] for row in modes} == {row[0] for row in opened},
+            'immutable enumeration adapter modes missing')
+    versions = dict(modes)
+    require(len(versions) == len(modes), 'duplicate live adapter identity')
+    require(single(rows, 'SYSTEM_D3D8_CORE_PIN ') == f'SYSTEM_D3D8_CORE_PIN path={expected_core} sha256={core_sha} expected_ci_source_commit={core_source} machine=014c file_locked=1 core_unchanged=1',
+            'original locked I386 core pin mismatch')
+    folder = expected_core.rsplit(chr(92), 1)[0] + chr(92)
+    pins = re.findall(r'^D3D8_PAYLOAD_PIN path=(.+) sha256=([0-9a-f]{64}) machine=(014c|json) locked=1 original_bytes=1$', text, re.M)
+    expected_pins = {(folder + name, core_sha if name == 'viogpudxvk.dll' else digest_value,
+                      'json' if name.endswith('.json') else '014c') for _, digest_value, name in PAYLOADS.values()}
+    require(len(pins) == 4 and set(pins) == expected_pins, 'exact four original I386 private payload pins required')
+    private = re.findall(r'^D3D8_PRIVATE_MODULE name=(\S+) path=(.+) machine=014c$', text, re.M)
+    expected_private = {(name, folder + name) for name in
+        ('viogpudxvk.dll', 'viogpu_gl_loader_x86.dll', 'viogpu_gl_vk_x86.dll')}
+    require(set(private) == expected_private, 'actual three private I386 modules missing')
+    require(single(rows, 'D3D8_HARDWARE_SOURCE ') == f'D3D8_HARDWARE_SOURCE core_commit={core_source} ci_run={core_run} loader_source=6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7 icd_source=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d icd_ci_run=37453381660 driver_selection=owned-json raw_architecture=014c',
+        'actual independently pinned core/loader/ICD sources differ')
+    contracts = re.findall(r'^SYSTEM_D3D8_CREATE_CONTRACT adapter=(\S+) runtime=(\S+) interface=8 version=(\d+) flags=00000000 callbacks=1 functions=1 command=\d+ allocation_list=\d+ patch_list=\d+ captured_mode=3$', text, re.M)
+    require(len(contracts) == sum(row.startswith('SYSTEM_D3D8_CREATE_CONTRACT ') for row in rows)
+        and contracts and all(adapter in versions and version == versions[adapter] for adapter, _, version in contracts),
+            'internal CreateDevice differs from captured Interface8/version/flags0 contract')
+    created = re.findall(r'^SYSTEM_D3D8_CREATE_RETURN runtime=(\S+) driver=(\S+) hr=00000000 interface=8 core_create_calls=1$', text, re.M)
+    require(len(created) == sum(row.startswith('SYSTEM_D3D8_CREATE_RETURN ') for row in rows)
+        and len(created) == len(contracts) and [row[0] for row in created] == [row[1] for row in contracts]
+        and len(set(created)) == len(created) and all(value not in ('0', '00000000', '(nil)') for row in created for value in row),
+        'actual internal core construction failed or duplicate identities reported')
+    require(len(private) == 3 * len(created) and all(private.count(value) == len(created) for value in expected_private),
+        'actual private module observations must be captured for every live internal device')
+    private_owners = re.findall(r'^SYSTEM_D3D8_ENUMERATION_PRIVATE_PAYLOADS device=(\S+) checked_after_create=1 machine=014c forbidden_loader=0$', text, re.M)
+    require(private_owners == [row[1] for row in created], 'live internal device private module identity missing')
+    tables = re.findall(r'^SYSTEM_D3D8_CALLBACK_TABLE runtime=(\S+) adapter_runtime=\S+ original=(\S+) wrapped=(\S+) bytes=88 owned_snapshot=1 borrowed_table_reread=0$', text, re.M)
+    require(len(tables) == len(created) and [row[0] for row in tables] == [row[0] for row in created]
+        and all(original != wrapped and original not in ('0', '00000000', '(nil)') and wrapped not in ('0', '00000000', '(nil)') for _, original, wrapped in tables),
+        'actual immutable callback owner snapshot missing')
+    presence = re.findall(r'^SYSTEM_D3D8_CALLBACK_PRESENCE runtime=(\S+) allocate=1 deallocate=1 lock=1 unlock=1 create_context=1 destroy_context=1 escape=1 render=1 present=[01] residency=[01]$', text, re.M)
+    require(presence == [row[0] for row in created], 'required original runtime callbacks missing')
+    require(rows.count('SYSTEM_D3D8_DEVICE_FUNCTIONS bytes=396 interface=12 published=1') == len(created),
+            'actual protected Vista99 function publication missing')
+    boundary = re.findall(r'^SYSTEM_D3D8_ENUMERATION_BOUNDARY device=(\S+) blocked_mask=([0-9a-f]{8}) bytes=396 public_create_device=0 draw_forwarding=0 present_forwarding=0$', text, re.M)
+    require(len(boundary) == len(created) and [row[0] for row in boundary] == [row[1] for row in created]
+        and all(int(mask, 16) & 0x4203 == 0x4203 and not int(mask, 16) & ~0x7fff for _, mask in boundary),
+        'typed runtime draw/Clear/Present deny boundary missing')
+    caps = re.findall(r'^SYSTEM_D3D8_CAPS12 id=(\d+) bytes=212 device_type=1 devcaps=([0-9a-f]{8}) caps2=[0-9a-f]{8} primitive=([0-9a-f]{8}) vs=fffe0101 constants=96 ps=ffff0104$', text, re.M)
+    require(caps, 'actual unchanged CAPS12 forwarding missing')
+    for ident, devcaps, primitive in caps:
+        require(int(devcaps, 16) & 0x90000 == 0x90000 and int(primitive, 16) & 0x2000,
+                'HAL/legacy-fog original projection mismatch')
         words = re.findall(rf'^SYSTEM_D3D8_CAPS12_WORD id={ident} index=(\d+) value=([0-9a-f]{{8}})$', text, re.M)
         require([int(index) for index, _ in words] == list(range(53)), 'all53 CAPS12 words required')
-        require(int(words[0][1], 16) == 1 and int(words[49][1], 16) == 0xfffe0101 and int(words[50][1], 16) == 96 and int(words[51][1], 16) == 0xffff0104, 'original CAPS12 output words mismatch')
-    caps_ends = re.findall(r'^SYSTEM_D3D8_CAPS_END id=\d+ type=\d+ bytes=\d+ hr=([0-9a-f]{8}) caps_modified=0$', text, re.M)
-    require(caps_ends and all(value == '00000000' for value in caps_ends), 'caps request failure retained')
+        require(int(words[0][1], 16) == 1 and int(words[7][1], 16) == int(devcaps, 16)
+            and int(words[8][1], 16) == int(primitive, 16) and int(words[49][1], 16) == 0xfffe0101
+            and int(words[50][1], 16) == 96 and int(words[51][1], 16) == 0xffff0104,
+            'original CAPS12 output words mismatch')
     begins = re.findall(r'^SYSTEM_D3D8_CAPS_BEGIN id=(\d+) interface=8 type=(\d+) bytes=(\d+) info=[01] adapter=\S+$', text, re.M)
     completed = re.findall(r'^SYSTEM_D3D8_CAPS_END id=(\d+) type=(\d+) bytes=(\d+) hr=00000000 caps_modified=0$', text, re.M)
-    require(sorted(begins) == sorted(completed) and len({row[0] for row in begins}) == len(begins), 'actual caps call/return pair mismatch')
-    require(not any(row.startswith(('D3D8_PIXEL ', 'D3D8_SCREEN_PIXEL ', 'D3D8_PRIVATE_MODULE ')) for row in rows), 'enumeration emitted device pixels/private GPU modules')
-    require(len(re.findall(r'^D3D8_SELECTOR installed=1 machine=014c pointer_bytes=4 slot_rva=[0-9a-f]+ registry_writes=0$', text, re.M)) == 1, 'exact owned system8 selector missing')
+    require(sorted(begins) == sorted(completed) and len({row[0] for row in begins}) == len(begins),
+            'actual unchanged caps call/return pairs missing or failed')
+    lifetimes = re.findall(r'^SYSTEM_D3D8_LIFETIME phase=destroyed runtime=(\S+) allocate=(\d+) deallocate=(\d+) lock=(\d+) unlock=(\d+) create_context=(\d+) destroy_context=(\d+) render=(\d+) present=0 residency=(\d+) live_allocations=0 live_locks=0 live_contexts=0 tracking_errors=0 callback_failures=0$', text, re.M)
+    require(len(lifetimes) == len(created) and sorted(row[0] for row in lifetimes) == sorted(row[0] for row in created),
+            'actual internal device callback teardown incomplete')
+    render_callbacks = 0
+    for _, allocate, deallocate, locked, unlocked, context, destroyed, render, _ in lifetimes:
+        require(allocate == deallocate and locked == unlocked and context == destroyed and int(context) > 0,
+                'actual internal callback owners unbalanced')
+        render_callbacks += int(render)
+    destruction_begin = re.findall(r'^SYSTEM_D3D8_DEVICE_DESTROY_BEGIN device=(\S+) callback_owner_live=1$', text, re.M)
+    destruction_end = re.findall(r'^SYSTEM_D3D8_DEVICE_DESTROY device=(\S+) hr=00000000 remaining=\d+ callback_owner_released=1$', text, re.M)
+    require(sorted(destruction_begin) == sorted(destruction_end) == sorted(row[1] for row in created),
+            'actual core teardown/callback lifetime pair mismatch')
+    require(not any(row.startswith(('D3D8_PIXEL ', 'D3D8_SCREEN_PIXEL ', 'D3D8_SELECTED_OFFSCREEN ',
+        'SYSTEM_D3D8_PRESENT_BEGIN ', 'SYSTEM_D3D8_PRESENT_END ', 'D3D8_API operation=CreateDevice')) for row in rows),
+        'enumeration emitted a public device/render/Present workload')
+    require([row for row in rows if row.startswith('D3D8_API ')]
+        == ['D3D8_API operation=Direct3DCreate8 object=1'],
+            'actual genuine system factory missing')
+    require(len(re.findall(r'^D3D8_SELECTOR installed=1 machine=014c pointer_bytes=4 slot_rva=[0-9a-f]+ registry_writes=0$', text, re.M)) == 1,
+            'exact owned system8 selector missing')
     restored = re.fullmatch(r'D3D8_SELECTOR restored=1 protection_restored=1 substitutions=([1-9]\d*) queries=([1-9]\d*)', single(rows, 'D3D8_SELECTOR restored='))
     require(restored and int(restored[2]) >= int(restored[1]), 'original system IAT restoration failed')
     closed_adapters = re.findall(r'^SYSTEM_D3D8_CLOSE adapter=\S+ runtime=\S+ hr=00000000 remaining=\d+ live_devices=0$', text, re.M)
-    require(len(closed_adapters) == len(opens) and 'remaining=0 live_devices=0' in closed_adapters[-1], 'adapter owner remained live')
-    require(re.fullmatch(r'D3D8_COMPLETE mode=front-enumerate adapters=[1-9]\d* create_device=0 presents=0 registry_writes=0', single(rows, 'D3D8_COMPLETE ')), 'enumeration-only scope mismatch')
-    return {'HAL_caps': True, 'interface': 8, 'caps_bytes': 212, 'core_loaded': True, 'create_device': False,
-            'physical_runtime_identities': runtime_identity}
+    require(len(closed_adapters) == len(opened) and 'remaining=0 live_devices=0' in closed_adapters[-1],
+            'adapter owner remained live')
+    require(re.fullmatch(r'D3D8_COMPLETE mode=front-enumerate adapters=[1-9]\d* create_device=0 presents=0 registry_writes=0', single(rows, 'D3D8_COMPLETE ')),
+            'enumeration public API scope mismatch')
+    require(single(rows, 'D3D8_ENUMERATION_COMPLETE ')
+        == 'D3D8_ENUMERATION_COMPLETE internal_driver_construction=1 public_create_device=0 draw=0 presents=0 selector_restored=1 environment_restored=1',
+        'closed internal-construction enumeration completion missing')
+    return {'HAL_caps': True, 'interface': 8, 'caps_bytes': 212, 'core_loaded': True,
+            'public_API_CreateDevice': False, 'runtime_workload_forwarded': False, 'Present': False,
+            'internal_core_devices': len(created), 'actual_backend_initialization_Render_callbacks': render_callbacks,
+            'callback_owner_teardowns': len(destruction_end), 'physical_runtime_identities': runtime_identity}
 
 
 def verify_native_identity_cpu(result, members):
@@ -533,11 +621,10 @@ def verify_archive(archive, collection_path, manifest_path):
         registered = prior['registered_I386_filename']
         mode = {'enumerate': 'front-enumerate', 'offscreen': 'front-offscreen', 'present': 'front-present'}[phase]
         arguments = f'--{mode} "{files["frontend"]["path"]}" "{registered}" "{files["core"]["path"]}" {files["core"]["sha256"]} {CORE_SOURCE}'
-        if phase != 'enumerate':
-            arguments += f' {luid} {source}'
+        arguments += f' {luid} {source}'
         require(command['arguments'] == arguments, 'exact selected runtime command mismatch')
         if phase == 'enumerate':
-            detail = verify_enumeration(text)
+            detail = verify_enumeration(text, luid, source)
         else:
             runtime_identity = verify_runtime_module_callers(lines(text))
             spec = importlib.util.spec_from_file_location('pixels', Path(__file__).with_name('verify-native-d3d8-system-device.py'))

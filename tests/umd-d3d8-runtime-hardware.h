@@ -16,9 +16,6 @@
 #include "umd-d3d8-runtime-policy.h"
 
 namespace dxvk::test::runtime8 {
-inline constexpr wchar_t hardwareCoreCommit[] = L"d7e5c7d46b8ce889e993bfab66a3b78b076c49d1";
-inline constexpr wchar_t hardwareCoreHash[] = L"7be8cbb9850407ccc304528911a6fbd71b01971fbeb4a86550cc8dcc2f346a3f";
-inline constexpr wchar_t hardwareCorePath[] = L"C:\\Users\\Public\\DxvkD3D8Candidate-d7e5c7d-37648387721\\viogpudxvk.dll";
 inline constexpr wchar_t loaderHash[] = L"d459f2d09080865cc3d591b498c02d38305a26963b401152f8230dc60c5ad7e7";
 inline constexpr wchar_t icdHash[] = L"2b549889816163433faabe6f2c1d2a61d6c106078d08e30031b74c0a66cd7f5c";
 inline constexpr wchar_t manifestHash[] = L"74d7d5d6ae9432cde2d802507ed59bbe4c2f2b95d01e7ac3c2b56e9691932c80";
@@ -32,11 +29,14 @@ public:
   D3d8HardwarePins(const D3d8HardwarePins&) = delete;
   D3d8HardwarePins& operator=(const D3d8HardwarePins&) = delete;
   bool open(const wchar_t* core, const wchar_t* hash, const wchar_t* commit) {
-    if (std::wcscmp(commit, hardwareCoreCommit) || std::wcscmp(hash, hardwareCoreHash)
-        || _wcsicmp(core, hardwareCorePath)) return false;
+    // ROOT's separately admitted original CI manifest supplies this complete
+    // core tuple. Source/CI identity is never inferred from its binary or
+    // granted by a CPU build. The actual file is locked and hashed below.
+    if (!core || !hash || !commit || !ownedCorePath(std::wstring_view(core), std::wstring_view(commit))
+        || !hexIdentity(std::wstring_view(hash), 64)) return false;
     folder = core; folder.resize(folder.find_last_of(L'\\') + 1);
     const std::array<std::pair<const wchar_t*, const wchar_t*>, 4> inputs{{
-      {L"viogpudxvk.dll", hardwareCoreHash}, {L"viogpu_gl_loader_x86.dll", loaderHash},
+      {L"viogpudxvk.dll", hash}, {L"viogpu_gl_loader_x86.dll", loaderHash},
       {L"viogpu_gl_vk_x86.dll", icdHash}, {L"freedreno_icd.json", manifestHash}}};
     for (size_t i = 0; i < inputs.size(); ++i) {
       files[i] = std::make_unique<File>();
@@ -67,18 +67,26 @@ public:
     envCount = 1;
     if (!SetEnvironmentVariableW(L"VK_ICD_FILENAMES", json.c_str())) return false;
     envCount = 2;
-    log("D3D8_HARDWARE_SOURCE core_commit=%ls ci_run=37648387721 mesa_commit=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d mesa_ci_run=37453381660 driver_selection=owned-json raw_architecture=014c",
-      hardwareCoreCommit);
+    const size_t separator = folder.find_last_of(L'-');
+    const auto run = folder.substr(separator + 1, folder.size() - separator - 2);
+    log("D3D8_HARDWARE_SOURCE core_commit=%ls ci_run=%ls loader_source=6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7 icd_source=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d icd_ci_run=37453381660 driver_selection=owned-json raw_architecture=014c",
+      commit, run.c_str());
     return true;
   }
   bool loaded() const {
+    return loadedAtFolder(folder, log);
+  }
+  // Enumeration's internal device may be destroyed before Direct3DCreate8
+  // returns. Capture real private module identities while core construction
+  // is still live, rather than requiring unloaded dependencies to persist.
+  static bool loadedAtFolder(const std::wstring& ownedFolder, Log logger) {
     for (const auto* name : {L"vulkan-1.dll", L"winevulkan.dll", L"d3d10warp.dll"})
       if (GetModuleHandleW(name)) return false;
     for (const auto* name : {L"viogpudxvk.dll", L"viogpu_gl_loader_x86.dll", L"viogpu_gl_vk_x86.dll"}) {
       const HMODULE module = GetModuleHandleW(name); if (!module) return false;
       std::array<wchar_t, 32768> actual{};
       const DWORD count = GetModuleFileNameW(module, actual.data(), DWORD(actual.size()));
-      if (!count || count >= actual.size() || _wcsicmp(actual.data(), (folder + name).c_str())) return false;
+      if (!count || count >= actual.size() || _wcsicmp(actual.data(), (ownedFolder + name).c_str())) return false;
       MODULEINFO info{};
       if (!K32GetModuleInformation(GetCurrentProcess(), module, &info, sizeof(info)) || info.SizeOfImage < 0x40) return false;
       const auto* bytes = static_cast<const uint8_t*>(info.lpBaseOfDll);
@@ -87,7 +95,7 @@ public:
       if (offset > info.SizeOfImage - 6) return false;
       std::memcpy(&signature, bytes + offset, 4); std::memcpy(&machine, bytes + offset + 4, 2);
       if (signature != 0x4550 || machine != IMAGE_FILE_MACHINE_I386) return false;
-      log("D3D8_PRIVATE_MODULE name=%ls path=%ls machine=014c", name, actual.data());
+      logger("D3D8_PRIVATE_MODULE name=%ls path=%ls machine=014c", name, actual.data());
     }
     return true;
   }

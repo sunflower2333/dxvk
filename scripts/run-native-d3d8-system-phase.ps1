@@ -151,7 +151,7 @@ try {
     $core=(@($config.files|Where-Object role -CEQ 'core'))[0]
     $mode=@{enumerate='--front-enumerate';offscreen='--front-offscreen';present='--front-present'}[$Phase]
     $arguments=$mode+' "'+$front+'" "'+$registered+'" "'+$core.path+'" '+$core.sha256+' '+$config.core_source
-    if ($Phase -in @('offscreen','present')) { $arguments+=' '+$config.adapter_luid+' '+$config.source_id }
+    $arguments+=' '+$config.adapter_luid+' '+$config.source_id
   }
   $result.command=[ordered]@{executable=$probe;arguments=$arguments;working_directory=$Output;deadline_ms=30000;runner_sha256=(Hash $raw)}
   $result.command|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $Output 'command-original.json') -Encoding UTF8

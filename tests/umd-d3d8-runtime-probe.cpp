@@ -399,9 +399,11 @@ struct Permission {
     }
     return true;
   }
-  void enable(const wchar_t* corePath, const wchar_t* coreSha256, const wchar_t* coreCommit, bool device = false) {
+  void enable(const wchar_t* corePath, const wchar_t* coreSha256, const wchar_t* coreCommit, policy::Mode mode) {
     require(absent(), "diagnostic-pins-originally-absent");
-    values = {device ? policy::devicePermissionValue : policy::permissionValue, corePath, coreSha256, coreCommit};
+    require(mode == policy::Mode::Device || mode == policy::Mode::EnumerateDevice, "exact-selected-permission");
+    values = {mode == policy::Mode::Device ? policy::devicePermissionValue : policy::enumeratePermissionValue,
+      corePath, coreSha256, coreCommit};
     for (size_t i = 0; i < policy::diagnosticNames.size(); ++i) {
       require(SetEnvironmentVariableW(policy::diagnosticNames[i], values[i].c_str()) != FALSE,
               "set-process-local-permission-pin");
@@ -853,7 +855,7 @@ int wmain(int argc, wchar_t** argv) {
   const bool guard = argc == 3 && !std::wcscmp(argv[1], L"--front-guard");
   const bool enumerate = argc == 2 && !std::wcscmp(argv[1], L"--enumerate");
   const bool installedOffscreen = argc == 2 && !std::wcscmp(argv[1], L"--offscreen");
-  const bool selectedEnumerate = argc == 7 && !std::wcscmp(argv[1], L"--front-enumerate");
+  const bool selectedEnumerate = argc == 9 && !std::wcscmp(argv[1], L"--front-enumerate");
   const bool selectedOffscreen = argc == 9 && !std::wcscmp(argv[1], L"--front-offscreen");
   const bool selectedPresent = argc == 9 && !std::wcscmp(argv[1], L"--front-present");
   const bool selectedHardware = selectedOffscreen || selectedPresent;
@@ -866,7 +868,7 @@ int wmain(int argc, wchar_t** argv) {
   if (selected && (!policy::ownedFrontPath(std::wstring_view(argv[2]))
       || !policy::ownedCorePath(std::wstring_view(argv[4]), std::wstring_view(argv[6]))
       || !policy::hexIdentity(std::wstring_view(argv[5]), 64))) return 64;
-  if (selectedHardware && (!parseLuid(argv[7], expectedLuid) || !sourceId(argv[8], expectedSource))) return 64;
+  if (selected && (!parseLuid(argv[7], expectedLuid) || !sourceId(argv[8], expectedSource))) return 64;
   if (kmtNames && (!parseLuid(argv[2], expectedLuid) || !sourceId(argv[3], expectedSource))) return 64;
   if (!enumerate && !hardware && !selected && !guard && !kmtNames && !processDiagnostics && !imageDiagnostics) return 64;
   if (guard) return d3d8RuntimeFrontGuard(argv[2]);
@@ -906,12 +908,14 @@ int wmain(int argc, wchar_t** argv) {
           expected.c_str(), unsigned(moduleMachine(runtime.value)), sizeof(void*), D3D_SDK_VERSION, sizeof(D3DCAPS8));
     require(moduleMachine(runtime.value) == IMAGE_FILE_MACHINE_I386, "genuine-I386-system-d3d8");
     Permission permission; Selector selector; policy::D3d8HardwarePins pins(trace);
-    if (selectedHardware) {
+    if (selected) {
       userGate();
       require(pins.open(argv[4], argv[5], argv[6]), "exact-original-I386-hardware-inputs");
+      if (selectedEnumerate)
+        trace("D3D8_ENUMERATION_CONSTRUCTION allowed=1 public_create_device=0 draw=0 presents=0 core_entry=OpenAdapter");
     }
     if (selected) {
-      permission.enable(argv[4], argv[5], argv[6], selectedHardware);
+      permission.enable(argv[4], argv[5], argv[6], selectedHardware ? policy::Mode::Device : policy::Mode::EnumerateDevice);
       selector.install(runtime.value, argv[2], argv[3]);
     }
     using Create = IDirect3D8* (WINAPI*)(UINT);
@@ -938,11 +942,14 @@ int wmain(int argc, wchar_t** argv) {
             == (D3DDEVCAPS_HWRASTERIZATION | D3DDEVCAPS_HWTRANSFORMANDLIGHT);
       }
     }
-    if (hardware) {
+    if (hardware || selected || enumerate) {
       require(virtio != UINT(-1) && hal, "VirtIO-HAL-hardware-caps");
-      HMONITOR monitor = selectedHardware ? matchAdapter(api.ptr, virtio, expectedLuid, expectedSource) : nullptr;
-      Window window; window.create(monitor, selectedPresent);
-      offscreen(api.ptr, virtio, window.value, selectedHardware, selectedPresent, &pins);
+      HMONITOR monitor = selected ? matchAdapter(api.ptr, virtio, expectedLuid, expectedSource) : nullptr;
+      if (hardware) {
+        Window window; window.create(monitor, selectedPresent);
+        offscreen(api.ptr, virtio, window.value, selectedHardware, selectedPresent, &pins);
+      }
+      if (selectedHardware) require(pins.loaded(), "actual-original-private-I386-modules");
     }
     api.reset(); auditModules(directory);
     if (selected) {
@@ -954,6 +961,8 @@ int wmain(int argc, wchar_t** argv) {
     trace("D3D8_COMPLETE mode=%s adapters=%u create_device=%u presents=%u registry_writes=0",
       selectedPresent ? "front-present" : selectedOffscreen ? "front-offscreen" : installedOffscreen ? "offscreen"
         : selected ? "front-enumerate" : "enumerate", count, unsigned(hardware), unsigned(selectedPresent));
+    if (selectedEnumerate)
+      trace("D3D8_ENUMERATION_COMPLETE internal_driver_construction=1 public_create_device=0 draw=0 presents=0 selector_restored=1 environment_restored=1");
     return traceFailed ? 1 : 0;
   } catch (const std::exception& error) { trace("D3D8_FAILED reason=%s", error.what()); return 1; }
 }

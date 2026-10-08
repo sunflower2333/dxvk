@@ -196,7 +196,8 @@ try {
   $cpuManifest = [IO.File]::ReadAllText($Manifest) | ConvertFrom-Json
   if ($cpuManifest.schema -cne 'native-system-d3d8-device-x86-v1' -or $cpuManifest.source_commit -cne $SourceCommit -or
       $cpuManifest.target_arch -cne 'x86' -or $cpuManifest.target_execution -cne 'deferred' -or
-      $cpuManifest.core_reference_commit -cne 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1' -or
+      $cpuManifest.core_reference_commit -cne 'de72dc2e97bd8e4ea70c5bf89c26918d06065723' -or
+      $cpuManifest.inputs.Count -ne 35 -or
       (Hash $Packet) -cne $cpuManifest.archive_sha256) { throw 'Packet/source/core identity mismatch' }
   if ((Hash $PSCommandPath) -cne $cpuManifest.build_helper_sha256) { throw 'Prepared helper identity mismatch' }
   if ((Hash $RunnerSource) -cne $cpuManifest.raw_process_helper_sha256 -or
@@ -242,7 +243,8 @@ try {
   $receipt.compiler_provenance = File-Row $CompilerProvenance
   $toolManifest = [IO.File]::ReadAllText($CompilerProvenance) | ConvertFrom-Json
   if (!$toolManifest.ready -or $toolManifest.compiler_root -cne $CompilerRoot -or
-      $toolManifest.file_count -ne @($toolManifest.files).Count) { throw 'Owned official compiler provenance mismatch' }
+      $toolManifest.file_count -ne 575 -or @($toolManifest.files).Count -ne 575 -or
+      (Hash $CompilerProvenance) -cne $cpuManifest.compiler_ready_sha256) { throw 'Owned official compiler provenance mismatch' }
   $receipt.compiler_full_before = @($toolManifest.files | ForEach-Object {
     if ((Hash $_.path) -cne $_.sha256) { throw ('Compiler provenance hash mismatch: ' + $_.path) }; File-Row $_.path
   })
@@ -254,7 +256,7 @@ try {
   $env:PATH = $bin + ';' + $env:PATH
   $receipt.compiler_environment = [ordered]@{include=$env:INCLUDE;lib=$env:LIB;path_prefix=$bin;kit_root=$KitRoot;kit_version=$KitVersion}
   $headers = @('shared\d3d9.h','shared\d3d9caps.h','shared\d3d9types.h','shared\d3dukmdt.h',
-    'shared\d3dkmthk.h','um\d3dumddi.h','um\Windows.h','shared\bcrypt.h','shared\sddl.h','um\winnt.h')
+    'shared\d3dkmthk.h','um\d3dumddi.h','um\Windows.h','shared\bcrypt.h','shared\sddl.h','um\winnt.h','um\wow64apiset.h','um\psapi.h','um\fileapi.h')
   New-Item -ItemType Directory (Join-Path $Root 'original-sdk-headers') | Out-Null
   $receipt.sdk = @($headers | ForEach-Object {
     $p = Join-Path $sdkInclude $_
@@ -292,6 +294,18 @@ try {
   }
   $built = @{}
   foreach ($group in $plan) { $built[$group.name] = Build-Group $group $source }
+  Run 'process-api-diagnostics' $built.probe '--process-api-diagnostics' 0 30
+  $apiOut = [IO.File]::ReadAllText((Join-Path $Root 'process-api-diagnostics.stdout.txt'))
+  foreach ($pattern in @(
+    '(?m)^D3D8_PROCESS_API provider=kernel32\.dll symbol=GetSystemWow64Directory2W present=0 error=127 ',
+    '(?m)^D3D8_PROCESS_API provider=kernelbase\.dll symbol=GetSystemWow64Directory2W present=1 error=0 .*owner_machine=014c owner_error=0\r?$',
+    '(?m)^D3D8_PROCESS_MACHINE process=014c native=aa64 effective=014c pointer_bytes=4 ',
+    '(?m)^D3D8_PROCESS_API_CANONICAL_DIRECTORY path=(?i:C:\\Windows\\SysWOW64) admission=0\r?$',
+    '(?m)^D3D8_PROCESS_API_DIAGNOSTICS_COMPLETE observed_providers=5 observed_lookup_rows=10 verified_modules=3 readonly_file_pairs=3 runtime_calls=0 KMT_calls=0 core_loads=0 admission=0\r?$'
+  )) {
+    if ($apiOut -cnotmatch $pattern) { throw ('Exact original I386 API-provider diagnostic missing: '+$pattern) }
+  }
+  $receipt['process_api_diagnostics'] = [ordered]@{executed=$true;verified_modules=3;readonly_file_pairs=3;runtime_factories=0;KMT_calls=0;core_loads=0;admission=$false}
   Run 'policy-positive' $built.policy '' 0 30
   $policyOut = [IO.File]::ReadAllText((Join-Path $Root 'policy-positive.stdout.txt'))
   if ($policyOut -notmatch ('(?m)^D3D8 runtime selector policy PASS checks=' + [regex]::Escape([string]$cpuManifest.native_policy_checks) + ';')) { throw 'Native policy positive missing' }
@@ -300,9 +314,12 @@ try {
   if ($callbacksOut -notmatch '(?m)^D3D8 runtime callback policy PASS checks=\d+ forwarded=11 immutable_table=1 mapped_submit=1 failed_release_retained=1 stale_owner_rejected=1; controlled CPU only\r?$') {
     throw 'Native callback ownership fixture missing'
   }
+  if ($callbacksOut -cnotmatch '(?m)^D3D8 enumeration table boundary PASS denied=6 forwarded=0 prefix=99 tail_unchanged=1 optional_null=1 teardown_allowed=1; controlled CPU only\r?$') {
+    throw 'Actual typed enumeration workload boundary fixture missing'
+  }
   Run 'frontend-null-invalid-guard' $built.probe ('--front-guard "' + $built.front + '"') 0 30
   $guardOut = [IO.File]::ReadAllText((Join-Path $Root 'frontend-null-invalid-guard.stdout.txt'))
-  if ($guardOut -notmatch '(?m)^D3D8_FRONT_GUARD PASS .*invalid_interfaces=6 non_system_caller=1 no_core_open=1 system_runtime_calls=0 device_permission_null=80070057') {
+  if ($guardOut -notmatch '(?m)^D3D8_FRONT_GUARD PASS .*invalid_interfaces=6 non_system_caller=1 no_core_open=1 system_runtime_calls=0 device_permission_null=80070057 enumeration_permission_null=80070057\r?$') {
     throw 'Native frontend guards missing'
   }
   $cli = @('', '--unknown', '--enumerate extra', '--offscreen extra', '--front-guard', '--front-guard one two',

@@ -35,19 +35,33 @@ int main() {
   using Mode = policy::Mode;
   CHECK(policy::permissionMode(View(u"read-only-d3d8-interface8-v1")) == Mode::ReadOnly);
   CHECK(policy::permissionMode(View(u"device-render-d3d8-interface8-v1")) == Mode::Device);
+  CHECK(policy::permissionMode(View(u"enumerate-device-d3d8-interface8-v1")) == Mode::EnumerateDevice);
   for (View bad : {View(u""), View(u"device-render-d3d8-interface8-v1 "),
       View(u"DEVICE-render-d3d8-interface8-v1"), View(u"device-render-d3d9-interface8-v1"),
-      View(u"device-render-d3d8-interface9-v1")})
+      View(u"device-render-d3d8-interface9-v1"), View(u"enumerate-device-d3d8-interface8-v1 "),
+      View(u"Enumerate-device-d3d8-interface8-v1")})
     CHECK(policy::permissionMode(bad) == Mode::Denied);
   std::u16string embeddedPermission(u"device-render-d3d8-interface8-v1");
   embeddedPermission.push_back(0); embeddedPermission.append(u"extra");
   CHECK(policy::permissionMode(View(embeddedPermission)) == Mode::Denied);
-  for (Mode captured : {Mode::Denied, Mode::ReadOnly, Mode::Device})
-    for (Mode current : {Mode::Denied, Mode::ReadOnly, Mode::Device})
+  for (Mode captured : {Mode::Denied, Mode::ReadOnly, Mode::Device, Mode::EnumerateDevice})
+    for (Mode current : {Mode::Denied, Mode::ReadOnly, Mode::Device, Mode::EnumerateDevice}) {
       CHECK(policy::mayCreateDevice(captured, current, 8)
-        == (captured == Mode::Device && current == Mode::Device));
-  for (uint32_t badApi : {0u, 7u, 9u, 10u, 11u, 0xffffffffu})
+        == ((captured == Mode::Device || captured == Mode::EnumerateDevice) && current == captured));
+      CHECK(policy::mayRender(captured, current)
+        == (captured == Mode::Device && current == captured));
+    }
+  for (uint32_t badApi : {0u, 7u, 9u, 10u, 11u, 0xffffffffu}) {
     CHECK(!policy::mayCreateDevice(Mode::Device, Mode::Device, badApi));
+    CHECK(!policy::mayCreateDevice(Mode::EnumerateDevice, Mode::EnumerateDevice, badApi));
+    CHECK(!policy::enumerationContract(badApi, 69632, 69632, 0));
+  }
+  for (uint32_t version : {0u, 12u, 69632u, 0xffffffffu}) {
+    CHECK(policy::enumerationContract(8, version, version, 0));
+    CHECK(!policy::enumerationContract(8, version, version ^ 1u, 0));
+    for (uint32_t bit = 0; bit < 32; ++bit)
+      CHECK(!policy::enumerationContract(8, version, version, 1u << bit));
+  }
   CHECK(policy::capsBytes == 212);
   CHECK(policy::hexIdentity(View(coreCommit), 40));
   CHECK(policy::hexIdentity(View(u"0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"), 64));

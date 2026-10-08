@@ -85,23 +85,44 @@ for label, key, value in [('timeout-with-PASS-output', 'TimedOut', True), ('live
     control = copy.deepcopy(row); control[key] = value
     reject(label, phase.closed, control, b'PASS', b'')
 caps = [0] * 53
-caps[0], caps[7], caps[49], caps[50], caps[51] = 1, 0x90000, 0xfffe0101, 96, 0xffff0104
+caps[0], caps[7], caps[8], caps[49], caps[50], caps[51] = 1, 0x90000, 0x2000, 0xfffe0101, 96, 0xffff0104
+folder = rf'C:\Users\Public\DxvkD3D8Candidate-{phase.CORE_SOURCE[:7]}-{phase.RUN}' + chr(92)
 enumeration = '\n'.join([
-    *provider_records, *module_records('d3d8.dll'),
+    prefix[0], *provider_records, *module_records('d3d8.dll'),
     r'SYSTEM_D3D8_CALLER_PATH actual=C:\Windows\System32\d3d8.dll expected=C:\Windows\SysWOW64\d3d8.dll machine=014c pointer_bytes=4 directory_api=GetSystemWow64Directory2W file_identity=1',
     r'D3D8_RUNTIME path=C:\Windows\SysWOW64\d3d8.dll machine=014c pointer_bytes=4 sdk_version=220 caps_bytes=212',
-    'D3D8_ADAPTER index=0 identifier_hr=00000000 caps_hr=00000000 vendor=1af4 device=1050 devcaps=00090000 vs=fffe0101 ps=ffff0104 constants=96',
-    r'SYSTEM_D3D8_OPEN_BEGIN interface=8 version=12 runtime=00000100 caller=C:\Windows\System32\d3d8.dll pointer_bytes=4 readonly=1',
-    f'SYSTEM_D3D8_OPEN_END hr=00000000 interface=8 driver_version=12 adapter=00000200 core=C:\\Users\\Public\\DxvkD3D8Candidate-d7e5c7d-37648387721\\viogpudxvk.dll expected_ci_source_commit={phase.CORE_SOURCE} machine=014c core_create_calls=0',
-    f'SYSTEM_D3D8_CORE_PIN path=C:\\Users\\Public\\DxvkD3D8Candidate-d7e5c7d-37648387721\\viogpudxvk.dll sha256={phase.PAYLOADS["core"][1]} expected_ci_source_commit={phase.CORE_SOURCE} machine=014c file_locked=1 core_unchanged=1',
+    'D3D8_ENUMERATION_CONSTRUCTION allowed=1 public_create_device=0 draw=0 presents=0 core_entry=OpenAdapter',
+    *[f'D3D8_PAYLOAD_PIN path={folder + name} sha256={digest} machine={"json" if name.endswith(".json") else "014c"} locked=1 original_bytes=1' for _, digest, name in phase.PAYLOADS.values()],
+    f'D3D8_HARDWARE_SOURCE core_commit={phase.CORE_SOURCE} ci_run={phase.RUN} loader_source=6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7 icd_source=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d icd_ci_run=37453381660 driver_selection=owned-json raw_architecture=014c',
+    r'SYSTEM_D3D8_OPEN_BEGIN interface=8 version=69632 runtime=00000100 caller=C:\Windows\System32\d3d8.dll pointer_bytes=4 readonly=0',
+    f'SYSTEM_D3D8_OPEN_END hr=00000000 interface=8 driver_version=12 adapter=00000200 core={folder}viogpudxvk.dll expected_ci_source_commit={phase.CORE_SOURCE} machine=014c core_create_calls=0',
+    'SYSTEM_D3D8_ENUMERATION_MODE adapter=00000200 version=69632 captured_mode=3 core_entry=OpenAdapter render_permission=0',
+    f'SYSTEM_D3D8_CORE_PIN path={folder}viogpudxvk.dll sha256={phase.PAYLOADS["core"][1]} expected_ci_source_commit={phase.CORE_SOURCE} machine=014c file_locked=1 core_unchanged=1',
+    'SYSTEM_D3D8_CREATE_CONTRACT adapter=00000200 runtime=00000300 interface=8 version=69632 flags=00000000 callbacks=1 functions=1 command=0 allocation_list=0 patch_list=0 captured_mode=3',
+    'SYSTEM_D3D8_CALLBACK_TABLE runtime=00000300 adapter_runtime=00000100 original=00000400 wrapped=00000500 bytes=88 owned_snapshot=1 borrowed_table_reread=0',
+    'SYSTEM_D3D8_CALLBACK_PRESENCE runtime=00000300 allocate=1 deallocate=1 lock=1 unlock=1 create_context=1 destroy_context=1 escape=1 render=1 present=1 residency=1',
+    'SYSTEM_D3D8_CREATE_RETURN runtime=00000300 driver=00000600 hr=00000000 interface=8 core_create_calls=1',
+    'SYSTEM_D3D8_ENUMERATION_BOUNDARY device=00000600 blocked_mask=00004783 bytes=396 public_create_device=0 draw_forwarding=0 present_forwarding=0',
+    'SYSTEM_D3D8_DEVICE_FUNCTIONS bytes=396 interface=12 published=1',
+    *[f'D3D8_PRIVATE_MODULE name={name} path={folder + name} machine=014c' for name in ('viogpudxvk.dll','viogpu_gl_loader_x86.dll','viogpu_gl_vk_x86.dll')],
+    'SYSTEM_D3D8_ENUMERATION_PRIVATE_PAYLOADS device=00000600 checked_after_create=1 machine=014c forbidden_loader=0',
     'SYSTEM_D3D8_CAPS_BEGIN id=1 interface=8 type=12 bytes=212 info=0 adapter=00000200',
     'SYSTEM_D3D8_CAPS_END id=1 type=12 bytes=212 hr=00000000 caps_modified=0',
-    'SYSTEM_D3D8_CAPS12 id=1 bytes=212 device_type=1 devcaps=00090000 caps2=00000000 primitive=00000000 vs=fffe0101 constants=96 ps=ffff0104',
+    'SYSTEM_D3D8_CAPS12 id=1 bytes=212 device_type=1 devcaps=00090000 caps2=00000000 primitive=00002000 vs=fffe0101 constants=96 ps=ffff0104',
     *[f'SYSTEM_D3D8_CAPS12_WORD id=1 index={i} value={word:08x}' for i, word in enumerate(caps)],
+    'SYSTEM_D3D8_DEVICE_DESTROY_BEGIN device=00000600 callback_owner_live=1',
+    'SYSTEM_D3D8_LIFETIME phase=destroyed runtime=00000300 allocate=2 deallocate=2 lock=1 unlock=1 create_context=1 destroy_context=1 render=1 present=0 residency=2 live_allocations=0 live_locks=0 live_contexts=0 tracking_errors=0 callback_failures=0',
+    'SYSTEM_D3D8_DEVICE_DESTROY device=00000600 hr=00000000 remaining=0 callback_owner_released=1',
+    'SYSTEM_D3D8_CLOSE adapter=00000200 runtime=00000100 hr=00000000 remaining=0 live_devices=0',
+    'D3D8_API operation=Direct3DCreate8 object=1',
+    'D3D8_ADAPTER index=0 identifier_hr=00000000 caps_hr=00000000 vendor=1af4 device=1050 devcaps=00090000 vs=fffe0101 ps=ffff0104 constants=96',
+    *module_records('gdi32.dll'),
+    'D3D8_KMT_MATCH adapter=17 source=0 luid=ec6b000000000000 software=0 render=1 no_device=1',
+    'D3D8_KMT_CLOSED status=00000000',
     'D3D8_SELECTOR installed=1 machine=014c pointer_bytes=4 slot_rva=1234 registry_writes=0',
     'D3D8_SELECTOR restored=1 protection_restored=1 substitutions=1 queries=2',
-    'SYSTEM_D3D8_CLOSE adapter=00000200 runtime=00000100 hr=00000000 remaining=0 live_devices=0',
-    'D3D8_COMPLETE mode=front-enumerate adapters=1 create_device=0 presents=0 registry_writes=0']) + '\n'
+    'D3D8_COMPLETE mode=front-enumerate adapters=1 create_device=0 presents=0 registry_writes=0',
+    'D3D8_ENUMERATION_COMPLETE internal_driver_construction=1 public_create_device=0 draw=0 presents=0 selector_restored=1 environment_restored=1']) + '\n'
 assert phase.verify_enumeration(enumeration)['HAL_caps']
 checks.append({'label': 'synthetic-CAPS12-enumeration-shape', 'accepted_synthetic': True})
 reject('missing-original-CAPS12-word', phase.verify_enumeration, enumeration.replace('SYSTEM_D3D8_CAPS12_WORD id=1 index=52 value=00000000\n', ''))
@@ -183,7 +204,8 @@ reject('runtime-caller-published-after-open', phase.verify_enumeration,
        + next(row for row in phase.lines(enumeration) if row.startswith('SYSTEM_D3D8_CALLER_PATH ')) + '\n')
 reject('extra-unpaired-runtime-open', phase.verify_enumeration,
        enumeration + next(row for row in phase.lines(enumeration) if row.startswith('SYSTEM_D3D8_OPEN_BEGIN ')) + '\n')
-reject('runtime-readonly-open-disabled', phase.verify_enumeration, enumeration.replace('readonly=1', 'readonly=0'))
+reject('runtime-readonly-open-disabled', phase.verify_enumeration,
+       enumeration.replace('pointer_bytes=4 readonly=0', 'pointer_bytes=4 readonly=1'))
 assert phase.verify_enumeration(enumeration.replace('C:\\Windows\\', 'C:\\WINDOWS\\'))['HAL_caps']
 checks.append({'label': 'actual-directory-API-case-preserved', 'accepted_synthetic': True})
 reject('runtime-path-differs-from-explicit-file-view', phase.verify_enumeration,
@@ -194,5 +216,32 @@ old_native = {'schema': 'native-system-d3d8-device-x86-build-v1', 'status': 'PAS
 reject('old-full-native-suite-is-not-CPU08-source', phase.verify_native_identity_cpu, old_native, {})
 changed_source = copy.deepcopy(old_native); changed_source['source_commit'] = phase.PROBE_SOURCE
 reject('old-full-native-suite-cannot-be-relabeled-CPU08', phase.verify_native_identity_cpu, changed_source, {})
+assert len(checks) == 73
+for label, old, new in [
+    ('readonly-cannot-construct-internal-device', 'readonly=0', 'readonly=1'),
+    ('wrong-captured-enumeration-mode', 'captured_mode=3', 'captured_mode=2'),
+    ('internal-device-runtime-version-mismatch', 'interface=8 version=69632 flags=', 'interface=8 version=69633 flags='),
+    ('internal-device-reserved-flags', 'flags=00000000 callbacks=', 'flags=00000001 callbacks='),
+    ('required-runtime-callback-absent', 'destroy_context=1 escape=1', 'destroy_context=0 escape=1'),
+    ('unowned-borrowed-callback-table', 'owned_snapshot=1 borrowed_table_reread=0', 'owned_snapshot=0 borrowed_table_reread=1'),
+    ('missing-typed-draw-denial', 'blocked_mask=00004783', 'blocked_mask=00004782'),
+    ('missing-typed-Present-denial', 'blocked_mask=00004783', 'blocked_mask=00000783'),
+    ('missing-actual-private-ICD', f'D3D8_PRIVATE_MODULE name=viogpu_gl_vk_x86.dll path={folder}viogpu_gl_vk_x86.dll machine=014c\n', ''),
+    ('wrong-private-loader-source', 'loader_source=6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7', 'loader_source=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d'),
+    ('internal-device-allocation-leak', 'allocate=2 deallocate=2', 'allocate=2 deallocate=1'),
+    ('internal-context-not-destroyed', 'create_context=1 destroy_context=1 render=1', 'create_context=1 destroy_context=0 render=1'),
+    ('unreported-live-context', 'live_contexts=0 tracking_errors=0', 'live_contexts=1 tracking_errors=0'),
+    ('internal-callback-failure', 'callback_failures=0', 'callback_failures=1'),
+    ('internal-Present-callback', 'render=1 present=0 residency=', 'render=1 present=1 residency='),
+    ('failed-HAL-caps-must-reject', 'caps_hr=00000000 vendor=', 'caps_hr=8876086a vendor='),
+    ('missing-driver-only-legacy-fog', 'primitive=00002000', 'primitive=00000000'),
+    ('public-API-device-claimed-during-enumeration', 'create_device=0 presents=0 registry_writes=0', 'create_device=1 presents=0 registry_writes=0'),
+]:
+    assert old in enumeration, label
+    reject(label, phase.verify_enumeration, enumeration.replace(old,new))
+reject('denied-runtime-workload-was-attempted', phase.verify_enumeration,
+       enumeration + 'SYSTEM_D3D8_ENUMERATION_FORBIDDEN device=00000600 forwarded=0 hr=8876086a\n')
+reject('public-API-clear-during-enumeration', phase.verify_enumeration,
+       enumeration + 'D3D8_API operation=Clear hr=00000000\n')
 print(json.dumps({'status': 'PASS', 'scope': 'synthetic names/process/mapped-file protocol controls only', 'checks': checks,
                   'actual_runtime_calls': 0, 'actual_native_processes': 0, 'GPU_runs': 0, 'target_calls': 0}, indent=2))

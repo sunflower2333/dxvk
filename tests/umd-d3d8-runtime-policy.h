@@ -12,6 +12,7 @@ namespace dxvk::test::runtime8 {
 inline constexpr wchar_t permissionName[] = L"VIOGPU_DXVK_RUNTIME_DIAGNOSTIC";
 inline constexpr wchar_t permissionValue[] = L"read-only-d3d8-interface8-v1";
 inline constexpr wchar_t devicePermissionValue[] = L"device-render-d3d8-interface8-v1";
+inline constexpr wchar_t enumeratePermissionValue[] = L"enumerate-device-d3d8-interface8-v1";
 inline constexpr wchar_t corePathName[] = L"VIOGPU_DXVK_D3D8_CORE_PATH";
 inline constexpr wchar_t coreSha256Name[] = L"VIOGPU_DXVK_D3D8_CORE_SHA256";
 inline constexpr wchar_t coreCommitName[] = L"VIOGPU_DXVK_D3D8_CORE_COMMIT";
@@ -21,7 +22,7 @@ inline constexpr uint32_t umdNameQuery = 1; // Original SDK KMTQAITYPE_UMDRIVERN
 inline constexpr uint32_t dx9DriverNameVersion = 0; // D3D8 uses the legacy DX9 slot.
 inline constexpr size_t capsBytes = 53 * sizeof(uint32_t);
 
-enum class Mode : uint32_t { Denied, ReadOnly, Device };
+enum class Mode : uint32_t { Denied, ReadOnly, Device, EnumerateDevice };
 
 template<typename Char>
 Mode permissionMode(std::basic_string_view<Char> value) {
@@ -35,12 +36,27 @@ Mode permissionMode(std::basic_string_view<Char> value) {
   };
   if (exact(permissionValue)) return Mode::ReadOnly;
   if (exact(devicePermissionValue)) return Mode::Device;
+  if (exact(enumeratePermissionValue)) return Mode::EnumerateDevice;
   return Mode::Denied;
 }
 
 // An adapter never gains device permission from later environment mutation.
 inline bool mayCreateDevice(Mode captured, Mode current, uint32_t api) {
-  return captured == Mode::Device && current == captured && api == 8;
+  return (captured == Mode::Device || captured == Mode::EnumerateDevice)
+      && current == captured && api == 8;
+}
+
+// Microsoft D3D8 constructs an internal driver device before querying HAL
+// caps. This separate diagnostic permission accepts only the observed normal
+// Interface8 contract. Version is an opaque runtime value, paired with the
+// adapter snapshot; obsolete command/list storage is deliberately irrelevant.
+inline bool enumerationContract(uint32_t api, uint32_t adapterVersion,
+                                uint32_t deviceVersion, uint32_t flags) {
+  return api == 8 && adapterVersion == deviceVersion && flags == 0;
+}
+
+inline bool mayRender(Mode captured, Mode current) {
+  return captured == Mode::Device && current == captured;
 }
 
 template<typename Char> constexpr Char asciiFold(Char value) {

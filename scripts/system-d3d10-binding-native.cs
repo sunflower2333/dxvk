@@ -37,6 +37,40 @@ public sealed class DxvkBindingIdentity01 {
     public int AdapterCount;
 }
 
+// One continuous same-boot QPC interval. Admission is frozen once and never
+// restarted by a later marker, a wall-clock correction, or polling progress.
+public sealed class DxvkBindingHoldBudget01 {
+    public const int StartupMilliseconds=120000, ProbeMilliseconds=115000;
+    public const int InvocationHoldMilliseconds=120000, OverallMilliseconds=240000;
+    public const int WorkerSeconds=480, LifecycleWatchdogSeconds=600, WatchdogTaskSeconds=900;
+    public readonly long BoundTimestamp, Frequency;
+    long lastTimestamp;
+    public long InvocationTimestamp { get; private set; }
+    public DxvkBindingHoldBudget01(long boundTimestamp,long frequency) {
+        if(boundTimestamp<=0 || frequency<=0)throw new ArgumentException("Positive same-boot monotonic clock required");
+        BoundTimestamp=boundTimestamp;Frequency=frequency;lastTimestamp=boundTimestamp;
+    }
+    decimal Milliseconds(long first,long last) {
+        if(first<=0 || last<first)throw new ArgumentException("Monotonic clock regressed or precedes its protected anchor");
+        return ((decimal)last-first)*1000/Frequency;
+    }
+    public void AdmitInvocation(long timestamp,long frequency,long observedTimestamp) {
+        if(InvocationTimestamp!=0)throw new InvalidOperationException("Invocation anchor already frozen");
+        if(frequency!=Frequency || timestamp<=0 || timestamp>observedTimestamp || Milliseconds(BoundTimestamp,timestamp)>=StartupMilliseconds)throw new ArgumentException("Same-clock invocation within bounded startup required");
+        InvocationTimestamp=timestamp;
+        RequirePending(observedTimestamp);
+    }
+    public void RequirePending(long nowTimestamp) {
+        if(nowTimestamp<lastTimestamp)throw new ArgumentException("Continuous monotonic observation required");
+        lastTimestamp=nowTimestamp;
+        decimal overall=Milliseconds(BoundTimestamp,nowTimestamp);
+        if(overall>=OverallMilliseconds)throw new TimeoutException("Actual probe overall hold deadline expired");
+        if(InvocationTimestamp==0) {
+            if(overall>=StartupMilliseconds)throw new TimeoutException("Actual probe invocation startup deadline expired");
+        } else if(Milliseconds(InvocationTimestamp,nowTimestamp)>=InvocationHoldMilliseconds)throw new TimeoutException("Actual invoked probe did not reach bounded hold");
+    }
+}
+
 public static class DxvkBindingNative01 {
     static readonly string[] ValueNames = { "UserModeDriverName", "UserModeDriverNameWoW", "InstalledDisplayDrivers" };
     static readonly IntPtr Hklm = new IntPtr(unchecked((int)0x80000002));

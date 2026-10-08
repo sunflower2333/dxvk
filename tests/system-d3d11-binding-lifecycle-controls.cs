@@ -7,6 +7,55 @@ public static class SystemD11LifecycleControls01 {
  static byte[] Raw(uint high,uint low,ulong generation,ulong caps){var b=new byte[160];U32(b,0,0x504d5644);U32(b,8,128);U32(b,128,0x44494c56);U32(b,132,1);U32(b,136,32);U32(b,140,1);U32(b,144,low);U32(b,148,high);U32(b,152,1);Array.Copy(BitConverter.GetBytes(generation),0,b,24,8);Array.Copy(BitConverter.GetBytes(caps),0,b,16,8);return b;}
  static void U32(byte[] b,int offset,uint value){Array.Copy(BitConverter.GetBytes(value),0,b,offset,4);}
  static DxvkBindingNames01 Names(string luid,string[] names){var v=new DxvkBindingNames01{Luid=luid,Names=new DxvkBindingName01[3]};for(int i=0;i<3;i++)v.Names[i]=new DxvkBindingName01{Version=(uint)i,Name=names[i]};return v;}
+ static void HoldBudgetControls(){
+  Check(DxvkBindingHoldBudget01.StartupMilliseconds==120000);
+  Check(DxvkBindingHoldBudget01.ProbeMilliseconds==115000);
+  Check(DxvkBindingHoldBudget01.InvocationHoldMilliseconds==120000);
+  Check(DxvkBindingHoldBudget01.OverallMilliseconds==240000);
+  Check(DxvkBindingHoldBudget01.WorkerSeconds==480);
+  Check(DxvkBindingHoldBudget01.LifecycleWatchdogSeconds==600);
+  Check(DxvkBindingHoldBudget01.WatchdogTaskSeconds==900);
+  foreach(long bad in new long[]{0,-1}){
+   Reject(delegate{new DxvkBindingHoldBudget01(bad,1000);});
+   Reject(delegate{new DxvkBindingHoldBudget01(1000,bad);});
+  }
+  var startup=new DxvkBindingHoldBudget01(1000,1000);
+  startup.RequirePending(1000);Check(true);startup.RequirePending(120999);Check(true);
+  Reject(delegate{startup.RequirePending(121000);});
+  var actual=new DxvkBindingHoldBudget01(1000,1000);
+  actual.AdmitInvocation(73213,1000,73213);Check(actual.InvocationTimestamp==73213);
+  actual.RequirePending(81219);Check(true); // Old bound-to-hold 80s would fail.
+  actual.RequirePending(188212);Check(true); // Original child 114999ms.
+  actual.RequirePending(188213);Check(true); // Full original child 115000ms.
+  actual.RequirePending(193212);Check(true);
+  Reject(delegate{actual.RequirePending(193213);});
+  var observedLate=new DxvkBindingHoldBudget01(1000,1000);
+  observedLate.AdmitInvocation(73213,1000,123213);Check(observedLate.InvocationTimestamp==73213);
+  observedLate.RequirePending(123214);Check(true); // Observation cannot reset it.
+  Reject(delegate{observedLate.AdmitInvocation(123214,1000,123214);});
+  Reject(delegate{observedLate.AdmitInvocation(73213,1000,123214);});
+  Reject(delegate{observedLate.RequirePending(123213);});
+  foreach(long bad in new long[]{0,999,121000}){
+   var denied=new DxvkBindingHoldBudget01(1000,1000);
+   Reject(delegate{denied.AdmitInvocation(bad,1000,121000);});
+  }
+  var frequency=new DxvkBindingHoldBudget01(1000,1000);
+  Reject(delegate{frequency.AdmitInvocation(2000,999,2000);});
+  var future=new DxvkBindingHoldBudget01(1000,1000);
+  Reject(delegate{future.AdmitInvocation(2001,1000,2000);});
+  var expired=new DxvkBindingHoldBudget01(1000,1000);
+  Reject(delegate{expired.AdmitInvocation(73213,1000,193213);});
+  var overall=new DxvkBindingHoldBudget01(1000,1000);
+  overall.AdmitInvocation(120999,1000,120999);Check(true);
+  overall.RequirePending(240998);Check(true);
+  Reject(delegate{overall.RequirePending(241000);});
+  var fractional=new DxvkBindingHoldBudget01(1,3);
+  fractional.RequirePending(360000);Check(true);
+  Reject(delegate{fractional.RequirePending(360001);});
+  var large=new DxvkBindingHoldBudget01(long.MaxValue-1000000,1000000000);
+  large.AdmitInvocation(long.MaxValue-500000,1000000000,long.MaxValue-1);Check(true);
+  large.RequirePending(long.MaxValue);Check(true); // Decimal arithmetic cannot wrap.
+ }
  public static int Main(){
   foreach(string api in new[]{"8","9","9ex","10","11"})foreach(string phase in new[]{"offscreen","present"})foreach(bool apply in new[]{false,true})foreach(bool wait in new[]{false,true}){
    DxvkBindingNative01.RequireLifecycleMode(false,apply,api,phase,wait);Check(true);
@@ -40,6 +89,7 @@ public static class SystemD11LifecycleControls01 {
   var failed=Names(restored,expected);failed.OpenStatus=-1;Reject(delegate{DxvkBindingNative01.RequireLifecycleNames(restored,expected,failed);});failed=Names(restored,expected);failed.CloseStatus=-1;Reject(delegate{DxvkBindingNative01.RequireLifecycleNames(restored,expected,failed);});
   Reject(delegate{DxvkBindingNative01.RequireLifecycleNames(restored,expected,null);});Reject(delegate{DxvkBindingNative01.RequireLifecycleNames(restored,new string[0],good);});failed=Names(restored,expected);failed.Names[2]=null;Reject(delegate{DxvkBindingNative01.RequireLifecycleNames(restored,expected,failed);});
   DxvkBindingNative01.RequireLifecycleJobComplete(0);Check(true);foreach(uint active in new uint[]{1,2,uint.MaxValue})Reject(delegate{DxvkBindingNative01.RequireLifecycleJobComplete(active);});
+  HoldBudgetControls();
   Console.WriteLine("SYSTEM_D11_LIFECYCLE_PURE_PASS checks="+checks+" native_calls=0 registry_changes=0 gpu_calls=0 hardware_admission=0");return 0;
  }
 }

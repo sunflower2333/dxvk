@@ -104,6 +104,34 @@ function D11-ValidationMarker([string]$Phase) {
     if ($Phase -ceq 'present') { return 'SYSTEM_D3D11_PRESENT_VALIDATION_PASS feature_level=10_0 typed_ddi=11 pixels=512 presents=2 software_fallback=0 production_admission=0 registry_changes=0' }
     'SYSTEM_D3D11_VALIDATION_PASS feature_level=10_0 typed_ddi=11 pixels=512 presents=0 software_fallback=0 production_admission=0 registry_changes=0'
 }
+function Probe-Arguments($Value,[string]$ProbeLuid) {
+    $raw=Join-Path $value.output 'originals'
+    if ($value.api -ceq '8') {
+        $args='--system-'+$value.d9_phase+' '+(Quote $value.core)+' '+$value.core_sha256+' '+$value.payload_source+' '+[DxvkBindingNative01]::LuidBytesForProbe($probeLuid)+' '+$value.d8_source_id+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
+    } elseif ($value.api -ceq '10') {
+        Require-D10Profile $value.api $value.d10_profile
+        if ($value.d10_profile -ceq '10_1') { $args='10.1 '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000' }
+        else { $args='10 '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000' }
+    } elseif ($value.api -ceq '11') {
+        $args=$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $value.vulkan_icd)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
+    } else {
+        # Frozen739de05 argv7 is the loaded ICD DLL, not its JSON manifest.
+        $args=$value.api+' '+$value.d9_phase+' '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
+    }
+    $args
+}
+function Require-ProbeInvocation($Value,$Ready,[string]$ExpectedArguments,[string]$ExpectedConfigSha,$Marker) {
+    $fields=@($Marker.PSObject.Properties.Name | Sort-Object) -join ','
+    if ($fields -cne 'arguments,config_sha256,executable,invocation_frequency,invocation_timestamp,output,owner_pid,owner_start_ticks,probe_sha256,runner_sha256,schema,utc,worker_job_handle,worker_pid,worker_start_utc' -or $Marker.schema -isnot [int] -or $Marker.schema -ne 2) { throw 'Exact owned probe invocation receipt required' }
+    foreach ($field in @('owner_pid','owner_start_ticks','worker_pid','worker_job_handle','invocation_timestamp','invocation_frequency')) {
+        if (($Marker.$field -isnot [int] -and $Marker.$field -isnot [long]) -or $Marker.$field -le 0) { throw 'Actual integer invocation identity/clock required' }
+    }
+    if ($Marker.owner_pid -ne $Value.owner_pid -or $Marker.owner_start_ticks -ne $Value.owner_start_ticks -or $Marker.worker_pid -ne $Ready.pid -or $Marker.worker_start_utc -cne $Ready.start_utc -or $Marker.worker_job_handle -ne $Ready.worker_job_handle -or $Marker.config_sha256 -cne $ExpectedConfigSha -or $Marker.executable -ine $Value.probe -or $Marker.probe_sha256 -cne $Value.probe_sha256 -or $Marker.runner_sha256 -cne $Value.runner_sha256 -or $Marker.output -ine $Value.output -or $Marker.arguments -cne $ExpectedArguments) { throw 'Probe invocation differs from the protected original owner/worker/config/argv' }
+    foreach ($field in @('worker_start_utc','config_sha256','executable','probe_sha256','runner_sha256','output','arguments')) { if ($Marker.$field -isnot [string] -or !$Marker.$field) { throw 'Actual nonempty invocation strings required' } }
+    $utc=[DateTime]::MinValue
+    if ($Marker.utc -isnot [string] -or ![DateTime]::TryParseExact($Marker.utc,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind,[ref]$utc) -or $utc.Kind -ne [DateTimeKind]::Utc) { throw 'Actual invocation UTC observation required; it does not prove child PID/start' }
+    $Marker
+}
 function Process-Receipt($Row,[string]$RunnerSha) {
     [ordered]@{pid=$Row.Pid;retained_process_handle=$Row.ProcessHandle;start_utc=$Row.StartUtc;exited=$Row.Exited;exit_code_available=$Row.ExitCodeAvailable;exit_code=$Row.ExitCode;timed_out=$Row.TimedOut;child_still_running=$Row.ChildStillRunning;pipes_drained=$Row.PipesDrained;stdout_bytes=$Row.StdoutBytes;stderr_bytes=$Row.StderrBytes;seconds=$Row.Seconds;capture_failure=$Row.Failure;expected_exit=0;runner_sha256=$RunnerSha}
 }
@@ -410,7 +438,10 @@ if ($Role -ne 'Controller') {
             $ownerHandle=$owner.Handle
             if ($owner.StartTime.ToUniversalTime().Ticks -ne [long]$value.owner_start_ticks) { throw 'Controller PID was reused before watchdog armed' }
             Write-Json (Join-Path $value.control 'watchdog-ready.json') ([ordered]@{pid=$PID;start_utc=(Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o');owner_pid=$owner.Id;owner_handle=$ownerHandle.ToInt64();owner_start_ticks=$value.owner_start_ticks;deadline_utc=$value.deadline_utc})
-            while ([DateTime]::UtcNow -lt [DateTime]::Parse($value.deadline_utc).ToUniversalTime()) {
+            $watchdogDeadline=[DateTime]::Parse($value.deadline_utc).ToUniversalTime()
+            $watchdogRemainingMs=[Math]::Max(0,[Math]::Min(($watchdogDeadline-[DateTime]::UtcNow).TotalMilliseconds,600000))
+            $watchdogClock=[Diagnostics.Stopwatch]::StartNew()
+            while ([DateTime]::UtcNow -lt $watchdogDeadline -and $watchdogClock.ElapsedMilliseconds -lt $watchdogRemainingMs) {
                 if ((Lifecycle-Enabled $value) -and $script:LifecycleWorkerJobHandle -eq 0 -and (Test-Path -LiteralPath (Join-Path $value.control 'lifecycle-worker-original.json'))) {
                     $scope=Lifecycle-AcquireJob $value
                     if ($scope.previous_boot -or $scope.retained_handle -le 0) { throw 'Actual same-boot worker job must arm before binding' }
@@ -515,20 +546,12 @@ public static class DxvkBindingAsync01 {
         }
         $stdout=Join-Path $value.output 'probe.stdout.raw'; $stderr=Join-Path $value.output 'probe.stderr.raw'
         $raw=Join-Path $value.output 'originals'
-        if ($value.api -ceq '8') {
-            $args='--system-'+$value.d9_phase+' '+(Quote $value.core)+' '+$value.core_sha256+' '+$value.payload_source+' '+[DxvkBindingNative01]::LuidBytesForProbe($probeLuid)+' '+$value.d8_source_id+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
-        } elseif ($value.api -ceq '10') {
-            Require-D10Profile $value.api $value.d10_profile
-            if ($value.d10_profile -ceq '10_1') { $args='10.1 '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000' }
-            else { $args='10 '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000' }
-        } elseif ($value.api -ceq '11') {
-            $args=$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $value.vulkan_icd)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
-        } else {
-            # Frozen739de05 argv7 is the loaded ICD DLL, not its JSON manifest.
-            $args=$value.api+' '+$value.d9_phase+' '+$probeLuid+' '+(Quote $value.front)+' '+(Quote $value.core)+' '+(Quote $value.private_loader)+' '+(Quote $value.vulkan_library)+' '+(Quote $raw)+' '+(Quote $value.hold_event)+' 60000'
-        }
-        Write-Json (Join-Path $value.output 'probe-start.json') ([ordered]@{executable=$value.probe;arguments=$args;runner_sha256=$value.runner_sha256;utc=[DateTime]::UtcNow.ToString('o')})
-        $task=[DxvkBindingAsync01]::Start($value.probe,$args,$value.output,$stdout,$stderr,115000)
+        $probeArguments=Probe-Arguments $value $probeLuid
+        # This is the invocation anchor, not an assertion of the child's PID
+        # or process start. Those still come solely from the retained runner.
+        $invocationTimestamp=[Diagnostics.Stopwatch]::GetTimestamp()
+        Write-Json (Join-Path $value.output 'probe-start.json') ([ordered]@{schema=2;owner_pid=$value.owner_pid;owner_start_ticks=$value.owner_start_ticks;worker_pid=$PID;worker_start_utc=$workerStart;worker_job_handle=$status.worker_job_handle;config_sha256=$ConfigSha256;executable=$value.probe;probe_sha256=$value.probe_sha256;arguments=$probeArguments;runner_sha256=$value.runner_sha256;output=$value.output;invocation_timestamp=$invocationTimestamp;invocation_frequency=[Diagnostics.Stopwatch]::Frequency;utc=[DateTime]::UtcNow.ToString('o')})
+        $task=[DxvkBindingAsync01]::Start($value.probe,$probeArguments,$value.output,$stdout,$stderr,[DxvkBindingHoldBudget01]::ProbeMilliseconds)
         $published=$false; $publishedPid=0; $publishedStart=''; $publishedHandle=0L; $released=$false
         while (!$task.IsCompleted) {
             $heldPid=0; $pendingExit=0
@@ -736,7 +759,7 @@ $value.d10_profile=$D10Profile
 $value.lifecycle_mode=$RootAuthorizeLifecycleRestart.IsPresent
 if ($value.lifecycle_mode) {
     $script:LifecycleJobHandle=[DxvkBindingNative01]::OwnWorkerLifetime()
-    $value.lifecycle_controller_job_handle=$script:LifecycleJobHandle; $value.deadline_utc=[DateTime]::UtcNow.AddSeconds(240).ToString('o')
+    $value.lifecycle_controller_job_handle=$script:LifecycleJobHandle; $value.deadline_utc=[DateTime]::UtcNow.AddSeconds([DxvkBindingHoldBudget01]::LifecycleWatchdogSeconds).ToString('o')
     $value.instance=$InstanceId; $value.lifecycle_driver_state=$driverState; $value.lifecycle_controller=$controllerScript
     $value.lifecycle_worker_job_name='Global\VioGpuLifecycleWorker-'+$runId
     $value.lifecycle_boot_utc=(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')
@@ -765,7 +788,7 @@ try {
     $restorePrincipal=New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType ServiceAccount -RunLevel Highest
     $restoreArgs='-NoProfile -ExecutionPolicy Bypass -File '+(Quote $controllerScript)+' -Role Watchdog -Config '+(Quote $configFile)+' -ConfigSha256 '+$configHash
     $restoreAction=New-ScheduledTaskAction -Execute $power -Argument $restoreArgs
-    $restoreSeconds=240; if ($value.lifecycle_mode) { $restoreSeconds=600 }
+    $restoreSeconds=240; if ($value.lifecycle_mode) { $restoreSeconds=[DxvkBindingHoldBudget01]::WatchdogTaskSeconds }
     $restoreSettings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds $restoreSeconds)
     $restoreTrigger=New-ScheduledTaskTrigger -AtStartup
     Register-ScheduledTask -TaskName $value.restore_task_name -Action $restoreAction -Trigger $restoreTrigger -Principal $restorePrincipal -Settings $restoreSettings | Out-Null; $restoreRegistered=$true
@@ -780,7 +803,8 @@ try {
     $principal=New-ScheduledTaskPrincipal -UserId $account -LogonType Interactive -RunLevel Limited
     $arguments='-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File '+(Quote $controllerScript)+' -Role Worker -Config '+(Quote $configFile)+' -ConfigSha256 '+$configHash
     $action=New-ScheduledTaskAction -Execute $power -Argument $arguments
-    $settings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 180)
+    $workerSeconds=180; if ($value.lifecycle_mode) { $workerSeconds=[DxvkBindingHoldBudget01]::WorkerSeconds }
+    $settings=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds $workerSeconds)
     Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings | Out-Null; $registered=$true
     Start-ScheduledTask -TaskName $taskName
     $clock.Restart()
@@ -857,11 +881,46 @@ try {
         try { $locked=$mutex.WaitOne(5000) } catch [Threading.AbandonedMutexException] { $locked=$true }
         if (!$locked -or (Test-Path -LiteralPath (Join-Path $control 'restored.json')) -or [DateTime]::UtcNow -ge [DateTime]::Parse($value.deadline_utc).ToUniversalTime()) { throw 'Probe cannot start after rescue restoration' }
         if (![DxvkBindingNative01]::Same($replacement,[DxvkBindingNative01]::Read($subkey,0x100,$bindingValueName))) { throw 'Candidate tuple changed during refresh checkpoint' }
+        $boundTimestamp=[Diagnostics.Stopwatch]::GetTimestamp()
         if ($Api -ceq '8') { Write-Json (Join-Path $control 'bound.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);api=$Api;selected_wow_slot=0;selected_value_name='UserModeDriverNameWoW';only_wow_legacy_slot_edited=$true;native_values_untouched=$true;adapter_wide=$true}) }
         else { Write-Json (Join-Path $control 'bound.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);api=$Api;selected_native_slot=$nativeSlot;only_native_tuple_slot_edited=$true;adapter_wide=$true}) }
     } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
     $clock.Restart()
-    while (!(Test-Path -LiteralPath (Join-Path $output 'worker-held.json'))) { if ((Test-Path -LiteralPath (Join-Path $output 'worker-result.json')) -or $clock.ElapsedMilliseconds -gt 80000) { throw 'Actual probe did not reach bounded hold' }; Start-Sleep -Milliseconds 100 }
+    $holdBudget=$null; $invocationPin=''; $invocationPath=Join-Path $output 'probe-start.json'
+    if ($value.lifecycle_mode) {
+        if (![Diagnostics.Stopwatch]::IsHighResolution) { throw 'Same-boot monotonic invocation clock required' }
+        $holdBudget=[DxvkBindingHoldBudget01]::new($boundTimestamp,[Diagnostics.Stopwatch]::Frequency)
+        $expectedProbeArguments=Probe-Arguments $value $forward.state.identity.Luid
+    }
+    while (!(Test-Path -LiteralPath (Join-Path $output 'worker-held.json')) -or ($value.lifecycle_mode -and !$invocationPin)) {
+        if (Test-Path -LiteralPath (Join-Path $output 'worker-result.json')) { throw 'Actual probe ended before bounded hold' }
+        if ($value.lifecycle_mode) {
+            if (!$invocationPin -and (Test-Path -LiteralPath $invocationPath)) {
+                # Read only this worker's fresh atomic path, freeze it once, and
+                # account from its QPC invocation tick, not first observation.
+                $pendingInvocationHash=Hash $invocationPath
+                $invocationText=[DxvkBindingNative01]::ReadClosedText($invocationPath)
+                if ($null -ne $invocationText) {
+                    Check-File $invocationPath $pendingInvocationHash
+                    $invocation=Require-ProbeInvocation $value $ready $expectedProbeArguments $configHash ($invocationText | ConvertFrom-Json)
+                    $holdBudget.AdmitInvocation([long]$invocation.invocation_timestamp,[long]$invocation.invocation_frequency,[Diagnostics.Stopwatch]::GetTimestamp())
+                    $invocationPin=$pendingInvocationHash
+                    $status.probe_invocation_budget=[ordered]@{schema=1;invocation=$invocationPath;invocation_sha256=$invocationPin;bound_timestamp=$holdBudget.BoundTimestamp;invocation_timestamp=$holdBudget.InvocationTimestamp;frequency=$holdBudget.Frequency;startup_ms=[DxvkBindingHoldBudget01]::StartupMilliseconds;probe_ms=[DxvkBindingHoldBudget01]::ProbeMilliseconds;invocation_hold_ms=[DxvkBindingHoldBudget01]::InvocationHoldMilliseconds;overall_ms=[DxvkBindingHoldBudget01]::OverallMilliseconds;anchor='owned worker invocation; not claimed child PID/start';hardware_admission=$false}
+                    Write-Json (Join-Path $control 'probe-invocation-budget.json') $status.probe_invocation_budget
+                }
+            }
+            if ($invocationPin) { Check-File $invocationPath $invocationPin }
+            $holdBudget.RequirePending([Diagnostics.Stopwatch]::GetTimestamp())
+        } elseif ($clock.ElapsedMilliseconds -gt 80000) { throw 'Actual probe did not reach bounded hold' }
+        Start-Sleep -Milliseconds 100
+    }
+    if ($value.lifecycle_mode) {
+        if (!$invocationPin) { throw 'Owned invocation anchor must precede lifecycle hold' }
+        # Admission is checked at acceptance too: a late hold written during
+        # the final sleep cannot skip time or frozen-receipt continuity gates.
+        Check-File $invocationPath $invocationPin
+        $holdBudget.RequirePending([Diagnostics.Stopwatch]::GetTimestamp())
+    }
     $settled=Restore-Tuple $value 'held-probe'; $status.registry_restored=$settled.raw_tuple_restored
     if ($value.lifecycle_mode) { $status.lifecycle_recovery=$settled.lifecycle; $status.restored_luid=$settled.lifecycle.restored_luid }
     if (!$status.registry_restored) { throw 'Held probe requires actual intent-backed raw restoration' }

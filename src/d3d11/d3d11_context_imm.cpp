@@ -88,6 +88,10 @@ namespace dxvk {
     // DataSize is 0, but we should ignore that pointer
     pData = DataSize ? pData : nullptr;
 
+    // Serialize query issue state with Begin/End, including a deferred list's
+    // API-side End bookkeeping. Never wait for a predicate inside a CS task.
+    D3D10DeviceLock lock = LockContext();
+
     // Get query status directly from the query object
     auto query = static_cast<D3D11Query*>(pAsync);
     HRESULT hr = query->GetData(pData, GetDataFlags);
@@ -102,8 +106,6 @@ namespace dxvk {
 
       // Ignore the DONOTFLUSH flag here as some games will spin
       // on queries without ever flushing the context otherwise.
-      D3D10DeviceLock lock = LockContext();
-
       if (unlikely(m_device->debugFlags().test(DxvkDebugFlag::Capture)))
         m_flushReason = "Query read-back";
 

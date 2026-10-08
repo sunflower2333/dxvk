@@ -1,6 +1,7 @@
 #include "umd_allocation.h"
 #include "umd_residency_transaction.h"
 #include "umd_primary_policy.h"
+#include "umd_open_primary_policy.h"
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -15,10 +16,19 @@ struct PrimaryAllocationTransaction {
   D3DDDI_ALLOCATIONINFO slots[2] = {};
   AllocationInfo metadata[2];
   RuntimeAllocation* owner = nullptr;
-  bool failed = false;
+  bool failed = false, stagingOnly = false, consumed = false;
+  D3DKMT_HANDLE borrowedPrimary = 0;
+  std::unique_ptr<RuntimeAllocation> lateCleanup;
+  std::shared_ptr<PrimaryStagingReleaseTransaction> stagingRelease;
   bool acquired() const {
+    if (stagingOnly)
+      return !failed && !consumed && slots[0].hAllocation && slots[0].hAllocation != borrowedPrimary;
     return !failed && (request.hKMResource || slots[0].hAllocation || slots[1].hAllocation);
   }
+};
+struct PrimaryStagingReleaseTransaction {
+  RuntimeAllocation* owner = nullptr;
+  bool inCallback = false, consumed = false;
 };
 struct PrimaryLockTransaction {
   D3DDDICB_LOCK request = {};
@@ -48,12 +58,15 @@ RuntimeAllocation::RuntimeAllocation(RuntimeAllocation&& other) noexcept
   m_stagingHandle(std::exchange(other.m_stagingHandle, 0)),
   m_generation(std::exchange(other.m_generation, 0)),
   m_info(other.m_info), m_published(std::exchange(other.m_published, false)),
-  m_opened(std::exchange(other.m_opened, false)) {
+  m_opened(std::exchange(other.m_opened, false)),
+  m_ownedStaging(std::exchange(other.m_ownedStaging, false)) {
   m_locked = std::exchange(other.m_locked, false);
   m_pendingAllocation = std::move(other.m_pendingAllocation);
   m_pendingLock = std::move(other.m_pendingLock);
   m_cleanupOwner = std::move(other.m_cleanupOwner);
+  m_stagingRelease = std::move(other.m_stagingRelease);
   if (m_pendingAllocation) m_pendingAllocation->owner = this;
+  if (m_stagingRelease) m_stagingRelease->owner = this;
   if (other.m_tracked) m_owner->replace(other, *this);
 }
 HRESULT RuntimeAllocation::release() { return m_owner ? m_owner->release(*this) : S_OK; }
@@ -62,9 +75,12 @@ bool RuntimeAllocation::canRotateWith(const RuntimeAllocation& other) const noex
     return value.m_locked || (value.m_pendingLock && !value.m_pendingLock->consumed);
   };
   return !mapped(*this) && !mapped(other) && !m_pendingAllocation && !other.m_pendingAllocation
+    && !(m_stagingRelease && m_stagingRelease->inCallback)
+    && !(other.m_stagingRelease && other.m_stagingRelease->inCallback)
     && m_owner == other.m_owner && bool(m_handle) == bool(other.m_handle)
     && bool(m_stagingHandle) == bool(other.m_stagingHandle)
-    && m_opened == other.m_opened && m_generation == other.m_generation
+    && m_opened == other.m_opened && m_ownedStaging == other.m_ownedStaging
+    && m_generation == other.m_generation
     && m_info.flags == other.m_info.flags && m_info.format == other.m_info.format
     && m_info.width == other.m_info.width && m_info.height == other.m_info.height;
 }
@@ -304,13 +320,25 @@ HRESULT RuntimeMemory::allocatePrimaryImpl(RuntimeAllocation& out, HANDLE resour
 HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   if (allocation.m_owner != this) return E_INVALIDARG;
   if (m_terminal) {
-    const auto handle = allocation.m_stagingHandle ? allocation.m_stagingHandle : allocation.m_handle;
+    const bool stagingOnly = allocation.m_ownedStaging;
+    const auto acquisition = allocation.m_pendingAllocation;
+    const auto pendingStaging = stagingOnly && acquisition && acquisition->acquired()
+      ? acquisition->slots[0].hAllocation : D3DKMT_HANDLE(0);
+    const auto handle = allocation.m_stagingHandle ? allocation.m_stagingHandle
+      : stagingOnly ? pendingStaging : allocation.m_handle;
     const auto resource = allocation.m_resource;
     const bool opened = allocation.m_opened;
     const bool unresolvedUnlock = allocation.m_pendingLock && allocation.m_pendingLock->unlocking;
+    const bool unresolvedRelease = allocation.m_stagingRelease && allocation.m_stagingRelease->inCallback;
     const bool locked = allocation.m_locked || (allocation.m_pendingLock && allocation.m_pendingLock->ownsLock());
     const bool acquired = !allocation.m_pendingAllocation || allocation.m_pendingAllocation->acquired();
-    if (allocation.m_pendingAllocation) allocation.m_pendingAllocation->owner = nullptr;
+    if (allocation.m_pendingAllocation) {
+      allocation.m_pendingAllocation->owner = nullptr;
+      if (stagingOnly) allocation.m_pendingAllocation->consumed = true;
+    }
+    if (allocation.m_stagingRelease) {
+      allocation.m_stagingRelease->owner = nullptr; allocation.m_stagingRelease->consumed = true;
+    }
     if (allocation.m_pendingLock) allocation.m_pendingLock->consumed = true;
     const auto unlockCallback = m_callbacks.pfnUnlockCb;
     const auto deallocateCallback = m_callbacks.pfnDeallocateCb;
@@ -319,13 +347,14 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
     allocation.m_owner = nullptr; allocation.m_resource = nullptr;
     allocation.m_handle = 0; allocation.m_kernelResource = 0; allocation.m_stagingHandle = 0;
     allocation.m_generation = 0; allocation.m_published = false;
-    allocation.m_opened = false; allocation.m_locked = false;
+    allocation.m_opened = false; allocation.m_locked = false; allocation.m_ownedStaging = false;
     allocation.m_pendingAllocation.reset(); allocation.m_pendingLock.reset();
+    allocation.m_stagingRelease.reset();
     // A nested DestroyDevice cannot observe the return status of a suspended
     // UnlockCb. Do not guess that it succeeded, unlock twice, or deallocate a
     // potentially mapped entry. The actual runtime must finish its terminal
     // ownership; no callback can be deferred past this DestroyDevice return.
-    HRESULT result = unresolvedUnlock ? DXGI_ERROR_WAS_STILL_DRAWING : S_OK;
+    HRESULT result = unresolvedUnlock || unresolvedRelease ? DXGI_ERROR_WAS_STILL_DRAWING : S_OK;
     if (locked) {
       D3DDDICB_UNLOCK request = {}; request.NumAllocations = 1; request.phAllocations = &handle;
       result = completed(unlockCallback(device, &request));
@@ -333,13 +362,17 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
     // A failed unlock did not release the mapping. Report it and leave that
     // kernel ownership to actual runtime device cleanup, never deallocate a
     // mapped allocation or claim successful driver cleanup.
-    if (!opened && acquired && SUCCEEDED(result)) {
-      D3DDDICB_DEALLOCATE request = {}; request.hResource = resource;
+    if ((!opened || stagingOnly) && acquired && SUCCEEDED(result)) {
+      D3DDDICB_DEALLOCATE request = {};
+      if (stagingOnly) { request.NumAllocations = 1; request.HandleList = &handle; }
+      else request.hResource = resource;
       const HRESULT hr = completed(deallocateCallback(device, &request));
       if (FAILED(hr)) result = hr;
     }
     return result;
   }
+  if (allocation.m_ownedStaging && allocation.m_stagingRelease && allocation.m_stagingRelease->inCallback)
+    return DXGI_ERROR_WAS_STILL_DRAWING;
   // A non-terminal callback can retire a mapped primary resource. Unlock its
   // staging entry while the resource remains in the ledger. Nested terminal
   // cleanup can then deallocate it, and this frame issues no late callback.
@@ -352,6 +385,7 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
     if (m_terminal || allocation.m_owner != this) return DXGI_ERROR_DEVICE_REMOVED;
     if (FAILED(hr)) return hr;
   }
+  if (allocation.m_ownedStaging) return releaseStaging(allocation);
   if (allocation.m_opened) {
     // A view, not an owner. Dropping it must not reach DeallocateCb: the
     // allocation outlives this resource and the creating process still uses
@@ -393,6 +427,107 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   allocation.m_kernelResource = 0; allocation.m_generation = 0;
   allocation.m_pendingAllocation.reset(); allocation.m_pendingLock.reset();
   return acquired ? completed(deallocate(device, &request)) : S_OK;
+}
+
+void RuntimeMemory::detachOpenedPrimary(RuntimeAllocation& allocation) noexcept {
+  untrack(allocation);
+  if (allocation.m_pendingAllocation) allocation.m_pendingAllocation->owner = nullptr;
+  if (allocation.m_stagingRelease) allocation.m_stagingRelease->owner = nullptr;
+  allocation.m_owner = nullptr; allocation.m_resource = nullptr;
+  allocation.m_handle = 0; allocation.m_kernelResource = 0; allocation.m_stagingHandle = 0;
+  allocation.m_generation = 0; allocation.m_published = false;
+  allocation.m_opened = false; allocation.m_ownedStaging = false; allocation.m_locked = false;
+  allocation.m_pendingAllocation.reset(); allocation.m_pendingLock.reset(); allocation.m_stagingRelease.reset();
+}
+
+HRESULT RuntimeMemory::releaseStaging(RuntimeAllocation& allocation) {
+  auto transaction = allocation.m_stagingRelease;
+  auto acquisition = allocation.m_pendingAllocation;
+  if (!transaction || transaction->owner != &allocation) return E_FAIL;
+  if (transaction->inCallback) return DXGI_ERROR_WAS_STILL_DRAWING;
+  const auto handle = allocation.m_stagingHandle ? allocation.m_stagingHandle
+    : acquisition && acquisition->acquired() ? acquisition->slots[0].hAllocation : D3DKMT_HANDLE(0);
+  if (!handle) { detachOpenedPrimary(allocation); return S_OK; }
+  allocation.m_stagingHandle = handle;
+  D3DDDICB_DEALLOCATE request = {};
+  request.NumAllocations = 1; request.HandleList = &handle;
+  // Keep the actual owner in the ledger through this callback. A failed
+  // DeallocateCb still owns its allocation, and a move carries this record to
+  // the new owner. Nested terminal cleanup cannot guess an in-flight result.
+  transaction->inCallback = true;
+  const HRESULT released = m_callbacks.pfnDeallocateCb(m_device, &request);
+  transaction->inCallback = false;
+  if (m_terminal || transaction->consumed || !transaction->owner
+      || transaction->owner->m_owner != this) return DXGI_ERROR_DEVICE_REMOVED;
+  if (SUCCEEDED(released)) {
+    transaction->consumed = true;
+    if (acquisition) acquisition->consumed = true;
+    detachOpenedPrimary(*transaction->owner);
+  }
+  return completed(released);
+}
+
+HRESULT RuntimeMemory::adoptPrimaryImpl(RuntimeAllocation& out, D3DKMT_HANDLE primary,
+    D3DKMT_HANDLE kernelResource, const AllocationInfo& info) {
+  if (m_callbacks.pfnPresentCb || !available() || !m_callbacks.pfnRenderCb) return DXGI_ERROR_UNSUPPORTED;
+  if (out.m_owner || !primary || !kernelResource) return E_INVALIDARG;
+  const auto status = openedPrimaryStatus(info);
+  if (status != PrimaryStatus::Valid)
+    return status == PrimaryStatus::Invalid ? E_INVALIDARG : DXGI_ERROR_UNSUPPORTED;
+  std::shared_ptr<PrimaryAllocationTransaction> transaction;
+  std::shared_ptr<PrimaryStagingReleaseTransaction> releasing;
+  std::unique_ptr<RuntimeAllocation> cleanup;
+  try {
+    transaction = std::make_shared<PrimaryAllocationTransaction>();
+    releasing = std::make_shared<PrimaryStagingReleaseTransaction>();
+    cleanup = std::make_unique<RuntimeAllocation>();
+    transaction->lateCleanup = std::make_unique<RuntimeAllocation>();
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+  const HRESULT adopted = adoptImpl(out, primary, kernelResource, info);
+  if (adopted != S_OK) return adopted;
+  transaction->stagingOnly = true; transaction->borrowedPrimary = primary;
+  transaction->owner = releasing->owner = &out; transaction->stagingRelease = releasing;
+  auto& metadata = transaction->metadata[0]; metadata = info;
+  metadata.flags = 2; metadata.refreshNumerator = metadata.refreshDenominator = 0;
+  auto& slot = transaction->slots[0]; slot.pPrivateDriverData = &metadata;
+  slot.PrivateDriverDataSize = sizeof(AllocationInfo);
+  auto& request = transaction->request; request.NumAllocations = 1; request.pAllocationInfo = &slot;
+  out.m_ownedStaging = true; out.m_pendingAllocation = transaction;
+  out.m_cleanupOwner = std::move(cleanup); out.m_stagingRelease = releasing;
+  const HRESULT allocated = m_callbacks.pfnAllocateCb(m_device, &request);
+  if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
+  transaction->failed = FAILED(allocated);
+  if (out.m_owner != this || out.m_pendingAllocation != transaction) {
+    HRESULT released = S_OK;
+    if (transaction->owner && transaction->owner->m_owner == this)
+      released = releaseImpl(*transaction->owner);
+    else if (transaction->acquired()) {
+      // A live direct cancellation can finish before AllocateCb returns its
+      // real output. Use pre-reserved stable ownership for late cleanup; the
+      // borrowed primary is never passed to DeallocateCb, even on failure.
+      auto late = transaction->lateCleanup.release();
+      late->m_owner = this; late->m_handle = primary; late->m_kernelResource = kernelResource;
+      late->m_info = info; late->m_generation = m_identity ? m_identity->generation : 0;
+      late->m_opened = late->m_ownedStaging = true; late->m_stagingHandle = slot.hAllocation;
+      late->m_stagingRelease = releasing; releasing->owner = late;
+      track(*late); late->m_orphanNext = m_orphans; m_orphans = late;
+      released = releaseImpl(*late);
+      transaction->consumed = SUCCEEDED(released);
+    }
+    return FAILED(released) ? released : DXGI_ERROR_DEVICE_REMOVED;
+  }
+  if (FAILED(allocated)) { detachOpenedPrimary(out); return allocated; }
+  out.m_stagingHandle = transaction->acquired() ? slot.hAllocation : 0;
+  HRESULT hr = allocated == S_OK ? checkIdentity() : E_FAIL;
+  if (hr == S_OK && (request.hResource || request.hKMResource || request.NumAllocations != 1
+      || request.pAllocationInfo != &slot || !out.m_stagingHandle || slot.hAllocation == primary)) hr = E_FAIL;
+  if (hr != S_OK) {
+    if (m_terminal || out.m_owner != this) return DXGI_ERROR_DEVICE_REMOVED;
+    const HRESULT released = releaseImpl(out);
+    return FAILED(released) ? released : hr;
+  }
+  transaction->owner = nullptr; out.m_pendingAllocation.reset();
+  return S_OK;
 }
 
 // Adopting is deliberately not allocating: no AllocateCb runs, so the balance
@@ -438,6 +573,8 @@ HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
     UINT rowPitch, bool publish) {
   if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
   if (allocation.m_owner != this || !allocation.m_handle) return E_INVALIDARG;
+  if (allocation.m_stagingRelease && allocation.m_stagingRelease->inCallback)
+    return DXGI_ERROR_WAS_STILL_DRAWING;
   if (allocation.m_info.flags == 1 && !allocation.m_stagingHandle) return DXGI_ERROR_UNSUPPORTED;
   if (allocation.primary()) {
     const HRESULT pending = unlockPrimary(allocation);

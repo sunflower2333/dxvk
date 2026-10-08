@@ -808,8 +808,9 @@ HRESULT openResourceData(Device* device, const D3D10DDIARG_OPENRESOURCE* args,
     // adopt validates the rest of the wire metadata. Do that before anything
     // sizes a copy from it: a private-data blob from another process is the
     // only thing between this path and an out-of-bounds transfer.
-    HRESULT hr = device->memory.adopt(surface->allocation, opened.hAllocation,
-      args->hKMResource.handle, info);
+    HRESULT hr = info.flags == 1
+      ? device->memory.adoptPrimary(surface->allocation, opened.hAllocation, args->hKMResource.handle, info)
+      : device->memory.adopt(surface->allocation, opened.hAllocation, args->hKMResource.handle, info);
     if (FAILED(hr)) return hr;
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width = info.width;

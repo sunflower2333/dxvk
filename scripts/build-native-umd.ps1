@@ -92,6 +92,8 @@ ninja -C build-umd src/umd/dxvk-umd-dxgi-blt-test.exe
 if ($LASTEXITCODE) { throw 'Typed DXGI Blt fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-primary-policy-test.exe src/umd/dxvk-umd-dxgi-primary-test.exe
 if ($LASTEXITCODE) { throw 'Typed DXGI primary/display fixture build failed' }
+ninja -C build-umd src/umd/dxvk-umd-open-primary-policy-test.exe src/umd/dxvk-umd-dxgi-open-primary-test.exe
+if ($LASTEXITCODE) { throw 'Typed DXGI opened primary/staging fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-volume-policy-test.exe src/umd/dxvk-umd-texture3d-test.exe
 if ($LASTEXITCODE) { throw 'Native volume policy and Texture3D fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-srv-range-test.exe src/umd/dxvk-umd-tex2d-srv-remaining-test.exe
@@ -209,6 +211,15 @@ if ($arch -ne 'arm64') {
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-dxgi-primary-test.exe dxgi-primary-test $primaryOriginals
     & python (Join-Path $PSScriptRoot 'verify-native-primary-originals.py') $primaryOriginals --stdout (Join-Path $OutputDirectory 'dxgi-primary-test.txt') --output (Join-Path $OutputDirectory 'dxgi-primary-originals-verified.json')
     if ($LASTEXITCODE) { throw 'DXGI primary original pixel verification failed' }
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-open-primary-policy-test.exe open-primary-policy-test
+    if ((Get-Content -LiteralPath (Join-Path $OutputDirectory 'open-primary-policy-test.txt') -Raw) -notmatch '(?m)^Opened primary policy PASS checks=6760\r?$') {
+        throw 'Opened primary policy fixture did not pass'
+    }
+    $openPrimaryOriginals = Join-Path $OutputDirectory 'dxgi-open-primary-originals'
+    New-Item -ItemType Directory -Path $openPrimaryOriginals -ErrorAction Stop | Out-Null
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-dxgi-open-primary-test.exe dxgi-open-primary-test $openPrimaryOriginals
+    & python (Join-Path $PSScriptRoot 'verify-native-open-primary-originals.py') $openPrimaryOriginals --stdout (Join-Path $OutputDirectory 'dxgi-open-primary-test.txt') --output (Join-Path $OutputDirectory 'dxgi-open-primary-originals-verified.json')
+    if ($LASTEXITCODE) { throw 'DXGI opened primary original pixel/padding verification failed' }
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-predication-test.exe predication-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-stream-output-test.exe stream-output-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-texture1d-test.exe texture1d-test
@@ -306,7 +317,7 @@ if ($exports -notmatch '\bVioGpuDxvkOpenAdapter10_2ForTest\b') { throw 'Missing 
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bVioGpuDxvkQueryVulkanLoader\b' -or $exports -notmatch '\bVioGpuDxvkOpenAdapter9ForTest\b' -or $exports -notmatch '\bOpenAdapter\b' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bD3D(?:8|9|10|11|12)Create(?:Device|9|8)\b') { throw 'Unexpected native UMD exports' }
 if ($exports -notmatch '\bVioGpuDxvkProbeD3D9BackendForTest\b' -or $exports -match '\bDirect3DCreate(?:8|9)(?:Ex|On12)?\b') { throw 'Unexpected embedded D3D9 exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
-foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-volume-policy-test.exe', 'dxvk-umd-texture3d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d9-public-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-d3d8-system-identity-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe', 'dxvk-umd-residency-transaction-test.exe', 'dxvk-umd-dxgi-residency-test.exe', 'dxvk-umd-allocation-terminal-test.exe', 'dxvk-umd-dxgi-shared-resolve-test.exe', 'dxvk-umd-dxgi-blt-test.exe', 'dxvk-umd-primary-policy-test.exe', 'dxvk-umd-dxgi-primary-test.exe')) {
+foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-volume-policy-test.exe', 'dxvk-umd-texture3d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d9-public-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-d3d8-system-identity-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe', 'dxvk-umd-residency-transaction-test.exe', 'dxvk-umd-dxgi-residency-test.exe', 'dxvk-umd-allocation-terminal-test.exe', 'dxvk-umd-dxgi-shared-resolve-test.exe', 'dxvk-umd-dxgi-blt-test.exe', 'dxvk-umd-primary-policy-test.exe', 'dxvk-umd-dxgi-primary-test.exe', 'dxvk-umd-open-primary-policy-test.exe', 'dxvk-umd-dxgi-open-primary-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
     # Include ARM64 fixtures for execution by the target validation owner.
     $path = Join-Path 'build-umd/src/umd' $name

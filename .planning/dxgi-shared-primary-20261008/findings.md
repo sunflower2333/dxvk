@@ -1,0 +1,13 @@
+# Contract findings
+
+Original local Microsoft docs: D3DDDICB_ALLOCATE.hResource permits NULL to associate an internal allocation with the device. hKMResource is returned only for resource-associated allocations. D3DDDICB_DEALLOCATE.hResource NULL uses NumAllocations/HandleList, containing the exact handles AllocateCb acquired.
+
+Named KMD ef8a493f, wddmddi.cpp5198–5254: SHAREDPRIMARYSURFACE returns no per-resource private data and one80-byte flags1 allocation, original layout and refresh. OpenAllocation5850–5900 validates exact allocation metadata and borrows existing kernel ownership. The local working KMD differs at an unrelated aperture flag; installed behavior is not inferred from that working copy.
+
+Current OpenResourceData adopts one flags1 handle but transferImpl rejects it because no CPU-visible staging exists. The next path will keep that handle borrowed, allocate one flags2 CPU staging with hResource=NULL, submit the existing exact64-byte opcode2 command with two real handles, and deallocate only the staging handle. It will preserve pitched metadata for row copies, keep failed locks retryable across moves, and balance terminal ownership before callbacks retire. An unresolved in-flight terminal unlock stays honest runtime-owned cleanup, as in451.
+
+The implemented staging-only path keeps its actual DeallocateCb transaction in the device ledger until success. Callback failure leaves its handle retryable; move updates the same transaction's owner. In-flight terminal retirement cannot know the suspended return status and reports incomplete cleanup, with no second callback or callback after DestroyDevice returns. Late outputs from a nonterminal direct cancellation use a distinct pre-reserved owner; failed cleanup remains an orphan in the ledger until terminal retry. The borrowed external handle never enters DeallocateCb.
+
+Final source controls distinguish78 rejected OpenResource frames from their valid same-address retries, require exact errors and unchanged private bytes, and exercise both pre-output and acquired-output terminal retirement with guard pages. The raw oracle uses only actual words and metadata, independently computes36 snapshots1260 pixels, and checks nine232-byte borrowed frames including twelve padding bytes per row. No generated fixture expected array is used by the reader.
+
+The ordinary DXGI Present path for opened shared-primary resources is a separate remaining edge: Resource.shared owns this pair; Resource.present currently gates publishPresentData. SetDisplayMode on opened primary and shared-primary creation/flip, gamma caps query and renderer BO/VidMm resource association are not completed by adding a staging allocation. Whole-profile admission remains closed.

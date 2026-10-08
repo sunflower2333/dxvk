@@ -37,6 +37,7 @@ inline DXGI_FORMAT allocationFormat(uint32_t format) {
 class RuntimeMemory;
 struct PrimaryAllocationTransaction;
 struct PrimaryLockTransaction;
+struct PrimaryStagingReleaseTransaction;
 class RuntimeAllocation {
 public:
   RuntimeAllocation() = default;
@@ -50,9 +51,9 @@ public:
   HANDLE runtimeResource() const { return m_resource; }
   uint64_t generation() const { return m_generation; }
   const AllocationInfo& info() const { return m_info; }
-  // An adopted allocation belongs to the process that created it. This device
-  // holds a view for as long as its opened resource lives and must never
-  // deallocate it; see RuntimeMemory::adopt.
+  // An adopted primary belongs to its creating process. An opened primary may
+  // also own an independent internal staging allocation; only that allocation
+  // can be passed to this device's DeallocateCb.
   bool opened() const { return m_opened; }
   bool primary() const { return m_info.flags == 1 && m_stagingHandle != 0; }
   // DXGI rotates kernel identities, not runtime resource handles. The latter
@@ -66,13 +67,14 @@ private:
   HANDLE m_resource = nullptr;
   D3DKMT_HANDLE m_handle = 0;
   D3DKMT_HANDLE m_kernelResource = 0;
-  // Both entries belong to m_resource. Only m_handle is the primary; this
-  // synchronized CPU-visible staging allocation is never a scanout handle.
+  // A created primary pair belongs to m_resource. For an opened primary this
+  // is a separately owned device allocation and m_handle remains borrowed.
   D3DKMT_HANDLE m_stagingHandle = 0;
   uint64_t m_generation = 0;
   AllocationInfo m_info;
   bool m_published = false;
   bool m_opened = false;
+  bool m_ownedStaging = false;
   RuntimeAllocation* m_previous = nullptr;
   RuntimeAllocation* m_next = nullptr;
   bool m_tracked = false;
@@ -80,6 +82,7 @@ private:
   bool m_releasing = false;
   std::shared_ptr<PrimaryAllocationTransaction> m_pendingAllocation;
   std::shared_ptr<PrimaryLockTransaction> m_pendingLock;
+  std::shared_ptr<PrimaryStagingReleaseTransaction> m_stagingRelease;
   // Reserved before primary acquisition. A failed cleanup may outlive this
   // C++ owner; move it into stable ledger storage without allocating in Destroy.
   std::unique_ptr<RuntimeAllocation> m_cleanupOwner;
@@ -134,6 +137,13 @@ public:
     D3DKMT_HANDLE kernelResource, const AllocationInfo& info) {
     return call([&] { return adoptImpl(out, allocation, kernelResource, info); });
   }
+  // Open the runtime's single standard-primary allocation, then acquire one
+  // internal staging allocation using hResource=NULL. Runtime/kernel resource
+  // cookies remain those of the borrowed primary, never the staging handle.
+  HRESULT adoptPrimary(RuntimeAllocation& out, D3DKMT_HANDLE allocation,
+    D3DKMT_HANDLE kernelResource, const AllocationInfo& info) {
+    return call([&] { return adoptPrimaryImpl(out, allocation, kernelResource, info); });
+  }
   // Raw allocation handles originate from pinned tracked resource owners;
   // runtime resource cookies and kernel resource handles are never interchanged.
   HRESULT queryResidency(const D3DKMT_HANDLE* allocations, UINT count,
@@ -176,6 +186,9 @@ private:
   HRESULT allocatePrimaryImpl(RuntimeAllocation&, HANDLE, UINT, UINT, DXGI_FORMAT, UINT, UINT);
   HRESULT adoptImpl(RuntimeAllocation& out, D3DKMT_HANDLE allocation,
     D3DKMT_HANDLE kernelResource, const AllocationInfo& info);
+  HRESULT adoptPrimaryImpl(RuntimeAllocation&, D3DKMT_HANDLE, D3DKMT_HANDLE, const AllocationInfo&);
+  HRESULT releaseStaging(RuntimeAllocation&);
+  void detachOpenedPrimary(RuntimeAllocation&) noexcept;
   HRESULT releaseImpl(RuntimeAllocation& allocation);
   HRESULT uploadImpl(RuntimeAllocation& allocation, const void* pixels, UINT rowPitch);
   HRESULT downloadImpl(RuntimeAllocation& allocation, void* pixels, UINT rowPitch);

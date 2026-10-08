@@ -509,9 +509,9 @@ public static class DxvkBindingAsync01 {
             $env:VK_LOADER_DEBUG='error,warn,driver'; $env:DXVK_LOG_PATH=$value.output; $env:DXVK_LOG_LEVEL='info'; $env:TU_WDDM_DIAGNOSTICS='1'
             # Exact Api10/11 success execution retains the strict zero-stderr gate.
             # Api9 diagnostic attempts keep the existing first-submit telemetry.
-            if ($value.api -ceq '10') { $env:TU_WDDM_DIAGNOSTICS='0'; $status.d10_profile=$value.d10_profile }
-            elseif ($value.api -ceq '11') { $env:TU_WDDM_DIAGNOSTICS='0' }
-            $status.vulkan_environment=[ordered]@{VK_DRIVER_FILES=$value.vulkan_icd;VK_ICD_FILENAMES=$value.vulkan_icd;TU_WDDM_DIAGNOSTICS=$env:TU_WDDM_DIAGNOSTICS;scope='worker/owned child only'}
+            if ($value.api -ceq '10') { $env:TU_WDDM_DIAGNOSTICS='0'; $env:VK_LOADER_DEBUG='error'; $status.d10_profile=$value.d10_profile }
+            elseif ($value.api -ceq '11') { $env:TU_WDDM_DIAGNOSTICS='0'; $env:VK_LOADER_DEBUG='error' }
+            $status.vulkan_environment=[ordered]@{VK_DRIVER_FILES=$value.vulkan_icd;VK_ICD_FILENAMES=$value.vulkan_icd;VK_LOADER_DEBUG=$env:VK_LOADER_DEBUG;TU_WDDM_DIAGNOSTICS=$env:TU_WDDM_DIAGNOSTICS;scope='worker/owned child only'}
         }
         $stdout=Join-Path $value.output 'probe.stdout.raw'; $stderr=Join-Path $value.output 'probe.stderr.raw'
         $raw=Join-Path $value.output 'originals'

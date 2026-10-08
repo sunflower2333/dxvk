@@ -35,18 +35,25 @@ foreach($case in @(@('8','offscreen','10_0'),@('8','present','10_0'),@('9','offs
 # Every case starts from the production default so quiet mode cannot leak into
 # the following Api9 attempt or inherit a caller's diagnostic environment.
 $diagnosticDefault=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left -is [Management.Automation.Language.VariableExpressionAst] -and $n.Left.VariablePath.UserPath -ieq 'env:TU_WDDM_DIAGNOSTICS' -and $n.Right.Extent.Text -ceq "'1'"},$true))
+$loaderDefault=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left -is [Management.Automation.Language.VariableExpressionAst] -and $n.Left.VariablePath.UserPath -ieq 'env:VK_LOADER_DEBUG' -and $n.Right.Extent.Text -ceq "'error,warn,driver'"},$true))
 $diagnosticRoute=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq '$value.api -ceq ''10''' -and $n.Extent.Text.Contains('$env:TU_WDDM_DIAGNOSTICS')},$true))
-Check ($diagnosticDefault.Count -eq 1);Check ($diagnosticRoute.Count -eq 1)
-$savedDiagnostic=$env:TU_WDDM_DIAGNOSTICS
+Check ($diagnosticDefault.Count -eq 1);Check ($loaderDefault.Count -eq 1);Check ($diagnosticRoute.Count -eq 1)
+$savedDiagnostic=$env:TU_WDDM_DIAGNOSTICS;$savedLoader=$env:VK_LOADER_DEBUG
 try {
  foreach($case in @(@('11','offscreen','10_0','0'),@('9','offscreen','10_0','1'),@('11','present','10_0','0'),@('9ex','present','10_0','1'),@('10','offscreen','10_0','0'),@('9','present','10_0','1'),@('10','offscreen','10_1','0'),@('9ex','offscreen','10_0','1'))){
   $value.api=$case[0];$value.d9_phase=$case[1];$value.d10_profile=$case[2];$status=[ordered]@{}
   Invoke-Expression $diagnosticDefault[0].Extent.Text
+  Invoke-Expression $loaderDefault[0].Extent.Text
   Invoke-Expression $diagnosticRoute[0].Extent.Text
   Check ($env:TU_WDDM_DIAGNOSTICS -ceq $case[3])
-  $rows.Add([ordered]@{kind='actual-diagnostic-routing';api=$value.api;phase=$case[1];d10_profile=$value.d10_profile;TU_WDDM_DIAGNOSTICS=$env:TU_WDDM_DIAGNOSTICS;gpu_calls=0})
+  $expectedLoader='error,warn,driver';if($case[3] -ceq '0'){$expectedLoader='error'}
+  Check ($env:VK_LOADER_DEBUG -ceq $expectedLoader)
+  $rows.Add([ordered]@{kind='actual-diagnostic-routing';api=$value.api;phase=$case[1];d10_profile=$value.d10_profile;TU_WDDM_DIAGNOSTICS=$env:TU_WDDM_DIAGNOSTICS;VK_LOADER_DEBUG=$env:VK_LOADER_DEBUG;gpu_calls=0})
  }
-} finally {if($null -eq $savedDiagnostic){Remove-Item Env:TU_WDDM_DIAGNOSTICS -ErrorAction SilentlyContinue}else{$env:TU_WDDM_DIAGNOSTICS=$savedDiagnostic}}
+} finally {
+ if($null -eq $savedDiagnostic){Remove-Item Env:TU_WDDM_DIAGNOSTICS -ErrorAction SilentlyContinue}else{$env:TU_WDDM_DIAGNOSTICS=$savedDiagnostic}
+ if($null -eq $savedLoader){Remove-Item Env:VK_LOADER_DEBUG -ErrorAction SilentlyContinue}else{$env:VK_LOADER_DEBUG=$savedLoader}
+}
 $work=$Output+'.cases';New-Item -ItemType Directory -Path $work|Out-Null
 $required=[Collections.Generic.List[object]]::new()
 foreach($leaf in @('front.dll','viogpudxvk.dll','private-loader.dll','icd.dll')){

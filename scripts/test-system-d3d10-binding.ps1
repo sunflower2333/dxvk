@@ -6,6 +6,7 @@ param(
     [string]$InstanceId='', [string]$Luid='',
     [ValidateSet('9','9ex','10','11')][string]$Api='10',
     [ValidateSet('offscreen','present')][string]$D9Phase='offscreen',
+    [ValidateSet('offscreen','present')][string]$D11Phase='offscreen',
     [string]$PrivateLoader='', [string]$PrivateLoaderSha256='',
     [string]$Probe='', [string]$ProbeSha256='', [string]$Front='', [string]$FrontSha256='',
     [string]$Core='', [string]$CoreSha256='', [string]$Runner='',
@@ -57,6 +58,14 @@ function Write-MutationIntent([string]$Path,$Value) {
 function Quote([string]$Value) {
     if (!$Value -or $Value.Contains('"') -or $Value.EndsWith('\') -or $Value.Contains([char]0)) { throw 'Unambiguous owned argument required' }
     '"'+$Value+'"'
+}
+function Require-D11Phase([string]$Api,[string]$Phase) {
+    if ($Api -cnotin @('9','9ex','10','11') -or $Phase -cnotin @('offscreen','present') -or ($Api -cne '11' -and $Phase -cne 'offscreen')) { throw 'D11 Present phase requires API11 and an exact reviewed phase' }
+}
+function D11-ValidationMarker([string]$Phase) {
+    Require-D11Phase '11' $Phase
+    if ($Phase -ceq 'present') { return 'SYSTEM_D3D11_PRESENT_VALIDATION_PASS feature_level=10_0 typed_ddi=11 pixels=512 presents=2 software_fallback=0 production_admission=0 registry_changes=0' }
+    'SYSTEM_D3D11_VALIDATION_PASS feature_level=10_0 typed_ddi=11 pixels=512 presents=0 software_fallback=0 production_admission=0 registry_changes=0'
 }
 function Process-Receipt($Row,[string]$RunnerSha) {
     [ordered]@{pid=$Row.Pid;retained_process_handle=$Row.ProcessHandle;start_utc=$Row.StartUtc;exited=$Row.Exited;exit_code_available=$Row.ExitCodeAvailable;exit_code=$Row.ExitCode;timed_out=$Row.TimedOut;child_still_running=$Row.ChildStillRunning;pipes_drained=$Row.PipesDrained;stdout_bytes=$Row.StdoutBytes;stderr_bytes=$Row.StderrBytes;seconds=$Row.Seconds;capture_failure=$Row.Failure;expected_exit=0;runner_sha256=$RunnerSha}
@@ -151,6 +160,7 @@ function Close-HeldProbeIfWorkerLost($Value) {
     } finally { if ($child) { $child.Dispose() } }
 }
 
+if ($Role -ceq 'Controller') { Require-D11Phase $Api $D11Phase }
 $native=Join-Path $PSScriptRoot 'system-d3d10-binding-native.cs'
 if ($Role -ne 'Controller') {
     Check-File $Config $ConfigSha256
@@ -159,6 +169,7 @@ if ($Role -ne 'Controller') {
     # protected raw backup. Only the restoration implementation is required
     # before the watchdog can restore; the worker checks every selected input.
     if ($Role -eq 'Worker') {
+        Require-D11Phase $value.api $value.d11_phase
         foreach ($file in $value.files) { Check-File $file.path $file.sha256 }
         foreach ($pair in @(@($value.probe,$value.probe_sha256),@($value.front,$value.front_sha256),@($value.core,$value.core_sha256))) { Check-File $pair[0] $pair[1] }
     }
@@ -340,7 +351,9 @@ public static class DxvkBindingAsync01 {
         if (!$published -or !$released -or !$status.held_module_census_passed -or $row.Pid -ne $publishedPid -or !$row.Exited -or !$row.ExitCodeAvailable -or $row.ExitCode -ne 0 -or $row.TimedOut -or $row.ChildStillRunning -or !$row.PipesDrained -or $row.Failure -or !$status.effective_candidate_selected -or !$status.effective_original_names_restored) { throw 'Actual factory/selection/held/modules/restore process gate failed; raw failure retained' }
         if ($value.api -ceq '11') {
             $finished=[DxvkBindingNative01]::ReadSharedText($stdout)
-            if ($finished -cnotmatch '(?m)^SYSTEM_D3D11_VALIDATION_PASS feature_level=10_0 typed_ddi=11 pixels=512 presents=0 software_fallback=0 production_admission=0 registry_changes=0\r?$' -or $finished -cnotmatch ('(?m)^SYSTEM_D3D11_HELD pid='+$publishedPid+' timeout_ms=60000 pixels_passed=1 stage= hr=00000000\r?$') -or $row.StderrBytes -ne 0) { throw 'Actual dedicated D11 factory/readback/release markers failed; independent raw reader remains required' }
+            $marker=D11-ValidationMarker $value.d11_phase
+            if ($finished -cnotmatch ('(?m)^'+[regex]::Escape($marker)+'\r?$') -or $finished -cnotmatch ('(?m)^SYSTEM_D3D11_HELD pid='+$publishedPid+' timeout_ms=60000 pixels_passed=1 stage= hr=00000000\r?$') -or $row.StderrBytes -ne 0) { throw 'Actual dedicated D11 selected-phase factory/readback/release markers failed; independent raw reader remains required' }
+            $status.d11_phase=$value.d11_phase
         } elseif ($value.api -in @('9','9ex')) {
             $finished=[DxvkBindingNative01]::ReadSharedText($stdout)
             $presents=0; $screenPixels=0; if ($value.d9_phase -ceq 'present') { $presents=2; $screenPixels=512 }
@@ -438,6 +451,7 @@ foreach ($copy in @(@($PSCommandPath,$controllerScript),@($native,$nativeCopy),@
 }
 $self=(Get-Process -Id $PID)
 $value=[ordered]@{schema=2;api=$Api;native_slot=$nativeSlot;d9_phase=$D9Phase;private_loader=$vulkanLoader;vulkan_library=$vulkanLibrary;owner_pid=$PID;owner_start_ticks=$self.StartTime.ToUniversalTime().Ticks;deadline_utc=[DateTime]::UtcNow.AddSeconds(120).ToString('o');registry_subkey=$subkey;original=$original;original_slots=$slots;luid=$Luid;control=$control;output=$output;mutex=('Global\VioGpuD10Binding-'+$runId);task_name=$taskName;restore_task_name=($taskName+'-restore');desktop_sid=$sid.Value;desktop_session=$explorer[0].SessionId;desktop_dwm_pid=$dwm[0].Id;desktop_explorer_pid=$explorer[0].Id;probe=$Probe;probe_sha256=$ProbeSha256;front=$Front;front_sha256=$FrontSha256;core=$Core;core_sha256=$CoreSha256;runner=$runnerCopy;runner_sha256=$runnerSha;token_script=$tokenCopy;vulkan_icd=$VulkanIcd;hold_event=('Local\VioGpuD10Validation-'+$runId)}
+$value.d11_phase=$D11Phase
 $value.files=@($controllerScript,$nativeCopy,$runnerCopy,$tokenCopy,$Probe,$Front,$Core,$DriverSys,$VulkanIcd,$vulkanLibrary,$vulkanLoader | ForEach-Object { [ordered]@{path=$_;sha256=(Hash $_)} })
 $value.payload_source=$approved.SourceCommit; $value.payload_ci_run=$approved.CiRun; $value.approved_payload_sha256=$ApprovedPayloadSha256
 $value.module_files=@([ordered]@{Path=$Front;Bytes=(Get-Item -LiteralPath $Front).Length;Sha256=$FrontSha256})+@($approved.ModuleFiles)

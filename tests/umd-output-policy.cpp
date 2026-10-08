@@ -48,6 +48,22 @@ int main() {
       CHECK(validRenderTargetRange(n, clear) == (n + clear <= 8));
   CHECK(!validRenderTargetRange(UINT32_MAX, 1));
   CHECK(!validRenderTargetRange(1, UINT32_MAX));
+  // Keep the lower feature level's all-NULL graphics binding legal, and
+  // reject real pixel UAVs in every slot before the backend state changes.
+  std::array<int*, colorOutputSlots> unordered{};
+  CHECK(outputMergerBindPath(false, unordered) == OutputMergerBindPath::RenderTargetsOnly);
+  CHECK(outputMergerBindPath(true, unordered) == OutputMergerBindPath::RenderTargetsAndUavs);
+  int view = 0;
+  for (size_t slot = 0; slot < unordered.size(); ++slot) {
+    unordered[slot] = &view;
+    CHECK(outputMergerBindPath(false, unordered) == OutputMergerBindPath::UnsupportedUav);
+    CHECK(outputMergerBindPath(true, unordered) == OutputMergerBindPath::RenderTargetsAndUavs);
+    unordered[slot] = nullptr;
+    CHECK(outputMergerBindPath(false, unordered) == OutputMergerBindPath::RenderTargetsOnly);
+  }
+  unordered.fill(&view);
+  CHECK(outputMergerBindPath(false, unordered) == OutputMergerBindPath::UnsupportedUav);
+  CHECK(outputMergerBindPath(true, unordered) == OutputMergerBindPath::RenderTargetsAndUavs);
   OutputShape shape{}, good{16,16,1,1,0};
   CHECK(mergeOutputShape(shape,good));
   CHECK(mergeOutputShape(shape,good));

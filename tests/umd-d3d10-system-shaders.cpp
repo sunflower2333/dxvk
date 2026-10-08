@@ -47,13 +47,13 @@ V vs(uint vertex:SV_VertexID,uint instance:SV_InstanceID) {
   float left=-1+0.5*instance;o.clip=float3(o.p.x,o.p.x-left,left+0.5-o.p.x);o.cull=1;
   o.v=0x11223340+instance;return o;
 }
-struct G { float4 p:SV_Position;float3 clip:SV_ClipDistance0;float cull:SV_CullDistance0;nointerpolation uint v:DATA0;uint id:SV_PrimitiveID; };
+struct G { float4 p:SV_Position;float3 clip:SV_ClipDistance0;float cull:SV_CullDistance0;nointerpolation uint v:DATA0;nointerpolation uint id:SV_PrimitiveID; };
 [maxvertexcount(3)] void gs(triangle V input[3],uint primitive:SV_PrimitiveID,inout TriangleStream<G> stream) {
   [unroll]for(uint i=0;i<3;++i){G o;o.p=input[i].p;o.clip=input[i].clip;o.cull=input[i].cull;o.v=input[i].v;o.id=primitive+37;stream.Append(o);}stream.RestartStrip();
 }
 struct P { uint4 u:SV_Target0;int4 s:SV_Target1;float depth:SV_Depth; };
-P ps(V input,uint primitive:SV_PrimitiveID,bool front:SV_IsFrontFace) {
-  P o;o.u=uint4(input.v,primitive+7,front?1:0,0x7fc01234);
+P ps(G input,bool front:SV_IsFrontFace) {
+  P o;o.u=uint4(input.v,input.id+7,front?1:0,0x7fc01234);
   o.s=int4(-int(input.v),-7,99,-1);o.depth=0.25;return o;
 }
 float4 ps_simple():SV_Target{return float4(1,0,0,1);}
@@ -78,6 +78,8 @@ struct Program {
       // Dedicated depth/coverage operands are encoded in instructions, not
       // register-file rows in the historical runtime union.
       if(p.Register==UINT(-1))continue;
+      if(p.SystemValueType==D3D_NAME_PRIMITIVE_ID)
+        CHECK(p.ComponentType==D3D_REGISTER_COMPONENT_UINT32&&p.Mask&&(p.Mask&(p.Mask-1))==0);
       const auto system=p.SystemValueType==D3D_NAME_TARGET?D3D_NAME_UNDEFINED:p.SystemValueType;
       CHECK(UINT(system)<=10);(input?inputs:outputs).push_back({D3D10_SB_NAME(system),p.Register,p.Mask});
     }
@@ -145,6 +147,17 @@ template<class Table>static void scene(bool geometry,bool model41){
   Fixture<Table> f;Program vs(ShaderStage::Vertex,"vs",model41?"vs_4_1":"vs_4_0");
   Program gs(ShaderStage::Geometry,"gs",model41?"gs_4_1":"gs_4_0");
   Program ps(ShaderStage::Pixel,"ps",model41?"ps_4_1":"ps_4_0");
+  if(geometry){
+    // This controlled fixture uses one explicit constant GS/PS interface.
+    // Require the original FXC containers to agree before testing DDI linkage.
+    auto primitive=[](const std::vector<D3D10DDIARG_SIGNATURE_ENTRY>& entries){
+      const D3D10DDIARG_SIGNATURE_ENTRY* found=nullptr;
+      for(const auto& entry:entries)if(entry.SystemValue==D3D10_SB_NAME_PRIMITIVE_ID){CHECK(!found);found=&entry;}
+      CHECK(found);return found;
+    };
+    const auto output=primitive(gs.outputs),input=primitive(ps.inputs);
+    CHECK(output->Register==input->Register&&output->Mask==input->Mask);
+  }
   auto vertex=f.shader(vs),geom=f.shader(gs),pixel=f.shader(ps);
   D3D10DDI_HRENDERTARGETVIEW targets[]={f.target(DXGI_FORMAT_R32G32B32A32_UINT),f.target(DXGI_FORMAT_R32G32B32A32_SINT)};
   auto depth=f.depth();f.f.pfnSetRenderTargets(f.device,targets,2,0,depth);expect();

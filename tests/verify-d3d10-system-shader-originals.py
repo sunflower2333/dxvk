@@ -8,7 +8,7 @@ import struct
 import tempfile
 from pathlib import Path
 
-SOURCE_SHA256 = "324039cd89e81df84352a113543e00dc36defd95acd248bedf96771c95e8d879"
+SOURCE_SHA256 = "6d6babb7922262180319294a4c4262f1cab742b4128c0cb367c721a497466ce6"
 
 
 def shader_cases():

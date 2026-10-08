@@ -40,21 +40,21 @@ static void retain(const char* name,const void* bytes,size_t size) {
   CHECK(WriteFile(file,bytes,DWORD(size),&written,nullptr)&&written==size);CHECK(CloseHandle(file));
 }
 static constexpr char source[]=R"(
-struct V { float4 p:SV_Position; float3 clip:SV_ClipDistance0; float cull:SV_CullDistance0; nointerpolation uint v:DATA0; };
+struct V { float4 p:SV_Position; float3 clip:SV_ClipDistance0; float cull:SV_CullDistance0; nointerpolation uint4 v:DATA0; };
 V vs(uint vertex:SV_VertexID,uint instance:SV_InstanceID) {
   V o;float2 xy=float2((vertex<<1)&2,vertex&2);
   o.p=float4(xy*float2(2,-2)+float2(-1,1),0,1);
   float left=-1+0.5*instance;o.clip=float3(o.p.x,o.p.x-left,left+0.5-o.p.x);o.cull=1;
-  o.v=0x11223340+instance;return o;
+  uint value=0x11223340+instance;o.v=uint4(value,value,value,value);return o;
 }
-struct G { float4 p:SV_Position;float3 clip:SV_ClipDistance0;float cull:SV_CullDistance0;nointerpolation uint v:DATA0;nointerpolation uint id:SV_PrimitiveID; };
+struct G { float4 p:SV_Position;float3 clip:SV_ClipDistance0;float cull:SV_CullDistance0;nointerpolation uint4 v:DATA0;nointerpolation uint id:SV_PrimitiveID; };
 [maxvertexcount(3)] void gs(triangle V input[3],uint primitive:SV_PrimitiveID,inout TriangleStream<G> stream) {
   [unroll]for(uint i=0;i<3;++i){G o;o.p=input[i].p;o.clip=input[i].clip;o.cull=input[i].cull;o.v=input[i].v;o.id=primitive+37;stream.Append(o);}stream.RestartStrip();
 }
 struct P { uint4 u:SV_Target0;int4 s:SV_Target1;float depth:SV_Depth; };
 P ps(G input,bool front:SV_IsFrontFace) {
-  P o;o.u=uint4(input.v,input.id+7,front?1:0,0x7fc01234);
-  o.s=int4(-int(input.v),-7,99,-1);o.depth=0.25;return o;
+  P o;o.u=uint4(input.v.x,input.id+7,front?1:0,0x7fc01234);
+  o.s=int4(-int(input.v.x),-7,99,-1);o.depth=0.25;return o;
 }
 float4 ps_simple():SV_Target{return float4(1,0,0,1);}
 )";

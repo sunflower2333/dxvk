@@ -33,7 +33,22 @@ check remains intact. The original reader changes only its retained HLSL
 source SHA256 pin; its complete validation body and literal image oracle are
 unchanged. Original attempt01 shaders, images and errors remain immutable.
 
+The fresh f639b66 ARM64 attempt02 confirms that the shared scalar interface
+still compiles with GS PrimitiveID at o3.x and PS PrimitiveID at v2.y. It
+completed model40 without GS, then stopped at the added matching check before
+creating or drawing the GS scene. No GS1 pixel result exists for attempt02.
+
+The follow-up keeps the shared interface and matching check, but reserves the
+entire ordinary DATA0 row in both V and G using nointerpolation uint4. VS
+explicitly broadcasts the original instance value to all four lanes; GS copies
+that vector; PS consumes only the original .x lane. This follows the
+[HLSL packing contract](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-packing-rules):
+four-component vector boundaries constrain shader IO packing. The intended
+result is a separate PrimitiveID row in both stages. Actual new FXC signatures,
+the retained matching check and full pixel oracle must confirm that result.
+
 Local x86/x64 strict SDK compilation checks C++ and typed DDI usage only.
 It does not compile HLSL, execute FXC, run WARP, or admit hardware. Fresh FXC
 register packing and all four native/public scenes require the separate
-complete native attempt02, including the original49-file pixel reader.
+complete native attempt03, including the original49-file pixel reader. Both
+failed attempts01 and02 remain immutable, with their distinct failure prefixes.

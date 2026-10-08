@@ -499,7 +499,7 @@ HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
   HRESULT unlocked;
   if (pending) unlocked = unlockPrimary(allocation);
   else {
-    D3DDDICB_UNLOCK unlock = {}; unlock.NumAllocations = 1; unlock.phAllocations = &handle;
+    D3DDDICB_UNLOCK unlock = {}; unlock.NumAllocations = 1; unlock.phAllocations = &lock.hAllocation;
     allocation.m_locked = false;
     unlocked = completed(m_callbacks.pfnUnlockCb(m_device, &unlock));
   }

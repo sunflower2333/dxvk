@@ -93,6 +93,15 @@ umd_shader_test = executable('dxvk-umd-shader-test',
   cpp_args : ['-DVIOGPU_SHADER_SPIRV_TEST'],
 )
 
+umd_encoded_resolve_shader_test = executable('dxvk-umd-encoded-resolve-shader-test',
+  ['../../tests/umd-encoded-resolve-shader.cpp', 'umd_shader.cpp'],
+  dependencies : [dxbc_spirv_dep],
+)
+umd_encoded_resolve_native_test = executable('dxvk-umd-encoded-resolve-native-test',
+  ['../../tests/umd-encoded-resolve-native.cpp', 'umd_shader.cpp'],
+  dependencies : [dxbc_spirv_dep, cpp.find_library('d3d11')],
+)
+
 umd_identity_query_test = executable('dxvk-umd-identity-query-test',
   '../../tests/umd-runtime-query.cpp', 'umd_runtime_query.cpp',
 )

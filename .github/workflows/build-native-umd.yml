@@ -175,3 +175,4 @@ jobs:
             candidate/arm64-bc-copy-originals/**
             candidate/arm64-depth-stencil-copy-originals/**
             candidate/arm64-depth-stencil-copy-1d-originals/**
+            candidate/arm64-encoded-resolve-originals/**

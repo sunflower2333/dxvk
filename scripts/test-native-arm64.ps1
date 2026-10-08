@@ -28,6 +28,8 @@ Add-Type -TypeDefinition ([IO.File]::ReadAllText($retainedRunnerSource))
 $runnerReceipt.type_compiled = $true
 $runnerReceipt | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'arm64-fixture-runner-source.json') -Encoding UTF8
 $cases = [ordered]@{
+    'dxvk-umd-encoded-resolve-shader-test.exe' = '(?m)^Encoded resolve shader CPU PASS variants=2 counts=5 channel_observations=10240 native_execution=0 hardware_admission=0\r?$'
+    'dxvk-umd-encoded-resolve-native-test.exe' = '(?m)^Encoded resolve native PASS profiles=1 families=2 shaders=5 samples=4 images=12 pixels=3072 rejections=6 hardware_admission=0\r?$'
     'dxvk-umd-so-oracle-test.exe' = 'SO capture oracle verified checks=21083 bit_flips=20480 streams=4 raw_bits=1 callback_controls=55'
     'dxvk-umd-volume-probe-oracle-test.exe' = 'volume probe oracle verified checks=100632 voxels=3046 bit_flips=97472 sampled=551'
     'dxvk-umd-cube-probe-oracle-test.exe' = 'PASS cube probe arithmetic checks=159292 bit_flips=154752 texels=4830 hardware=0'
@@ -102,6 +104,7 @@ $cases = [ordered]@{
     'dxvk-umd-system-runtime-test.exe' = 'system runtime control PASS: WARP Draw/readback/Present/immediate teardown'
 }
 $originalDirectories = @{
+    'dxvk-umd-encoded-resolve-native-test.exe' = 'arm64-encoded-resolve-originals'
     'dxvk-umd-dxgi-extended-blt-test.exe' = 'arm64-dxgi-extended-blt-originals'
     'dxvk-umd-dxgi-extended-primary-test.exe' = 'arm64-dxgi-extended-primary-originals'
     'dxvk-umd-texture-uav-test.exe' = 'arm64-texture-uav-originals'
@@ -166,7 +169,15 @@ foreach ($name in $cases.Keys) {
     if ($process.ExitCode -ne 0 -or $text -notmatch $cases[$name]) {
         throw "$name failed: exit=$($process.ExitCode) $(Get-Content -LiteralPath $err -Raw)"
     }
-    if ($name -ceq 'dxvk-umd-texture-uav-test.exe') {
+    if ($name -ceq 'dxvk-umd-encoded-resolve-native-test.exe') {
+        $encodedResolveReview = Join-Path $root 'arm64-encoded-resolve-originals-verified.json'
+        & python (Join-Path $PSScriptRoot 'verify-native-encoded-resolve-originals.py') $childDirectory $out --output $encodedResolveReview
+        if ($LASTEXITCODE) { throw 'Independent ARM64 encoded resolve sample/mean/untouched originals failed' }
+        $encodedResolveVerified = Get-Content -LiteralPath $encodedResolveReview -Raw | ConvertFrom-Json
+        if ($encodedResolveVerified.passed -ne $true -or $encodedResolveVerified.profiles -ne 1 -or $encodedResolveVerified.families -ne 2 -or $encodedResolveVerified.samples -ne 4 -or $encodedResolveVerified.images -ne 12 -or $encodedResolveVerified.pixels -ne 3072 -or $encodedResolveVerified.source_sample_pixels -ne 2048 -or $encodedResolveVerified.mean_pixels -ne 512 -or $encodedResolveVerified.unchanged_target_pixels -ne 512 -or $encodedResolveVerified.raw_combined_bytes -ne 12672 -or $encodedResolveVerified.raw_files -ne 24 -or $encodedResolveVerified.hardware_admission -ne $false -or $encodedResolveVerified.ordinary_runtime_admission -ne $false -or $encodedResolveVerified.generic_inverse_srgb_bit_exactness -ne $false) {
+            throw 'ARM64 encoded resolve independent reader totals or admission flags changed'
+        }
+    } elseif ($name -ceq 'dxvk-umd-texture-uav-test.exe') {
         & python (Join-Path $PSScriptRoot '../tests/verify-texture-uav-originals.py') --directory $childDirectory --output (Join-Path $root 'arm64-texture-uav-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 texture UAV descriptor/compute/clear originals failed' }
     } elseif ($name -ceq 'dxvk-umd-resource-copy-cast-test.exe') {

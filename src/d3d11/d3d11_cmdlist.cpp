@@ -79,6 +79,7 @@ namespace dxvk {
     // This will be the chunk ID of the first chunk
     // added, for the purpose of resource tracking.
     uint64_t baseChunkId = m_chunks.size();
+    uint64_t baseActionId = m_actions.size();
     
     for (const auto& chunk : pCommandList->m_chunks)
       m_chunks.push_back(chunk);
@@ -86,7 +87,10 @@ namespace dxvk {
     for (const auto& query : pCommandList->m_queries)
       m_queries.push_back(query);
 
-    m_order.append(pCommandList->m_order, baseChunkId);
+    for (const auto& action : pCommandList->m_actions)
+      m_actions.push_back(action);
+
+    m_order.append(pCommandList->m_order, baseChunkId, baseActionId);
 
     for (const auto& resource : pCommandList->m_resources) {
       TrackedResource entry = resource;
@@ -101,8 +105,23 @@ namespace dxvk {
   }
 
 
+  void D3D11CommandList::AddAction(
+          D3D11PredicateAction Command,
+          uint64_t            Cost,
+          D3D11Buffer*        TrackedBuffer) {
+    ActionEntry action;
+    action.command = std::move(Command);
+    action.cost = Cost;
+    if (TrackedBuffer && TrackedBuffer->HasSequenceNumber())
+      action.resource = D3D11ResourceRef(TrackedBuffer, 0, D3D11_RESOURCE_DIMENSION_BUFFER);
+    m_actions.push_back(std::move(action));
+    m_order.addAction(m_actions.size() - 1);
+  }
+
+
   void D3D11CommandList::EmitToCsThread(
-    const D3D11ChunkDispatchProc& DispatchProc) {
+    const D3D11ChunkDispatchProc& DispatchProc,
+    const D3D11ActionDispatchProc& DispatchAction) {
     std::size_t endIndex = 0;
     const D3D11CommandReplay<Com<D3D11Query, false>, D3D11QueryTicket> replay(m_order,
       [] (const Com<D3D11Query, false>& query) {
@@ -117,10 +136,20 @@ namespace dxvk {
     assert(endIndex == m_queries.size());
 
     // Public readiness remains all-End-up-front. Each API replay owns its
-    // ordered ticket bindings; this view does not evaluate or suppress work.
+    // ordered ticket bindings. Only individual action entries are evaluated;
+    // state/query CS chunks are always dispatched.
     size_t j = 0;
     for (const auto& replayOperation : replay.operations()) {
       const auto& operation = replayOperation.recorded;
+      if (operation.type == D3D11RecordedOperationType::Action) {
+        const auto& action = m_actions.at(size_t(operation.actionId));
+        const bool tracked = action.resource.Get() != nullptr;
+        auto result = DispatchAction(action.command, replayOperation.predicate, action.cost,
+          tracked ? GpuFlushType::ImplicitStrongHint : GpuFlushType::ImplicitWeakHint);
+        if (result.executed && tracked)
+          TrackResourceSequenceNumber(action.resource, result.sequence);
+        continue;
+      }
       if (operation.type != D3D11RecordedOperationType::Chunk)
         continue;
       const size_t i = size_t(operation.chunkId);

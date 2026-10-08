@@ -187,6 +187,12 @@ namespace dxvk {
 
     void SynchronizeDevice();
 
+    bool EvaluatePredicateAction(
+            D3D11Query*                 Query,
+      const D3D11QueryTicket&            Ticket,
+            BOOL                        Value,
+            bool                        Hint);
+
     void EndFrame(
             Rc<DxvkLatencyTracker>      LatencyTracker);
     

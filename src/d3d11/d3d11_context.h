@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 #include <type_traits>
 #include <vector>
 
@@ -25,6 +26,8 @@ namespace dxvk {
 
   class D3D11DeferredContext;
   class D3D11ImmediateContext;
+
+  using D3D11PredicateAction = std::function<void (DxvkContext*)>;
 
   template<bool IsDeferred>
   struct D3D11ContextObjectForwarder;
@@ -1034,6 +1037,11 @@ namespace dxvk {
     void RecordPredication(
             D3D11Query*                       pQuery,
             BOOL                              PredicateValue);
+
+    void EmitPredicateAction(
+            D3D11PredicateAction              Command,
+            uint64_t                          Cost,
+            D3D11Buffer*                      TrackedBuffer);
 
     void ResetCommandListState();
 

@@ -1,5 +1,7 @@
 #include "d3d11_cmdlist.h"
 #include "d3d11_context_imm.h"
+#include "d3d11_predicate_action.h"
+#include <thread>
 #include "d3d11_device.h"
 #include "d3d11_fence.h"
 #include "d3d11_texture.h"
@@ -273,6 +275,22 @@ namespace dxvk {
       AddCost(cost);
       ConsiderFlush(flushType);
       return csSeqNum;
+    }, [this] (const D3D11PredicateAction& action,
+        const D3D11ReplayPredicate<Com<D3D11Query, false>, D3D11QueryTicket>& predicate,
+        uint64_t cost, GpuFlushType flushType) {
+      D3D11ActionDispatchResult result;
+      if (!EvaluatePredicateAction(predicate.query.ptr(), predicate.ticket, predicate.value, predicate.hint))
+        return result;
+
+      // Copy the owned action into a new command for each replay. The command
+      // list and its predicate bindings may be released once dispatch returns.
+      EmitCs(D3D11PredicateAction(action));
+      FlushCsChunk();
+      result.sequence = m_csSeqNum;
+      result.executed = true;
+      AddCost(cost);
+      ConsiderFlush(flushType);
+      return result;
     });
 
     // Restore the immediate context's state
@@ -930,6 +948,35 @@ namespace dxvk {
   
   void D3D11ImmediateContext::SynchronizeDevice() {
     m_device->waitForIdle();
+  }
+
+
+  bool D3D11ImmediateContext::EvaluatePredicateAction(
+          D3D11Query*       Query,
+    const D3D11QueryTicket&  Ticket,
+          BOOL              Value,
+          bool              Hint) {
+    // Caller holds the context lock (or the application's required API
+    // serialization) and keeps Query/Ticket owners alive across the wait.
+    auto decision = D3D11EvaluatePredicateAction(bool(Query), Hint, Value,
+      [&] (bool* value) {
+        BOOL data = FALSE;
+        const HRESULT hr = Query->ReadPredicateTicket(Ticket, &data);
+        if (hr == S_OK) {
+          *value = data != FALSE;
+          return DxvkGpuQueryStatus::Available;
+        }
+        return hr == S_FALSE ? DxvkGpuQueryStatus::Pending : DxvkGpuQueryStatus::Invalid;
+      }, [&] {
+        return SUCCEEDED(FlushRuntimeSubmission());
+      }, [&] {
+        return m_device->getDeviceStatus() == VK_SUCCESS;
+      }, [] {
+        std::this_thread::yield();
+      });
+    if (decision == D3D11PredicateDecision::Invalid)
+      Logger::err("D3D11: Invalid exact predicate ticket for CopyStructureCount");
+    return decision == D3D11PredicateDecision::Execute;
   }
 
 

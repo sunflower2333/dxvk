@@ -5,6 +5,7 @@
 #include "umd_shader11.h"
 #include "umd_query.h"
 #include "umd_allocation.h"
+#include "umd_residency_transaction.h"
 #include "umd_runtime_gpu.h"
 #include "umd_map.h"
 #include "umd_view.h"
@@ -24,6 +25,7 @@
 #include "umd_private_children.h"
 
 #include <wrl/client.h>
+#include <d3d9.h> // Official S_NOT_RESIDENT / S_RESIDENT_IN_SHARED_MEMORY HRESULTs.
 #include <cstring>
 #include <memory>
 #include <new>
@@ -2591,6 +2593,129 @@ HRESULT APIENTRY rotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITIE
     catch (...) { return E_FAIL; }
 }
 
+// Residency and priority concern VidMm allocations, not the embedded
+// renderer's cached image. Capture every owner before calling the runtime;
+// private resource bytes can be reclaimed during a reentrant callback.
+struct AllocationParticipant {
+  void* storage;
+  std::shared_ptr<const char> reservation;
+  std::shared_ptr<dxvk::umd::RuntimeAllocation> allocation;
+  D3DKMT_HANDLE handle;
+};
+
+HRESULT captureAllocations(Device* device, const DXGI_DDI_HRESOURCE* resources,
+    UINT count, std::vector<AllocationParticipant>& participants) {
+  participants.reserve(count);
+  std::lock_guard<std::mutex> lock(resourceStorageMutex);
+  if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
+  for (UINT i = 0; i < count; ++i) {
+    auto resource = reinterpret_cast<Resource*>(resources[i]);
+    const auto entry = resourceStorage.find(resource);
+    if (entry == resourceStorage.end() || entry->second.owner != device
+        || entry->second.phase != ResourcePhase::Live) return E_INVALIDARG;
+    auto allocation = resource->allocationOwner();
+    // Backend-only Vulkan allocations do not have a VidMm handle in this
+    // bridge. Never substitute a guessed resident answer or an opaque cookie.
+    if (!allocation || !allocation->handle()) return DXGI_DDI_ERR_UNSUPPORTED;
+    const auto handle = allocation->handle();
+    participants.push_back({resource, entry->second.reservation, std::move(allocation), handle});
+  }
+  return S_OK;
+}
+
+bool allocationsLiveLocked(Device* device, const std::vector<AllocationParticipant>& participants) {
+  if (device->retired) return false;
+  for (const auto& participant : participants) {
+    const auto entry = resourceStorage.find(participant.storage);
+    if (entry == resourceStorage.end() || entry->second.owner != device
+        || entry->second.phase != ResourcePhase::Live
+        || entry->second.reservation != participant.reservation
+        || participant.allocation->handle() != participant.handle) return false;
+  }
+  return true;
+}
+
+HRESULT queryResourceResidencyData(Device* device, const DXGI_DDI_ARG_QUERYRESOURCERESIDENCY& args) {
+  std::vector<AllocationParticipant> participants;
+  HRESULT hr = captureAllocations(device, args.pResources, UINT(args.Resources), participants);
+  if (hr != S_OK) return hr;
+  std::vector<D3DKMT_HANDLE> handles;
+  handles.reserve(participants.size());
+  for (const auto& participant : participants) handles.push_back(participant.handle);
+  std::vector<D3DDDI_RESIDENCYSTATUS> statuses(participants.size());
+  auto live = [&] {
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    return allocationsLiveLocked(device, participants);
+  };
+  hr = device->memory.queryResidency(handles.data(), UINT(handles.size()), statuses.data(), live);
+  if (hr != S_OK) return hr;
+  std::vector<DXGI_DDI_RESIDENCY> staged;
+  staged.reserve(statuses.size());
+  HRESULT result = S_OK;
+  // Map the two distinct official enum types explicitly. The DXGI table and
+  // the kernel callback arrays are never reinterpreted as one another.
+  for (const auto status : statuses) {
+    switch (status) {
+      case D3DDDI_RESIDENCYSTATUS_RESIDENTINGPUMEMORY:
+        staged.push_back(DXGI_DDI_RESIDENCY_FULLY_RESIDENT); break;
+      case D3DDDI_RESIDENCYSTATUS_RESIDENTINSHAREDMEMORY:
+        staged.push_back(DXGI_DDI_RESIDENCY_RESIDENT_IN_SHARED_MEMORY);
+        if (result == S_OK) result = S_RESIDENT_IN_SHARED_MEMORY;
+        break;
+      case D3DDDI_RESIDENCYSTATUS_NOTRESIDENT:
+        staged.push_back(DXGI_DDI_RESIDENCY_EVICTED_TO_DISK); result = S_NOT_RESIDENT; break;
+      default: return E_FAIL;
+    }
+  }
+  std::lock_guard<std::mutex> lock(resourceStorageMutex);
+  if (!allocationsLiveLocked(device, participants)) return DXGI_ERROR_DEVICE_REMOVED;
+  std::copy(staged.begin(), staged.end(), args.pStatus);
+  return result;
+}
+
+HRESULT APIENTRY queryResourceResidency(DXGI_DDI_ARG_QUERYRESOURCERESIDENCY* args) {
+  if (!args || !args->hDevice || !args->Resources || !args->pResources || !args->pStatus)
+    return E_INVALIDARG;
+  // Resources is SIZE_T in the actual WDK. Bound it before narrowing or
+  // reading either caller array, including values larger than UINT_MAX.
+  if (args->Resources > dxvk::umd::residencyBatchLimit) return DXGI_DDI_ERR_UNSUPPORTED;
+  const auto request = *args;
+  DeviceOperation operation(reinterpret_cast<void*>(request.hDevice));
+  if (!operation.owner) return DXGI_ERROR_DEVICE_REMOVED;
+  dxvk::umd::RuntimeService::Scope scope(operation.owner->service.get());
+  try {
+    return operation.owner->service->run([&] {
+      DeviceOperation worker(operation.storage, operation.owner);
+      return queryResourceResidencyData(operation.owner.get(), request);
+    });
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
+}
+
+HRESULT APIENTRY setResourcePriority(DXGI_DDI_ARG_SETRESOURCEPRIORITY* args) {
+  if (!args || !args->hDevice || !args->hResource) return E_INVALIDARG;
+  const auto request = *args;
+  DeviceOperation operation(reinterpret_cast<void*>(request.hDevice));
+  if (!operation.owner) return DXGI_ERROR_DEVICE_REMOVED;
+  dxvk::umd::RuntimeService::Scope scope(operation.owner->service.get());
+  try {
+    return operation.owner->service->run([&] {
+      DeviceOperation worker(operation.storage, operation.owner);
+      auto device = operation.owner.get();
+      std::vector<AllocationParticipant> participants;
+      HRESULT hr = captureAllocations(device, &request.hResource, 1, participants);
+      if (hr != S_OK) return hr;
+      auto live = [&] {
+        std::lock_guard<std::mutex> lock(resourceStorageMutex);
+        return allocationsLiveLocked(device, participants);
+      };
+      hr = device->memory.setPriority(participants.front().handle, request.Priority, live);
+      return live() ? hr : DXGI_ERROR_DEVICE_REMOVED;
+    });
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
+}
+
 HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
   if (args->SrcSubResourceIndex || args->DstSubResourceIndex
       || args->hDstResource || !args->pDXGIContext || args->Flags.Value != 1)
@@ -2946,11 +3071,15 @@ HRESULT createDdiDevice(
   if (dxgiTable) {
     *dxgiTable = {};
     dxgiTable->pfnRotateResourceIdentities = rotateResourceIdentities;
+    dxgiTable->pfnQueryResourceResidency = queryResourceResidency;
+    dxgiTable->pfnSetResourcePriority = setResourcePriority;
     if (device->memory.available()) dxgiTable->pfnPresent = present;
   }
   if (dxgiTable11) {
     *dxgiTable11 = {};
     dxgiTable11->pfnRotateResourceIdentities = rotateResourceIdentities;
+    dxgiTable11->pfnQueryResourceResidency = queryResourceResidency;
+    dxgiTable11->pfnSetResourcePriority = setResourcePriority;
     if (device->memory.available()) dxgiTable11->pfnPresent = present;
   }
   {

@@ -192,6 +192,15 @@ umd_d3d10_formats_test = executable('dxvk-umd-d3d10-formats-test',
 umd_allocation_test = executable('dxvk-umd-allocation-test',
   '../../tests/umd-allocation.cpp', 'umd_allocation.cpp', 'umd_runtime_query.cpp')
 
+umd_residency_transaction_test = executable('dxvk-umd-residency-transaction-test',
+  '../../tests/umd-residency-transaction.cpp')
+
+umd_dxgi_residency_test = executable('dxvk-umd-dxgi-residency-test',
+  ['../../tests/umd-dxgi-residency.cpp', 'umd_adapter.cpp', 'umd_contract.cpp',
+   'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp', 'umd_allocation.cpp',
+   'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
 umd_runtime_gpu_test = executable('dxvk-umd-runtime-gpu-test',
   '../../tests/umd-runtime-gpu.cpp', 'umd_runtime_gpu.cpp', 'umd_runtime_query.cpp',
   'umd_ddi.cpp', 'umd_allocation.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',

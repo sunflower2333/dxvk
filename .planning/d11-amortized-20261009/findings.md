@@ -1,0 +1,7 @@
+# Findings
+
+Local Microsoft windows-driver-docs/windows-driver-docs-pr/display/changes-from-direct3d-10.md requires DDI11 pfnPerformAmortizedProcessingCb after command submission, on original DDI caller; balance multiple-engine submits and do not time-poll. Current umd_ddi.cpp/runtime_gpu.cpp have no invocation. RuntimeService serializes/pumps synchronous backend jobs while runtime callbacks stay on caller. RuntimeGpu RenderCb submit boundary is authoritative; avoid immediate callback while pending allocation and submit guards remain held. DDI11 runtime callback table remains runtime-owned and may update slots.
+
+Ownership: d11_runtime_create_fix owns adapter/interface/front/probe/readers; this agent owns umd_ddi.cpp, umd_runtime_service.h, umd_runtime_gpu.cpp and relevant device/runtime fixtures.
+
+Implemented successful validated RenderCb notification, caller-side RuntimeService pump and empty DDI11 Flush opportunity. Oldest matching Scope budget prevents nested/repeated Flush recursion. Weak Device/current callback table slot preserves updates and retirement; retired owner suppresses late SetError on unexpected exception. Handler installation follows successful backend construction, before table publication; initialization submissions do not pump an unpublished DDI. Added meaningful source-linked Windows controls. Recursive entry serialization mutex intentionally remains across callback; submit/allocation/queue locks do not.

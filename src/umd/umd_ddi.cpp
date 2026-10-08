@@ -247,7 +247,9 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function, pre
           return;
         } else return operation.owner->service->run(backend);
       } catch (...) {
-        operation.owner->error(DXGI_ERROR_DEVICE_REMOVED);
+        // Amortized processing can destroy the device and invalidate its
+        // runtime callback table before an exception reaches this wrapper.
+        if (!operation.owner->retired) operation.owner->error(DXGI_ERROR_DEVICE_REMOVED);
         if constexpr (std::is_void_v<Result>) return;
         else if constexpr (std::is_same_v<Result, BOOL>) return TRUE;
         else return Result{};
@@ -2505,6 +2507,9 @@ void APIENTRY drawIndexedInstanced(D3D10DDI_HDEVICE h, UINT count, UINT instance
 }
 void APIENTRY flush(D3D10DDI_HDEVICE h) {
   auto device = get(h);
+  // DDI11's runtime no longer performs this work inside RenderCb. An empty
+  // explicit Flush must still offer deferred runtime destruction a chance.
+  if (device->callbacks11) device->service->requestAmortizedProcessing();
   // Hand over this device's shared writes before the submission barrier. A
   // publish is itself a synchronized readback, so it must happen while the
   // caller can still service runtime callbacks, and the allocation has to
@@ -3462,6 +3467,20 @@ HRESULT createDdiDevice(
   });
   if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
   if (!device->backend || !device->context) return E_FAIL;
+  if (callbacks11) {
+    // Backend construction can submit its own initialization buffers before
+    // any DDI device/immediate context exists. Install the runtime opportunity
+    // only after construction succeeds, before publishing callable entries.
+    const std::weak_ptr<Device> retained = owner;
+    device->service->setAmortizedProcessing([retained] {
+      const auto current = retained.lock();
+      if (!current || current->retired || current->closing) return;
+      // Both the table and its slots remain runtime-owned, just like SetError.
+      // A callback may destroy the device and reclaim all private bytes.
+      const auto callback = current->callbacks11->pfnPerformAmortizedProcessingCb;
+      if (callback) callback(current->runtime);
+    });
+  }
   populateDeviceFunctions(table);
   if (dxgiTable) {
     *dxgiTable = {};

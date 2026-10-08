@@ -10,6 +10,7 @@
 #include <type_traits>
 #include <optional>
 #include <cstdint>
+#include <functional>
 
 namespace dxvk::umd {
 
@@ -38,6 +39,7 @@ public:
   struct Scope {
     RuntimeService* service;
     Scope* previous;
+    bool amortized = false;
     inline static thread_local Scope* current = nullptr;
     explicit Scope(RuntimeService* value) : service(value), previous(current) { current = this; }
     ~Scope() { current = previous; }
@@ -66,6 +68,22 @@ public:
     for (auto scope = Scope::current; scope; scope = scope->previous)
       if (scope->service == this) return true;
     return false;
+  }
+
+  // DDI11 moves runtime amortized processing out of RenderCb. Install this
+  // once, before device entries are published, and retain only a weak
+  // device owner in the closure. D3D9/10 leave it empty.
+  void setAmortizedProcessing(std::function<void()> callback) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_amortized = std::move(callback);
+  }
+  // A successful immediate submission requests one opportunity. Explicit
+  // Flush also requests it when the command buffer is empty, to drain the
+  // runtime's deferred destruction. Never call the runtime under submit or
+  // allocation locks, or on a backend worker.
+  void requestAmortizedProcessing() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_closed && m_amortized) m_amortizedPending = true;
   }
 
   template<typename Function> HRESULT invoke(Function&& function) {
@@ -148,12 +166,21 @@ public:
       // Nested destroy may already have returned and its private bytes may
       // have been freed. Only independently owned retirement nodes survive.
       releaseRetired();
+      // The oldest matching caller scope represents the original DDI,
+      // including its nested DDIs and repeated Flush retirement passes.
+      // Consume its single opportunity before invoking the runtime so a
+      // nested Flush cannot recursively pump the same callback.
+      if (!m_releasing) {
+        performAmortizedProcessing();
+        releaseRetired();
+      }
     }
     if (job.error) std::rethrow_exception(job.error);
   }
   void close() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_closed = true;
+    m_amortizedPending = false;
     while (m_head) {
       auto request = m_head;
       m_head = request->next;
@@ -165,6 +192,19 @@ public:
   }
 
 private:
+  void performAmortizedProcessing() {
+    Scope* caller = nullptr;
+    for (auto scope = Scope::current; scope; scope = scope->previous)
+      if (scope->service == this) caller = scope;
+    if (!caller || caller->amortized) return;
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      if (m_closed || !m_amortizedPending || !m_amortized) return;
+      m_amortizedPending = false;
+      caller->amortized = true;
+    }
+    m_amortized();
+  }
   void releaseRetired();
   struct Request {
     Request* next = nullptr;
@@ -209,6 +249,8 @@ private:
   uint64_t m_retirementEpoch = 0;
   unsigned m_pumps = 0;
   bool m_deferred = false, m_closed = false, m_releasing = false;
+  std::function<void()> m_amortized;
+  bool m_amortizedPending = false;
 };
 
 // Keep the cleanup closure out of drain<Function>: a lambda inside that

@@ -1,0 +1,9 @@
+# Progress
+
+2026-10-09: isolated worktree from MAIN 98b9a0d; no target calls. Source and local documentation audited.
+
+Initial six strict x86/x64 COFF compilations passed with zero diagnostics; later guard/fixture four-object follow-on also passed. Final handler placement changed after review and final six-object compilation is running in coff-final-03. All earlier originals are retained. No Windows fixture execution or target calls occurred.
+
+Final03 six strict objects passed with zero diagnostics. Source peer found no blocker and verified original machine/receipts/source joins. Strengthened fixture guard-release and runtime callback-table invalidation controls based on the peer's two evidence-limit notes; only the two affected fixture objects compile in final04. No production changes after final03.
+
+Both final04 fixture objects passed with zero diagnostics. Peer approved the stronger allocation release and actual callback PAGE_NOACCESS controls; no remaining scoped source blocker. Final production objects remain final03; earlier originals stay immutable. Freeze and handoff contain six selected successful COFF receipts and no Windows execution claim.

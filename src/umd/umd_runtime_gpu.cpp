@@ -385,7 +385,10 @@ int32_t MWD_CALL RuntimeGpu::submit(void* ptr, const void* stream, uint32_t size
   if (!self.m_commands || self.m_commandSize < sizeof(Render) || self.m_commandSize > 65536
       || !self.m_allocationList || !self.m_allocationCount || self.m_allocationCount > 1024
       || !self.m_patchList || !self.m_patchCount || self.m_patchCount > 1024) { self.m_removed = true; return E_FAIL; }
-  return FAILED(hr) ? hr : self.identity();
+  if (FAILED(hr)) return hr;
+  hr = self.identity();
+  if (hr == S_OK && self.m_service) self.m_service->requestAmortizedProcessing();
+  return hr;
 }
 int32_t MWD_CALL RuntimeGpu::completed(void* ptr, uint32_t* out) {
   if (!out) return E_POINTER;

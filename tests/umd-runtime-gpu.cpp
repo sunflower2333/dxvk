@@ -11,6 +11,7 @@
 #include <functional>
 #include <thread>
 #include <mutex>
+#include <stdexcept>
 
 using dxvk::umd::RuntimeGpu;
 static std::atomic<unsigned> checks{0};
@@ -21,6 +22,7 @@ static bool trackBackendDrain = false;
 static bool preexistingWorker = false;
 static HANDLE pendingSubmission = nullptr;
 static ID3D11DeviceContext* inspectionContext = nullptr; // Borrowed test WARP context.
+static std::function<void()> onFlush;
 static std::mutex submissionMutex;
 static std::atomic<unsigned> childDrains{0};
 struct Fixture {
@@ -345,6 +347,7 @@ HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
 HRESULT dxvk::umd::isStagingResourceBusy(ID3D11DeviceContext*, ID3D11Resource*, BOOL*) noexcept { return E_NOTIMPL; }
 HRESULT dxvk::umd::flushRuntimeSubmission(ID3D11DeviceContext* context) noexcept {
   CHECK(GetCurrentThreadId() != f->runtimeThread);
+  if (onFlush) onFlush();
   context->Flush();
   if (pendingSubmission)
     CHECK(WaitForSingleObject(pendingSubmission, 3000) == WAIT_OBJECT_0);
@@ -358,6 +361,121 @@ static void APIENTRY setError(D3D10DDI_HRTCORELAYER, HRESULT) {
   --errorHookDepth;
 }
 static HRESULT APIENTRY unusedPresent(HANDLE, DXGIDDICB_PRESENT*) { return E_NOTIMPL; }
+
+static unsigned amortizedCalls = 0, alternateAmortizedCalls = 0;
+static std::function<void()> onAmortized;
+static void APIENTRY amortized(D3D10DDI_HRTCORELAYER runtime) {
+  CHECK(runtime.handle == f && GetCurrentThreadId() == f->runtimeThread
+    && runtimeHookDepth == 0 && errorHookDepth == 0);
+  ++amortizedCalls;
+  if (auto hook = std::exchange(onAmortized, {})) hook();
+}
+static void APIENTRY alternateAmortized(D3D10DDI_HRTCORELAYER runtime) {
+  ++alternateAmortizedCalls; amortized(runtime);
+}
+
+static void successfulSubmissionAmortization() {
+  auto fixture = setup();
+  CHECK(f->gpu->close() == S_OK); f->bridge = {}; f->gpu.reset();
+  auto service = std::make_shared<dxvk::umd::RuntimeService>();
+  f->runtimeThread = GetCurrentThreadId();
+  unsigned calls = 0;
+  mwd_allocation a{};
+  service->setAmortizedProcessing([&] {
+    CHECK(GetCurrentThreadId() == f->runtimeThread && runtimeHookDepth == 0);
+    ++calls;
+    // Releasing the submitted allocation would fail while its pending guard
+    // is still held. An amortized callback must run after submission returns.
+    CHECK(f->bridge.create.callbacks->release(f->bridge.create.owner, a.token) == S_OK);
+    a.token = nullptr;
+  });
+  f->gpu = RuntimeGpu::create(&f->device, f->input, f->identity, service);
+  f->bridge = f->gpu->backend();
+  service->run([&] { a = buffer(); });
+  CHECK(calls == 0);
+  f->renderFails = true;
+  service->run([&] { CHECK(send(a) == E_FAIL); });
+  CHECK(calls == 0);
+  f->renderFails = false;
+  service->run([&] { CHECK(send(a) == S_OK && send(a) == S_OK); });
+  CHECK(calls == 1 && f->renders == 3 && !a.token && f->allocations.empty());
+  service->run([] {});
+  CHECK(calls == 1);
+  service->run([&] { CHECK(f->gpu->close() == S_OK); });
+  service->close();
+  service->requestAmortizedProcessing(); service->run([] {});
+  CHECK(calls == 1 && f->allocations.empty() && f->contextCloses == 1);
+}
+
+static void runtimeAmortizedProcessing() {
+  auto fixture = setup();
+  CHECK(f->gpu->close() == S_OK); f->bridge = {}; f->gpu.reset();
+  f->runtimeThread = GetCurrentThreadId(); earlyBackendFail = false;
+  D3D11DDI_DEVICEFUNCS table{};
+  auto kernel = f->input;
+  void* storage = VirtualAlloc(nullptr, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  void* queryStorage = VirtualAlloc(nullptr, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  void* callbackStorage = VirtualAlloc(nullptr, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  CHECK(storage && queryStorage && callbackStorage);
+  auto* callbacks = static_cast<D3D11DDI_CORELAYER_DEVICECALLBACKS*>(callbackStorage);
+  callbacks->pfnSetErrorCb = setError;
+  callbacks->pfnPerformAmortizedProcessingCb = amortized;
+  D3D10DDIARG_CREATEDEVICE args{};
+  args.Interface = D3D11_0_DDI_INTERFACE_VERSION;
+  args.Version = D3D11_0_DDI_BUILD_VERSION << 16;
+  args.Flags = UINT(D3D11DDI_3DPIPELINELEVEL_10_0)
+    << D3D11DDI_CREATEDEVICE_FLAG_3DPIPELINESUPPORT_SHIFT;
+  args.hDrvDevice.pDrvPrivate = storage; args.hRTDevice.handle = &f->device;
+  args.hRTCoreLayer.handle = f;
+  args.p11UMCallbacks = callbacks; args.pKTCallbacks = &kernel; args.p11DeviceFuncs = &table;
+  CHECK(dxvk::umd::createAdapterDevice(f->identity, &args) == S_OK);
+  CHECK(table.pfnFlush && table.pfnDestroyDevice);
+  const D3D10DDIARG_CREATEQUERY queryArgs{D3D10DDI_QUERY_EVENT, 0};
+  D3D10DDI_HQUERY queryHandle{queryStorage};
+  CHECK(table.pfnCalcPrivateQuerySize(args.hDrvDevice, &queryArgs) <= 4096);
+  table.pfnCreateQuery(args.hDrvDevice, &queryArgs, queryHandle, {});
+  const unsigned before = amortizedCalls, rendered = f->renders;
+  onFlush = [&] {
+    auto a = buffer();
+    CHECK(send(a) == S_OK && send(a) == S_OK);
+    CHECK(f->bridge.create.callbacks->release(f->bridge.create.owner, a.token) == S_OK);
+  };
+  onAmortized = [&] {
+    onFlush = {}; // The nested empty Flush must not submit another command.
+    table.pfnDestroyQuery(args.hDrvDevice, queryHandle);
+    DWORD previous = 0;
+    CHECK(VirtualProtect(queryStorage, 4096, PAGE_NOACCESS, &previous));
+    // Runtime amortized processing can synchronously reenter Flush. It must
+    // remain serialized, release retired children and never recurse into the
+    // amortized callback or read reclaimed query bytes.
+    table.pfnFlush(args.hDrvDevice);
+    CHECK(amortizedCalls == before + 1);
+  };
+  table.pfnFlush(args.hDrvDevice);
+  CHECK(!onAmortized && amortizedCalls == before + 1 && f->renders == rendered + 2);
+  callbacks->pfnPerformAmortizedProcessingCb = alternateAmortized;
+  const unsigned alternateBefore = alternateAmortizedCalls;
+  table.pfnFlush(args.hDrvDevice); // Empty Flush still drains runtime work.
+  CHECK(alternateAmortizedCalls == alternateBefore + 1 && amortizedCalls == before + 2);
+  onAmortized = [&] {
+    table.pfnDestroyDevice(args.hDrvDevice);
+    DWORD previous = 0;
+    CHECK(VirtualProtect(storage, 4096, PAGE_NOACCESS, &previous));
+    f->runtimeValid = false;
+    CHECK(VirtualProtect(callbackStorage, 4096, PAGE_NOACCESS, &previous));
+    // Reading either runtime callback slot after this point is invalid.
+    throw std::runtime_error("retired runtime callback table");
+  };
+  table.pfnFlush(args.hDrvDevice);
+  CHECK(!onAmortized && amortizedCalls == before + 3 && f->allocations.empty());
+  const auto closedCount = amortizedCalls;
+  table.pfnFlush(args.hDrvDevice); table.pfnDestroyDevice(args.hDrvDevice);
+  CHECK(amortizedCalls == closedCount);
+  CHECK(VirtualFree(queryStorage, 0, MEM_RELEASE) && VirtualFree(storage, 0, MEM_RELEASE)
+    && VirtualFree(callbackStorage, 0, MEM_RELEASE));
+  inspectionContext = nullptr;
+  std::printf("D3D11 amortized processing PASS: successful submissions coalesced; empty Flush, live callback slot, nested Flush/query retirement and reclaimed device storage\n");
+}
 
 static void runtimeTeardown() {
   // D3D10 runtime calls stay on their DDI caller, and all device-owned
@@ -641,5 +759,7 @@ int main() {
   }
   CHECK(earlyBackends == 2);
   runtimeTeardown();
+  successfulSubmissionAmortization();
+  runtimeAmortizedProcessing();
   std::printf("PASS %u runtime GPU checks; ordinary caller dispatch, nested resource/view destruction and Flush retirement, shared owners, map/submit/reset and synchronous D3D10 teardown; backend-drains=%u child-drains=%u\n", checks.load(), backendDrains.load(), childDrains.load());
 }

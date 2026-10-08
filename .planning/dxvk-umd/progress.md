@@ -1,6 +1,62 @@
 # Current continuation checkpoint (2026-10-08)
 
-## Current checkpoint: 2026-10-08 X8 presentable resources and native CRT linking
+## Current checkpoint: CI60 failure corrected, EWDK KMD build verified
+
+The default VM UMD is still Mesa. Latest fully accepted core remains18452d7;
+its isolated real-KMT D10/10.1 USER06 draw/readback/Present passed1792 exact
+pixels. Ordinary system-runtime DX8–11 and desktop replacement are pending.
+
+Published fae491c / soleNativeUMD37768987344 is terminal FAILURE: x86/x64
+both fail opened-primary line703 with callback887b0002; identity/shader/ARM
+backend pass, ARM runtime is skipped. ROOT3242783/0 independently reopens
+1390 original ZIP members,38 actual native children,7 GH transports,
+2 collectors and1084 exact source blobs. Proof715425/3ef34e7f is
+artifacts/root-CI60-failure-originals-independent-review-01/actual-CI60-failure-originals-reviewed-01.json.
+Saved legacy opened90 and partial shared80 files per architecture pass their
+literal oracles; Blt identity120/15624 and shared predicate21/735 also pass.
+This is original failure/pixel evidence, never a successful current core.
+
+Source b3c7caa now integrated as ec73890 requires the documented exact
+DXGI_DDI_ERR_UNSUPPORTED only for the shared descriptor carrying pPrimaryDesc;
+first five DXGI_ERROR_UNSUPPORTED checks and all no-allocation/storage/pixel
+oracles stay exact. The raw log has no descriptor index; branch5 attribution
+is source inference. Production primary rejection remains unchanged.
+
+Depth/null-PS754c3bc and private rotation/Present8d245293 are integrated as
+4265dc6/8195410. ROOT3239634/0 joins frozen source/originals30844/f9a29f0d;
+ROOT3240940/0 completes6 merged strict optimized x64/x86 compiles and6 COFF
+reopens110811/3e129018. Harness1c4d7ad integrated370661b preserves60 old ARM
+cases and adds depth65 raw originals plus independent reader:61 cases,
+48 mandatory and71 full shipped fixtures. ROOT3242660/0 joins the corrected
+rejection/harness originals19529/83bdf310. New native execution is pending.
+
+Target EWDK KMD03 actually passes11 tool stages and all19 retained native
+children/11 host transports. ROOT3234895/0 independently joins242 TAR members,
+source118,compiler86,selected14,PE/imports and protected34/desktop continuity.
+New unsigned SYS410624/a05bde85 remains uninstalled. ROOT3238396/0 accepts
+only historical fdfd8f99/C1b9 source and explicit target release:1235/765baa27.
+No newer-trunk KMD, package signing or hardware admission is inferred.
+
+CPU06 ARM64/ARM64EC compile and native LINK pass; hybrid LINK fails actual
+_mm_getcsr/_mm_setcsr. Official same-SDK comparison originals identify A641
+CSR definitions and their weak aliases in ARM64 softintrin.lib; x64 lacks
+these providers. ROOT3243588/0 rejoins the real HTTP206/COFF originals:
+17280/31f48bc1,comparison only. Source4b2b3da integratedabebcfb explicitly
+selects this same-SDK helper for hybrid LINK, preserves native6 inputs and
+requires actual library copies/symbols/stability. CPU07 native packet is being
+prepared; no target library/build success is inherited from comparison.
+
+Final merged opened-primary fixture compiles2 and COFF reopens2 also pass ROOT3244319/0: 75977/96e8fa96. The next push includes the five reviewed source/harness commits and this checkpoint.
+
+Next: one consolidated push through
+the sole active NativeUMD workflow; prepare the exact61-case current-source
+collector. Review and run one fresh CPU07 frontend build after explicit target
+handoff. Continue clip/cull stream-output and generation-safe backend predication.
+Then stage an accepted current core and verify fresh DX8 HAL/offscreen448/
+Present64, ordinary DX9/D10/D11 hardware coverage, DWM and dynamic Explorer.
+All ordinary0x17f/0x37f and registration gates remain closed.
+
+## Earlier checkpoint: X8 presentable resources and native CRT linking
 
 Latest accepted core remains18452d7 / NativeUMD37743643139, all six jobs
 successful. ROOT00139eed joins five genuine ZIPs/14168 members,1012 Git blobs,
@@ -81,6 +137,8 @@ threading and D11 immediate/compute-UAV/tessellation/interface hardware proof,
 then DWM and dynamic Explorer validation, are still required for replacement.
 
 ## Active execution update: integrated CI60 candidate and accepted isolated D10 hardware
+
+Actual publication update: ROOT3207966/0 pushedfae491c360a47fee15f45b681cfe96c19496faf0 once. GHAPI3209084/0 confirms exactly one push NativeUMDrun37768987344, in_progress; original12696/2125b9f9. No extra workflow or manual dispatch. ROOT now accepted CPU06 failed build originals and explicit release1030/d16a2c05; hybrid LINK fails actual EC _mm_getcsr/_mm_setcsr, after both CL stages and native LINK pass. Views stayed skipped. ROOT3215473/0 grants exclusive KMD03 ownership to verify_ewdk_build with1532/b81fa683 authorization; all other actors make no target calls.
 
 The consolidated candidate includes SO e208191, same-family bit-copy e2cf240,
 shared presentation bcf2ec9, BC1-5 updates b5e7200, identity X8 Blt c06479d,

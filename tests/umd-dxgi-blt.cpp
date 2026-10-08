@@ -432,8 +432,50 @@ static void terminalRetirement() {
   };
   CHECK(f.blt(args) == DXGI_ERROR_DEVICE_REMOVED && backings.empty());
 }
+static void x8BltPolicy() {
+  D3D11_TEXTURE2D_DESC source{};
+  source.Width = 7; source.Height = 5;
+  source.MipLevels = source.ArraySize = source.SampleDesc.Count = 1;
+  source.Format = DXGI_FORMAT_B8G8R8X8_UNORM;
+  source.Usage = D3D11_USAGE_DEFAULT; source.BindFlags = D3D11_BIND_RENDER_TARGET;
+  auto destination = source;
+  dxvk::umd::BltPlan plan;
+  CHECK(dxvk::umd::bltLinearFormat(source.Format) == source.Format);
+  CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, 0, 1, plan) == S_OK);
+  CHECK(plan.sourceFormat == DXGI_FORMAT_B8G8R8X8_UNORM
+    && plan.destinationFormat == DXGI_FORMAT_B8G8R8X8_UNORM
+    && plan.sourceWidth == 7 && plan.sourceHeight == 5 && plan.width == 7 && plan.height == 5 && !plan.resolve);
+  DXGI_DDI_ARG_BLT_FLAGS present{}; present.Present = 1;
+  CHECK(present.Value == 8);
+  CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, present.Value, 1, plan) == S_OK);
+  CHECK(plan.sourceFormat == DXGI_FORMAT_B8G8R8X8_UNORM
+    && plan.destinationFormat == DXGI_FORMAT_B8G8R8X8_UNORM && !plan.resolve);
+  // Rejected plans must not publish even partially changed format/extent data.
+  const auto original = plan;
+  for (unsigned test = 0; test < 10; ++test) {
+    auto src = source, dst = destination;
+    UINT flags = 0, right = 7, rotation = 1;
+    HRESULT expected = DXGI_ERROR_UNSUPPORTED;
+    if (test == 0) { src.SampleDesc.Count = 4; flags = 1; }
+    if (test == 1) { src.Format = DXGI_FORMAT_B8G8R8A8_UNORM; flags = 2; }
+    if (test == 2) { dst.Format = DXGI_FORMAT_B8G8R8A8_UNORM; flags = 2; }
+    if (test == 3) src.Format = DXGI_FORMAT_B8G8R8X8_UNORM_SRGB;
+    if (test == 4) dst.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    if (test == 5) dst.BindFlags = 0;
+    if (test == 6) { flags = 16; expected = E_INVALIDARG; }
+    if (test == 7) { rotation = 0; expected = E_INVALIDARG; }
+    if (test == 8) { right = 8; expected = E_INVALIDARG; }
+    if (test == 9) { flags = 1; expected = E_INVALIDARG; }
+    CHECK(dxvk::umd::bltPlan(src, dst, 0, 0, 0, 0, right, 5, flags, rotation, plan) == expected);
+    CHECK(plan.sourceWidth == original.sourceWidth && plan.sourceHeight == original.sourceHeight
+      && plan.width == original.width && plan.height == original.height
+      && plan.sourceFormat == original.sourceFormat && plan.destinationFormat == original.destinationFormat
+      && plan.resolve == original.resolve);
+  }
+}
 int main() {
   caller = GetCurrentThreadId();
+  x8BltPolicy();
   std::vector<unsigned char> vertex, pixel;
   CHECK(dxvk::umd::bltShaderContainers(vertex, pixel));
   save("blt-internal-vs.dxbc", vertex.data(), vertex.size());

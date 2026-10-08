@@ -12,6 +12,7 @@ inline constexpr DXGI_FORMAT bltLinearFormat(DXGI_FORMAT format) {
     case DXGI_FORMAT_R8G8B8A8_UNORM:
     case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return DXGI_FORMAT_R8G8B8A8_UNORM;
     case DXGI_FORMAT_B8G8R8A8_UNORM: return DXGI_FORMAT_B8G8R8A8_UNORM;
+    case DXGI_FORMAT_B8G8R8X8_UNORM: return DXGI_FORMAT_B8G8R8X8_UNORM;
     default: return DXGI_FORMAT_UNKNOWN;
   }
 }
@@ -49,6 +50,11 @@ inline HRESULT bltPlan(const D3D11_TEXTURE2D_DESC& src,
     return DXGI_ERROR_UNSUPPORTED;
   staged.resolve = (flags & 1) != 0;
   if (staged.resolve != (src.SampleDesc.Count > 1)) return E_INVALIDARG;
+  // The opened-primary fixture exercises a same-format, single-sample X8 copy.
+  // Keep its actual X8 format in both scratch textures; conversion and MSAA
+  // resolve need separate pixel acceptance before they can use this path.
+  if ((src.Format == DXGI_FORMAT_B8G8R8X8_UNORM || dst.Format == DXGI_FORMAT_B8G8R8X8_UNORM)
+      && (staged.resolve || src.Format != dst.Format)) return DXGI_ERROR_UNSUPPORTED;
   // Encoded sRGB copies must not decode before filtering. Single-sample
   // copies below reinterpret via compatible UNORM scratch. sRGB MSAA remains
   // rejected until its encoded-domain resolve semantics are verified.

@@ -874,8 +874,7 @@ HRESULT createResourceData(Device* device,
       || !args->SampleDesc.Count
       || args->Usage != D3D10_DDI_USAGE_DEFAULT || args->MapFlags
       || !(args->BindFlags & D3D10_DDI_BIND_RENDER_TARGET)
-      || (!(args->pPrimaryDesc && args->Format == DXGI_FORMAT_B8G8R8X8_UNORM)
-        && dxvk::umd::bltLinearFormat(args->Format) == DXGI_FORMAT_UNKNOWN)
+      || dxvk::umd::bltLinearFormat(args->Format) == DXGI_FORMAT_UNKNOWN
       || (args->SampleDesc.Count > 1 && args->pInitialDataUP))) {
     return DXGI_ERROR_UNSUPPORTED;
   }

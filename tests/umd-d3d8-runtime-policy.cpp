@@ -73,6 +73,13 @@ int main() {
   CHECK(!policy::hexIdentity(View(nulCommit), 40));
   CHECK(policy::ownedCorePath(View(corePath), View(coreCommit)));
   CHECK(policy::ownedCorePath(View(u"c:\\users\\public\\dxvkd3d8candidate-0123456-1\\VIOGPUDXVK.DLL"), View(coreCommit)));
+  CHECK(policy::ownedCorePath(View(u"C:\\Users\\Public\\DxvkD3D8Candidate-0123456-37711793677-icd02\\viogpudxvk.dll"), View(coreCommit)));
+  for (View invalid : {View(u"C:\\Users\\Public\\DxvkD3D8Candidate-0123456-0-icd02\\viogpudxvk.dll"),
+      View(u"C:\\Users\\Public\\DxvkD3D8Candidate-0123456-01-icd02\\viogpudxvk.dll"),
+      View(u"C:\\Users\\Public\\DxvkD3D8Candidate-0123456-1-icd03\\viogpudxvk.dll"),
+      View(u"C:\\Users\\Public\\DxvkD3D8Candidate-0123456-1-ICD02\\viogpudxvk.dll"),
+      View(u"C:\\Users\\Public\\DxvkD3D8Candidate-0123456-1-icd02-icd02\\viogpudxvk.dll")})
+    CHECK(!policy::ownedCorePath(invalid, View(coreCommit)));
   CHECK(!policy::ownedCorePath(View(corePath), View(u"abcdef6789abcdef0123456789abcdef01234567")));
   CHECK(!policy::ownedCorePath(View(corePath), View(u"0123456")));
   for (View invalid : {View(u"C:\\Users\\Public\\DxvkD3D8Candidate-0123456-\\viogpudxvk.dll"),

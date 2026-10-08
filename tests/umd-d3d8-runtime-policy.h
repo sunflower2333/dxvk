@@ -96,12 +96,20 @@ bool ownedCorePath(std::basic_string_view<Char> path, std::basic_string_view<Cha
   for (size_t i = 0; i < 7; ++i)
     if (asciiFold(path[prefixBytes + i]) != asciiFold(commit[i])) return false;
   if (path[prefixBytes + 7] != Char('-')) return false;
-  const size_t runEnd = path.size() - suffixBytes;
+  size_t runEnd = path.size() - suffixBytes;
+  // This explicitly scoped candidate preserves its real CI run while owning
+  // fresh derived-ICD inputs. Other suffixes remain rejected.
+  constexpr char derivedCandidate[] = "-icd02";
+  constexpr size_t derivedBytes = sizeof(derivedCandidate) - 1;
+  bool derived = runEnd >= derivedBytes;
+  for (size_t i = 0; derived && i < derivedBytes; ++i)
+    derived = path[runEnd - derivedBytes + i] == Char(derivedCandidate[i]);
+  if (derived) runEnd -= derivedBytes;
   if (path[prefixBytes + 8] == Char('0') || runEnd - (prefixBytes + 8) > 20) return false;
   for (size_t i = prefixBytes + 8; i < runEnd; ++i)
     if (path[i] < Char('0') || path[i] > Char('9')) return false;
   for (size_t i = 0; i < suffixBytes; ++i)
-    if (asciiFold(path[runEnd + i]) != asciiFold(Char(suffix[i]))) return false;
+    if (asciiFold(path[path.size() - suffixBytes + i]) != asciiFold(Char(suffix[i]))) return false;
   return true;
 }
 

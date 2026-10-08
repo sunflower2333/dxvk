@@ -19,6 +19,9 @@ namespace dxvk::test::runtime8 {
 inline constexpr wchar_t loaderHash[] = L"d459f2d09080865cc3d591b498c02d38305a26963b401152f8230dc60c5ad7e7";
 inline constexpr wchar_t icdHash[] = L"2b549889816163433faabe6f2c1d2a61d6c106078d08e30031b74c0a66cd7f5c";
 inline constexpr wchar_t manifestHash[] = L"74d7d5d6ae9432cde2d802507ed59bbe4c2f2b95d01e7ac3c2b56e9691932c80";
+// A separately retained derivative changes only the original JSON's bare DLL
+// name to an explicit module-relative path. The original JSON stays pinned.
+inline constexpr wchar_t derivedManifestHash[] = L"f50169e3e0efc6dea34fe0ce109228c79ce1df817a5508fb13a759c71d780ff3";
 inline constexpr wchar_t originalUserSid[] = L"S-1-5-21-362894365-441372107-2852668596-1000";
 
 class D3d8HardwarePins {
@@ -35,9 +38,10 @@ public:
     if (!core || !hash || !commit || !ownedCorePath(std::wstring_view(core), std::wstring_view(commit))
         || !hexIdentity(std::wstring_view(hash), 64)) return false;
     folder = core; folder.resize(folder.find_last_of(L'\\') + 1);
-    const std::array<std::pair<const wchar_t*, const wchar_t*>, 4> inputs{{
+    const std::array<std::pair<const wchar_t*, const wchar_t*>, 5> inputs{{
       {L"viogpudxvk.dll", hash}, {L"viogpu_gl_loader_x86.dll", loaderHash},
-      {L"viogpu_gl_vk_x86.dll", icdHash}, {L"freedreno_icd.json", manifestHash}}};
+      {L"viogpu_gl_vk_x86.dll", icdHash}, {L"freedreno_icd.json", manifestHash},
+      {L"freedreno_icd_owned_x86.json", derivedManifestHash}}};
     for (size_t i = 0; i < inputs.size(); ++i) {
       files[i] = std::make_unique<File>();
       const auto name = folder + inputs[i].first;
@@ -52,9 +56,13 @@ public:
       if (_wcsicmp(actual.c_str(), name.c_str())) return false;
       std::wstring actualHash;
       if (!sha256(files[i]->handle, actualHash) || actualHash != inputs[i].second) return false;
-      if (i != 3 && !diskI386(files[i]->handle)) return false;
-      log("D3D8_PAYLOAD_PIN path=%ls sha256=%ls machine=%s locked=1 original_bytes=1",
-        name.c_str(), actualHash.c_str(), i == 3 ? "json" : "014c");
+      if (i < 3 && !diskI386(files[i]->handle)) return false;
+      if (i < 4)
+        log("D3D8_PAYLOAD_PIN path=%ls sha256=%ls machine=%s locked=1 original_bytes=1",
+          name.c_str(), actualHash.c_str(), i == 3 ? "json" : "014c");
+      else
+        log("D3D8_DERIVED_ICD_PIN path=%ls sha256=%ls original_sha256=%ls locked=1 original_bytes=0 library_path=.\\viogpu_gl_vk_x86.dll only_library_path_changed=1",
+          name.c_str(), actualHash.c_str(), manifestHash);
     }
     for (const auto* name : {L"viogpudxvk.dll", L"viogpu_gl_loader_x86.dll", L"viogpu_gl_vk_x86.dll",
         L"vulkan-1.dll", L"winevulkan.dll", L"d3d10warp.dll"}) if (GetModuleHandleW(name)) return false;
@@ -62,13 +70,15 @@ public:
       SetLastError(ERROR_SUCCESS);
       if (GetEnvironmentVariableW(name, nullptr, 0) || GetLastError() != ERROR_ENVVAR_NOT_FOUND) return false;
     }
-    const auto json = folder + L"freedreno_icd.json";
+    const auto json = folder + L"freedreno_icd_owned_x86.json";
     if (!SetEnvironmentVariableW(L"VK_DRIVER_FILES", json.c_str())) return false;
     envCount = 1;
     if (!SetEnvironmentVariableW(L"VK_ICD_FILENAMES", json.c_str())) return false;
     envCount = 2;
-    const size_t separator = folder.find_last_of(L'-');
-    const auto run = folder.substr(separator + 1, folder.size() - separator - 2);
+    auto candidate = folder.substr(0, folder.size() - 1);
+    if (candidate.size() >= 6 && candidate.compare(candidate.size() - 6, 6, L"-icd02") == 0)
+      candidate.resize(candidate.size() - 6);
+    const auto run = candidate.substr(candidate.find_last_of(L'-') + 1);
     log("D3D8_HARDWARE_SOURCE core_commit=%ls ci_run=%ls loader_source=6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7 icd_source=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d icd_ci_run=37453381660 driver_selection=owned-json raw_architecture=014c",
       commit, run.c_str());
     return true;
@@ -112,7 +122,7 @@ private:
   struct Hash { BCRYPT_HASH_HANDLE handle = nullptr; ~Hash() { if (handle) BCryptDestroyHash(handle); } };
   const Log log;
   std::wstring folder;
-  std::array<std::unique_ptr<File>, 4> files;
+  std::array<std::unique_ptr<File>, 5> files;
   unsigned envCount = 0;
   static bool seek(HANDLE file, LONGLONG position) {
     LARGE_INTEGER offset{}; offset.QuadPart = position;

@@ -50,8 +50,8 @@ public static class SystemD11LifecycleControls01 {
   overall.RequirePending(240998);Check(true);
   Reject(delegate{overall.RequirePending(241000);});
   var fractional=new DxvkBindingHoldBudget01(1,3);
-  fractional.RequirePending(360000);Check(true);
-  Reject(delegate{fractional.RequirePending(360001);});
+  fractional.RequirePending(360);Check(true);
+  Reject(delegate{fractional.RequirePending(361);});
   var large=new DxvkBindingHoldBudget01(long.MaxValue-1000000,1000000000);
   large.AdmitInvocation(long.MaxValue-500000,1000000000,long.MaxValue-1);Check(true);
   large.RequirePending(long.MaxValue);Check(true); // Decimal arithmetic cannot wrap.

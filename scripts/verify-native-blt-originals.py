@@ -3,6 +3,7 @@
 import argparse
 from fractions import Fraction
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -82,7 +83,7 @@ def program(directory, stage):
     return identity
 
 
-def verify(directory, stdout):
+def verify_legacy(directory, stdout):
     require(directory.is_dir(), 'Original directory is absent')
     raw, stdout_identity = original(stdout)
     markers = re.findall(rb'(?m)^DXGI Blt PASS checks=(\d+) profiles=3 snapshots=30 '
@@ -132,6 +133,19 @@ def verify(directory, stdout):
                 uploaded=uploaded, stdout=stdout_identity, backend='WARP production-DDI reference',
                 hardware_admission=False, primary_scanout_admission=False,
                 oracle='exact rational bilinear pixel centers, CCW rotation and literal encoded RGBA/BGRA')
+
+
+def verify(directory, stdout):
+    # Preserve every legacy byte/program oracle and exact 68-file closure;
+    # require the additional identity phase independently in the same run.
+    proof = verify_legacy(directory, stdout)
+    path = Path(__file__).with_name('verify-native-identity-blt-originals.py')
+    spec = importlib.util.spec_from_file_location('native_identity_blt_originals', path)
+    require(spec is not None and spec.loader is not None, 'Identity reader is absent')
+    reader = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reader)
+    proof['identity_copy'] = reader.verify(directory, stdout)
+    return proof
 
 
 def main():

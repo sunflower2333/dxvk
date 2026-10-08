@@ -19,6 +19,7 @@
 
 static std::atomic<unsigned> checks{0};
 static unsigned snapshots, pixels, locks, unlocks, submissions, releases;
+static unsigned identitySnapshots, identityPixels;
 static DWORD caller;
 static HRESULT lastError = S_OK, lockResult = S_OK, unlockResult = S_OK, submissionResult = S_OK;
 static LUID selected{0x12345678, -43};
@@ -432,6 +433,197 @@ static void terminalRetirement() {
   };
   CHECK(f.blt(args) == DXGI_ERROR_DEVICE_REMOVED && backings.empty());
 }
+static uint32_t identityColor(unsigned x, unsigned y, unsigned seed) {
+  return ((64 + seed * 11 + x * 3 + y * 5) & 255) << 24
+    | ((seed * 13 + x * 17 + y * 7) & 255)
+    | (((seed * 19 + x * 5 + y * 23) & 255) << 8)
+    | (((seed * 29 + x * 11 + y * 13) & 255) << 16);
+}
+static uint32_t identityExpected(unsigned test, unsigned subresource, unsigned x, unsigned y) {
+  if (test == 2 || test == 5) return identityColor(x, y, 4);
+  if ((test == 0 || (test == 1 && subresource == 3))
+      && x >= 2 && y >= 1 && x < 9 && y < 6) return identityColor(x - 2, y - 1, 4);
+  return 0xff281008;
+}
+static void identitySave(const void* address, UINT pitch, UINT width, UINT height,
+    DXGI_FORMAT format, unsigned profile, unsigned formatIndex, unsigned test, unsigned subresource) {
+  CHECK(address && pitch >= width * 4);
+  std::vector<uint32_t> actual(size_t(width) * height);
+  for (UINT y = 0; y < height; ++y) std::memcpy(actual.data() + size_t(y) * width,
+    static_cast<const uint8_t*>(address) + size_t(y) * pitch, width * 4);
+  const uint32_t metadata[]{width, height, test, subresource, uint32_t(format), pitch, 4, profile};
+  char name[128]; std::snprintf(name, sizeof(name), "identity-blt-%u-%u-%u-%u.actual.u32.bin",
+    profile, formatIndex, test, subresource); save(name, actual.data(), actual.size() * 4);
+  std::snprintf(name, sizeof(name), "identity-blt-%u-%u-%u-%u.metadata.u32.bin",
+    profile, formatIndex, test, subresource); save(name, metadata, sizeof(metadata));
+  for (UINT y = 0; y < height; ++y) for (UINT x = 0; x < width; ++x) {
+    const auto wanted = identityExpected(test, subresource, x, y);
+    if (actual[size_t(y) * width + x] != wanted) std::fprintf(stderr,
+      "Identity Blt mismatch profile=%u format=%u seed=4 case=%u sub=%u x=%u y=%u actual=%08x expected=%08x\n",
+      profile, unsigned(format), test, subresource, x, y, actual[size_t(y) * width + x], wanted);
+    CHECK(actual[size_t(y) * width + x] == wanted); ++identityPixels;
+  }
+  ++identitySnapshots;
+}
+template<typename F>
+static void identityRead(F& f, Texture<F>& texture, UINT subresource, unsigned profile,
+    unsigned formatIndex, unsigned test) {
+  Texture<F> staging(f, texture.width, texture.height, texture.format, 0, 0, false, 1,
+    texture.mips, texture.arrays, true);
+  f.table.pfnResourceCopy(f.device, staging.handle, texture.handle); CHECK(lastError == S_OK);
+  D3D10DDI_MAPPED_SUBRESOURCE mapped{};
+  f.table.pfnStagingResourceMap(f.device, staging.handle, subresource, D3D10_DDI_MAP_READ, 0, &mapped);
+  CHECK(lastError == S_OK);
+  identitySave(mapped.pData, mapped.RowPitch, std::max(1u, texture.width >> (subresource % texture.mips)),
+    std::max(1u, texture.height >> (subresource % texture.mips)), texture.format, profile, formatIndex, test, subresource);
+  f.table.pfnStagingResourceUnmap(f.device, staging.handle, subresource); CHECK(lastError == S_OK);
+}
+template<typename Table>
+static void identityProfile(unsigned index) {
+  using F = Fixture<Table>;
+  using Microsoft::WRL::ComPtr;
+  F f; auto context = f.contextKey; ComPtr<ID3D11Device> backend; context->GetDevice(&backend);
+  std::vector<unsigned char> vertex, pixel; CHECK(dxvk::umd::bltShaderContainers(vertex, pixel));
+  ComPtr<ID3D11VertexShader> vs; ComPtr<ID3D11PixelShader> ps;
+  CHECK(backend->CreateVertexShader(vertex.data(), vertex.size(), nullptr, &vs) == S_OK);
+  CHECK(backend->CreatePixelShader(pixel.data(), pixel.size(), nullptr, &ps) == S_OK);
+  D3D11_RASTERIZER_DESC rasterDesc{}; rasterDesc.FillMode = D3D11_FILL_SOLID;
+  rasterDesc.CullMode = D3D11_CULL_FRONT; rasterDesc.ScissorEnable = TRUE; rasterDesc.DepthClipEnable = TRUE;
+  ComPtr<ID3D11RasterizerState> raster; CHECK(backend->CreateRasterizerState(&rasterDesc, &raster) == S_OK);
+  D3D11_TEXTURE2D_DESC appDesc{}; appDesc.Width = appDesc.Height = 4;
+  appDesc.MipLevels = appDesc.ArraySize = appDesc.SampleDesc.Count = 1;
+  appDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; appDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+  ComPtr<ID3D11Texture2D> appTarget; ComPtr<ID3D11RenderTargetView> appView;
+  CHECK(backend->CreateTexture2D(&appDesc, nullptr, &appTarget) == S_OK);
+  CHECK(backend->CreateRenderTargetView(appTarget.Get(), nullptr, &appView) == S_OK);
+  const D3D11_VIEWPORT viewport{3, 4, 17, 19, .25f, .75f}; const D3D11_RECT scissor{31, 37, 41, 43};
+  context->RSSetViewports(1, &viewport); context->RSSetScissorRects(1, &scissor); context->RSSetState(raster.Get());
+  context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+  context->VSSetShader(vs.Get(), nullptr, 0); context->PSSetShader(ps.Get(), nullptr, 0);
+  auto target = appView.Get(); context->OMSetRenderTargets(1, &target, nullptr);
+  ComPtr<ID3D11Predicate> predicate;
+  const D3D11_QUERY_DESC queryDesc{D3D11_QUERY_OCCLUSION_PREDICATE, 0};
+  CHECK(backend->CreatePredicate(&queryDesc, &predicate) == S_OK);
+  context->Begin(predicate.Get()); context->End(predicate.Get()); context->Flush();
+  BOOL visible = TRUE; HRESULT result = S_FALSE; const auto started = GetTickCount64();
+  while (result == S_FALSE && GetTickCount64() - started < 10000) {
+    result = context->GetData(predicate.Get(), &visible, sizeof(visible), D3D11_ASYNC_GETDATA_DONOTFLUSH);
+    if (result == S_FALSE) SwitchToThread();
+  }
+  CHECK(result == S_OK && visible == FALSE);
+  auto state = [&] {
+    ComPtr<ID3D11Predicate> currentPredicate; BOOL value = TRUE;
+    context->GetPredication(&currentPredicate, &value); CHECK(currentPredicate.Get() == predicate.Get() && value == FALSE);
+    UINT count = 1; D3D11_VIEWPORT seenViewport{}; context->RSGetViewports(&count, &seenViewport);
+    CHECK(count == 1 && !std::memcmp(&seenViewport, &viewport, sizeof(viewport)));
+    count = 1; D3D11_RECT seenScissor{}; context->RSGetScissorRects(&count, &seenScissor);
+    CHECK(count == 1 && !std::memcmp(&seenScissor, &scissor, sizeof(scissor)));
+    ComPtr<ID3D11RasterizerState> seenRaster; context->RSGetState(&seenRaster); CHECK(seenRaster.Get() == raster.Get());
+    D3D11_PRIMITIVE_TOPOLOGY topology{}; context->IAGetPrimitiveTopology(&topology);
+    CHECK(topology == D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+    ComPtr<ID3D11VertexShader> seenVS; context->VSGetShader(&seenVS, nullptr, nullptr); CHECK(seenVS.Get() == vs.Get());
+    ComPtr<ID3D11PixelShader> seenPS; context->PSGetShader(&seenPS, nullptr, nullptr); CHECK(seenPS.Get() == ps.Get());
+    ComPtr<ID3D11RenderTargetView> seenView; context->OMGetRenderTargets(1, &seenView, nullptr);
+    CHECK(seenView.Get() == appView.Get());
+  };
+  const DXGI_FORMAT formats[]{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8X8_UNORM};
+  for (unsigned formatIndex = 0; formatIndex < 4; ++formatIndex) {
+    const auto format = formats[formatIndex];
+    Texture<F> source(f, 7, 5, format, D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT);
+    std::array<uint32_t, 35> words{}, sentinel{}; sentinel.fill(0xff281008);
+    for (UINT y = 0; y < 5; ++y) for (UINT x = 0; x < 7; ++x) words[y * 7 + x] = identityColor(x, y, 4);
+    f.table.pfnResourceUpdateSubresourceUP(f.device, source.handle, 0, nullptr, words.data(), 28, 140);
+    CHECK(lastError == S_OK);
+    // This public-context canary proves the issued, non-hint predicate really
+    // suppresses ordinary copies, before and after the production typed Blt.
+    D3D11_TEXTURE2D_DESC probeDesc{}; probeDesc.Width = 7; probeDesc.Height = 5;
+    probeDesc.MipLevels = probeDesc.ArraySize = probeDesc.SampleDesc.Count = 1; probeDesc.Format = format;
+    D3D11_SUBRESOURCE_DATA nativeSource{words.data(), 28, 140}, nativeSentinel{sentinel.data(), 28, 140};
+    ComPtr<ID3D11Texture2D> controlSource, controlDestination;
+    CHECK(backend->CreateTexture2D(&probeDesc, &nativeSource, &controlSource) == S_OK);
+    CHECK(backend->CreateTexture2D(&probeDesc, &nativeSentinel, &controlDestination) == S_OK);
+    Texture<F> destination(f, 11, 8, format, D3D10_DDI_BIND_RENDER_TARGET);
+    DXGI_DDI_ARG_BLT args{}; args.hSrcResource = source.dxgi(); args.hDstResource = destination.dxgi();
+    args.DstLeft = 2; args.DstTop = 1; args.DstRight = 9; args.DstBottom = 6;
+    args.Rotate = DXGI_DDI_MODE_ROTATION_IDENTITY; args.Flags.Convert = 1;
+    context->SetPredication(predicate.Get(), FALSE);
+    context->CopyResource(controlDestination.Get(), controlSource.Get());
+    CHECK(f.blt(args) == S_OK && lastError == S_OK); state();
+    context->CopyResource(controlDestination.Get(), controlSource.Get());
+    context->SetPredication(nullptr, FALSE); identityRead(f, destination, 0, index, formatIndex, 0);
+    probeDesc.Usage = D3D11_USAGE_STAGING; probeDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    ComPtr<ID3D11Texture2D> controlStaging; CHECK(backend->CreateTexture2D(&probeDesc, nullptr, &controlStaging) == S_OK);
+    context->CopyResource(controlStaging.Get(), controlDestination.Get());
+    D3D11_MAPPED_SUBRESOURCE map{}; CHECK(context->Map(controlStaging.Get(), 0, D3D11_MAP_READ, 0, &map) == S_OK);
+    identitySave(map.pData, map.RowPitch, 7, 5, format, index, formatIndex, 4, 0); context->Unmap(controlStaging.Get(), 0);
+    Texture<F> array(f, 22, 16, format, D3D10_DDI_BIND_RENDER_TARGET, 0, false, 1, 2, 2);
+    args.hDstResource = array.dxgi(); args.DstSubresource = 3;
+    context->SetPredication(predicate.Get(), FALSE); CHECK(f.blt(args) == S_OK); state();
+    context->SetPredication(nullptr, FALSE);
+    for (UINT subresource = 0; subresource < 4; ++subresource) identityRead(f, array, subresource, index, formatIndex, 1);
+    args.hDstResource = source.dxgi(); args.DstSubresource = 0;
+    args.DstLeft = args.DstTop = 0; args.DstRight = 7; args.DstBottom = 5;
+    context->SetPredication(predicate.Get(), FALSE); CHECK(f.blt(args) == S_OK); state();
+    context->SetPredication(nullptr, FALSE); identityRead(f, source, 0, index, formatIndex, 2);
+    Texture<F> rejected(f, 11, 8, format, D3D10_DDI_BIND_RENDER_TARGET);
+    args.hDstResource = rejected.dxgi(); args.DstLeft = 2; args.DstTop = 1; args.DstRight = 9; args.DstBottom = 6;
+    for (unsigned negative = 0; negative < 6; ++negative) {
+      auto bad = args;
+      if (negative == 0) bad.Flags.Value |= 16;
+      if (negative == 1) bad.Rotate = DXGI_DDI_MODE_ROTATION_UNSPECIFIED;
+      if (negative == 2) bad.SrcSubresource = 1;
+      if (negative == 3) bad.DstSubresource = 1;
+      if (negative == 4) bad.DstRight = 10;
+      if (negative == 5) bad.Flags.Resolve = 1;
+      CHECK(f.blt(bad) == E_INVALIDARG);
+    }
+    auto unsupported = args; unsupported.Flags.Present = 1; CHECK(f.blt(unsupported) == DXGI_DDI_ERR_UNSUPPORTED);
+    identityRead(f, rejected, 0, index, formatIndex, 3);
+    // The runtime Present-source contract currently requires one mip/slice.
+    // Exercise selected-source mip and same-native-image aliasing directly in
+    // the production GPU helper, rather than claim broader DDI admission.
+    D3D11_TEXTURE2D_DESC aliasDesc{}; aliasDesc.Width = 22; aliasDesc.Height = 16;
+    aliasDesc.MipLevels = 2; aliasDesc.ArraySize = 2; aliasDesc.SampleDesc.Count = 1;
+    aliasDesc.Format = format; aliasDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    std::array<std::vector<uint32_t>, 4> aliasWords;
+    std::array<D3D11_SUBRESOURCE_DATA, 4> aliasInitial{};
+    for (UINT subresource = 0; subresource < 4; ++subresource) {
+      const UINT width = 22 >> (subresource % 2), height = 16 >> (subresource % 2);
+      auto& image = aliasWords[subresource]; image.resize(size_t(width) * height, 0xff281008);
+      if (subresource == 1) for (UINT y = 0; y < height; ++y) for (UINT x = 0; x < width; ++x)
+        image[size_t(y) * width + x] = identityColor(x, y, 4);
+      aliasInitial[subresource] = {image.data(), width * 4, width * height * 4};
+    }
+    ComPtr<ID3D11Texture2D> alias; CHECK(backend->CreateTexture2D(&aliasDesc, aliasInitial.data(), &alias) == S_OK);
+    dxvk::umd::BltPlan aliasPlan;
+    CHECK(dxvk::umd::bltPlan(aliasDesc, aliasDesc, 1, 3, 0, 0, 11, 8, 2, 1, aliasPlan) == S_OK && aliasPlan.directCopy);
+    context->SetPredication(predicate.Get(), FALSE);
+    CHECK(dxvk::umd::bltTexture2D(backend.Get(), context, alias.Get(), alias.Get(), 1, 3, 0, 0, 1,
+      aliasPlan, [] { return true; }) == S_OK); state(); context->SetPredication(nullptr, FALSE);
+    aliasDesc.BindFlags = 0; aliasDesc.Usage = D3D11_USAGE_STAGING; aliasDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    ComPtr<ID3D11Texture2D> aliasStaging; CHECK(backend->CreateTexture2D(&aliasDesc, nullptr, &aliasStaging) == S_OK);
+    context->CopyResource(aliasStaging.Get(), alias.Get());
+    for (UINT subresource : {1u, 3u}) {
+      CHECK(context->Map(aliasStaging.Get(), subresource, D3D11_MAP_READ, 0, &map) == S_OK);
+      identitySave(map.pData, map.RowPitch, 11, 8, format, index, formatIndex, 5, subresource);
+      context->Unmap(aliasStaging.Get(), subresource);
+    }
+  }
+}
+static void identityBltPolicy() {
+  D3D11_TEXTURE2D_DESC source{}; source.Width = 7; source.Height = 5;
+  source.MipLevels = source.ArraySize = source.SampleDesc.Count = 1;
+  source.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; source.BindFlags = D3D11_BIND_RENDER_TARGET;
+  auto destination = source; dxvk::umd::BltPlan plan;
+  for (UINT flags : {0u, 2u, 8u, 10u}) {
+    CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, flags, 1, plan) == S_OK && plan.directCopy);
+  }
+  CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, 4, 1, plan) == S_OK && !plan.directCopy);
+  CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, 0, 3, plan) == S_OK && !plan.directCopy);
+  destination.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  CHECK(dxvk::umd::bltPlan(source, destination, 0, 0, 0, 0, 7, 5, 2, 1, plan) == S_OK && !plan.directCopy);
+}
 static void x8BltPolicy() {
   D3D11_TEXTURE2D_DESC source{};
   source.Width = 7; source.Height = 5;
@@ -476,12 +668,16 @@ static void x8BltPolicy() {
 int main() {
   caller = GetCurrentThreadId();
   x8BltPolicy();
+  identityBltPolicy();
   std::vector<unsigned char> vertex, pixel;
   CHECK(dxvk::umd::bltShaderContainers(vertex, pixel));
   save("blt-internal-vs.dxbc", vertex.data(), vertex.size());
   save("blt-internal-ps.dxbc", pixel.data(), pixel.size());
   profile<D3D10DDI_DEVICEFUNCS>(0); profile<D3D10_1DDI_DEVICEFUNCS>(1); profile<D3D11DDI_DEVICEFUNCS>(2);
   terminalRetirement<D3D10DDI_DEVICEFUNCS>(); terminalRetirement<D3D10_1DDI_DEVICEFUNCS>(); terminalRetirement<D3D11DDI_DEVICEFUNCS>();
+  identityProfile<D3D10DDI_DEVICEFUNCS>(0); identityProfile<D3D10_1DDI_DEVICEFUNCS>(1); identityProfile<D3D11DDI_DEVICEFUNCS>(2);
+  CHECK(identitySnapshots == 120 && identityPixels == 15624);
+  std::printf("DXGI identity Blt PASS profiles=3 formats=4 snapshots=120 pixels=15624 hardware_admission=0\n");
   CHECK(snapshots == 30 && pixels == 1536 && backings.empty() && bridges.empty() && lastError == S_OK);
   std::printf("DXGI Blt PASS checks=%u profiles=3 snapshots=30 pixels=1536 hardware_admission=0\n", checks.load());
 }

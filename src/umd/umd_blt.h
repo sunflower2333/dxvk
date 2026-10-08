@@ -20,6 +20,7 @@ struct BltPlan {
   UINT sourceWidth = 0, sourceHeight = 0, width = 0, height = 0;
   DXGI_FORMAT sourceFormat = DXGI_FORMAT_UNKNOWN, destinationFormat = DXGI_FORMAT_UNKNOWN;
   bool resolve = false;
+  bool directCopy = false;
 };
 
 // The original DDI bind metadata is validated separately. Reject unsupported
@@ -67,6 +68,10 @@ inline HRESULT bltPlan(const D3D11_TEXTURE2D_DESC& src,
   const bool swapped = rotation == 2 || rotation == 4;
   if (!(flags & 4) && (staged.width != (swapped ? staged.sourceHeight : staged.sourceWidth)
       || staged.height != (swapped ? staged.sourceWidth : staged.sourceHeight))) return E_INVALIDARG;
+  // Compare the actual formats, not their normalized sampling formats: an
+  // encoded sRGB copy to UNORM still belongs to the conversion shader path.
+  staged.directCopy = rotation == 1 && !(flags & 5) && src.Format == dst.Format
+    && staged.sourceWidth == staged.width && staged.sourceHeight == staged.height;
   output = staged;
   return S_OK;
 }
@@ -81,6 +86,29 @@ inline HRESULT bltTexture2D(ID3D11Device* device, ID3D11DeviceContext* context,
     UINT destinationSubresource, UINT left, UINT top, UINT rotation, const BltPlan& plan, const Live& live) {
   using Microsoft::WRL::ComPtr;
   if (!device || !context || !source || !destination) return E_INVALIDARG;
+  if (plan.directCopy) {
+    // Validated identity rectangles cover the whole source mip. When both
+    // handles name the very same subresource, bounds force left=top=0 and the
+    // operation is already complete. Never issue an illegal self-copy.
+    if (source == destination && sourceSubresource == destinationSubresource)
+      return live() ? device->GetDeviceRemovedReason() : DXGI_ERROR_DEVICE_REMOVED;
+    ComPtr<ID3D11DeviceContext> commands;
+    HRESULT hr = device->CreateDeferredContext(0, &commands);
+    if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    if (!commands) return E_FAIL;
+    // A fresh context has no app predication or bindings. The GPU bit copy
+    // preserves all physical channels, including X8, without SRV/RTV sampling.
+    commands->CopySubresourceRegion(destination, destinationSubresource, left, top, 0,
+      source, sourceSubresource, nullptr);
+    ComPtr<ID3D11CommandList> list;
+    hr = commands->FinishCommandList(FALSE, &list);
+    if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    if (!list) return E_FAIL;
+    context->ExecuteCommandList(list.Get(), TRUE);
+    return live() ? device->GetDeviceRemovedReason() : DXGI_ERROR_DEVICE_REMOVED;
+  }
   std::vector<unsigned char> vsBytes, psBytes;
   if (!bltShaderContainers(vsBytes, psBytes)) return E_FAIL;
   ComPtr<ID3D11VertexShader> vs; ComPtr<ID3D11PixelShader> ps;

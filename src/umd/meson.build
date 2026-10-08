@@ -301,6 +301,11 @@ umd_depth_stencil_copy_test = executable('dxvk-umd-depth-stencil-copy-test',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies)
 
+umd_depth_stencil_copy_1d_test = executable('dxvk-umd-depth-stencil-copy-1d-test',
+  ['../../tests/umd-depth-stencil-copy-1d.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
 umd_msaa_copy_policy_test = executable('dxvk-umd-msaa-copy-policy-test',
   '../../tests/umd-msaa-copy-policy.cpp')
 

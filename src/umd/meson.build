@@ -355,3 +355,12 @@ umd_d3d10_depth_test = executable('dxvk-umd-d3d10-depth-test',
   ['../../tests/umd-d3d10-depth.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_contract.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler'), cpp.find_library('d3d10_1')])
+
+umd_distance_stream_policy_test = executable('dxvk-umd-distance-stream-policy-test',
+  ['../../tests/umd-distance-stream-policy.cpp', 'umd_shader.cpp', 'umd_shader11.cpp'],
+  dependencies : [dxbc_spirv_dep])
+
+umd_d3d10_distance_stream_test = executable('dxvk-umd-d3d10-distance-stream-test',
+  ['../../tests/umd-d3d10-distance-stream.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_contract.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler'), cpp.find_library('d3d10_1')])

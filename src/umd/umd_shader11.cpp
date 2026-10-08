@@ -222,7 +222,9 @@ bool streamOutputSignature11(const dxbc_spv::dxbc::Signature& signature,
           && (!matched || (uint8_t(matched->getComponentMask()) & (1u << end)))) ++end;
       ShaderStreamEntry11 entry;
       entry.stream = native.stream; entry.slot = uint8_t(native.slot);
-      entry.start = gap ? 0 : uint8_t(component); entry.count = uint8_t(end - component);
+      uint32_t first = 0;
+      if (matched) while (!(uint8_t(matched->getComponentMask()) & (1u << first))) ++first;
+      entry.start = gap ? 0 : uint8_t(component - first); entry.count = uint8_t(end - component);
       if (matched) { entry.semantic = matched->getSemanticName(); entry.semanticIndex = matched->getSemanticIndex(); }
       staged.entries.push_back(std::move(entry));
       streamComponents[native.stream] += end - component;

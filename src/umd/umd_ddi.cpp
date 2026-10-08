@@ -1774,6 +1774,7 @@ void APIENTRY createGeometryStream(D3D10DDI_HDEVICE h,
       dxvk::umd::ShaderCode11 decoded;
       for (const auto& entry : candidate.outputs)
         decoded.outputs.push_back({entry.systemValue, entry.registerIndex, entry.mask, entry.scalar});
+      signatureOrdinals11(decoded.outputs, signature->pOutputSignature, signature->NumOutputSignatureEntries);
       candidate.native11 = std::move(decoded);
       candidate.nativeStream.strides = candidate.streamOutput.strides;
       candidate.nativeStream.strideCount = candidate.streamOutput.strideCount;

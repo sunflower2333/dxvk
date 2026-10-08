@@ -1,0 +1,5 @@
+# Progress
+
+Fresh isolated worktree based on frozen depth packet 754c3bc. Production permits only systems 0/1/2/3 for null capture, enforces disjoint component ownership and 8-distance/two-register limits, maps captured owners to proper clip/cull ordinals, fixes shared relative-component translation and enriches null-GS metadata.
+
+Final strict x64/x86 COFFs passed for production UMD, shader11 and both new fixtures: eight objects with zero diagnostics. Native fixture initial include-order enum/type collision was corrected without production changes; fresh final fixture compilation passed. GCC O2 and Clang ASan/UBSan new policy108 and unchanged SM51118 controls passed; expected SM5 malformed-token diagnostics retained. Independent 77-original reader passed33 synthetic mutation controls with native/compiler/hardware false. Reviewed source and actual compiler/process/control originals frozen for ROOT. No children, MAIN/target edits or push; Windows/native execution and hardware admission remain pending.

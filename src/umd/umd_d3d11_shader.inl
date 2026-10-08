@@ -226,6 +226,7 @@ void APIENTRY createGeometryStream11(D3D10DDI_HDEVICE h,
       dxvk::umd::ShaderCode11 decoded;
       for (const auto& entry : outputs)
         decoded.outputs.push_back({entry.systemValue, entry.registerIndex, entry.mask, entry.scalar});
+      signatureOrdinals11(decoded.outputs, signature->pOutputSignature, signature->NumOutputSignatureEntries);
       std::vector<dxvk::umd::ShaderStreamDeclaration11> entries;
       for (UINT i = 0; i < stream->NumEntries; ++i) {
         const auto& entry = stream->pOutputStreamDecl[i];

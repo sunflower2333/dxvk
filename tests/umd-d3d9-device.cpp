@@ -3683,6 +3683,12 @@ static void presentationContracts() {
     f->queryHook = [] { f->input.pfnPresentCb = nullptr; };
     createDevice(); CHECK(f->table.pfnPresent);
     char cookie; const HANDLE resource = presentTarget(&cookie, format);
+    // Resource owners use process-wide opaque tokens. The mock runtime's
+    // allocation handle must differ so this contract can detect an owner
+    // token accidentally forwarded instead of the allocated kernel handle.
+    const D3DKMT_HANDLE expectedAllocation = uintptr_t(resource) == 71 ? 72u : 71u;
+    f->nextPresentAllocation = expectedAllocation;
+    CHECK(uintptr_t(resource) != expectedAllocation);
     auto args = presentArgs(resource); const auto before = snapshot(args);
     f->queryHook = [&] { args.hSrcResource = nullptr; args.Flags.Value = 0; };
     // Kernel callbacks can overwrite the renderer's private storage only after
@@ -3695,7 +3701,7 @@ static void presentationContracts() {
     CHECK(snapshot(args) != before && f->presents == 1 && f->surfaceReads == 1);
     CHECK(f->presentAllocations.size() == 1 && f->presentAllocations.count(&cookie));
     CHECK(f->presentAllocations.begin()->second.info.format == (format == D3DFMT_X8R8G8B8 ? 2u : 1u));
-    CHECK(f->lastPresent.hSrcAllocation == 71 && uintptr_t(resource) != 71);
+    CHECK(f->lastPresent.hSrcAllocation == expectedAllocation && uintptr_t(resource) != expectedAllocation);
     *f->rendererPixels = f->expectedPresentPixels;
     args = presentArgs(resource);
     f->presentLockHook = [] { f->rendererPixels->assign(f->rendererPixels->size(), 0x72); };

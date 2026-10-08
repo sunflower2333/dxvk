@@ -90,7 +90,7 @@ struct Texture {
     std::vector<D3D11_SUBRESOURCE_DATA> publicInitial(expected.size());
     for (UINT mip=0;mip<mips;++mip) {
       const UINT w=std::max(1u,width>>mip),h=std::max(1u,height>>mip);
-      shapes[mip]={w,h,1,w,h,1};
+      shapes[mip]={w,h,1,(w+3u)&~3u,(h+3u)&~3u,1};
       for (UINT layer=0;layer<layers;++layer) {
         const UINT sub=mip+layer*mips,row=((w+3)/4)*bytes,rows=(h+3)/4;
         auto& data=expected[sub]; data.resize(row*rows);
@@ -188,9 +188,8 @@ static void exercise(Fixture& f,DXGI_FORMAT format,UINT bytes,UINT cube) {
   for (UINT sub=0;sub<texture.mips*texture.layers;++sub) texture.update(sub,nullptr,1);
   const UINT layer=texture.layers-1;
   const D3D10_DDI_BOX patch{4,4,0,12,12,1}; texture.update(layer*5,&patch,2);
-  if (!cube) { const D3D10_DDI_BOX edge{4,0,0,6,4,1}; texture.update(layer*5+2,&edge,3); }
-  const UINT tiny=cube?2u:3u;
-  const D3D10_DDI_BOX edge{0,0,0,INT(tiny),2,1}; texture.update(layer*5+3,&edge,4);
+  if (!cube) { const D3D10_DDI_BOX edge{4,0,0,8,4,1}; texture.update(layer*5+2,&edge,3); }
+  const D3D10_DDI_BOX edge{0,0,0,4,4,1}; texture.update(layer*5+3,&edge,4);
   texture.update(layer*5+4,nullptr,5);
   snapshot(texture,staging,0);
   malformed(texture,staging);

@@ -455,19 +455,28 @@ namespace dxvk {
     if (!rtv)
       return;
 
-    AddCost(GpuCostEstimate::Transfer);
-
     DxvkAttachment attachment = {};
     attachment.view = rtv->GetImageView();
     attachment.shadow = rtv->GetBufferView();
 
-    EmitCs([
+    auto command = [
       cClearValue = ConvertColorValue(ColorRGBA, attachment.view->formatInfo()),
       cAttachment = std::move(attachment)
     ] (DxvkContext* ctx) {
       ctx->clearRenderTarget(cAttachment,
         VK_IMAGE_ASPECT_COLOR_BIT, cClearValue, 0u);
-    });
+    };
+
+    // Deferred clears, including unbound ones, use their recorded predicate.
+    // They must not observe the immediate API binding during replay.
+    if constexpr (IsDeferred) {
+      EmitPredicateAction(std::move(command), GpuCostEstimate::Transfer, nullptr);
+    } else if (m_state.pr.predicateObject) {
+      EmitPredicateAction(std::move(command), GpuCostEstimate::Transfer, nullptr);
+    } else {
+      AddCost(GpuCostEstimate::Transfer);
+      EmitCs(std::move(command));
+    }
   }
 
 

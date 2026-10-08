@@ -975,7 +975,7 @@ namespace dxvk {
         std::this_thread::yield();
       });
     if (decision == D3D11PredicateDecision::Invalid)
-      Logger::err("D3D11: Invalid exact predicate ticket for CopyStructureCount");
+      Logger::err("D3D11: Invalid exact predicate ticket for action");
     return decision == D3D11PredicateDecision::Execute;
   }
 

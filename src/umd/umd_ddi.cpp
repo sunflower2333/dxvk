@@ -5,6 +5,7 @@
 #include "umd_shader11.h"
 #include "umd_query.h"
 #include "umd_allocation.h"
+#include "umd_primary.h"
 #include "umd_residency_transaction.h"
 #include "umd_runtime_gpu.h"
 #include "umd_map.h"
@@ -267,6 +268,9 @@ struct Resource {
   // that a view holding the last reference keeps the backing alive.
   std::shared_ptr<dxvk::umd::SharedSurface> shared;
   std::unique_ptr<ResourceRetirement> retirement;
+  // Creation transaction only. Clear the borrowed address before publication.
+  DXGI_DDI_PRIMARY_DESC* primaryOutput = nullptr;
+  UINT primaryDriverFlags = 0;
   std::shared_ptr<dxvk::umd::RuntimeAllocation> allocationOwner() const {
     if (shared) return {shared, &shared->allocation};
     if (present) return {present, &present->allocation};
@@ -284,7 +288,7 @@ struct ResourceRetirement final : dxvk::umd::RuntimeService::Retirement {
     // deallocated here in any case -- it belongs to the process that made it.
     resource->shared.reset();
     resource->backend.Reset();
-    if (FAILED(hr)) device->error(hr);
+    if (FAILED(hr) && !device->retired) device->error(hr);
   }
 };
 enum class ResourcePhase { Creating, Live };
@@ -838,10 +842,17 @@ HRESULT createResourceData(Device* device,
       (args->BindFlags & ~(D3D10_DDI_BIND_PIPELINE_MASK | D3D10_DDI_BIND_PRESENT))) {
     return E_INVALIDARG;
   }
-  // Primary scanout needs real primary allocation metadata and the runtime
-  // SetDisplayMode callback. Return the documented unsupported result while
-  // Blt supplies the rotation fallback; do not create an ordinary allocation.
-  if (args->pPrimaryDesc) return DXGI_DDI_ERR_UNSUPPORTED;
+  dxvk::umd::PrimaryPlan primary;
+  DXGI_DDI_PRIMARY_DESC primaryDesc = {};
+  if (args->pPrimaryDesc) {
+    if (!dxvk::umd::readPrimary(args->pPrimaryDesc, primaryDesc)) return DXGI_DDI_ERR_UNSUPPORTED;
+    const HRESULT hr = dxvk::umd::primaryResourcePlan(*args, primaryDesc, primary);
+    if (hr != S_OK) return hr;
+    if (!runtime.handle || !device->memory.available()
+        || (primary.scanout && !device->memory.primaryAvailable())) return DXGI_DDI_ERR_UNSUPPORTED;
+    resource->primaryOutput = args->pPrimaryDesc;
+    resource->primaryDriverFlags = primary.driverFlags;
+  }
   resource->nativeBindFlags = args->BindFlags;
   D3D11_TEXTURE1D_DESC oneDimensional = {};
   if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D &&
@@ -855,14 +866,15 @@ HRESULT createResourceData(Device* device,
       && !(cubeArrays10_1
         ? dxvk::umd::textureCubeArrayDesc10_1(*args, miscFlags, cube)
         : dxvk::umd::textureCubeDesc(*args, miscFlags, cube))) return E_INVALIDARG;
-  const bool presentable = (args->BindFlags & D3D10_DDI_BIND_PRESENT) != 0;
+  const bool presentable = args->pPrimaryDesc || (args->BindFlags & D3D10_DDI_BIND_PRESENT) != 0;
   if (presentable && (!device->memory.available() || !runtime.handle
       || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
       || args->MipLevels != 1 || args->ArraySize != 1
       || !args->SampleDesc.Count
       || args->Usage != D3D10_DDI_USAGE_DEFAULT || args->MapFlags
       || !(args->BindFlags & D3D10_DDI_BIND_RENDER_TARGET)
-      || dxvk::umd::bltLinearFormat(args->Format) == DXGI_FORMAT_UNKNOWN
+      || (!(args->pPrimaryDesc && args->Format == DXGI_FORMAT_B8G8R8X8_UNORM)
+        && dxvk::umd::bltLinearFormat(args->Format) == DXGI_FORMAT_UNKNOWN)
       || (args->SampleDesc.Count > 1 && args->pInitialDataUP))) {
     return DXGI_ERROR_UNSUPPORTED;
   }
@@ -932,9 +944,13 @@ HRESULT createResourceData(Device* device,
     if (hr == S_OK && !resource->backend) hr = E_FAIL;
     if (hr == S_OK && presentable) {
       resource->present = std::make_shared<PresentSurface>();
-      hr = device->memory.allocate(resource->present->allocation, runtime.handle,
+      const auto format = args->Format == DXGI_FORMAT_B8G8R8X8_UNORM
+        ? args->Format : dxvk::umd::bltLinearFormat(args->Format);
+      if (primary.scanout) hr = device->memory.allocatePrimary(resource->present->allocation, runtime.handle,
         args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight,
-        dxvk::umd::bltLinearFormat(args->Format));
+        format, primaryDesc.ModeDesc.RefreshRate.Numerator, primaryDesc.ModeDesc.RefreshRate.Denominator);
+      else hr = device->memory.allocate(resource->present->allocation, runtime.handle,
+        args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight, format);
       if (FAILED(hr)) resource->backend.Reset();
     }
     if (hr == S_OK && shared) {
@@ -979,8 +995,13 @@ void publishNewResource(Device* device, D3D10DDI_HRESOURCE out, Build&& build) {
       if (device->retired || entry == resourceStorage.end() || entry->second.reservation != reservation)
         hr = DXGI_ERROR_DEVICE_REMOVED;
       else {
-        new (out.pDrvPrivate) Resource(std::move(staged));
-        entry->second.phase = ResourcePhase::Live;
+        if (staged.primaryOutput && !dxvk::umd::writePrimaryFlags(staged.primaryOutput, staged.primaryDriverFlags))
+          hr = DXGI_DDI_ERR_UNSUPPORTED;
+        else {
+          staged.primaryOutput = nullptr;
+          new (out.pDrvPrivate) Resource(std::move(staged));
+          entry->second.phase = ResourcePhase::Live;
+        }
       }
     }
   } // Failed staged owners are fully destroyed before SetError can reenter.
@@ -991,7 +1012,7 @@ void publishNewResource(Device* device, D3D10DDI_HRESOURCE out, Build&& build) {
       if (entry != resourceStorage.end() && entry->second.reservation == reservation)
         resourceStorage.erase(entry);
     }
-    device->error(hr);
+    if (!device->retired) device->error(hr);
   }
 }
 void APIENTRY createResource(D3D10DDI_HDEVICE h,
@@ -2912,10 +2933,8 @@ HRESULT APIENTRY blt(DXGI_DDI_ARG_BLT* args) {
     catch (...) { return E_FAIL; }
 }
 
-HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
-  if (args->SrcSubResourceIndex || args->DstSubResourceIndex
-      || args->hDstResource || !args->pDXGIContext || args->Flags.Value != 1)
-    return E_INVALIDARG;
+HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool primaryOnly,
+    const std::function<HRESULT(dxvk::umd::RuntimeAllocation&, const std::function<bool()>&)>& submit) {
   try {
     // A nested Present for another resource can also reenter the same shared
     // publication sweep while its staging texture is mapped.
@@ -2924,7 +2943,7 @@ HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
       Device* device;
       ~DevicePresentScope() { device->presentActive = false; }
     } devicePresentScope{device};
-    auto resource = reinterpret_cast<Resource*>(args->hSurfaceToPresent);
+    auto resource = reinterpret_cast<Resource*>(storage);
     std::shared_ptr<const char> reservation;
     std::shared_ptr<PresentSurface> surface;
     ComPtr<ID3D11Resource> image;
@@ -2944,6 +2963,7 @@ HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
           || entry->second.phase != ResourcePhase::Live) return E_INVALIDARG;
       if (!resource->backend || !resource->present || !resource->present->allocation.handle())
         return E_INVALIDARG;
+      if (primaryOnly && !resource->present->allocation.primary()) return DXGI_DDI_ERR_UNSUPPORTED;
       reservation = entry->second.reservation;
       surface = resource->present; image = resource->backend;
     }
@@ -2973,7 +2993,7 @@ HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
     auto readback = surface->readback;
     if (!readback) {
       auto desc = sourceDesc;
-      desc.Format = dxvk::umd::bltLinearFormat(desc.Format);
+      if (desc.Format != DXGI_FORMAT_B8G8R8X8_UNORM) desc.Format = dxvk::umd::bltLinearFormat(desc.Format);
       desc.SampleDesc = {1, 0};
       desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0;
       desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ; desc.MiscFlags = 0;
@@ -3009,10 +3029,44 @@ HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
     hr = device->memory.upload(surface->allocation, map.pData, map.RowPitch);
     if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
     if (FAILED(hr)) return hr;
-    hr = device->memory.present(surface->allocation, *args, stillLive);
+    hr = submit(surface->allocation, stillLive);
     return stillLive() ? hr : DXGI_ERROR_DEVICE_REMOVED;
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }
+}
+
+HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
+  if (args->SrcSubResourceIndex || args->DstSubResourceIndex
+      || args->hDstResource || !args->pDXGIContext || args->Flags.Value != 1) return E_INVALIDARG;
+  return publishPresentData(device, args->hSurfaceToPresent, false,
+    [&](auto& allocation, const auto& live) { return device->memory.present(allocation, *args, live); });
+}
+
+HRESULT APIENTRY setDisplayMode(DXGI_DDI_ARG_SETDISPLAYMODE* args) {
+  if (!args || !args->hDevice || !args->hResource || args->SubResourceIndex) return E_INVALIDARG;
+  const auto request = *args;
+  DeviceOperation operation(reinterpret_cast<void*>(request.hDevice));
+  if (!operation.owner) return DXGI_ERROR_DEVICE_REMOVED;
+  dxvk::umd::RuntimeService::Scope scope(operation.owner->service.get());
+  try {
+    return operation.owner->service->run([&] {
+      DeviceOperation worker(operation.storage, operation.owner);
+      auto device = operation.owner.get();
+      return publishPresentData(device, request.hResource, true,
+        [&](auto& allocation, const auto& live) { return device->memory.setDisplayMode(allocation, live); });
+    });
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
+}
+
+HRESULT APIENTRY getGammaCaps(DXGI_DDI_ARG_GET_GAMMA_CONTROL_CAPS* args) {
+  if (!args || !args->hDevice || !args->pGammaCapabilities) return E_INVALIDARG;
+  DeviceOperation operation(reinterpret_cast<void*>(args->hDevice));
+  if (!operation.owner || operation.owner->retired) return DXGI_ERROR_DEVICE_REMOVED;
+  // The current identity ABI has no queried gamma capability reply. Leave
+  // the caller's output intact, including guarded storage, rather than invent
+  // a curve from static KMD code. Gamma programming belongs to the KMD path.
+  return DXGI_DDI_ERR_UNSUPPORTED;
 }
 
 HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
@@ -3280,6 +3334,8 @@ HRESULT createDdiDevice(
   populateDeviceFunctions(table);
   if (dxgiTable) {
     *dxgiTable = {};
+    dxgiTable->pfnGetGammaCaps = getGammaCaps;
+    dxgiTable->pfnSetDisplayMode = setDisplayMode;
     dxgiTable->pfnBlt = blt;
     dxgiTable->pfnRotateResourceIdentities = rotateResourceIdentities;
     dxgiTable->pfnQueryResourceResidency = queryResourceResidency;
@@ -3288,6 +3344,8 @@ HRESULT createDdiDevice(
   }
   if (dxgiTable11) {
     *dxgiTable11 = {};
+    dxgiTable11->pfnGetGammaCaps = getGammaCaps;
+    dxgiTable11->pfnSetDisplayMode = setDisplayMode;
     dxgiTable11->pfnBlt = blt;
     dxgiTable11->pfnRotateResourceIdentities = rotateResourceIdentities;
     dxgiTable11->pfnQueryResourceResidency = queryResourceResidency;

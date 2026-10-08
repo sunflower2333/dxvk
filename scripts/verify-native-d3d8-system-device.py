@@ -16,8 +16,17 @@ PAYLOADS = {'viogpudxvk.dll': CORE_HASH,
             'freedreno_icd.json': '74d7d5d6ae9432cde2d802507ed59bbe4c2f2b95d01e7ac3c2b56e9691932c80'}
 
 
-def verify(text, mode, luid, source):
+def verify(text, mode, luid, source, core_identity=None, owned_icd_setup=False):
     assert mode in ('front-offscreen', 'front-present')
+    assert type(owned_icd_setup) is bool
+    if core_identity is None:
+        assert not owned_icd_setup, 'owned ICD setup requires an explicit joined core tuple'
+        core_identity = {'source': CORE_COMMIT, 'run': 37711793677, 'sha256': CORE_HASH}
+    assert isinstance(core_identity, dict) and set(core_identity) == {'source', 'run', 'sha256'}
+    assert re.fullmatch(r'[0-9a-f]{40}', core_identity['source']) and re.fullmatch(r'[0-9a-f]{64}', core_identity['sha256'])
+    assert type(core_identity['run']) is int and core_identity['run'] > 0
+    core_commit, core_run, core_hash = (core_identity[key] for key in ('source', 'run', 'sha256'))
+    core_path = rf'C:\Users\Public\DxvkD3D8Candidate-{core_commit[:7]}-{core_run}' + ('-icd02' if owned_icd_setup else '') + r'\viogpudxvk.dll'
     text = text.replace('\r\n', '\n')
     rows = text.splitlines()
     assert not re.search(r'^(?:D3D8_(?:ERROR|FAILED|UNAVAILABLE)|SYSTEM_D3D8_(?:CREATE_BLOCKED|DEVICE_DESTROY_FAILED))\b', text, re.M)
@@ -31,13 +40,24 @@ def verify(text, mode, luid, source):
     assert len(matched) == 1 and int(matched[0][0]) > 0 and matched[0][1:] == (str(source), luid)
     assert rows.count('D3D8_KMT_CLOSED status=00000000') == 1
     core = re.findall(r'^SYSTEM_D3D8_CORE_PIN path=(.+) sha256=([0-9a-f]{64}) expected_ci_source_commit=([0-9a-f]{40}) machine=014c file_locked=1 core_unchanged=1$', text, re.M)
-    assert core == [(CORE_PATH, CORE_HASH, CORE_COMMIT)]
+    assert core == [(core_path, core_hash, core_commit)]
     pins = re.findall(r'^D3D8_PAYLOAD_PIN path=(.+) sha256=([0-9a-f]{64}) machine=(014c|json) locked=1 original_bytes=1$', text, re.M)
-    folder = CORE_PATH.rsplit('\\', 1)[0] + '\\'
-    expected_pins = {(folder + name, digest, 'json' if name.endswith('.json') else '014c') for name, digest in PAYLOADS.items()}
+    folder = core_path.rsplit('\\', 1)[0] + '\\'
+    expected_pins = {(folder + name, core_hash if name == 'viogpudxvk.dll' else digest, 'json' if name.endswith('.json') else '014c') for name, digest in PAYLOADS.items()}
     assert len(pins) == 4 and set(pins) == expected_pins
+    derived = [row for row in rows if row.startswith('D3D8_DERIVED_ICD_PIN ')]
+    if owned_icd_setup:
+        expected_derived = (f'D3D8_DERIVED_ICD_PIN path={folder}freedreno_icd_owned_x86.json '
+            'sha256=f50169e3e0efc6dea34fe0ce109228c79ce1df817a5508fb13a759c71d780ff3 '
+            f'original_sha256={PAYLOADS["freedreno_icd.json"]} locked=1 original_bytes=0 '
+            'library_path=.' + chr(92) + 'viogpu_gl_vk_x86.dll only_library_path_changed=1')
+        assert derived == [expected_derived]
+        opens = [i for i, row in enumerate(rows) if row.startswith('SYSTEM_D3D8_OPEN_BEGIN ')]
+        assert opens and rows.index(expected_derived) < min(opens), 'derived ICD lock must precede backend construction'
+    else:
+        assert not derived, 'derived ICD requires explicit setup admission'
     source_rows = [r for r in rows if r.startswith('D3D8_HARDWARE_SOURCE ')]
-    assert source_rows == [f'D3D8_HARDWARE_SOURCE core_commit={CORE_COMMIT} ci_run=37711793677 loader_source=6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7 icd_source=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d icd_ci_run=37453381660 driver_selection=owned-json raw_architecture=014c']
+    assert source_rows == [f'D3D8_HARDWARE_SOURCE core_commit={core_commit} ci_run={core_run} loader_source=6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7 icd_source=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d icd_ci_run=37453381660 driver_selection=owned-json raw_architecture=014c']
     modules = re.findall(r'^D3D8_PRIVATE_MODULE name=(\S+) path=(.+) machine=014c$', text, re.M)
     assert len(modules) == 6
     for name in ('viogpudxvk.dll', 'viogpu_gl_loader_x86.dll', 'viogpu_gl_vk_x86.dll'):

@@ -10,6 +10,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 
 PROBE_SOURCE = 'e3ac12646a1b55742d575109063ae78507af5cec'
+SETUP_SOURCE = '37b8a2dde5bfe7022ccc676594c1f57621cc8ff9'
+OWNED_ICD_SHA = 'f50169e3e0efc6dea34fe0ce109228c79ce1df817a5508fb13a759c71d780ff3'
 CORE_SOURCE = 'de72dc2e97bd8e4ea70c5bf89c26918d06065723'
 RUN = 37711793677
 SID = 'S-1-5-21-362894365-441372107-2852668596-1000'
@@ -254,7 +256,7 @@ def verify_runtime_module_callers(rows):
     return {'module_identities': identities, 'callers': callers, 'opens': [(position, opened[2]) for position, opened in opens]}
 
 
-def verify_enumeration(text, luid='ec6b000000000000', source=0, core_identity=None):
+def verify_enumeration(text, luid='ec6b000000000000', source=0, core_identity=None, owned_icd_setup=False):
     """Actual HAL enumeration requires an internal driver device on system D3D8.
 
     This predicate permits real backend construction/initialization, including
@@ -285,7 +287,9 @@ def verify_enumeration(text, luid='ec6b000000000000', source=0, core_identity=No
         and re.fullmatch(r'[0-9a-f]{64}', core_identity['sha256'])
         and type(core_identity['run']) is int and core_identity['run'] > 0, 'exact independently admitted core tuple required')
     core_source, core_run, core_sha = (core_identity[key] for key in ('source', 'run', 'sha256'))
-    expected_core = rf'C:\Users\Public\DxvkD3D8Candidate-{core_source[:7]}-{core_run}\viogpudxvk.dll'
+    require(type(owned_icd_setup) is bool, 'explicit owned ICD setup scope required')
+    suffix = '-icd02' if owned_icd_setup else ''
+    expected_core = rf'C:\Users\Public\DxvkD3D8Candidate-{core_source[:7]}-{core_run}{suffix}\viogpudxvk.dll'
     opened = re.findall(r'^SYSTEM_D3D8_OPEN_END hr=00000000 interface=8 driver_version=12 adapter=(\S+) core=(.+) expected_ci_source_commit=([0-9a-f]{40}) machine=014c core_create_calls=0$', text, re.M)
     require(len(opened) == len(runtime_identity['opens']) and all(commit == core_source and path == expected_core for _, path, commit in opened),
             'actual standard typed adapter admission failed')
@@ -301,6 +305,16 @@ def verify_enumeration(text, luid='ec6b000000000000', source=0, core_identity=No
     expected_pins = {(folder + name, core_sha if name == 'viogpudxvk.dll' else digest_value,
                       'json' if name.endswith('.json') else '014c') for _, digest_value, name in PAYLOADS.values()}
     require(len(pins) == 4 and set(pins) == expected_pins, 'exact four original I386 private payload pins required')
+    derived = [row for row in rows if row.startswith('D3D8_DERIVED_ICD_PIN ')]
+    if owned_icd_setup:
+        expected_derived = (f'D3D8_DERIVED_ICD_PIN path={folder}freedreno_icd_owned_x86.json '
+            f'sha256={OWNED_ICD_SHA} original_sha256={PAYLOADS["icd-json"][1]} locked=1 original_bytes=0 '
+            'library_path=.' + chr(92) + 'viogpu_gl_vk_x86.dll only_library_path_changed=1')
+        require(derived == [expected_derived], 'exact separately derived module-relative ICD pin required')
+        require(rows.index(expected_derived) < min(position for position, _ in runtime_identity['opens']),
+                'derived ICD must be locked before internal backend construction')
+    else:
+        require(not derived, 'derived ICD requires an explicitly admitted setup')
     private = re.findall(r'^D3D8_PRIVATE_MODULE name=(\S+) path=(.+) machine=014c$', text, re.M)
     expected_private = {(name, folder + name) for name in
         ('viogpudxvk.dll', 'viogpu_gl_loader_x86.dll', 'viogpu_gl_vk_x86.dll')}
@@ -548,6 +562,63 @@ def read_native_archive(path):
     return members
 
 
+def verify_owned_icd_native_setup(setup):
+    """Reopen the admitted changed build, preserving its overall observer failure."""
+    require(setup['accepted'] and setup['source'] == SETUP_SOURCE, 'changed native setup is not admitted')
+    fixed = {
+        'archive': (29528581, '1b6a4f3b6065de7c0a74a488719ff9948179e3edfedef156b5ba4b31a2ab523a'),
+        'proof': (138185, '10c8b7d10a6182afb4e009a01902c0fb4438fa1d60c7d89fb58d1cd029eb4973'),
+        'reader': (23817, 'eeac203bd113835fb03b8f178b509d74bb3416e58da904db62ee1c73b376bccd'),
+        'ROOT_admission': (1971, 'fa9f189f227a375cd4a190fda4b398b1379698ad87d8243a804195755e31089c'),
+    }
+    for key, (size, sha) in fixed.items():
+        row = setup[key]
+        data = Path(row['path']).read_bytes()
+        require(row['bytes'] == len(data) == size and row['sha256'] == digest(data) == sha,
+                'actual changed native setup original differs: ' + key)
+    root = read_json(Path(setup['ROOT_admission']['path']).read_bytes())
+    require(root['root_originals_direct_review'] and root['native_build_scope_accepted']
+        and root['source_commit'] == SETUP_SOURCE and root['new_guard_dependency_admitted']
+        and root['overall_attempt_status'] == 'FAIL' and root['overall_attempt_exit'] == 1
+        and root['original_posthash_status'] == 'FAIL' and root['actual_full_state_before_after_post_equal']
+        and root['protected_static34_equal'] and not root['HAL_admitted'], 'ROOT changed-build scope mismatch')
+    require(root['original_archive'] == setup['archive'] and root['original_native_scope_review'] == setup['proof']
+        and root['independent_reader'] == setup['reader'], 'ROOT changed-build original joins differ')
+    attempt = Path(setup['attempt_directory'])
+    require(Path(setup['archive']['path']).parent == attempt and Path(setup['proof']['path']).parent == attempt,
+            'changed native originals must belong to the same actual attempt')
+    outer = setup['outer']
+    require(digest(Path(outer['path']).read_bytes()) == outer['sha256']
+        and len(Path(outer['path']).read_bytes()) == outer['bytes'], 'actual changed native outer differs')
+    spec = importlib.util.spec_from_file_location('frozen_changed_native_originals', Path(setup['reader']['path']))
+    reader = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reader)
+    canonical = reader.review(attempt, Path(outer['path']))
+    proof = read_json(Path(setup['proof']['path']).read_bytes())
+    require(canonical == proof and proof['native_build_accepted'] and proof['new_guard_dependency_native_admitted']
+        and proof['base_source_commit'] == PROBE_SOURCE and proof['base_35_fixture_replays'] == 0,
+        'actual changed native binary/fixture originals failed canonical review')
+    members = read_native_archive(Path(setup['archive']['path']))
+    return proof, read_json(members['result.json']), members
+
+
+def verify_runtime_stdout(text, phase, luid, source, core_identity, owned_icd_setup=False):
+    """Dispatch only with the core tuple already joined by the archive reader."""
+    require(isinstance(core_identity, dict) and set(core_identity) == {'source', 'run', 'sha256'},
+            'explicit joined runtime core identity required')
+    if phase == 'enumerate':
+        return verify_enumeration(text, luid, source, core_identity=core_identity,
+                                  owned_icd_setup=owned_icd_setup)
+    require(phase in ('offscreen', 'present'), 'runtime phase required')
+    runtime_identity = verify_runtime_module_callers(lines(text))
+    spec = importlib.util.spec_from_file_location('pixels', Path(__file__).with_name('verify-native-d3d8-system-device.py'))
+    pixels = importlib.util.module_from_spec(spec); spec.loader.exec_module(pixels)
+    detail = pixels.verify(text, 'front-' + phase, luid, source, core_identity=core_identity,
+                           owned_icd_setup=owned_icd_setup)
+    detail['physical_runtime_identities'] = runtime_identity
+    return detail
+
+
 def verify_archive(archive, collection_path, manifest_path):
     collection = read_json(collection_path.read_bytes())
     raw_archive = archive.read_bytes()
@@ -571,7 +642,10 @@ def verify_archive(archive, collection_path, manifest_path):
     require(contents['manifest-original.json'] == contents['output/manifest-original.json'] == manifest_bytes, 'independently pinned actual manifest mismatch')
     manifest = read_json(manifest_bytes)
     require(manifest['schema'] == 'system-d3d8-phase-inputs-v1' and manifest['ready'] and manifest['native_cpu']['accepted'], 'native inputs still pending')
-    require(manifest['probe_source'] == PROBE_SOURCE and manifest['core_source'] == CORE_SOURCE and manifest['core_ci_run'] == RUN, 'source/CI identity mismatch')
+    owned_setup = 'native_setup' in manifest
+    probe_source = SETUP_SOURCE if owned_setup else PROBE_SOURCE
+    require(manifest['probe_source'] == probe_source and manifest['native_cpu']['source'] == PROBE_SOURCE
+        and manifest['core_source'] == CORE_SOURCE and manifest['core_ci_run'] == RUN, 'separate base/setup/core source identity mismatch')
     require(manifest['loader_source'] == '6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7' and manifest['icd_source'] == '8443c71a5ab32b9d58b904fa51f4bf2f9089db8d', 'distinct original loader/ICD source mismatch')
     require(manifest['adapter_luid'] == 'ec6b000000000000' and manifest['source_id'] == 0, 'fresh selected adapter identity mismatch')
     require(len(manifest['helpers']) == len(HELPERS) and {row['name'] for row in manifest['helpers']} == HELPERS, 'exact frozen helper set required')
@@ -587,6 +661,8 @@ def verify_archive(archive, collection_path, manifest_path):
     task = read_json(contents['task-result-original.json'])
     finalized = read_json(contents['task-collection-original.json'])
     result = read_json(contents['output/result-original.json'])
+    require(result['probe_source'] == probe_source and result['core_source'] == CORE_SOURCE,
+            'actual phase result source identities differ')
     phase = result['phase']
     require(phase in ('names', *PRIOR) and config['phase'] == task['phase'] == finalized['phase'] == phase, 'original phase mismatch')
     require(task['completed'] and task['process_passed'] and not task['failure'] and result['completed'] and result['process_passed'] and not result['failure'], 'original runtime attempt failed')
@@ -650,19 +726,29 @@ def verify_archive(archive, collection_path, manifest_path):
     native_result = read_json(native_members['result.json'])
     native_cpu_details = verify_native_identity_cpu(native_result, native_members, completion_members,
         read_json(Path(native['posthash_original_path']).read_bytes()))
+    setup_details = None
+    output_result, output_members = native_result, native_members
+    if owned_setup:
+        setup_details, output_result, output_members = verify_owned_icd_native_setup(manifest['native_setup'])
     for role, path in (('probe', 'probe/d3d8-runtime-probe.exe'), ('frontend', 'front/viogpu-d3d8-runtime-front.dll')):
-        data = native_members[path]
+        data = output_members[path]
         pin = next(row for row in manifest['files'] if row['role'] == role)
         require(digest(data) == pin['sha256'] and len(data) == pin['bytes'], 'actual native I386 output chain mismatch')
-        row = [item for item in native_result['outputs'] if item['path'] == pin['path']]
+        row = [item for item in output_result['outputs'] if item['path'] == pin['path']]
         require(len(row) == 1 and row[0]['sha256'] == pin['sha256'] and row[0]['machine'] == 0x14c, 'native PE/probe output receipt mismatch')
-    require(len(manifest['files']) == 6 and {row['role'] for row in manifest['files']} == {'probe', 'frontend', *PAYLOADS}, 'exact six phase input definitions required')
-    require(files.keys() == ({'probe'} if phase == 'names' else {'probe', 'frontend', *PAYLOADS}), 'unexpected selected phase input')
+    derived_roles = {'owned-icd-json'} if owned_setup else set()
+    require(len(manifest['files']) == 6 + len(derived_roles)
+        and {row['role'] for row in manifest['files']} == {'probe', 'frontend', *PAYLOADS, *derived_roles}, 'exact phase input definitions required')
+    require(files.keys() == ({'probe'} if phase == 'names' else {'probe', 'frontend', *PAYLOADS, *derived_roles}), 'unexpected selected phase input')
     for row in manifest['files']:
         if row['role'] in PAYLOADS:
             size, sha, name = PAYLOADS[row['role']]
-            folder = r'C:\Users\Public\DxvkD3D8Candidate-de72dc2-37711793677'
+            folder = r'C:\Users\Public\DxvkD3D8Candidate-de72dc2-37711793677' + ('-icd02' if owned_setup else '')
             require(row['bytes'] == size and row['sha256'] == sha and row['path'] == folder + chr(92) + name, 'original I386 payload/config pin mismatch')
+        elif row['role'] == 'owned-icd-json':
+            require(row['bytes'] == 148 and row['sha256'] == OWNED_ICD_SHA
+                and row['path'] == r'C:\Users\Public\DxvkD3D8Candidate-de72dc2-37711793677-icd02\freedreno_icd_owned_x86.json'
+                and row['original_ZIP_member'] is False, 'separately derived ICD input mismatch')
     require({row['role'] for row in result['inputs_before']} == files.keys(), 'exact phase payload set mismatch')
     for row in result['inputs_before']:
         pin = files[row['role']]
@@ -678,26 +764,21 @@ def verify_archive(archive, collection_path, manifest_path):
         prior_bytes = contents['prior-admission-original.json']
         require(prior_bytes == contents['output/prior-admission-original.json'] and digest(prior_bytes) == config['prior_admission_sha256'], 'independent previous-phase proof changed')
         prior = read_json(prior_bytes)
-        require(prior['verified'] and prior['phase'] == PRIOR[phase] and prior['manifest_sha256'] == digest(manifest_bytes) and prior['probe_source'] == PROBE_SOURCE and prior['core_source'] == CORE_SOURCE and prior['luid'] == luid and prior['source'] == source and prior['sid'] == SID, 'previous original admission mismatch')
+        require(prior['verified'] and prior['phase'] == PRIOR[phase] and prior['manifest_sha256'] == digest(manifest_bytes) and prior['probe_source'] == probe_source and prior['core_source'] == CORE_SOURCE and prior['luid'] == luid and prior['source'] == source and prior['sid'] == SID, 'previous original admission mismatch')
         registered = prior['registered_I386_filename']
         mode = {'enumerate': 'front-enumerate', 'offscreen': 'front-offscreen', 'present': 'front-present'}[phase]
         arguments = f'--{mode} "{files["frontend"]["path"]}" "{registered}" "{files["core"]["path"]}" {files["core"]["sha256"]} {CORE_SOURCE}'
         arguments += f' {luid} {source}'
         require(command['arguments'] == arguments, 'exact selected runtime command mismatch')
-        if phase == 'enumerate':
-            detail = verify_enumeration(text, luid, source)
-        else:
-            runtime_identity = verify_runtime_module_callers(lines(text))
-            spec = importlib.util.spec_from_file_location('pixels', Path(__file__).with_name('verify-native-d3d8-system-device.py'))
-            pixels = importlib.util.module_from_spec(spec); spec.loader.exec_module(pixels)
-            detail = pixels.verify(text, mode, luid, source)
-            detail['physical_runtime_identities'] = runtime_identity
+        core_identity = {'source': manifest['core_source'], 'run': manifest['core_ci_run'],
+                         'sha256': files['core']['sha256']}
+        detail = verify_runtime_stdout(text, phase, luid, source, core_identity, owned_setup)
     return {'schema': 'system-d3d8-phase-admission-v1', 'verified': True, 'phase': phase, 'manifest_sha256': digest(manifest_bytes),
-            'probe_source': PROBE_SOURCE, 'core_source': CORE_SOURCE, 'core_ci_run': RUN, 'luid': luid, 'source': source, 'sid': SID,
+            'probe_source': probe_source, 'core_source': CORE_SOURCE, 'core_ci_run': RUN, 'luid': luid, 'source': source, 'sid': SID,
             'registered_I386_filename': registered, 'original_archive_sha256': digest(raw_archive), 'original_archive_bytes': len(raw_archive),
             'original_files': len(contents), 'stdout_sha256': digest(stdout), 'process_sha256': digest(contents['output/process-original.json']),
             'collection_sha256': digest(collection_path.read_bytes()), 'details': detail, 'registration': registration,
-            'native_cpu_details': native_cpu_details,
+            'native_cpu_details': native_cpu_details, 'native_setup_details': setup_details,
             'scope': 'one original closed genuine system8 USER phase; later phases require a separate explicit target handoff'}
 
 

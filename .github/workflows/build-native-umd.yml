@@ -158,3 +158,4 @@ jobs:
             candidate/arm64-cube-array-targets-originals/**
             candidate/arm64-dxgi-shared-resolve-originals/**
             candidate/arm64-dxgi-blt-originals/**
+            candidate/arm64-dxgi-primary-originals/**

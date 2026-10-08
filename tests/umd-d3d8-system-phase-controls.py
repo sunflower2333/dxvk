@@ -253,5 +253,97 @@ for label, key, value in [('CPU08-source-does-not-admit-current-binaries', 'sour
     control = copy.deepcopy(current_native); control[key] = value
     reject(label, phase.verify_native_identity_cpu, control, {}, {}, {})
 assert len(checks) == 98
-print(json.dumps({'status': 'PASS', 'scope': 'synthetic names/process/mapped-file protocol controls only', 'checks': checks,
+owned_folder = folder.rstrip(chr(92)) + '-icd02' + chr(92)
+derived_pin = (f'D3D8_DERIVED_ICD_PIN path={owned_folder}freedreno_icd_owned_x86.json '
+    f'sha256={phase.OWNED_ICD_SHA} original_sha256={phase.PAYLOADS["icd-json"][1]} locked=1 original_bytes=0 '
+    'library_path=.' + chr(92) + 'viogpu_gl_vk_x86.dll only_library_path_changed=1')
+owned_enumeration = enumeration.replace(folder, owned_folder)
+owned_enumeration = owned_enumeration.replace('D3D8_HARDWARE_SOURCE ', derived_pin + '\nD3D8_HARDWARE_SOURCE ', 1)
+def verify_owned(text):
+    return phase.verify_enumeration(text, owned_icd_setup=True)
+assert verify_owned(owned_enumeration)['HAL_caps']
+checks.append({'label': 'explicit-owned-ICD-synthetic-enumeration', 'accepted_synthetic': True})
+reject('new-ICD-root-with-old-setup', phase.verify_enumeration, owned_enumeration)
+reject('old-ICD-root-with-new-setup', verify_owned, enumeration)
+for label, old, new in [
+    ('derived-ICD-marker-missing', derived_pin + '\n', ''),
+    ('derived-ICD-marker-duplicated', derived_pin, derived_pin + '\n' + derived_pin),
+    ('derived-ICD-hash-changed', 'sha256=' + phase.OWNED_ICD_SHA, 'sha256=' + '12' * 32),
+    ('derived-ICD-original-hash-changed', 'original_sha256=' + phase.PAYLOADS['icd-json'][1], 'original_sha256=' + '34' * 32),
+    ('derived-ICD-falsely-claims-original', 'locked=1 original_bytes=0', 'locked=1 original_bytes=1'),
+    ('derived-ICD-relative-module-changed', 'library_path=.' + chr(92) + 'viogpu_gl_vk_x86.dll', 'library_path=viogpu_gl_vk_x86.dll'),
+    ('derived-ICD-extra-field-change', 'only_library_path_changed=1', 'only_library_path_changed=0'),
+]:
+    reject(label, verify_owned, owned_enumeration.replace(old, new))
+reject('derived-ICD-locked-after-construction', verify_owned,
+       owned_enumeration.replace(derived_pin + '\n', '') + derived_pin + '\n')
+reject('owned-ICD-preserves-public-workload-denial', verify_owned,
+       owned_enumeration + 'D3D8_API operation=Clear hr=00000000\n')
+reject('owned-ICD-preserves-failed-HAL-denial', verify_owned,
+       owned_enumeration.replace('caps_hr=00000000', 'caps_hr=8876086a'))
+assert len(checks) == 111
+core_identity = {'source': phase.CORE_SOURCE, 'run': phase.RUN, 'sha256': phase.PAYLOADS['core'][1]}
+assert phase.verify_runtime_stdout(owned_enumeration, 'enumerate', 'ec6b000000000000', 0,
+                                   core_identity, True)['HAL_caps']
+checks.append({'label': 'archive-production-dispatch-owned-enumeration', 'accepted_synthetic': True})
+reject('archive-runtime-dispatch-requires-explicit-core', phase.verify_runtime_stdout,
+       owned_enumeration, 'enumerate', 'ec6b000000000000', 0, None, True)
+for key, value in [('source', '12' * 20), ('run', phase.RUN + 1), ('sha256', '12' * 32)]:
+    wrong_core = dict(core_identity); wrong_core[key] = value
+    reject('archive-runtime-dispatch-core-' + key + '-must-match', phase.verify_runtime_stdout,
+           owned_enumeration, 'enumerate', 'ec6b000000000000', 0, wrong_core, True)
+
+pixel_spec = importlib.util.spec_from_file_location('pixel_fixture', path.with_name('verify-native-d3d8-system-device.py'))
+pixel = importlib.util.module_from_spec(pixel_spec); pixel_spec.loader.exec_module(pixel)
+def pixel_fixture(present):
+    # Complete synthetic draw/readback/teardown protocol; no native or GPU calls.
+    markers = ('D3D8_USER_GATE ', 'D3D8_SYSTEM_', 'SYSTEM_D3D8_CALLER_PATH ',
+        'SYSTEM_D3D8_OPEN_BEGIN ', 'D3D8_RUNTIME ', 'SYSTEM_D3D8_CORE_PIN ',
+        'D3D8_PAYLOAD_PIN ', 'D3D8_DERIVED_ICD_PIN ', 'D3D8_HARDWARE_SOURCE ',
+        'D3D8_PRIVATE_MODULE ', 'D3D8_ADAPTER ', 'D3D8_KMT_', 'D3D8_SELECTOR ',
+        'SYSTEM_D3D8_CREATE_RETURN ', 'SYSTEM_D3D8_CALLBACK_TABLE ',
+        'SYSTEM_D3D8_DEVICE_FUNCTIONS ', 'SYSTEM_D3D8_LIFETIME ',
+        'SYSTEM_D3D8_DEVICE_DESTROY ', 'SYSTEM_D3D8_CLOSE ')
+    fixture = [row for row in owned_enumeration.splitlines() if row.startswith(markers)]
+    fixture += [row for row in fixture if row.startswith('D3D8_PRIVATE_MODULE ')]
+    fixture += ['D3D8_SELECTOR_QUERY index=0 type=1 bytes=524 kernel_adapter=17 original_status=00000000 selected=1 substitutions=1']
+    fixture += [f'D3D8_PIXEL stage={stage} x={x} y={y} value={color:08x}'
+                for stage, color in enumerate(pixel.COLORS, 1) for x in range(8) for y in range(8)]
+    for operation, count in {'CreateDevice-HAL-hardwareVP':1, 'CreateVertexShader-1.1':1,
+            'CreatePixelShader-1.1':1, 'CreatePixelShader-1.4':1, 'CreateTexture-dynamic':1,
+            'CopyRects-RT-to-systemmem':7, 'Reset':1, 'Present-owned-window':int(present)}.items():
+        fixture += [f'D3D8_API operation={operation} hr=00000000'] * count
+    fixture += [f'D3D8_SELECTED_OFFSCREEN PASS stages=7 pixels=448 shader=VS1.1/PS1.1+PS1.4 dynamic_texture=1 resets=1 presents={int(present)}']
+    if present:
+        fixture += [f'D3D8_SCREEN_PIXEL x={x} y={y} rgb=193e72' for x in range(8) for y in range(8)]
+        fixture += ['D3D8_PRESENT PASS calls=1 pixels=64 rgb=193e72 polls=1 source=actual-screen']
+        fixture = [row.replace('render=1 present=0 residency=', 'render=1 present=1 residency=') for row in fixture]
+    fixture += [f'D3D8_COMPLETE mode=front-{"present" if present else "offscreen"} adapters=1 create_device=1 presents={int(present)} registry_writes=0']
+    return '\n'.join(fixture) + '\n'
+
+def dispatch_pixels(text, mode, identity=core_identity, owned=True):
+    return phase.verify_runtime_stdout(text, mode, 'ec6b000000000000', 0, identity, owned)
+def reject_pixel(label, function, *args):
+    try: function(*args)
+    except (AssertionError, ValueError, UnicodeError): checks.append({'label': label, 'rejected': True})
+    else: raise AssertionError('control incorrectly accepted: ' + label)
+for mode in ('offscreen', 'present'):
+    pixels = pixel_fixture(mode == 'present')
+    result = dispatch_pixels(pixels, mode)
+    assert result['offscreen_pixels'] == 448 and result['screen_pixels'] == (64 if mode == 'present' else 0)
+    checks.append({'label': 'archive-production-dispatch-owned-' + mode, 'accepted_synthetic': True})
+    reject_pixel(mode + '-missing-owned-ICD-lock', dispatch_pixels, pixels.replace(derived_pin + '\n', ''), mode)
+    reject_pixel(mode + '-old-unsuffixed-directory', dispatch_pixels, pixels.replace(owned_folder, folder), mode)
+    reject_pixel(mode + '-derived-falsely-original', dispatch_pixels, pixels.replace('locked=1 original_bytes=0', 'locked=1 original_bytes=1'), mode)
+    reject_pixel(mode + '-derived-lock-after-construction', dispatch_pixels, pixels.replace(derived_pin + '\n', '') + derived_pin + '\n', mode)
+    reject_pixel(mode + '-owned-ICD-with-old-scope', dispatch_pixels, pixels, mode, core_identity, False)
+    wrong_core = dict(core_identity); wrong_core['sha256'] = '12' * 32
+    reject_pixel(mode + '-joined-core-hash-mismatch', dispatch_pixels, pixels, mode, wrong_core)
+    reject_pixel(mode + '-pixel-regression', dispatch_pixels, pixels.replace('value=ff123456', 'value=ff123457', 1), mode)
+    reject_pixel(mode + '-allocation-leak', dispatch_pixels, pixels.replace('allocate=2 deallocate=2', 'allocate=2 deallocate=1'), mode)
+    legacy_pixels = pixels.replace(derived_pin + '\n', '').replace(owned_folder, folder)
+    assert dispatch_pixels(legacy_pixels, mode, core_identity, False)['offscreen_pixels'] == 448
+    checks.append({'label': 'archive-production-dispatch-legacy-' + mode, 'accepted_synthetic': True})
+assert len(checks) == 136
+print(json.dumps({'status': 'PASS', 'scope': 'synthetic names/process/mapped-file/runtime-dispatch/pixel protocol controls only', 'checks': checks,
                   'actual_runtime_calls': 0, 'actual_native_processes': 0, 'GPU_runs': 0, 'target_calls': 0}, indent=2))

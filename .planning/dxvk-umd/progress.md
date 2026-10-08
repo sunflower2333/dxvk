@@ -1,12 +1,25 @@
 # Current continuation checkpoint (2026-10-08)
 
+D10/D11 replacement status: the mandatory D10 callback table is complete,
+but production D10 requirements remain0x17f: stream-output, predication,
+opened/shared resources, complete resources/shaders/MRT, primary/DXGI and
+runtime threading. Some bounded paths are implemented; complete semantics
+and ordinary target validation are still required. D10.1/D11 add their exact
+interface/immediate/compute-UAV/tessellation/shader-interface requirements.
+Public supported-version discovery and pipeline levels remain unadvertised.
+Latest CI37724958522 was refreshed completed/success with allsix jobs; this
+is CPU/fixture evidence, not ordinary VM system runtime or desktop acceptance.
+No default VM UMD replacement has been accepted.
+
 Published source 1b378e61f9b4e852cb3deffc305cc652aabfeafa integrates corrected
 typed DXGI Blt and preserves all45 prior ARM cases/32 shipped fixtures, adding
 one to each (46/33). ROOT b1806c72 joins all10 Blt files to frozen a3 source,
 all current DX8 helpers remain unchanged, and the owned push2821662 closed0.
-Exactly one NativeUMD CI37724958522 runs; five jobs succeeded and ARM runtime
-is pending at the latest original API observation. No redundant push/rerun.
-Two workflow paths now retain actual ARM Resolve and Blt raw originals.
+Sole NativeUMD CI37724958522 completed all6 SUCCESS. ROOT061b134b directly
+rejoins five original ZIPs/9758 members/994 Git blobs/five links,138 closed
+native fixtures,18 cube/three volume/three Resolve/three Blt raw reviews.
+ROOT623f72e8 independently binds the terminal API and closed collector; new
+ARM Resolve and Blt raw originals are retained and accepted. No extra run.
 
 Previous d650 CI37721066402 all6 succeeded, but ROOT 2d8db135 accepted ARM
 Resolve only at runner-proof scope because the upload whitelist omitted its
@@ -14,17 +27,25 @@ Resolve only at runner-proof scope because the upload whitelist omitted its
 four canonical receipts/135 closed native fixtures and18 cube/three volume
 reviews remain accepted; independent x86/x64 Resolve pixels passed. Preserve
 that partial original review and do not relabel missing ARM pixels as accepted.
-New CI46 must retain/review its actual fresh Resolve and Blt originals.
+New CI46 independently accepts the fresh ARM Resolve/Blt originals; prior
+d650 partial evidence stays at its original scope.
 
 Frozen Blt a3c7409 corrects97a58e5's erased-table callback. ROOT db824203 joins
 2839 originals/241 Git+dependency inputs/657 compiler inputs/253 portable
 joins/four optimized x86/x64 COFFs/47 closed children. GCC optimized and Clang
 ASan/UBSan each passed340240 controls; independent synthetic reader accepted
-one positive/rejected18 mutations. Primary work is separate and local: genuine
-primary+staging allocation pair, opcode2 RenderCb synchronized copy and typed
-SetDisplayMode now have four strict optimized SDK COFFs; pixel/retirement
-fixtures and ROOT review are pending. Full mandatory profile/rendering-cache
-VidMm association/primary/gamma/threading hardware acceptance stays open.
+one positive/rejected18 mutations. Primary work is separate and local. Frozen
+939ae931 plus frozen451bd978 are now integrated together as13 exact source
+files. ROOT51639d8d rejoins4530 original TAR members/250 Git inputs/340 compiler
+inputs/eight optimized x64/x86 COFFs/21 closed compile-control children, plus
+peer source reviewfa6257b5. GCC/Clang each5637 and literal-reader1positive/
+eight negatives passed. Failed nonterminal unlock is retained/retried before
+new map/copy/rotation; terminal unresolved unlock reports failure without
+mapped Deallocate or callbacks after DestroyDevice. Synthetic terminal
+runtime3 releases/two map closures stay separate from UMD successes. Preserve
+all old46 ARM cases/33 shipped fixtures, add two (48/35), and retain new ARM
+primary raw originals. Native execution24images/768pixels/72files and actual
+ordinary runtime/scanout remain pending; gamma/shared/VidMm gates stay closed.
 
 DX8 CPU10, parser01 and fresh de72 payload staging remain ROOT-accepted with
 actual split CPU originals, AST5/Add-Type and17 staged payload originals.
@@ -48,15 +69,68 @@ failed; exact612-byte log enables only VK_KHR_win32_surface. ROOTb30be87e
 joins41 original files/TARf7f95210, unchanged six production inputs, selector
 restore, failed native probeexit1/collector0/seven transports/outer closed,
 exact task removed and explicit release6572ff3a. No accepted HAL proof exists.
-CPU delegate diagnoses the genuine loader/ICD/environment setup locally,
-without caps bypass, failure relabeling or target replay.
+Frozen37b8a2d is integrated locally as0bbdf18 (six exact source files). It
+changes only the owned ICD JSON path to .\\viogpu_gl_vk_x86.dll
+and adds explicit -icd02 candidate/payload pins. ROOT9e67e94a directly rejoins
+509 portable controls,seven derivation negatives,three changed local I386
+COFF/twoPE and exact6a loader path cases3. The old local guard object stays
+excluded; native02 independently rebuilt the current guard. ROOT448a90c8
+manually reviewed all helpers/host/outer/reader and35 committed/licensed
+inputs before authorizationd142b1c5. The actual native build passed4COFF/3PE,
+509policy/frontguard/five malformed CLI controls with19 closed children.
+The whole attempt remains FAIL: posthash compared50 preexisting historical
+Native telemetry values. Current before/after/post state is exactly identical;
+static34 and selected575 compiler/13SDK/9library inputs are unchanged.
+ROOTfa9f189f directly replays scoped reader06/all136 TAR originals and accepts
+native-build scope plus failed-attempt explicit release, preserving original
+posthash/host failures. Fresh five-payload -icd02 staging actually passed
+once under ROOTc236b4a9. ROOT32c9f843 independently rejoins18 TAR originals,
+four original API ZIP/CRC/PE payloads and the separate148-byte derived JSON,
+static34/SYS/desktop, two native/five host/outer/offline-reader closures and
+explicit release8e434536. Current phase40d is integrated as six exact
+production files. ROOTf83d9675 rejoins every Git/snapshot file and preserves998
+other files, then independently runs all136 portable protocol controls under
+closed child2922037. The archive dispatcher now carries the explicit joined
+core tuple; offscreen/Present accepts the exact -icd02 root with the derived
+JSON lock while retaining448 readback/64 screen pixels and allocation lifetimes.
+The prior enumeration fallback already matched de72; this repair does not
+reinterpret the real Vulkan failure. Fresh packet03 and parser/names/HAL02
+remain disabled until their respective actual receipts pass. Old packet01/02
+and unexecuted parser01 recipes stay preserved. No HAL/device/draw/Present/
+default replacement is accepted from staging or synthetic controls.
 
-Current exclusive target owner: /root/port_dx11 under actual CPU02 authorization
-3be487b1, following ROOT's accepted enumerate failure release. ROOT and other
-agents remain target idle. Ordered CPU-only attempt: upload/stage/native Parse6
-and Add-Type/copy67/frontend seven-stage build/real ARM64+x64 view eight-stage
-build/collect/transfer/observe/original review/release. Actual copies/compilers/
-links/PEs are pending; no module/frontend/core/probe execution or registration.
+Consolidated primary939+451, ownedICD37b and phase40d source is ready for one
+necessary NativeUMD push. Existing46 ARM cases/33 shipped fixtures are kept,
+two primary fixtures are added (48/35), and ARM primary raw originals are
+included in the upload whitelist. No dispatch-only or disabled workflow is
+triggered intentionally. New native CI evidence remains pending.
+
+CPU02 actually FAILED at the first recovered resource after17 readable ARM
+copies. ROOTb14c2be1 directly rejoins86 originals/17 unchanged source copies/
+33 original resources/native Parse6,allfive native andnine host owners closed
+and explicit release3dc11393. No compiler/link/view build stage ran. The
+ConcurrencyCheckui string14.50.35723.00 differs from fixed14.50.35723.0;
+ce067879 explicitly compares recovered-resource fixed fields while retaining
+raw strings/hash/machine pins. ROOTca0e10c0 directly rejoined33 original PE
+version blocks; ROOT prepared replay236 and authorizationd403895e bound fresh
+CPU03 after actual DX8 native02 releasefa9f189f. CPU03 Parse6 and all67 copies
+passed. Its first ARM64 CL failed2 with D8027: cannot execute the copied
+Hostarm64/arm64/c2.dll. Later frontend/view stages were not attempted; no
+module/probe ran. Original151-file TAR686df426 is retained; agent original
+reader1110 and ROOT replay1261 pass original-integrity/closure only, preserving
+actual build=false. ROOTa0de4e20 accepts seven closed native children/ten
+closed host transports and explicit release1f554914. The ROOT comparison's
+initial check-count mismatch is preserved; fresh scoped review accounts for151
+already-retained original equality checks without changing any raw evidence.
+CPU03 release is historical; latest accepted target release is now staging03
+ROOT32c9f843. Target is idle/ROOT-owned; agents are local-only pending fresh
+parser or compiler-readonly authorization. Local exact CPU03 PE imports reveal
+omitted eager msvcdis140.dll and MSVCP140_1.dll, plus delayed pgodb140.dll;
+actual source readability/search resolution and OS-load cause remain unproved.
+A narrow native read-only dependency capture is being prepared without build,
+module execution, repair or original EWDK/ISO/PATH mutation.
+This ARM64X frontend is the DX8/9 legacy OpenAdapter entry, not modern D10/11
+runtime admission; modern mandatory semantics/hardware proof remain separate.
 
 ROOT c14006d5 independently replays1949 original-only joins for33 same-version
 resources, including genuine17 native TAR members/32 Microsoft HTTP206 ranges

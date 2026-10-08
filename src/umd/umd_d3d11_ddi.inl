@@ -11,7 +11,7 @@ HRESULT createResourceData11(Device* device, const D3D11DDIARG_CREATERESOURCE* a
       || args->ArraySize > D3D11_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION) return E_INVALIDARG;
   UINT misc = 0, bindings = 0;
   if (!dxvk::umd::resource11Flags(*args, misc, bindings)) return E_INVALIDARG;
-  if ((args->BindFlags & D3D10_DDI_BIND_PRESENT)
+  if (args->pPrimaryDesc || (args->BindFlags & D3D10_DDI_BIND_PRESENT)
       || (args->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED)) {
     // Paired KMD allocations currently describe only a plain 2D image. Keep
     // the existing shared/present ownership path and reject extra semantics.
@@ -21,7 +21,6 @@ HRESULT createResourceData11(Device* device, const D3D11DDIARG_CREATERESOURCE* a
     const auto legacy = dxvk::umd::resource10Fields(*args);
     return createResourceData(device, &legacy, resource, runtime);
   }
-  if (args->pPrimaryDesc) return DXGI_ERROR_UNSUPPORTED;
   D3D11_TEXTURE3D_DESC volume = {};
   if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE3D) {
     const auto legacy = dxvk::umd::resource10Fields(*args);

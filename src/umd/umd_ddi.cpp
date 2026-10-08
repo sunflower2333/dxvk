@@ -1925,11 +1925,6 @@ HRESULT renderTargetBindings(Device* device, const D3D10DDI_HRENDERTARGETVIEW* t
     if (!targets[i].pDrvPrivate) continue;
     auto object = get(targets[i]);
     if (!object || object->owner != device || !object->backend) return E_INVALIDARG;
-    // The legacy bridge reconstructs the original float-only output slice.
-    if (!device->nativeTable11 && object->format != DXGI_FORMAT_R8G8B8A8_UNORM &&
-        object->format != DXGI_FORMAT_B8G8R8A8_UNORM) {
-      return E_INVALIDARG;
-    }
     if (!dxvk::umd::outputView(object->backend.Get(), views[i]) ||
         !dxvk::umd::mergeOutputShape(shape, views[i].shape)) {
       return E_INVALIDARG;
@@ -1940,7 +1935,9 @@ HRESULT renderTargetBindings(Device* device, const D3D10DDI_HRENDERTARGETVIEW* t
       }
     }
     translated[i] = object->backend.Get();
-    output.types[i] = colorScalar11(object->format);
+    D3D11_RENDER_TARGET_VIEW_DESC realized{};
+    object->backend->GetDesc(&realized);
+    output.types[i] = colorScalar11(realized.Format);
     staged[i] = object->shared;
     anyColor = true;
   }
@@ -1965,6 +1962,7 @@ void APIENTRY setRenderTargets(D3D10DDI_HDEVICE h,
   try {
     device->context->OMSetRenderTargets(count, count ? bindings.targets.data() : nullptr, bindings.depth);
     device->targetShared = std::move(bindings.shared); device->targetBound = bindings.anyColor;
+    device->targetTypes = bindings.types;
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
 }

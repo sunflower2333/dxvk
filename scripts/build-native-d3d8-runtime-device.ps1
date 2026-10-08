@@ -309,7 +309,7 @@ try {
   foreach ($pattern in @(
     '(?m)^D3D8_PROCESS_API provider=kernel32\.dll symbol=GetSystemWow64Directory2W present=0 error=127 ',
     '(?m)^D3D8_PROCESS_API provider=kernelbase\.dll symbol=GetSystemWow64Directory2W present=1 error=0 .*owner_machine=014c owner_error=0\r?$',
-    '(?m)^D3D8_PROCESS_MACHINE process=014c native=aa64 effective=014c pointer_bytes=4 ',
+    '(?m)^D3D8_SYSTEM_PROCESS_ID process=014c native=aa64 pointer_bytes=4 api=IsWow64Process2 identity=1\r?$',
     '(?m)^D3D8_PROCESS_API_CANONICAL_DIRECTORY path=(?i:C:\\Windows\\SysWOW64) admission=0\r?$',
     '(?m)^D3D8_PROCESS_API_DIAGNOSTICS_COMPLETE observed_providers=5 observed_lookup_rows=10 verified_modules=3 readonly_file_pairs=3 runtime_calls=0 KMT_calls=0 core_loads=0 admission=0\r?$'
   )) {

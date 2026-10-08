@@ -2,19 +2,20 @@
 """Copy original I386 payloads and prepare one manifest, with native pins pending."""
 import argparse
 import hashlib
+import importlib.util
 import json
 import shutil
 import struct
 import subprocess
 import tarfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-SOURCE = '5c420e4daddc39effb2c8e8a28bd07ec7407c402'
+SOURCE = '66bfbdf73d32d7213af439a69cb569730b018f55'
 CORE = 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1'
 RUN = 37648387721
 FOLDER = r'C:\Users\Public\DxvkD3D8Candidate-d7e5c7d-37648387721'
-NATIVE = r'C:\Users\Public\DxvkD3D8Runtime-5c420e4-05'
+NATIVE = r'C:\Users\Public\DxvkD3D8Runtime-66bfbdf-08'
 ZIP_PINS = {
     'core': ('artifacts/dxvk-native-dx10-dx11-20261007/root-consolidated-arm-canonical-01/successful-original-ci-01/_archives/dxvk-umd-backend-x86-' + CORE + '.zip', 27246294, '2ebb7966a16417465b838b24b346f6cd4ee068e279b5e0c7f664abf28ff22b2d'),
     'mesa': ('artifacts/dxvk-native-d3d8-port-20261007/x86-runtime-artifact-audit-01/mesa-8443c71-x86-11408567654.zip', 29588250, 'a80bb994b1c7855f21b76f87e72a86add435e19719db41bd66fc55bba55a43dc')}
@@ -112,11 +113,19 @@ def prepare(workspace, output, native_originals=None, native_proof=None, native_
         result = json_read(native_originals / 'result.json'); proof = json_read(native_proof)
         archive_pin = record(native_archive)
         require(proof['verified'] and proof['source_commit'] == SOURCE and proof['archive_sha256'] == archive_pin['sha256'], 'independently accepted native original proof required')
-        require(result['source_commit'] == SOURCE and result['status'] == 'PASS' and result['object_count'] == 5 and result['pe_count'] == 4 and result['malformed_cli_guards'] == 30 and result['policy_checks'] == 329 and result['callback_checks'] > 0, 'actual strict native CPU suite incomplete')
-        require(result['source_before'] == result['source_after'] and result['before'] == result['after'] and result['gpu_runs'] == result['system_runtime_calls'] == result['selector_calls'] == 0, 'native original source/state/scope mismatch')
+        native_members = {}
         with tarfile.open(native_archive, 'r:gz') as archive:
-            native_members = {member.name.removeprefix('./'): archive.extractfile(member).read() for member in archive if member.isfile()}
+            for member in archive:
+                if member.isdir():
+                    continue
+                name = PurePosixPath(member.name.removeprefix('./'))
+                require(member.isfile() and not name.is_absolute() and '..' not in name.parts and str(name) not in native_members,
+                        'unsafe or duplicate actual native CPU member')
+                native_members[str(name)] = archive.extractfile(member).read()
         require(native_members['result.json'] == (native_originals / 'result.json').read_bytes(), 'accepted native receipt not in original archive')
+        spec = importlib.util.spec_from_file_location('phase_native_identity', scripts / 'verify-native-d3d8-system-phase.py')
+        phase = importlib.util.module_from_spec(spec); spec.loader.exec_module(phase)
+        native_details = phase.verify_native_identity_cpu(result, native_members)
         for role, pin in pins.items():
             path = ('probe/d3d8-runtime-probe.exe' if role == 'probe' else 'front/viogpu-d3d8-runtime-front.dll')
             data = (native_originals / path).read_bytes()
@@ -125,13 +134,13 @@ def prepare(workspace, output, native_originals=None, native_proof=None, native_
             require(len(row) == 1 and row[0]['bytes'] == len(data) and row[0]['sha256'] == sha(data), 'actual native output pin mismatch')
             pe(data)
             pin.update(bytes=len(data), sha256=sha(data))
-        native.update(accepted=True, original_archive_sha256=archive_pin['sha256'], original_proof_sha256=sha(native_proof.read_bytes()), original_proof_path=str(native_proof), original_archive_path=str(native_archive))
+        native.update(accepted=True, original_archive_sha256=archive_pin['sha256'], original_proof_sha256=sha(native_proof.read_bytes()), original_proof_path=str(native_proof), original_archive_path=str(native_archive), details=native_details)
     files = [{'role': role, **pin} for role, pin in pins.items()] + files
     manifest = {'schema': 'system-d3d8-phase-inputs-v1', 'ready': False, 'probe_source': SOURCE, 'runner_source': runner_source,
                 'core_source': CORE, 'core_ci_run': RUN, 'loader_source': '6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7', 'icd_source': '8443c71a5ab32b9d58b904fa51f4bf2f9089db8d',
                 'adapter_luid': 'ec6b000000000000', 'source_id': 0, 'user': {'account': r'DROIDVM\USER', 'sid': 'S-1-5-21-362894365-441372107-2852668596-1000'},
                 'native_cpu': native, 'files': files, 'helpers': rows, 'payload_originals': provenance,
-                'pending': ['native phase parser and independent root review before a separately authorized phase'] + ([] if native['accepted'] else ['native5c420e4 strict CPU success and independent original proof', 'actual native I386 probe/frontend hashes']),
+                'pending': ['native phase parser and independent root review before a separately authorized phase'] + ([] if native['accepted'] else ['native66bfbdf focused shared-identity CPU success and independent original proof', 'actual native I386 probe/frontend hashes']),
                 'native_phase_parse': 'pending', 'I386_KMT_names': 'pending', 'system_HAL_enumeration': 'pending', 'hardware_admission': False,
                 'registry_driver_writes': False, 'installation': False, 'payload_staged': False}
     (bundle / 'phase-inputs-original.json').write_text(json.dumps(manifest, indent=2) + '\n')

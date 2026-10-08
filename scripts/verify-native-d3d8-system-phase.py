@@ -9,7 +9,7 @@ import tarfile
 import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 
-PROBE_SOURCE = '5c420e4daddc39effb2c8e8a28bd07ec7407c402'
+PROBE_SOURCE = '66bfbdf73d32d7213af439a69cb569730b018f55'
 CORE_SOURCE = 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1'
 RUN = 37648387721
 SID = 'S-1-5-21-362894365-441372107-2852668596-1000'
@@ -38,10 +38,10 @@ def read_json(data):
     return json.loads(data.decode('utf-8-sig'))
 
 
-def closed(row, stdout, stderr, deadline_ms=30000):
+def closed(row, stdout, stderr, deadline_ms=30000, expected_exit=0):
     require(row['Pid'] > 0 and row['ProcessHandle'] != 0, 'original PID/OS handle missing')
     require(row['Exited'] and row['ExitCodeAvailable'] and row['PipesDrained'], 'original exit/drain incomplete')
-    require(not row['TimedOut'] and not row['ChildStillRunning'] and not row['Failure'] and row['ExitCode'] == 0, 'original phase failed')
+    require(not row['TimedOut'] and not row['ChildStillRunning'] and not row['Failure'] and row['ExitCode'] == expected_exit, 'original phase failed')
     require(row['StdoutBytes'] == len(stdout) and row['StderrBytes'] == len(stderr), 'raw pipe length mismatch')
     require(0 <= row['Seconds'] < deadline_ms / 1000 + 30 and row['StartUtc'], 'original bounded process timing missing')
 
@@ -70,22 +70,138 @@ def match_identity(rows, luid, source):
     require(rows.count('D3D8_KMT_CLOSED status=00000000') == 1, 'original KMT adapter not closed')
 
 
+IDENTITY_PREFIXES = ('D3D8_SYSTEM_API_LOOKUP ', 'D3D8_SYSTEM_PROCESS_ID ', 'D3D8_SYSTEM_PE ',
+                     'D3D8_SYSTEM_FILE_ID ', 'D3D8_SYSTEM_FILE_CLOSE ', 'D3D8_SYSTEM_MODULE_ID ',
+                     'D3D8_SYSTEM_DIRECTORY ')
+SYSTEM_DIRECTORY = r'C:\Windows\SysWOW64'
+SYSTEM_MODULES = {'kernel32.dll', 'kernelbase.dll', 'gdi32.dll', 'd3d8.dll', 'd3d8thk.dll',
+                  'd3d9.dll', 'dxgi.dll', 'd3d11.dll', 'd3d9on12.dll'}
+
+
+def verify_module_identities(rows):
+    """Rejoin the actual common helper's raw records; never trust identity=1 alone."""
+    selected = [(index, row) for index, row in enumerate(rows) if row.startswith(IDENTITY_PREFIXES)]
+    groups, machines, directories, index = [], [], [], 0
+    pending = None
+    directory = None
+
+    def take(pattern, message):
+        nonlocal index
+        require(index < len(selected), message)
+        position, text = selected[index]
+        match = re.fullmatch(pattern, text)
+        require(match, message + ': ' + text)
+        index += 1
+        return position, match
+
+    def pe(name, view):
+        position, value = take(r'D3D8_SYSTEM_PE name=(\S+) view=(\S+) machine=(014c) magic=(010b) '
+            r'sections=(\d+) pe=([0-9a-f]{8}) timestamp=([0-9a-f]{8}) image_bytes=(\d+) '
+            r'header_bytes=(\d+) checksum=([0-9a-f]{8}) entry=([0-9a-f]{8})', 'complete selected I386 PE record required')
+        require(value[1].casefold() == name and value[2] == view, 'selected PE name/view reordered')
+        fields = tuple(value.group(i) for i in range(3, 12))
+        require(int(value[5]) > 0 and int(value[6], 16) >= 64
+            and int(value[8]) >= int(value[9]) >= int(value[6], 16) + 24 + 68
+            and int(value[11], 16) < int(value[8]), 'selected PE size/offset/entry invalid')
+        return position, fields
+
+    def file(name, view):
+        _, header = pe(name, view)
+        _, value = take(r'D3D8_SYSTEM_FILE_ID name=(\S+) view=(\S+) input=(.+) final_nt=(.+) '
+            r'volume=([0-9a-f]{8}) index_high=([0-9a-f]{8}) index_low=([0-9a-f]{8}) bytes=(\d+) '
+            r'machine=014c sha256=([0-9a-f]{64}) unchanged=1 locked=1', 'complete unchanged readonly file identity required')
+        require(value[1].casefold() == name and value[2] == view, 'file identity name/view reordered')
+        size = int(value[8])
+        require(0 < size <= 32 * 1024 * 1024 and size >= int(header[6]), 'file length/header boundary invalid')
+        require(int(value[6], 16) or int(value[7], 16), 'complete original file index required')
+        return {'input': value[3], 'final_nt': value[4], 'file_key': value.group(5, 6, 7, 8),
+                'sha256': value[9], 'selected_PE': header}
+
+    while index < len(selected):
+        text = selected[index][1]
+        if text.startswith('D3D8_SYSTEM_API_LOOKUP '):
+            require(pending is None, 'duplicate or incomplete system API invocation')
+            _, lookup = take(r'D3D8_SYSTEM_API_LOOKUP provider=kernel32\.dll process_present=1 process_error=0 '
+                r'directory_present=([01]) directory_error=(\d+)', 'exact Kernel32 Process2/Directory2 lookup required')
+            if lookup[1] == '0':
+                require(lookup[2] == '127', 'alternate Directory2 provider requires original error127')
+                take(r'D3D8_SYSTEM_API_LOOKUP provider=kernelbase\.dll directory_present=1 directory_error=0 exact_API_only=1',
+                     'exact named KernelBase Directory2 provider required')
+            else:
+                require(lookup[2] == '0', 'successful original Directory2 lookup has wrong status')
+            pending = {'machine': None, 'providers': []}
+        elif text.startswith('D3D8_SYSTEM_PROCESS_ID '):
+            require(pending is not None and pending['machine'] is None, 'process evidence lacks exact preceding API lookups')
+            position, _ = take(r'D3D8_SYSTEM_PROCESS_ID process=014c native=aa64 pointer_bytes=4 api=IsWow64Process2 identity=1',
+                               'exact actual I386/ARM64 process evidence required')
+            pending['machine'] = position
+            machines.append(position)
+        elif text.startswith('D3D8_SYSTEM_PE '):
+            name = re.fullmatch(r'D3D8_SYSTEM_PE name=(\S+) view=loaded .+', text)
+            require(name and name[1].casefold() in SYSTEM_MODULES, 'exact known loaded system module required')
+            name = name[1].casefold()
+            require(machines and (pending is None or pending['machine'] is not None), 'mapped identity before actual process evidence')
+            start, loaded = pe(name, 'loaded')
+            logical, explicit = file(name, 'logical'), file(name, 'explicit-I386')
+            require(logical['selected_PE'] == explicit['selected_PE'] == loaded, 'loaded/disk selected PE mismatch')
+            require(logical['file_key'] == explicit['file_key'] and logical['sha256'] == explicit['sha256'],
+                    'readonly file ID/length/hash mismatch')
+            handles = []
+            for view in ('explicit-I386', 'logical'):
+                _, closed = take(r'D3D8_SYSTEM_FILE_CLOSE name=(\S+) view=(\S+) handle=((?:0x)?[0-9a-fA-F]+) status=1',
+                                 'both explicit readonly handles must close before identity publication')
+                require(closed[1].casefold() == name and closed[2] == view, 'original file close name/view reordered')
+                handle = int(closed[3], 16)
+                require(handle > 0 and handle not in handles, 'missing or duplicate simultaneous file handle')
+                handles.append(handle)
+            end, module = take(r'D3D8_SYSTEM_MODULE_ID name=(\S+) logical=(.+) explicit=(.+) mapped_nt=(.+) identity=1 machine=014c readonly=1',
+                               'complete actual mapped module identity required')
+            require(module[1].casefold() == name and module[2] == logical['input'] and module[3] == explicit['input'],
+                    'loaded module and actual file input records differ')
+            require(module[3].casefold() == (SYSTEM_DIRECTORY + chr(92) + name).casefold(),
+                    'exact explicit I386 directory file view required')
+            require(module[4].casefold() == logical['final_nt'].casefold() == explicit['final_nt'].casefold(),
+                    'mapped NT filename differs from held file final NT filename')
+            entry = {'name': name, 'logical': module[2], 'explicit': module[3], 'mapped_nt': module[4],
+                     'file_key': logical['file_key'], 'sha256': logical['sha256'], 'selected_PE': loaded,
+                     'closed_handles': handles, 'start_row': start, 'end_row': end}
+            groups.append(entry)
+            if pending is not None:
+                require(name in ('kernel32.dll', 'kernelbase.dll') and name not in pending['providers'],
+                        'API provider identity duplicated or unexpected')
+                pending['providers'].append(name)
+            else:
+                require(directory is not None, 'non-provider identity before verified directory selection')
+        elif text.startswith('D3D8_SYSTEM_DIRECTORY '):
+            require(pending is not None and pending['machine'] is not None
+                and pending['providers'] == ['kernel32.dll', 'kernelbase.dll'], 'actual API provider identities incomplete')
+            position, value = take(r'D3D8_SYSTEM_DIRECTORY machine=014c api=GetSystemWow64Directory2W path=(.+)',
+                                   'documented explicit I386 directory selection required')
+            require(value[1].casefold() == SYSTEM_DIRECTORY.casefold(), 'original explicit I386 directory mismatch')
+            directory = value[1]
+            directories.append(position)
+            pending = None
+        else:
+            require(False, 'unknown or reordered physical system identity record')
+    require(pending is None and machines and directories and groups, 'complete system process/provider/module originals required')
+    return {'modules': groups, 'process_rows': machines, 'directory_rows': directories,
+            'module_count': len(groups), 'readonly_file_pairs': len(groups), 'closed_file_handles': len(groups) * 2}
+
+
 def verify_names(text, luid, source):
     rows = lines(text)
     match_identity(rows, luid, source)
-    machines = single(rows, 'D3D8_PROCESS_MACHINE ')
-    require(re.fullmatch(r'D3D8_PROCESS_MACHINE process=014c native=aa64 effective=014c pointer_bytes=4 legacy_status=[01] legacy_wow=[01]', machines),
-            'actual I386 process on ARM64 machine evidence required')
-    directory = single(rows, 'D3D8_SYSTEM_DIRECTORY ')
-    selected = re.fullmatch(r'D3D8_SYSTEM_DIRECTORY machine=014c api=GetSystemWow64Directory2W path=(.+)', directory)
-    require(selected and selected[1].casefold() == r'C:\Windows\SysWOW64'.casefold(),
-            'explicit I386 system directory selection required')
+    identities = verify_module_identities(rows)
+    require([row['name'] for row in identities['modules']] == ['kernel32.dll', 'kernelbase.dll', 'gdi32.dll']
+        and len(identities['process_rows']) == len(identities['directory_rows']) == 1,
+        'names phase requires exactly three actual loaded system module joins')
     gdi = single(rows, 'D3D8_SYSTEM_GDI32 ')
-    paths = re.fullmatch(r'D3D8_SYSTEM_GDI32 actual=(.+) expected=(.+) machine=014c pointer_bytes=4', gdi)
-    require(paths and paths[1].casefold() == paths[2].casefold() == r'C:\Windows\SysWOW64\gdi32.dll'.casefold(),
-            'actual and expected genuine I386 GDI32 paths must match')
-    require(rows.index(machines) < rows.index(directory) < rows.index(gdi) < rows.index(single(rows, 'D3D8_KMT_MATCH ')),
-            'machine/path evidence must precede KMT matching')
+    paths = re.fullmatch(r'D3D8_SYSTEM_GDI32 actual=(.+) expected=(.+) machine=014c pointer_bytes=4 file_identity=1', gdi)
+    loaded = identities['modules'][-1]
+    require(paths and paths[1] == loaded['logical'] and paths[2] == loaded['explicit'],
+            'GDI32 trace must match independently rejoined logical/explicit file identities')
+    require(identities['process_rows'][0] < identities['directory_rows'][0] < loaded['end_row']
+        < rows.index(gdi) < rows.index(single(rows, 'D3D8_KMT_MATCH ')), 'actual module identities must precede KMT matching')
     name = re.fullmatch(r'D3D8_KMT_NAME version=0 status=00000000 terminated=1 name=(.+) pointer_bytes=4 raw_bytes=524', single(rows, 'D3D8_KMT_NAME '))
     require(name, 'successful original I386 legacy name query required')
     words = []
@@ -102,23 +218,55 @@ def verify_names(text, luid, source):
     require(actual == name[1] and 3 < len(actual) < 260, 'printed name differs from original words')
     require(re.fullmatch(r'[A-Za-z]:\\[^\x00\r\n"]+\.dll', actual, re.I) and '..' not in actual.split('\\'), 'bounded actual absolute registered filename required')
     require(rows.count('D3D8_KMT_NAMES_COMPLETE system_runtime_calls=0 create_device=0 core_loads=0 registry_writes=0') == 1, 'names phase scope mismatch')
-    allowed = ('D3D8_USER_GATE ', 'D3D8_PROCESS_MACHINE ', 'D3D8_SYSTEM_DIRECTORY ', 'D3D8_SYSTEM_GDI32 ',
+    allowed = (*IDENTITY_PREFIXES, 'D3D8_USER_GATE ', 'D3D8_SYSTEM_GDI32 ',
                'D3D8_KMT_MATCH ', 'D3D8_KMT_NAME ', 'D3D8_KMT_NAME_WORD ', 'D3D8_KMT_CLOSED ', 'D3D8_KMT_NAMES_COMPLETE ')
     require(all(row.startswith(allowed) for row in rows), 'names phase emitted factory/core/unexpected output')
     return {'registered_I386_filename': actual, 'name_words': 260, 'query_bytes': 524,
             'process_machine': '014c', 'native_machine': 'aa64', 'system_directory_api': 'GetSystemWow64Directory2W',
             'actual_I386_GDI32_path': paths[1], 'expected_I386_GDI32_path': paths[2],
-            'create_device': False, 'core_loaded': False}
+            'physical_module_identities': identities, 'create_device': False, 'core_loaded': False}
+
+
+def verify_runtime_module_callers(rows):
+    identities = verify_module_identities(rows)
+    runtime_modules = [row for row in identities['modules'] if row['name'] == 'd3d8.dll']
+    require(runtime_modules, 'actual genuine D3D8 mapped/file identity required')
+    callers = []
+    for position, row in enumerate(rows):
+        if not row.startswith('SYSTEM_D3D8_CALLER_PATH '):
+            continue
+        caller = re.fullmatch(r'SYSTEM_D3D8_CALLER_PATH actual=(.+) expected=(.+) machine=014c pointer_bytes=4 '
+                              r'directory_api=GetSystemWow64Directory2W file_identity=1', row)
+        require(caller, 'complete actual Microsoft D3D8 caller file identity required')
+        earlier = [value for value in runtime_modules if value['end_row'] < position]
+        require(earlier and caller[1] == earlier[-1]['logical'] and caller[2] == earlier[-1]['explicit'],
+                'actual caller differs from preceding complete mapped/file identity')
+        callers.append({'row': position, 'logical': caller[1], 'explicit': caller[2],
+                        'file_identity': earlier[-1]})
+    require(callers, 'actual Microsoft D3D8 caller identity records absent')
+    opens = [(position, re.fullmatch(r'SYSTEM_D3D8_OPEN_BEGIN interface=8 version=\d+ runtime=\S+ caller=(.+) '
+             r'pointer_bytes=4 readonly=([01])', row)) for position, row in enumerate(rows)
+             if row.startswith('SYSTEM_D3D8_OPEN_BEGIN ')]
+    require(len(opens) == len(callers) and all(match for _, match in opens), 'complete actual Interface8 open/caller pairs required')
+    for index, ((position, opened), caller) in enumerate(zip(opens, callers)):
+        require(caller['row'] < position and opened[1] == caller['logical']
+            and (index == 0 or opens[index - 1][0] < caller['row']), 'actual Interface8 caller/open identity reordered')
+    return {'module_identities': identities, 'callers': callers, 'opens': [(position, opened[2]) for position, opened in opens]}
 
 
 def verify_enumeration(text):
     rows = lines(text)
+    runtime_identity = verify_runtime_module_callers(rows)
+    require(all(readonly == '1' for _, readonly in runtime_identity['opens']), 'enumeration must retain readonly Interface8 opens')
     require(not re.search(r'^(?:D3D8_(?:ERROR|FAILED|UNAVAILABLE)\b|SYSTEM_D3D8_(?:CREATE|DEVICE|LIFETIME)(?:_|\b))', text, re.M), 'enumeration attempted device or reported failure')
-    require(single(rows, 'D3D8_RUNTIME ') == r'D3D8_RUNTIME path=C:\Windows\SysWOW64\d3d8.dll machine=014c pointer_bytes=4 sdk_version=220 caps_bytes=212', 'genuine system8 runtime identity required')
+    runtime = re.fullmatch(r'D3D8_RUNTIME path=(.+) machine=014c pointer_bytes=4 sdk_version=220 caps_bytes=212',
+                           single(rows, 'D3D8_RUNTIME '))
+    modules = [row for row in runtime_identity['module_identities']['modules'] if row['name'] == 'd3d8.dll']
+    require(runtime and all(runtime[1].casefold() == row['explicit'].casefold() for row in modules),
+            'genuine system8 runtime path must match rejoined explicit I386 files')
     adapters = re.findall(r'^D3D8_ADAPTER index=\d+ identifier_hr=00000000 caps_hr=00000000 vendor=1af4 device=1050 devcaps=([0-9a-f]{8}) vs=fffe0101 ps=ffff0104 constants=96$', text, re.M)
     require(len(adapters) == 1 and int(adapters[0], 16) & 0x90000 == 0x90000, 'actual bounded Interface8 HAL caps required')
-    opens = re.findall(r'^SYSTEM_D3D8_OPEN_BEGIN interface=8 version=\d+ runtime=\S+ caller=C:\\Windows\\SysWOW64\\d3d8\.dll pointer_bytes=4 readonly=1$', text, re.M | re.I)
-    require(opens, 'genuine Microsoft caller did not open Interface8')
+    opens = runtime_identity['opens']
     ends = re.findall(r'^SYSTEM_D3D8_OPEN_END hr=00000000 interface=8 driver_version=12 adapter=\S+ core=(.+) expected_ci_source_commit=([0-9a-f]{40}) machine=014c core_create_calls=0$', text, re.M)
     require(len(ends) == len(opens) and all(commit == CORE_SOURCE for _, commit in ends), 'actual typed adapter admission failed')
     expected_core = r'C:\Users\Public\DxvkD3D8Candidate-d7e5c7d-37648387721\viogpudxvk.dll'
@@ -143,7 +291,108 @@ def verify_enumeration(text):
     closed_adapters = re.findall(r'^SYSTEM_D3D8_CLOSE adapter=\S+ runtime=\S+ hr=00000000 remaining=\d+ live_devices=0$', text, re.M)
     require(len(closed_adapters) == len(opens) and 'remaining=0 live_devices=0' in closed_adapters[-1], 'adapter owner remained live')
     require(re.fullmatch(r'D3D8_COMPLETE mode=front-enumerate adapters=[1-9]\d* create_device=0 presents=0 registry_writes=0', single(rows, 'D3D8_COMPLETE ')), 'enumeration-only scope mismatch')
-    return {'HAL_caps': True, 'interface': 8, 'caps_bytes': 212, 'core_loaded': True, 'create_device': False}
+    return {'HAL_caps': True, 'interface': 8, 'caps_bytes': 212, 'core_loaded': True, 'create_device': False,
+            'physical_runtime_identities': runtime_identity}
+
+
+def verify_native_identity_cpu(result, members):
+    """Join the focused CPU08 scope without relabeling the old full CPU suite."""
+    require(result['schema'] == 'native-system-d3d8-device-x86-build-v1' and result['status'] == 'PASS'
+        and result['source_commit'] == PROBE_SOURCE and result['core_reference_commit'] == CORE_SOURCE,
+        'exact accepted shared-identity native CPU source required')
+    require(result['object_count'] == 4 and result['pe_count'] == 3 and result['malformed_cli_guards'] == 4,
+            'focused native CPU output/CLI scope mismatch')
+    require(result['shared_identity_fixture'] == {'executed': True, 'checks': 91, 'runtime_factories': 0,
+        'KMT_calls': 0, 'core_loads': 0}, 'actual shared predicate execution scope mismatch')
+    require(result['process_api_diagnostics'] == {'executed': True, 'verified_modules': 3, 'readonly_file_pairs': 3,
+        'runtime_factories': 0, 'KMT_calls': 0, 'core_loads': 0, 'admission': False},
+        'actual read-only process/module observation scope mismatch')
+    require(result['source_before'] == result['source_after'] and len(result['source_before']) == 21
+        and result['before'] == result['after'], 'native original source/state changed')
+    require(result['compiler_full_before'] == result['compiler_full_after']
+        and len(result['compiler_full_before']) == 575 and result['sdk'] == result['sdk_after']
+        and len(result['sdk']) == 13 and result['libraries'] == result['libraries_after']
+        and len(result['libraries']) == 9, 'native official compiler/selected SDK/library originals changed')
+    require(result['compiler_provenance']['sha256'] == 'c6333c67b4f3725f513e82c488b844054859b28456bccb0131eb59b805a5db48'
+        and digest(members['original-compiler-provenance.json']) == result['compiler_provenance']['sha256'],
+        'unchanged original compiler-ready manifest required')
+    ready = read_json(members['original-compiler-provenance.json'])
+    tools = {row['path']: row for row in ready['files']}
+    observed_tools = {row['path']: row for row in result['compiler_full_before']}
+    require(ready['ready'] and ready['file_count'] == len(tools) == len(ready['files']) == 575
+        and len(observed_tools) == 575 and observed_tools.keys() == tools.keys(), 'complete original compiler file set required')
+    for path, row in observed_tools.items():
+        require(all(row[key] == tools[path][key] for key in ('bytes', 'sha256')), 'native compiler file differs from unchanged ready pin')
+    source_rows = {row['input_path']: row for row in result['source_before']}
+    require(len(source_rows) == 21, 'duplicate native source input')
+    for path, row in source_rows.items():
+        member = PurePosixPath(path)
+        require(not member.is_absolute() and '..' not in member.parts, 'unsafe native source path')
+        data = members['source/' + str(member)]
+        require(len(data) == row['bytes'] and digest(data) == row['sha256'], 'retained native source bytes differ from before/after rows')
+    for key, prefix in [('sdk', 'original-sdk-headers/'), ('libraries', 'original-link-libraries/')]:
+        names = set()
+        for row in result[key]:
+            name = row['path'].rsplit(chr(92), 1)[-1]
+            require(name not in names, 'duplicate original selected native dependency')
+            names.add(name)
+            data = members[prefix + name]
+            require(len(data) == row['bytes'] and digest(data) == row['sha256'], 'retained native selected dependency changed')
+    require(not result['installation'] and not result['production_core_built']
+        and result['gpu_runs'] == result['system_runtime_calls'] == result['selector_calls'] == 0,
+        'focused native CPU build cannot grant runtime/hardware admission')
+    require(result['raw_process_source']['sha256'] == result['raw_process_source_after']['sha256'] == RAW
+        and digest(members['executed-raw-process-source.cs']) == RAW, 'actual native process runner changed')
+    expected = ['archive-list', 'extract']
+    for group, units in [('front', ['tests_umd-d3d8-runtime-front.cpp']),
+                         ('probe', ['tests_umd-d3d8-runtime-probe.cpp', 'tests_umd-d3d8-runtime-guard.cpp']),
+                         ('identity', ['tests_umd-d3d8-system-identity.cpp'])]:
+        expected += [group + '-' + unit + '-compile' for unit in units] + [group + '-link', group + '-headers']
+    expected += ['identity-fixture', 'process-api-diagnostics'] + ['invalid-cli-' + str(i) for i in range(1, 5)]
+    require([command['name'] for command in result['commands']] == expected,
+            'exact eighteen original native build children required')
+    for command in result['commands']:
+        name = command['name']
+        stdout, stderr = members[name + '.stdout.txt'], members[name + '.stderr.txt']
+        require(command['stdout'].rsplit(chr(92), 1)[-1] == name + '.stdout.txt'
+            and command['stderr'].rsplit(chr(92), 1)[-1] == name + '.stderr.txt'
+            and command['raw_pipe_bytes'], 'actual native raw member paths mismatch')
+        raw = {'Pid': command['pid'], 'ProcessHandle': command['retained_process_handle'], 'Exited': command['exited'],
+               'ExitCodeAvailable': command['exit_code_available'], 'PipesDrained': command['pipes_drained'],
+               'TimedOut': command['timeout'], 'ChildStillRunning': command['child_still_running'],
+               'Failure': command['capture_failure'], 'ExitCode': command['exit'], 'StdoutBytes': command['stdout_bytes'],
+               'StderrBytes': command['stderr_bytes'], 'Seconds': command['seconds'], 'StartUtc': command['start_utc']}
+        expected_exit = 64 if name.startswith('invalid-cli-') else 0
+        require(command['expected'] == expected_exit, 'actual native child exit contract mismatch')
+        expected_deadline = 180 if name.endswith('-compile') else 120 if name.endswith('-link') else 30
+        if name == 'identity-fixture' or name.startswith('invalid-cli-'):
+            expected_deadline = 15
+        require(command['deadline_seconds'] == expected_deadline, 'frozen native child deadline changed')
+        closed(raw, stdout, stderr, command['deadline_seconds'] * 1000, expected_exit)
+        if name.endswith('-compile'):
+            require(command['first_party_strict'] and not command['compiler_warnings']
+                and not re.search(rb'\bwarning [CD]\d+', stdout + stderr, re.I), 'strict native source compiler diagnostic retained')
+        if name in ('identity-fixture', 'process-api-diagnostics'):
+            require(command['arguments'] == ('' if name == 'identity-fixture' else '--process-api-diagnostics')
+                and command['deadline_seconds'] == (15 if name == 'identity-fixture' else 30),
+                'focused native execution command/deadline mismatch')
+        if name.startswith('invalid-cli-'):
+            arguments = ['', '--unknown', '--process-api-diagnostics extra', '--process-api-diagnostics one two']
+            require(command['arguments'] == arguments[int(name.rsplit('-', 1)[1]) - 1], 'frozen malformed native CLI changed')
+    require(members['identity-fixture.stdout.txt'].decode('utf-8').strip()
+        == 'D3D8 system image identity fixture PASS checks=91 runtime_calls=0 KMT_calls=0 core_loads=0',
+        'original shared predicate stdout missing')
+    rows = lines(members['process-api-diagnostics.stdout.txt'].decode('utf-8'))
+    identities = verify_module_identities(rows)
+    require([entry['name'] for entry in identities['modules']] == ['kernel32.dll', 'kernelbase.dll', 'gdi32.dll']
+        and len(identities['process_rows']) == len(identities['directory_rows']) == 1,
+        'actual read-only three-module native observation incomplete')
+    require(single(rows, 'D3D8_PROCESS_API_DIAGNOSTICS_COMPLETE ')
+        == 'D3D8_PROCESS_API_DIAGNOSTICS_COMPLETE observed_providers=5 observed_lookup_rows=10 verified_modules=3 readonly_file_pairs=3 runtime_calls=0 KMT_calls=0 core_loads=0 admission=0',
+        'actual read-only native completion/scope missing')
+    return {'objects': 4, 'PEs': 3, 'shared_predicate_checks': 91, 'malformed_CLI': 4,
+            'owned_build_children': 18, 'original_module_identities': identities,
+            'runtime_factories': 0, 'KMT_calls': 0, 'core_loads': 0, 'hardware_admission': False}
 
 
 def verify_archive(archive, collection_path, manifest_path):
@@ -242,11 +491,18 @@ def verify_archive(archive, collection_path, manifest_path):
         require(result[key] is False, 'unexpected runner admission or persistent mutation')
     files = {row['role']: row for row in manifest['files'] if phase in row['phases']}
     with tarfile.open(Path(native['original_archive_path']), 'r:gz') as original:
-        result_bytes = original.extractfile('result.json').read()
-        native_result = read_json(result_bytes)
-        require(native_result['status'] == 'PASS' and native_result['source_commit'] == PROBE_SOURCE, 'accepted native original build result mismatch')
+        native_members = {}
+        for member in original:
+            if member.isdir():
+                continue
+            name = PurePosixPath(member.name.removeprefix('./'))
+            require(member.isfile() and not name.is_absolute() and '..' not in name.parts and str(name) not in native_members,
+                    'unsafe or duplicate native CPU original member')
+            native_members[str(name)] = original.extractfile(member).read()
+        native_result = read_json(native_members['result.json'])
+        native_cpu_details = verify_native_identity_cpu(native_result, native_members)
         for role, path in (('probe', 'probe/d3d8-runtime-probe.exe'), ('frontend', 'front/viogpu-d3d8-runtime-front.dll')):
-            data = original.extractfile(path).read()
+            data = native_members[path]
             pin = next(row for row in manifest['files'] if row['role'] == role)
             require(digest(data) == pin['sha256'] and len(data) == pin['bytes'], 'actual native I386 output chain mismatch')
             row = [item for item in native_result['outputs'] if item['path'] == pin['path']]
@@ -283,14 +539,17 @@ def verify_archive(archive, collection_path, manifest_path):
         if phase == 'enumerate':
             detail = verify_enumeration(text)
         else:
+            runtime_identity = verify_runtime_module_callers(lines(text))
             spec = importlib.util.spec_from_file_location('pixels', Path(__file__).with_name('verify-native-d3d8-system-device.py'))
             pixels = importlib.util.module_from_spec(spec); spec.loader.exec_module(pixels)
             detail = pixels.verify(text, mode, luid, source)
+            detail['physical_runtime_identities'] = runtime_identity
     return {'schema': 'system-d3d8-phase-admission-v1', 'verified': True, 'phase': phase, 'manifest_sha256': digest(manifest_bytes),
             'probe_source': PROBE_SOURCE, 'core_source': CORE_SOURCE, 'core_ci_run': RUN, 'luid': luid, 'source': source, 'sid': SID,
             'registered_I386_filename': registered, 'original_archive_sha256': digest(raw_archive), 'original_archive_bytes': len(raw_archive),
             'original_files': len(contents), 'stdout_sha256': digest(stdout), 'process_sha256': digest(contents['output/process-original.json']),
             'collection_sha256': digest(collection_path.read_bytes()), 'details': detail, 'registration': registration,
+            'native_cpu_details': native_cpu_details,
             'scope': 'one original closed genuine system8 USER phase; later phases require a separate explicit target handoff'}
 
 

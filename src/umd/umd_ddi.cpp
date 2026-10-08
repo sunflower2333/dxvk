@@ -58,6 +58,7 @@ struct Device {
   ComPtr<ID3D11Texture2D> rotationScratch;
   std::atomic<bool> rotationActive{false};
   std::atomic<bool> presentActive{false};
+  std::atomic<dxvk::umd::SharedSurface*> resolvingShared{nullptr};
   BOOL predicateValue = FALSE;
   bool suppressCommands = false;
   D3D10DDI_HRTCORELAYER runtime;
@@ -1026,7 +1027,11 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
   // does not destroy the surface for whoever else has it open, and after the
   // retirement below there is no live context to publish through. A failure
   // here is the caller's to hear about; the destruction still proceeds.
-  if (object->shared && object->shared->state.dirty) {
+  // A nested destroy may run inside Resolve's synchronized Lock callback.
+  // That handoff already pins this surface and has its staging texture
+  // mapped; let it finish rather than remapping the same texture recursively.
+  if (object->shared && object->shared->state.dirty
+      && object->shared.get() != device->resolvingShared.load()) {
     const HRESULT hr = dxvk::umd::publishSharedSurface(device->backend.Get(),
       device->context.Get(), device->memory, *object->shared, device->sharedEpoch);
     if (FAILED(hr)) device->error(hr);
@@ -2719,6 +2724,76 @@ HRESULT APIENTRY setResourcePriority(DXGI_DDI_ARG_SETRESOURCEPRIORITY* args) {
     catch (...) { return E_FAIL; }
 }
 
+HRESULT resolveSharedResourceData(Device* device, DXGI_DDI_HRESOURCE handle) {
+  // Shared publication maps one staging buffer. Reentrant Present/Resolve
+  // and allocation rotation must not use that same buffer or replace its
+  // allocation while the runtime services Lock/Unlock/Render callbacks.
+  if (device->presentActive.exchange(true)) return DXGI_ERROR_WAS_STILL_DRAWING;
+  struct ResolveScope {
+    Device* device;
+    ~ResolveScope() { device->resolvingShared = nullptr; device->presentActive = false; }
+  } resolveScope{device};
+  if (device->rotationActive) return DXGI_ERROR_WAS_STILL_DRAWING;
+  auto resource = reinterpret_cast<Resource*>(handle);
+  std::shared_ptr<const char> reservation;
+  std::shared_ptr<dxvk::umd::SharedSurface> surface;
+  ComPtr<ID3D11Device> backend;
+  ComPtr<ID3D11DeviceContext> context;
+  {
+    std::lock_guard<std::mutex> lock(deviceStorageMutex);
+    if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
+    backend = device->backend; context = device->context;
+  }
+  if (!backend || !context) return DXGI_ERROR_DEVICE_REMOVED;
+  {
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    const auto entry = resourceStorage.find(resource);
+    if (entry == resourceStorage.end() || entry->second.owner != device
+        || entry->second.phase != ResourcePhase::Live) return E_INVALIDARG;
+    if (!resource->shared || !resource->shared->allocation.handle()) return DXGI_DDI_ERR_UNSUPPORTED;
+    reservation = entry->second.reservation; surface = resource->shared;
+  }
+  const auto allocation = surface->allocation.handle();
+  device->resolvingShared = surface.get();
+  auto live = [&] {
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    const auto entry = resourceStorage.find(resource);
+    return !device->retired && entry != resourceStorage.end()
+      && entry->second.owner == device && entry->second.phase == ResourcePhase::Live
+      && entry->second.reservation == reservation && surface->allocation.handle() == allocation;
+  };
+  // Publishing a dirty cache performs a synchronized GPU readback and a
+  // balanced KMD upload. It must finish before handing ownership to the next
+  // user. Even a clean cache still owes submission of partially built commands.
+  HRESULT hr = dxvk::umd::publishSharedSurface(backend.Get(), context.Get(),
+    device->memory, *surface, device->sharedEpoch);
+  if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  hr = dxvk::umd::flushRuntimeSubmission(context.Get());
+  if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  // The next owner can change the linear allocation without touching this
+  // cache. Invalidate only this successful handoff; failed publication leaves
+  // local dirty pixels authoritative and available for a later retry.
+  dxvk::umd::invalidateSharedSurface(*surface);
+  return S_OK;
+}
+
+HRESULT APIENTRY resolveSharedResource(DXGI_DDI_ARG_RESOLVESHAREDRESOURCE* args) {
+  if (!args || !args->hDevice || !args->hResource) return E_INVALIDARG;
+  const auto request = *args;
+  DeviceOperation operation(reinterpret_cast<void*>(request.hDevice));
+  if (!operation.owner) return DXGI_ERROR_DEVICE_REMOVED;
+  dxvk::umd::RuntimeService::Scope scope(operation.owner->service.get());
+  try {
+    return operation.owner->service->run([&] {
+      DeviceOperation worker(operation.storage, operation.owner);
+      return resolveSharedResourceData(operation.owner.get(), request.hResource);
+    });
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
+}
+
 HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
   if (args->SrcSubResourceIndex || args->DstSubResourceIndex
       || args->hDstResource || !args->pDXGIContext || args->Flags.Value != 1)
@@ -3083,6 +3158,7 @@ HRESULT createDdiDevice(
     dxgiTable11->pfnRotateResourceIdentities = rotateResourceIdentities;
     dxgiTable11->pfnQueryResourceResidency = queryResourceResidency;
     dxgiTable11->pfnSetResourcePriority = setResourcePriority;
+    dxgiTable11->pfnResolveSharedResource = resolveSharedResource;
     if (device->memory.available()) dxgiTable11->pfnPresent = present;
   }
   {

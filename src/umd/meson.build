@@ -215,6 +215,11 @@ umd_dxgi_shared_resolve_test = executable('dxvk-umd-dxgi-shared-resolve-test',
    'umd_shader11.cpp', 'umd_allocation.cpp', 'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp'],
   dependencies : native_entry_dependencies)
 
+umd_dxgi_blt_test = executable('dxvk-umd-dxgi-blt-test',
+  ['../../tests/umd-dxgi-blt.cpp', 'umd_ddi.cpp', 'umd_shader.cpp',
+   'umd_shader11.cpp', 'umd_allocation.cpp', 'umd_runtime_query.cpp', 'umd_runtime_gpu.cpp'],
+  dependencies : native_entry_dependencies)
+
 umd_runtime_gpu_test = executable('dxvk-umd-runtime-gpu-test',
   '../../tests/umd-runtime-gpu.cpp', 'umd_runtime_gpu.cpp', 'umd_runtime_query.cpp',
   'umd_ddi.cpp', 'umd_allocation.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',

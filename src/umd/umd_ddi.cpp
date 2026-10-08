@@ -15,6 +15,7 @@
 #include "umd_transfer_policy.h"
 #include "umd_transfer_format.h"
 #include "umd_generate_mips.h"
+#include "umd_blt.h"
 #include "umd_state.h"
 #include "umd_stream_output.h"
 #include "umd_output_merger.h"
@@ -256,6 +257,7 @@ struct PresentSurface {
 };
 struct Resource {
   Device* owner = nullptr;
+  UINT nativeBindFlags = 0;
   ComPtr<ID3D11Resource> backend;
   // Present callbacks can destroy and reclaim the runtime's Resource bytes.
   // A local Present owner keeps this allocation and readback alive separately.
@@ -817,6 +819,7 @@ HRESULT openResourceData(Device* device, const D3D10DDIARG_OPENRESOURCE* args,
     hr = device->backend->CreateTexture2D(&desc, nullptr, &surface->cache);
     if (FAILED(hr)) return hr;
     resource->backend = surface->cache;
+    resource->nativeBindFlags = D3D10_DDI_BIND_SHADER_RESOURCE | D3D10_DDI_BIND_RENDER_TARGET;
     trackSharedSurface(device, surface);
     resource->shared = std::move(surface);
     return S_OK;
@@ -831,11 +834,15 @@ HRESULT createResourceData(Device* device,
   bool shared = false;
   if (!args || !args->pMipInfoList || !args->MipLevels || !args->ArraySize ||
       args->MipLevels > D3D11_REQ_MIP_LEVELS || args->ArraySize > D3D11_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION ||
-      args->pPrimaryDesc ||
       !dxvk::umd::textureMiscFlags(*args, miscFlags, &shared) || (args->MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK) ||
       (args->BindFlags & ~(D3D10_DDI_BIND_PIPELINE_MASK | D3D10_DDI_BIND_PRESENT))) {
     return E_INVALIDARG;
   }
+  // Primary scanout needs real primary allocation metadata and the runtime
+  // SetDisplayMode callback. Return the documented unsupported result while
+  // Blt supplies the rotation fallback; do not create an ordinary allocation.
+  if (args->pPrimaryDesc) return DXGI_DDI_ERR_UNSUPPORTED;
+  resource->nativeBindFlags = args->BindFlags;
   D3D11_TEXTURE1D_DESC oneDimensional = {};
   if (args->ResourceDimension == D3D10DDIRESOURCE_TEXTURE1D &&
       !dxvk::umd::texture1DDesc(*args, miscFlags, oneDimensional)) return E_INVALIDARG;
@@ -852,10 +859,11 @@ HRESULT createResourceData(Device* device,
   if (presentable && (!device->memory.available() || !runtime.handle
       || args->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D
       || args->MipLevels != 1 || args->ArraySize != 1
-      || args->SampleDesc.Count != 1 || args->SampleDesc.Quality
+      || !args->SampleDesc.Count
       || args->Usage != D3D10_DDI_USAGE_DEFAULT || args->MapFlags
       || !(args->BindFlags & D3D10_DDI_BIND_RENDER_TARGET)
-      || (args->Format != DXGI_FORMAT_R8G8B8A8_UNORM && args->Format != DXGI_FORMAT_B8G8R8A8_UNORM))) {
+      || dxvk::umd::bltLinearFormat(args->Format) == DXGI_FORMAT_UNKNOWN
+      || (args->SampleDesc.Count > 1 && args->pInitialDataUP))) {
     return DXGI_ERROR_UNSUPPORTED;
   }
   // A presentable shared surface would need one allocation to serve both the
@@ -925,7 +933,8 @@ HRESULT createResourceData(Device* device,
     if (hr == S_OK && presentable) {
       resource->present = std::make_shared<PresentSurface>();
       hr = device->memory.allocate(resource->present->allocation, runtime.handle,
-        args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight, args->Format);
+        args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight,
+        dxvk::umd::bltLinearFormat(args->Format));
       if (FAILED(hr)) resource->backend.Reset();
     }
     if (hr == S_OK && shared) {
@@ -2794,6 +2803,115 @@ HRESULT APIENTRY resolveSharedResource(DXGI_DDI_ARG_RESOLVESHAREDRESOURCE* args)
     catch (...) { return E_FAIL; }
 }
 
+HRESULT bltData(Device* device, const DXGI_DDI_ARG_BLT& request) {
+  if (device->presentActive.exchange(true)) return DXGI_ERROR_WAS_STILL_DRAWING;
+  struct BltScope {
+    Device* device;
+    ~BltScope() { device->resolvingShared = nullptr; device->presentActive = false; }
+  } scope{device};
+  if (device->rotationActive) return DXGI_ERROR_WAS_STILL_DRAWING;
+  ComPtr<ID3D11Device> backend;
+  ComPtr<ID3D11DeviceContext> context;
+  {
+    std::lock_guard<std::mutex> lock(deviceStorageMutex);
+    if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
+    backend = device->backend; context = device->context;
+  }
+  if (!backend || !context) return DXGI_ERROR_DEVICE_REMOVED;
+  struct Participant {
+    void* storage = nullptr;
+    std::shared_ptr<const char> reservation;
+    ComPtr<ID3D11Texture2D> image;
+    std::shared_ptr<dxvk::umd::SharedSurface> shared;
+    UINT bindings = 0;
+  } source, destination;
+  {
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    for (auto pair : {std::pair{request.hSrcResource, &source}, std::pair{request.hDstResource, &destination}}) {
+      auto resource = reinterpret_cast<Resource*>(pair.first);
+      const auto entry = resourceStorage.find(resource);
+      if (entry == resourceStorage.end() || entry->second.owner != device
+          || entry->second.phase != ResourcePhase::Live) return E_INVALIDARG;
+      auto& participant = *pair.second;
+      participant.storage = resource; participant.reservation = entry->second.reservation;
+      participant.shared = resource->shared; participant.bindings = resource->nativeBindFlags;
+      if (!resource->backend || FAILED(resource->backend.As(&participant.image))) return DXGI_DDI_ERR_UNSUPPORTED;
+    }
+  }
+  if (!(source.bindings & D3D10_DDI_BIND_PRESENT)
+      || !(destination.bindings & D3D10_DDI_BIND_RENDER_TARGET)) return DXGI_DDI_ERR_UNSUPPORTED;
+  // Present Blt publishes into DWM's real paired shared allocation. A private
+  // cache alone cannot satisfy that handoff and must not return success.
+  if (request.Flags.Present && !destination.shared) return DXGI_DDI_ERR_UNSUPPORTED;
+  D3D11_TEXTURE2D_DESC srcDesc{}, dstDesc{};
+  source.image->GetDesc(&srcDesc); destination.image->GetDesc(&dstDesc);
+  dxvk::umd::BltPlan plan;
+  HRESULT hr = dxvk::umd::bltPlan(srcDesc, dstDesc, request.SrcSubresource, request.DstSubresource,
+    request.DstLeft, request.DstTop, request.DstRight, request.DstBottom,
+    request.Flags.Value, UINT(request.Rotate), plan);
+  if (hr != S_OK) return hr == DXGI_ERROR_UNSUPPORTED ? DXGI_DDI_ERR_UNSUPPORTED : hr;
+  auto live = [&] {
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    if (device->retired) return false;
+    for (const auto* participant : {&source, &destination}) {
+      const auto entry = resourceStorage.find(participant->storage);
+      if (entry == resourceStorage.end() || entry->second.owner != device
+          || entry->second.phase != ResourcePhase::Live
+          || entry->second.reservation != participant->reservation) return false;
+    }
+    return true;
+  };
+  const auto epoch = device->sharedEpoch;
+  if (source.shared) {
+    hr = dxvk::umd::refreshSharedSurface(backend.Get(), context.Get(), device->memory, *source.shared, epoch);
+    if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  }
+  const bool wholeDestination = request.DstLeft == 0 && request.DstTop == 0
+    && plan.width == std::max(1u, dstDesc.Width >> (request.DstSubresource % dstDesc.MipLevels))
+    && plan.height == std::max(1u, dstDesc.Height >> (request.DstSubresource % dstDesc.MipLevels));
+  if (destination.shared && !wholeDestination) {
+    hr = dxvk::umd::refreshSharedSurface(backend.Get(), context.Get(), device->memory, *destination.shared, epoch);
+    if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  }
+  hr = dxvk::umd::bltTexture2D(backend.Get(), context.Get(), source.image.Get(), destination.image.Get(),
+    request.SrcSubresource, request.DstSubresource, request.DstLeft, request.DstTop, UINT(request.Rotate), plan, live);
+  if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  if (destination.shared) {
+    if (wholeDestination) dxvk::umd::sharedWroteWhole(destination.shared->state, epoch);
+    else dxvk::umd::sharedWroteRegion(destination.shared->state);
+  }
+  if (request.Flags.Present) {
+    device->resolvingShared = destination.shared.get();
+    hr = dxvk::umd::publishSharedSurface(backend.Get(), context.Get(), device->memory, *destination.shared, epoch);
+    if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    hr = dxvk::umd::flushRuntimeSubmission(context.Get());
+    if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    dxvk::umd::invalidateSharedSurface(*destination.shared);
+    openSharedEpoch(device);
+  }
+  return S_OK;
+}
+
+HRESULT APIENTRY blt(DXGI_DDI_ARG_BLT* args) {
+  if (!args || !args->hDevice || !args->hSrcResource || !args->hDstResource) return E_INVALIDARG;
+  const auto request = *args;
+  DeviceOperation operation(reinterpret_cast<void*>(request.hDevice));
+  if (!operation.owner) return DXGI_ERROR_DEVICE_REMOVED;
+  dxvk::umd::RuntimeService::Scope scope(operation.owner->service.get());
+  try {
+    return operation.owner->service->run([&] {
+      DeviceOperation worker(operation.storage, operation.owner);
+      return bltData(operation.owner.get(), request);
+    });
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
+}
+
 HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
   if (args->SrcSubResourceIndex || args->DstSubResourceIndex
       || args->hDstResource || !args->pDXGIContext || args->Flags.Value != 1)
@@ -2851,9 +2969,12 @@ HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
     ComPtr<ID3D11Texture2D> source;
     hr = image.As(&source);
     if (FAILED(hr)) return hr;
+    D3D11_TEXTURE2D_DESC sourceDesc{}; source->GetDesc(&sourceDesc);
     auto readback = surface->readback;
     if (!readback) {
-      D3D11_TEXTURE2D_DESC desc = {}; source->GetDesc(&desc);
+      auto desc = sourceDesc;
+      desc.Format = dxvk::umd::bltLinearFormat(desc.Format);
+      desc.SampleDesc = {1, 0};
       desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0;
       desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ; desc.MiscFlags = 0;
       hr = backend->CreateTexture2D(&desc, nullptr, &readback);
@@ -2861,7 +2982,18 @@ HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
       if (FAILED(hr)) return hr;
       surface->readback = readback;
     }
-    context->CopyResource(readback.Get(), source.Get());
+    if (sourceDesc.SampleDesc.Count > 1) {
+      // Resolve into a GPU-only single-sample image; staging resources cannot
+      // be resolve destinations. Keep Present honest for unsupported sRGB MSAA.
+      if (sourceDesc.Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB) return DXGI_DDI_ERR_UNSUPPORTED;
+      auto desc = sourceDesc; desc.SampleDesc = {1, 0};
+      ComPtr<ID3D11Texture2D> resolved;
+      hr = backend->CreateTexture2D(&desc, nullptr, &resolved);
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      if (!resolved) return E_FAIL;
+      context->ResolveSubresource(resolved.Get(), 0, source.Get(), 0, sourceDesc.Format);
+      context->CopyResource(readback.Get(), resolved.Get());
+    } else context->CopyResource(readback.Get(), source.Get());
     if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
     D3D11_MAPPED_SUBRESOURCE map = {};
     // Synchronous Map is the GPU completion barrier before any guest CPU
@@ -3147,6 +3279,7 @@ HRESULT createDdiDevice(
   if (!device->backend || !device->context) return E_FAIL;
   populateDeviceFunctions(table);
   if (dxgiTable) {
+    dxgiTable->pfnBlt = blt;
     *dxgiTable = {};
     dxgiTable->pfnRotateResourceIdentities = rotateResourceIdentities;
     dxgiTable->pfnQueryResourceResidency = queryResourceResidency;
@@ -3154,6 +3287,7 @@ HRESULT createDdiDevice(
     if (device->memory.available()) dxgiTable->pfnPresent = present;
   }
   if (dxgiTable11) {
+    dxgiTable11->pfnBlt = blt;
     *dxgiTable11 = {};
     dxgiTable11->pfnRotateResourceIdentities = rotateResourceIdentities;
     dxgiTable11->pfnQueryResourceResidency = queryResourceResidency;

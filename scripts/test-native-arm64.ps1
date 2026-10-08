@@ -69,12 +69,14 @@ $cases = [ordered]@{
     'dxvk-umd-dxgi-residency-test.exe' = '(?m)^DXGI residency/priority PASS checks=\d+ profiles=6 residency=108 priority=48 releases=36\r?$'
     'dxvk-umd-allocation-terminal-test.exe' = '(?m)^DXGI terminal allocations PASS checks=\d+ owned=10 opened=1 transfers=4 attempts=10 released=9 failures=1 locks=3 unlocks=2 retired_lock_returns=1\r?$'
     'dxvk-umd-dxgi-shared-resolve-test.exe' = '(?m)^DXGI shared resolve PASS checks=\d+ profiles=3 snapshots=15 pixels=525 hardware_admission=0\r?$'
+    'dxvk-umd-dxgi-blt-test.exe' = '(?m)^DXGI Blt PASS checks=\d+ profiles=3 snapshots=30 pixels=1536 hardware_admission=0\r?$'
     'dxvk-umd-predication-test.exe' = 'native predication PASS checks=.*draw-cases=24'
     'dxvk-umd-stream-output-test.exe' = 'native stream output PASS checks=.*drawauto-cases=2'
     'dxvk-umd-query-test.exe' = 'query completion PASS checks='
     'dxvk-umd-system-runtime-test.exe' = 'system runtime control PASS: WARP Draw/readback/Present/immediate teardown'
 }
 $originalDirectories = @{
+    'dxvk-umd-dxgi-blt-test.exe' = 'arm64-dxgi-blt-originals'
     'dxvk-umd-dxgi-shared-resolve-test.exe' = 'arm64-dxgi-shared-resolve-originals'
     'dxvk-umd-texture3d-test.exe' = 'arm64-texture3d-originals'
     'dxvk-umd-texturecube-test.exe' = 'arm64-texturecube-originals'
@@ -125,6 +127,9 @@ foreach ($name in $cases.Keys) {
     if ($name -ceq 'dxvk-umd-dxgi-shared-resolve-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-shared-resolve-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-dxgi-shared-resolve-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 shared-resource handoff originals failed' }
+    } elseif ($name -ceq 'dxvk-umd-dxgi-blt-test.exe') {
+        & python (Join-Path $PSScriptRoot 'verify-native-blt-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-dxgi-blt-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 typed DXGI Blt originals failed' }
     } elseif ($name -ceq 'dxvk-umd-texturecube-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-cube-originals.py') $childDirectory --output (Join-Path $root 'arm64-texturecube-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 cube original oracle failed' }

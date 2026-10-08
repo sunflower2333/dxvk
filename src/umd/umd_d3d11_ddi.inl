@@ -29,6 +29,7 @@ HRESULT createResourceData11(Device* device, const D3D11DDIARG_CREATERESOURCE* a
         || !dxvk::umd::texture3DInitialData(legacy)) return E_INVALIDARG;
   }
   resource->owner = device;
+  resource->nativeBindFlags = args->BindFlags;
   resource->retirement = std::make_unique<ResourceRetirement>();
   std::vector<D3D11_SUBRESOURCE_DATA> initial;
   if (args->pInitialDataUP) {

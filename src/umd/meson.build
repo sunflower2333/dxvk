@@ -341,3 +341,12 @@ umd_d3d10_shader_test = executable('dxvk-umd-d3d10-shader-test',
   ['../../tests/umd-d3d10-shaders.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
    'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_contract.cpp'],
   dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])
+
+# Shared decoded SM4/4.1 pipeline, independently profiled for historical DDIs.
+umd_shader10_profile_test = executable('dxvk-umd-shader10-profile-test',
+  ['../../tests/umd-shader10-profile.cpp', 'umd_shader.cpp', 'umd_shader11.cpp'],
+  dependencies : [dxbc_spirv_dep])
+umd_d3d10_system_shader_test = executable('dxvk-umd-d3d10-system-shader-test',
+  ['../../tests/umd-d3d10-system-shaders.cpp', 'umd_ddi.cpp', 'umd_shader.cpp', 'umd_shader11.cpp',
+   'umd_runtime_query.cpp', 'umd_allocation.cpp', 'umd_runtime_gpu.cpp', 'umd_contract.cpp'],
+  dependencies : native_entry_dependencies + [cpp.find_library('d3dcompiler')])

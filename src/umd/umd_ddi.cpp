@@ -3,6 +3,7 @@
 #include "umd_adapter.h"
 #include "umd_shader.h"
 #include "umd_shader11.h"
+#include "umd_shader10_policy.h"
 #include "umd_query.h"
 #include "umd_allocation.h"
 #include "umd_primary.h"
@@ -1677,81 +1678,56 @@ void APIENTRY unmapResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource, UIN
 SIZE_T APIENTRY shaderSize(D3D10DDI_HDEVICE, const UINT*, const D3D10DDIARG_STAGE_IO_SIGNATURES*) {
   return sizeof(Shader);
 }
+HRESULT createNativeShader10(Device* device, const UINT* code, D3D10DDI_HSHADER output,
+    dxvk::umd::ShaderStage stage, const D3D10DDIARG_STAGE_IO_SIGNATURES* signature);
+void signatureOrdinals11(std::vector<dxvk::umd::ShaderIo11>& decoded,
+    const D3D10DDIARG_SIGNATURE_ENTRY* entries, UINT count);
 void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
     const D3D10DDIARG_STAGE_IO_SIGNATURES* signature, dxvk::umd::ShaderStage stage,
     const D3D10DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT* streamOutput = nullptr) {
   auto device = get(h);
-  if (!out.pDrvPrivate) { device->error(E_INVALIDARG); return; }
-  auto shader = new (out.pDrvPrivate) Shader();
-  shader->owner = device;
-  shader->stage = stage;
-  if (!code || !dxvk::umd::validLegacyShaderVersion(stage, code[0],
-        device->featureLevel >= D3D_FEATURE_LEVEL_10_1)
-      || !signature || signature->NumInputSignatureEntries > 32 ||
-      !signature->NumOutputSignatureEntries || signature->NumOutputSignatureEntries > 32 || !signature->pOutputSignature ||
-      (signature->NumInputSignatureEntries && !signature->pInputSignature)) {
+  if (!out.pDrvPrivate || uintptr_t(out.pDrvPrivate) % alignof(Shader)) {
     device->error(E_INVALIDARG); return;
   }
-  static_assert(D3D10_SB_NAME_POSITION == 1 && D3D10_SB_NAME_VERTEX_ID == 6);
+  auto shader = new (out.pDrvPrivate) Shader();
+  shader->owner = device; shader->stage = stage;
+  if (!streamOutput) {
+    device->error(createNativeShader10(device, code, out, stage, signature));
+    return;
+  }
+  if (!code || !dxvk::umd::validLegacyShaderVersion(stage, code[0],
+        device->featureLevel >= D3D_FEATURE_LEVEL_10_1)
+      || !signature || signature->NumInputSignatureEntries > 32
+      || !signature->NumOutputSignatureEntries || signature->NumOutputSignatureEntries > 32
+      || !signature->pOutputSignature
+      || (signature->NumInputSignatureEntries && !signature->pInputSignature)) {
+    device->error(E_INVALIDARG); return;
+  }
   try {
     Shader candidate; candidate.owner = device; candidate.stage = stage;
     candidate.retirement = std::make_unique<ComRetirement>();
-    if (streamOutput) {
-      if (!dxvk::umd::streamOutputDeclaration(*streamOutput, *signature, candidate.streamOutput)) {
-        device->error(E_INVALIDARG); return;
-      }
-      candidate.withStreamOutput = true;
-    }
-    for (UINT i = 0; i < signature->NumInputSignatureEntries; i++) {
-      const auto& entry = signature->pInputSignature[i];
-      candidate.inputs.push_back({uint32_t(entry.SystemValue), entry.Register, entry.Mask});
-      candidate.needsLayout |= stage == dxvk::umd::ShaderStage::Vertex && entry.SystemValue == D3D10_SB_NAME_UNDEFINED;
-    }
-    for (UINT i = 0; i < signature->NumOutputSignatureEntries; i++) {
-      const auto& entry = signature->pOutputSignature[i];
-      candidate.outputs.push_back({uint32_t(entry.SystemValue), entry.Register, entry.Mask});
-      candidate.needsLinkage |= stage != dxvk::umd::ShaderStage::Pixel && entry.SystemValue == D3D10_SB_NAME_UNDEFINED;
-    }
-    if (stage == dxvk::umd::ShaderStage::Pixel) {
-      std::vector<dxvk::umd::ShaderSignatureEntry> resolved;
-      if (!dxvk::umd::resolvePixelInputs(code, code[1], candidate.inputs.data(), candidate.inputs.size(), resolved)) {
-        device->error(E_INVALIDARG); return;
-      }
-      candidate.inputs = std::move(resolved);
-    } else if (stage == dxvk::umd::ShaderStage::Geometry) {
-      std::vector<dxvk::umd::ShaderSignatureEntry> resolved;
-      if (!dxvk::umd::resolveGeometryInputs(code, code[1], candidate.inputs.data(), candidate.inputs.size(), resolved)) {
-        device->error(E_INVALIDARG); return;
-      }
-      candidate.inputs = std::move(resolved);
-      candidate.needsLinkage = true;
-    }
-    auto validationInputs = candidate.inputs;
-    auto validationOutputs = candidate.outputs;
-    // Validate raw tokens and register structure now. These provisional
-    // signature types are discarded and never enter the DXVK compiler.
-    // The bound layout supplies actual types when the shader is first drawn.
-    if (stage != dxvk::umd::ShaderStage::Pixel) {
-      if (stage == dxvk::umd::ShaderStage::Vertex)
-        for (auto& input : validationInputs)
-          if (!input.systemValue) input.scalar = dxvk::umd::ShaderScalar::Float32;
-      for (auto& output : validationOutputs)
-        if (!output.systemValue) output.scalar = dxvk::umd::ShaderScalar::Uint32;
-    }
-    std::vector<unsigned char> bytecode;
-    if (!dxvk::umd::buildShaderContainer(stage, code, code[1], validationInputs.data(),
-        validationInputs.size(), validationOutputs.data(), validationOutputs.size(), bytecode,
-        stage != dxvk::umd::ShaderStage::Vertex && !streamOutput)) {
+    if (!dxvk::umd::streamOutputDeclaration(*streamOutput, *signature, candidate.streamOutput)) {
       device->error(E_INVALIDARG); return;
     }
-    HRESULT hr = S_OK;
-    if (candidate.needsLayout || candidate.needsLinkage) candidate.code.assign(code, code + code[1]);
-    else if (stage == dxvk::umd::ShaderStage::Vertex) {
-      hr = device->backend->CreateVertexShader(bytecode.data(), bytecode.size(), nullptr, &candidate.vertex);
-      if (SUCCEEDED(hr)) candidate.compiledVertexBytecode = std::move(bytecode);
+    dxvk::umd::ShaderCode11 decoded;
+    if (!dxvk::umd::decodeShader11(stage, code, code[1], decoded)
+        || !dxvk::umd::shader10Profile(decoded, device->featureLevel >= D3D_FEATURE_LEVEL_10_1)) {
+      device->error(E_INVALIDARG); return;
     }
-    else hr = device->backend->CreatePixelShader(bytecode.data(), bytecode.size(), nullptr, &candidate.pixel);
-    if (FAILED(hr)) { device->error(hr); return; }
+    signatureOrdinals11(decoded.inputs, signature->pInputSignature, signature->NumInputSignatureEntries);
+    signatureOrdinals11(decoded.outputs, signature->pOutputSignature, signature->NumOutputSignatureEntries);
+    candidate.withStreamOutput = true;
+    candidate.nativeStream.strides = candidate.streamOutput.strides;
+    candidate.nativeStream.strideCount = candidate.streamOutput.strideCount;
+    for (const auto& entry : candidate.streamOutput.entries)
+      candidate.nativeStream.entries.push_back({0, entry.SemanticIndex,
+        entry.SemanticName ? entry.SemanticName : "", entry.StartComponent, entry.ComponentCount, entry.OutputSlot});
+    candidate.native11 = std::move(decoded);
+    // Keep the original D3D10 SO object callable until its first draw. The
+    // shared preparation compiles its real declarations against the active
+    // producer, including data-only output with no rasterized position.
+    candidate.needsLinkage = true;
+    candidate.code.assign(code, code + code[1]);
     *shader = std::move(candidate);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
@@ -1794,6 +1770,15 @@ void APIENTRY createGeometryStream(D3D10DDI_HDEVICE h,
       candidate.inputs = candidate.outputs;
       candidate.retirement = std::make_unique<ComRetirement>();
       candidate.needsLinkage = candidate.withStreamOutput = candidate.streamOutputPassthrough = true;
+      dxvk::umd::ShaderCode11 decoded;
+      for (const auto& entry : candidate.outputs)
+        decoded.outputs.push_back({entry.systemValue, entry.registerIndex, entry.mask, entry.scalar});
+      candidate.native11 = std::move(decoded);
+      candidate.nativeStream.strides = candidate.streamOutput.strides;
+      candidate.nativeStream.strideCount = candidate.streamOutput.strideCount;
+      for (const auto& entry : candidate.streamOutput.entries)
+        candidate.nativeStream.entries.push_back({0, entry.SemanticIndex,
+          entry.SemanticName ? entry.SemanticName : "", entry.StartComponent, entry.ComponentCount, entry.OutputSlot});
       *shader = std::move(candidate);
     } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
       catch (...) { device->error(E_FAIL); }
@@ -1857,7 +1842,7 @@ void APIENTRY setPixelShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
 void APIENTRY setGeometryShader(D3D10DDI_HDEVICE h, D3D10DDI_HSHADER shader) {
   auto device = get(h); auto object = get(shader);
   if (object && (object->owner != device || object->stage != dxvk::umd::ShaderStage::Geometry
-      || (object->code.empty() && !object->streamOutputPassthrough))) { device->error(E_INVALIDARG); return; }
+      || (object->code.empty() && !object->native11 && !object->streamOutputPassthrough))) { device->error(E_INVALIDARG); return; }
   try {
     device->context->GSSetShader(object ? object->geometry.Get() : nullptr, nullptr, 0);
     device->geometryShader = object;
@@ -2405,7 +2390,8 @@ bool drawReady(Device* device, bool indexed = false) {
       || !device->topologyBound || (indexed && !device->indexBound)) {
     device->error(E_INVALIDARG); return false;
   }
-  return prepareVertexShader(device) && prepareSharedDraw(device);
+  return (device->vertexShader && device->vertexShader->native11
+    ? prepareNativeGraphics11(device) : prepareVertexShader(device)) && prepareSharedDraw(device);
 }
 void APIENTRY draw(D3D10DDI_HDEVICE h, UINT count, UINT start) {
   auto device = get(h);

@@ -82,7 +82,8 @@ HRESULT compileNativeShader11(Device* device, Shader& shader, const dxvk::umd::S
 HRESULT createNativeShader11(Device* device, const UINT* code, D3D10DDI_HSHADER output,
     dxvk::umd::ShaderStage stage, const D3D10DDIARG_STAGE_IO_SIGNATURES* signature = nullptr,
     const D3D11DDIARG_TESSELLATION_IO_SIGNATURES* tessellation = nullptr,
-    const D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT* stream = nullptr) {
+    const D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT* stream = nullptr,
+    bool existingLegacyStorage = false) {
   using dxvk::umd::ShaderStage;
   if (stage >= ShaderStage::Hull && device->featureLevel < D3D_FEATURE_LEVEL_11_0) return DXGI_ERROR_UNSUPPORTED;
   if (!output.pDrvPrivate || uintptr_t(output.pDrvPrivate) % alignof(Shader) || !code) return E_INVALIDARG;
@@ -156,12 +157,37 @@ HRESULT createNativeShader11(Device* device, const UINT* code, D3D10DDI_HSHADER 
       if (hr == S_OK && device->retired) hr = DXGI_ERROR_DEVICE_REMOVED;
       if (hr == S_OK) {
         staged.native11 = std::move(decoded);
-        new (output.pDrvPrivate) Shader(std::move(staged));
+        if (existingLegacyStorage) *get(output) = std::move(staged);
+        else new (output.pDrvPrivate) Shader(std::move(staged));
       }
     } catch (const std::bad_alloc&) { hr = E_OUTOFMEMORY; }
       catch (...) { hr = E_FAIL; }
   }
   return hr;
+}
+// D3D10 uses the same decoded shader representation, with its own exact
+// SM4 profile and historical signature limits. The private renderer's FL11
+// minimum cannot grant a D3D10 caller SM5, tessellation or shader interfaces.
+HRESULT createNativeShader10(Device* device, const UINT* code, D3D10DDI_HSHADER output,
+    dxvk::umd::ShaderStage stage, const D3D10DDIARG_STAGE_IO_SIGNATURES* signature) {
+  if (!code || !signature || !dxvk::umd::validLegacyShaderVersion(stage, code[0],
+        device->featureLevel >= D3D_FEATURE_LEVEL_10_1)
+      || signature->NumInputSignatureEntries > 32 || signature->NumOutputSignatureEntries > 32
+      || !signatureRange11(signature->pInputSignature, signature->NumInputSignatureEntries)
+      || !signatureRange11(signature->pOutputSignature, signature->NumOutputSignatureEntries)) return E_INVALIDARG;
+  for (UINT i = 0; i < signature->NumInputSignatureEntries; ++i)
+    if (UINT(signature->pInputSignature[i].SystemValue) > 10) return E_INVALIDARG;
+  for (UINT i = 0; i < signature->NumOutputSignatureEntries; ++i)
+    if (UINT(signature->pOutputSignature[i].SystemValue) > 10) return E_INVALIDARG;
+  try {
+    dxvk::umd::ShaderCode11 decoded;
+    if (!dxvk::umd::decodeShader11(stage, code, code[1], decoded)
+        || !dxvk::umd::shader10Profile(decoded, device->featureLevel >= D3D_FEATURE_LEVEL_10_1)
+        || (stage == dxvk::umd::ShaderStage::Geometry && !dxvk::umd::shaderRasterPosition(decoded)))
+      return E_INVALIDARG;
+    return createNativeShader11(device, code, output, stage, signature, nullptr, nullptr, true);
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+    catch (...) { return E_FAIL; }
 }
 void APIENTRY createVertexShader11(D3D10DDI_HDEVICE h, const UINT* code,
     D3D10DDI_HSHADER output, D3D10DDI_HRTSHADER, const D3D10DDIARG_STAGE_IO_SIGNATURES* signature) {
@@ -332,6 +358,12 @@ bool prepareNativeGraphics11(Device* device) {
         device->error(E_INVALIDARG); return false;
       }
       codes[i] = *shaders[i]->native11;
+    }
+    if (!device->nativeTable11 && !(shaders[3] && shaders[3]->withStreamOutput)) {
+      const auto& rasterProducer = codes[3] ? *codes[3] : *codes[0];
+      if (!dxvk::umd::shaderRasterPosition(rasterProducer)) {
+        device->error(E_INVALIDARG); return false;
+      }
     }
     for (auto& input : codes[0]->inputs) if (!input.systemValue) {
       const auto layout = device->inputLayout;

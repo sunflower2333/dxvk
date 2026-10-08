@@ -127,10 +127,11 @@ namespace dxvk {
     if (unlikely(!query->DoBegin()))
       return;
 
+    auto ticket = query->CaptureTicket();
     FlushCsChunk();
-    EmitCs([cQuery = Com<D3D11Query, false>(query)]
+    EmitCs([cQuery = Com<D3D11Query, false>(query), cTicket = std::move(ticket)]
     (DxvkContext* ctx) {
-      cQuery->Begin(ctx);
+      cQuery->Begin(ctx, cTicket);
     });
     FlushCsChunk();
   }
@@ -145,18 +146,19 @@ namespace dxvk {
     auto query = static_cast<D3D11Query*>(pAsync);
 
     const bool implicitBegin = !query->DoEnd();
+    auto ticket = query->CaptureTicket();
     FlushCsChunk();
     if (unlikely(implicitBegin)) {
-      EmitCs([cQuery = Com<D3D11Query, false>(query)]
+      EmitCs([cQuery = Com<D3D11Query, false>(query), cTicket = ticket]
       (DxvkContext* ctx) {
-        cQuery->Begin(ctx);
+        cQuery->Begin(ctx, cTicket);
       });
       FlushCsChunk();
     }
 
-    EmitCs([cQuery = Com<D3D11Query, false>(query)]
+    EmitCs([cQuery = Com<D3D11Query, false>(query), cTicket = std::move(ticket)]
     (DxvkContext* ctx) {
-      cQuery->End(ctx);
+      cQuery->End(ctx, cTicket);
     });
     FlushCsChunk();
 

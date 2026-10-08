@@ -7,8 +7,21 @@
 
 #include "d3d11_device_child.h"
 #include "d3d11_query_sequence.h"
+#include "d3d11_query_ticket.h"
+
+#include <memory>
 
 namespace dxvk {
+
+  struct D3D11QueryDataTicket {
+    explicit D3D11QueryDataTicket(uint64_t id) : state(id) { }
+
+    D3D11QueryTicketState state;
+    std::array<Rc<DxvkQuery>, 2> query;
+    std::array<Rc<DxvkEvent>, 1> event;
+  };
+
+  using D3D11QueryTicket = std::shared_ptr<D3D11QueryDataTicket>;
   
   class D3D11Query : public D3D11DeviceChild<ID3D11Query1> {
     constexpr static uint32_t MaxGpuQueries = 2;
@@ -34,6 +47,14 @@ namespace dxvk {
     void Begin(DxvkContext* ctx);
     
     void End(DxvkContext* ctx);
+
+    void Begin(DxvkContext* ctx, const D3D11QueryTicket& ticket);
+
+    void End(DxvkContext* ctx, const D3D11QueryTicket& ticket);
+
+    D3D11QueryTicket CaptureTicket() const {
+      return m_currentTicket;
+    }
     
     bool STDMETHODCALLTYPE DoBegin();
 
@@ -43,9 +64,7 @@ namespace dxvk {
             void*                             pData,
             UINT                              GetDataFlags);
     
-    void DoDeferredEnd() {
-      m_sequence.deferEnd();
-    }
+    void DoDeferredEnd();
 
     bool IsScoped() const {
       return m_desc.Query != D3D11_QUERY_EVENT
@@ -97,8 +116,9 @@ namespace dxvk {
 
     D3D11QuerySequence m_sequence;
     
-    std::array<Rc<DxvkQuery>, MaxGpuQueries> m_query;
-    std::array<Rc<DxvkEvent>, MaxGpuEvents>  m_event;
+    D3D11QueryTicket m_currentTicket;
+    D3D11DeferredQueryTickets<D3D11QueryTicket> m_deferredTickets;
+    uint64_t m_nextTicket = 0;
 
     D3D10Query m_d3d10;
 
@@ -108,6 +128,8 @@ namespace dxvk {
     D3DDestructionNotifier m_destructionNotifier;
 
     UINT64 GetTimestampQueryFrequency() const;
+
+    D3D11QueryTicket CreateTicket();
     
   };
   

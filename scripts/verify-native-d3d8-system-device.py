@@ -5,9 +5,9 @@ import json
 import re
 from pathlib import Path
 
-CORE_COMMIT = 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1'
-CORE_HASH = '7be8cbb9850407ccc304528911a6fbd71b01971fbeb4a86550cc8dcc2f346a3f'
-CORE_PATH = r'C:\Users\Public\DxvkD3D8Candidate-d7e5c7d-37648387721\viogpudxvk.dll'
+CORE_COMMIT = 'de72dc2e97bd8e4ea70c5bf89c26918d06065723'
+CORE_HASH = 'ba60b53fe43c8901da3e37d8407958e8e83c05d973e48c94240a3d048bc09cba'
+CORE_PATH = r'C:\Users\Public\DxvkD3D8Candidate-de72dc2-37711793677\viogpudxvk.dll'
 SID = 'S-1-5-21-362894365-441372107-2852668596-1000'
 COLORS = (0xff123456, 0xff739a4c, 0xffc0568e, 0xff288cb0, 0xff623a81, 0xff91b742, 0xffa362d1)
 PAYLOADS = {'viogpudxvk.dll': CORE_HASH,
@@ -37,7 +37,7 @@ def verify(text, mode, luid, source):
     expected_pins = {(folder + name, digest, 'json' if name.endswith('.json') else '014c') for name, digest in PAYLOADS.items()}
     assert len(pins) == 4 and set(pins) == expected_pins
     source_rows = [r for r in rows if r.startswith('D3D8_HARDWARE_SOURCE ')]
-    assert source_rows == [f'D3D8_HARDWARE_SOURCE core_commit={CORE_COMMIT} ci_run=37648387721 mesa_commit=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d mesa_ci_run=37453381660 driver_selection=owned-json raw_architecture=014c']
+    assert source_rows == [f'D3D8_HARDWARE_SOURCE core_commit={CORE_COMMIT} ci_run=37711793677 loader_source=6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7 icd_source=8443c71a5ab32b9d58b904fa51f4bf2f9089db8d icd_ci_run=37453381660 driver_selection=owned-json raw_architecture=014c']
     modules = re.findall(r'^D3D8_PRIVATE_MODULE name=(\S+) path=(.+) machine=014c$', text, re.M)
     assert len(modules) == 6
     for name in ('viogpudxvk.dll', 'viogpu_gl_loader_x86.dll', 'viogpu_gl_vk_x86.dll'):

@@ -243,5 +243,15 @@ reject('denied-runtime-workload-was-attempted', phase.verify_enumeration,
        enumeration + 'SYSTEM_D3D8_ENUMERATION_FORBIDDEN device=00000600 forwarded=0 hr=8876086a\n')
 reject('public-API-clear-during-enumeration', phase.verify_enumeration,
        enumeration + 'D3D8_API operation=Clear hr=00000000\n')
+current_native = {'schema': 'native-system-d3d8-device-x86-build-v1', 'status': 'FAIL',
+                  'source_commit': phase.PROBE_SOURCE, 'core_reference_commit': phase.CORE_SOURCE}
+reject('CPU09-build-alone-is-not-complete', phase.verify_native_identity_cpu, current_native, {})
+reject('CPU09-completion-without-original-posthash', phase.verify_native_identity_cpu, current_native, {}, {})
+for label, key, value in [('CPU08-source-does-not-admit-current-binaries', 'source_commit', '66bfbdf73d32d7213af439a69cb569730b018f55'),
+                         ('old-d7-core-does-not-admit-de72', 'core_reference_commit', 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1'),
+                         ('failed-marker-build-must-remain-FAIL', 'status', 'PASS')]:
+    control = copy.deepcopy(current_native); control[key] = value
+    reject(label, phase.verify_native_identity_cpu, control, {}, {}, {})
+assert len(checks) == 98
 print(json.dumps({'status': 'PASS', 'scope': 'synthetic names/process/mapped-file protocol controls only', 'checks': checks,
                   'actual_runtime_calls': 0, 'actual_native_processes': 0, 'GPU_runs': 0, 'target_calls': 0}, indent=2))

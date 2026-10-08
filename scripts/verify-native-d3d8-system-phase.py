@@ -9,15 +9,15 @@ import tarfile
 import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
 
-PROBE_SOURCE = '66bfbdf73d32d7213af439a69cb569730b018f55'
-CORE_SOURCE = 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1'
-RUN = 37648387721
+PROBE_SOURCE = 'e3ac12646a1b55742d575109063ae78507af5cec'
+CORE_SOURCE = 'de72dc2e97bd8e4ea70c5bf89c26918d06065723'
+RUN = 37711793677
 SID = 'S-1-5-21-362894365-441372107-2852668596-1000'
 RAW = 'd8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad'
 SYS = 'd48e118a89b83df49e1da2f4b26e57b13d7f40ee6a42ad19ff6ea0328989650a'
 PRIOR = {'enumerate': 'names', 'offscreen': 'enumerate', 'present': 'offscreen'}
 PAYLOADS = {
-    'core': (5488640, '7be8cbb9850407ccc304528911a6fbd71b01971fbeb4a86550cc8dcc2f346a3f', 'viogpudxvk.dll'),
+    'core': (5517312, 'ba60b53fe43c8901da3e37d8407958e8e83c05d973e48c94240a3d048bc09cba', 'viogpudxvk.dll'),
     'loader': (677888, 'd459f2d09080865cc3d591b498c02d38305a26963b401152f8230dc60c5ad7e7', 'viogpu_gl_loader_x86.dll'),
     'icd': (14300672, '2b549889816163433faabe6f2c1d2a61d6c106078d08e30031b74c0a66cd7f5c', 'viogpu_gl_vk_x86.dll'),
     'icd-json': (145, '74d7d5d6ae9432cde2d802507ed59bbe4c2f2b95d01e7ac3c2b56e9691932c80', 'freedreno_icd.json')}
@@ -383,104 +383,169 @@ def verify_enumeration(text, luid='ec6b000000000000', source=0, core_identity=No
             'callback_owner_teardowns': len(destruction_end), 'physical_runtime_identities': runtime_identity}
 
 
-def verify_native_identity_cpu(result, members):
-    """Join the focused CPU08 scope without relabeling the old full CPU suite."""
-    require(result['schema'] == 'native-system-d3d8-device-x86-build-v1' and result['status'] == 'PASS'
-        and result['source_commit'] == PROBE_SOURCE and result['core_reference_commit'] == CORE_SOURCE,
-        'exact accepted shared-identity native CPU source required')
-    require(result['object_count'] == 4 and result['pe_count'] == 3 and result['malformed_cli_guards'] == 4,
-            'focused native CPU output/CLI scope mismatch')
-    require(result['shared_identity_fixture'] == {'executed': True, 'checks': 91, 'runtime_factories': 0,
-        'KMT_calls': 0, 'core_loads': 0}, 'actual shared predicate execution scope mismatch')
-    require(result['process_api_diagnostics'] == {'executed': True, 'verified_modules': 3, 'readonly_file_pairs': 3,
-        'runtime_factories': 0, 'KMT_calls': 0, 'core_loads': 0, 'admission': False},
-        'actual read-only process/module observation scope mismatch')
-    require(result['source_before'] == result['source_after'] and len(result['source_before']) == 21
-        and result['before'] == result['after'], 'native original source/state changed')
-    require(result['compiler_full_before'] == result['compiler_full_after']
-        and len(result['compiler_full_before']) == 575 and result['sdk'] == result['sdk_after']
-        and len(result['sdk']) == 13 and result['libraries'] == result['libraries_after']
-        and len(result['libraries']) == 9, 'native official compiler/selected SDK/library originals changed')
-    require(result['compiler_provenance']['sha256'] == 'c6333c67b4f3725f513e82c488b844054859b28456bccb0131eb59b805a5db48'
-        and digest(members['original-compiler-provenance.json']) == result['compiler_provenance']['sha256'],
-        'unchanged original compiler-ready manifest required')
-    ready = read_json(members['original-compiler-provenance.json'])
-    tools = {row['path']: row for row in ready['files']}
-    observed_tools = {row['path']: row for row in result['compiler_full_before']}
-    require(ready['ready'] and ready['file_count'] == len(tools) == len(ready['files']) == 575
-        and len(observed_tools) == 575 and observed_tools.keys() == tools.keys(), 'complete original compiler file set required')
-    for path, row in observed_tools.items():
-        require(all(row[key] == tools[path][key] for key in ('bytes', 'sha256')), 'native compiler file differs from unchanged ready pin')
+def verify_native_identity_cpu(result, members, completion_members=None, posthash=None):
+    """Join the actual closed CPU09 build and separately executed remaining CPU fixtures."""
+    require(result.get('schema') == 'native-system-d3d8-device-x86-build-v1' and result.get('status') == 'FAIL'
+        and result.get('source_commit') == PROBE_SOURCE and result.get('core_reference_commit') == CORE_SOURCE,
+        'exact original CPU09 build and current source required')
+    require(completion_members is not None and posthash is not None,
+            'separate actual completion originals and original readonly posthash required')
+    require(digest(members['result.json']) == '585aa34424eafd4eada70ae5628cfd62686f2e30b37d8e57a05c94bd8c2788b2'
+        and read_json(members['result.json']) == result, 'exact immutable actual CPU09 build receipt required')
+    require(result['error'] == 'Exact original I386 API-provider diagnostic missing: (?m)^D3D8_PROCESS_MACHINE process=014c native=aa64 effective=014c pointer_bytes=4 ',
+            'CPU09 failure was not the isolated obsolete marker')
+    c = read_json(completion_members['result.json'])
+    require(c['schema'] == 'native-system-d3d8-device-x86-completion-v1' and c['status'] == 'PASS'
+        and c['source_commit'] == PROBE_SOURCE and c['marker_helper_commit'] == 'e5bfaf2100380151be9d5d974ebb3692f2b4ed95'
+        and not c.get('error') and not c.get('final_capture_error'), 'actual current-source CPU completion failed')
+    require(completion_members['original-failed-result.json'] == members['result.json']
+        and read_json(completion_members['original-posthash.json']) == posthash
+        and digest(completion_members['original-posthash.json']) == 'd9e37a95907f0274ca4b962abba0e6b5052fcd96ea60a69e3a781ba0f74584eb',
+        'actual original build/posthash chain differs')
+    require(posthash['status'] == 'PASS' and posthash['original_result_sha256'] == digest(members['result.json'])
+        and c['original_result_after']['sha256'] == digest(members['result.json']), 'failed original was mutated or not retained')
+    require(result['before'] == result['failure_state'] == posthash['state_after'] == c['before'] == c['after'],
+            'actual protected native state changed')
+
+    def facts(rows):
+        return [(row['path'].replace('\\\\', '\\').casefold(), row['bytes'], row['sha256']) for row in rows]
+
+    for old, observed, new, count in [('source_before', 'source_after', 'source', 35),
+            ('compiler_full_before', 'compiler_after', 'compiler', 575), ('sdk', 'sdk_after', 'sdk', 13),
+            ('libraries', 'libraries_after', 'libraries', 9)]:
+        base = facts(result[old])
+        require(len(base) == count and len({row[0] for row in base}) == count
+            and base == facts(posthash[observed]) == facts(c[new + '_before']) == facts(c[new + '_after']),
+            'actual CPU09 source/tool/SDK/library continuity differs: ' + new)
     source_rows = {row['input_path']: row for row in result['source_before']}
-    require(len(source_rows) == 21, 'duplicate native source input')
+    require(len(source_rows) == 35, 'complete exact CPU09 input set required')
     for path, row in source_rows.items():
-        member = PurePosixPath(path)
-        require(not member.is_absolute() and '..' not in member.parts, 'unsafe native source path')
-        data = members['source/' + str(member)]
-        require(len(data) == row['bytes'] and digest(data) == row['sha256'], 'retained native source bytes differ from before/after rows')
+        name = PurePosixPath(path)
+        require(not name.is_absolute() and '..' not in name.parts, 'unsafe CPU09 input member')
+        data = members['source/' + str(name)]
+        require(len(data) == row['bytes'] and digest(data) == row['sha256'], 'actual CPU09 retained source differs')
     for key, prefix in [('sdk', 'original-sdk-headers/'), ('libraries', 'original-link-libraries/')]:
-        names = set()
+        seen = set()
         for row in result[key]:
             name = row['path'].rsplit(chr(92), 1)[-1]
-            require(name not in names, 'duplicate original selected native dependency')
-            names.add(name)
+            require(name not in seen, 'duplicate actual CPU09 native dependency')
+            seen.add(name)
             data = members[prefix + name]
-            require(len(data) == row['bytes'] and digest(data) == row['sha256'], 'retained native selected dependency changed')
-    require(not result['installation'] and not result['production_core_built']
-        and result['gpu_runs'] == result['system_runtime_calls'] == result['selector_calls'] == 0,
-        'focused native CPU build cannot grant runtime/hardware admission')
-    require(result['raw_process_source']['sha256'] == result['raw_process_source_after']['sha256'] == RAW
-        and digest(members['executed-raw-process-source.cs']) == RAW, 'actual native process runner changed')
+            require(len(data) == row['bytes'] and digest(data) == row['sha256'], 'actual selected native dependency differs')
+    require(digest(members['original-compiler-provenance.json']) ==
+        digest(completion_members['original-compiler-provenance.json']) ==
+        result['compiler_provenance']['sha256'] == c['compiler_ready_before']['sha256'] ==
+        'c6333c67b4f3725f513e82c488b844054859b28456bccb0131eb59b805a5db48', 'actual575 original compiler readiness differs')
+    ready = read_json(members['original-compiler-provenance.json'])
+    require(ready['ready'] and ready['file_count'] == len(ready['files']) == 575
+        and facts(ready['files']) == facts(result['compiler_full_before']), 'complete575 actual owned compiler files differ')
+    for native in (result, c):
+        require(not native['installation'] and native['gpu_runs'] == native['system_runtime_calls'] == native['selector_calls'] == 0,
+                'CPU scope cannot grant runtime/hardware admission')
+        require(native['raw_process_source']['sha256'] == RAW, 'actual native owned runner differs')
+    require(c['compiler_launches'] == c['readonly_diagnostic_replays'] == c['valid_runtime_modes_executed'] == 0
+        and not c['production_core_loaded'] and c['originals_unchanged']
+        and c['raw_process_source_after']['sha256'] == RAW
+        and digest(completion_members['executed-raw-process-source.cs']) == RAW
+        and digest(members['executed-raw-process-source.cs']) == RAW, 'completion replay/permission/runner differs')
+    require(len(result['outputs']) == 9 and facts(result['outputs']) == facts(c['outputs_before']) == facts(c['outputs_after']),
+            'exact original five COFF/four PE continuity differs')
+    objects = pes = 0
+    for row in result['outputs']:
+        path = row['path'].replace('\\\\', '\\')
+        relative = path.split('DxvkD3D8Runtime-e3ac126-09' + chr(92), 1)[1].replace(chr(92), '/')
+        data = members[relative]
+        require(data == completion_members['original-reused-outputs/' + relative.rsplit('/', 1)[-1]]
+            and len(data) == row['bytes'] and digest(data) == row['sha256'] and row['machine'] == 0x14c,
+            'original reused compiled output differs')
+        if relative.endswith('.obj'):
+            machine = int.from_bytes(data[6:8], 'little') if data[:4] == b'\0\0\xff\xff' else int.from_bytes(data[:2], 'little')
+            objects += 1
+        else:
+            offset = int.from_bytes(data[60:64], 'little')
+            require(data[:2] == b'MZ' and data[offset:offset + 4] == b'PE\0\0', 'original native PE header differs')
+            machine = int.from_bytes(data[offset + 4:offset + 6], 'little'); pes += 1
+        require(machine == 0x14c, 'actual compiled CPU09 output is not I386')
+    require((objects, pes) == (5, 4), 'five original COFF/four original PE required')
     expected = ['archive-list', 'extract']
     for group, units in [('front', ['tests_umd-d3d8-runtime-front.cpp']),
-                         ('probe', ['tests_umd-d3d8-runtime-probe.cpp', 'tests_umd-d3d8-runtime-guard.cpp']),
-                         ('identity', ['tests_umd-d3d8-system-identity.cpp'])]:
+            ('probe', ['tests_umd-d3d8-runtime-probe.cpp', 'tests_umd-d3d8-runtime-guard.cpp']),
+            ('policy', ['tests_umd-d3d8-runtime-policy.cpp']), ('callbacks', ['tests_umd-d3d8-runtime-callbacks.cpp'])]:
         expected += [group + '-' + unit + '-compile' for unit in units] + [group + '-link', group + '-headers']
-    expected += ['identity-fixture', 'process-api-diagnostics'] + ['invalid-cli-' + str(i) for i in range(1, 5)]
-    require([command['name'] for command in result['commands']] == expected,
-            'exact eighteen original native build children required')
-    for command in result['commands']:
-        name = command['name']
-        stdout, stderr = members[name + '.stdout.txt'], members[name + '.stderr.txt']
-        require(command['stdout'].rsplit(chr(92), 1)[-1] == name + '.stdout.txt'
-            and command['stderr'].rsplit(chr(92), 1)[-1] == name + '.stderr.txt'
-            and command['raw_pipe_bytes'], 'actual native raw member paths mismatch')
-        raw = {'Pid': command['pid'], 'ProcessHandle': command['retained_process_handle'], 'Exited': command['exited'],
-               'ExitCodeAvailable': command['exit_code_available'], 'PipesDrained': command['pipes_drained'],
-               'TimedOut': command['timeout'], 'ChildStillRunning': command['child_still_running'],
-               'Failure': command['capture_failure'], 'ExitCode': command['exit'], 'StdoutBytes': command['stdout_bytes'],
-               'StderrBytes': command['stderr_bytes'], 'Seconds': command['seconds'], 'StartUtc': command['start_utc']}
-        expected_exit = 64 if name.startswith('invalid-cli-') else 0
-        require(command['expected'] == expected_exit, 'actual native child exit contract mismatch')
-        expected_deadline = 180 if name.endswith('-compile') else 120 if name.endswith('-link') else 30
-        if name == 'identity-fixture' or name.startswith('invalid-cli-'):
-            expected_deadline = 15
-        require(command['deadline_seconds'] == expected_deadline, 'frozen native child deadline changed')
-        closed(raw, stdout, stderr, command['deadline_seconds'] * 1000, expected_exit)
-        if name.endswith('-compile'):
-            require(command['first_party_strict'] and not command['compiler_warnings']
-                and not re.search(rb'\bwarning [CD]\d+', stdout + stderr, re.I), 'strict native source compiler diagnostic retained')
-        if name in ('identity-fixture', 'process-api-diagnostics'):
-            require(command['arguments'] == ('' if name == 'identity-fixture' else '--process-api-diagnostics')
-                and command['deadline_seconds'] == (15 if name == 'identity-fixture' else 30),
-                'focused native execution command/deadline mismatch')
-        if name.startswith('invalid-cli-'):
-            arguments = ['', '--unknown', '--process-api-diagnostics extra', '--process-api-diagnostics one two']
-            require(command['arguments'] == arguments[int(name.rsplit('-', 1)[1]) - 1], 'frozen malformed native CLI changed')
-    require(members['identity-fixture.stdout.txt'].decode('utf-8').strip()
-        == 'D3D8 system image identity fixture PASS checks=91 runtime_calls=0 KMT_calls=0 core_loads=0',
-        'original shared predicate stdout missing')
-    rows = lines(members['process-api-diagnostics.stdout.txt'].decode('utf-8'))
-    identities = verify_module_identities(rows)
-    require([entry['name'] for entry in identities['modules']] == ['kernel32.dll', 'kernelbase.dll', 'gdi32.dll']
-        and len(identities['process_rows']) == len(identities['directory_rows']) == 1,
-        'actual read-only three-module native observation incomplete')
-    require(single(rows, 'D3D8_PROCESS_API_DIAGNOSTICS_COMPLETE ')
-        == 'D3D8_PROCESS_API_DIAGNOSTICS_COMPLETE observed_providers=5 observed_lookup_rows=10 verified_modules=3 readonly_file_pairs=3 runtime_calls=0 KMT_calls=0 core_loads=0 admission=0',
-        'actual read-only native completion/scope missing')
-    return {'objects': 4, 'PEs': 3, 'shared_predicate_checks': 91, 'malformed_CLI': 4,
-            'owned_build_children': 18, 'original_module_identities': identities,
+    expected += ['process-api-diagnostics']
+    require([row['name'] for row in result['commands']] == expected, 'exact16 original construction children required')
+    fixture_names = ['policy-positive', 'callbacks-positive', 'frontend-null-invalid-guard'] + ['invalid-cli-' + str(i) for i in range(1, 33)]
+    require([row['name'] for row in c['commands']] == fixture_names and c['policy_checks'] == 503
+        and c['malformed_cli_guards'] == 32, 'exact35 unexecuted CPU fixtures required')
+    cli = ['', '--unknown', '--enumerate extra', '--offscreen extra', '--front-guard', '--front-guard one two',
+        '--front-guard one two three', '--front-enumerate', '--front-enumerate missing', '--front-enumerate one',
+        '--front-enumerate one two extra', '--front-enumerate one two three four',
+        '--front-enumerate one two three four five', '--front-enumerate one two three four five extra',
+        '--kmt-names', '--kmt-names extra', '--kmt-names ec6b000000000000', '--kmt-names not-luid 0',
+        '--kmt-names ec6b000000000000 bad-source', '--kmt-names ec6b000000000000 0 extra',
+        '--front-offscreen', '--front-offscreen missing', '--front-offscreen one two three four five six',
+        '--front-offscreen one two three four five six seven', '--front-offscreen one two three four five six seven extra',
+        '--front-present', '--front-present missing', '--front-present one two three four five six',
+        '--front-present one two three four five six seven', '--front-present one two three four five six seven extra',
+        '--process-api-diagnostics extra', '--process-api-diagnostics one two']
+    for receipt, contents in ((result, members), (c, completion_members)):
+        for command in receipt['commands']:
+            name = command['name']; stdout = contents[name + '.stdout.txt']; stderr = contents[name + '.stderr.txt']
+            require(command['raw_pipe_bytes'] and command['stdout'].rsplit(chr(92), 1)[-1] == name + '.stdout.txt'
+                and command['stderr'].rsplit(chr(92), 1)[-1] == name + '.stderr.txt', 'actual owned native pipe member differs')
+            raw = {'Pid': command['pid'], 'ProcessHandle': command['retained_process_handle'], 'Exited': command['exited'],
+                'ExitCodeAvailable': command['exit_code_available'], 'PipesDrained': command['pipes_drained'], 'TimedOut': command['timeout'],
+                'ChildStillRunning': command['child_still_running'], 'Failure': command['capture_failure'], 'ExitCode': command['exit'],
+                'StdoutBytes': command['stdout_bytes'], 'StderrBytes': command['stderr_bytes'], 'Seconds': command['seconds'], 'StartUtc': command['start_utc']}
+            expected_exit = 64 if name.startswith('invalid-cli-') else 0
+            require(command['expected'] == expected_exit, 'actual child exit contract differs')
+            deadline = 180 if name.endswith('-compile') else 120 if name.endswith('-link') else 15 if name.startswith('invalid-cli-') else 30
+            require(command['deadline_seconds'] == deadline, 'actual child deadline differs')
+            closed(raw, stdout, stderr, deadline * 1000, expected_exit)
+            if name.endswith('-compile'):
+                require(command['first_party_strict'] and not command['compiler_warnings'] and not re.search(rb'\bwarning [CD]\d+', stdout + stderr, re.I), 'actual strict compilation warning')
+            if name.startswith('invalid-cli-'):
+                require(command['arguments'] == cli[int(name.rsplit('-', 1)[1]) - 1], 'actual malformed CLI changed')
+    require(re.search(rb'^D3D8 runtime selector policy PASS checks=503;', completion_members['policy-positive.stdout.txt'], re.M), 'actual503 CPU policy missing')
+    callback = completion_members['callbacks-positive.stdout.txt'].decode('utf-8').replace('\r\n', '\n')
+    match = re.search(r'^D3D8 runtime callback policy PASS checks=(\d+) forwarded=11 immutable_table=1 mapped_submit=1 failed_release_retained=1 stale_owner_rejected=1; controlled CPU only$', callback, re.M)
+    require(match and c['callback_checks'] == int(match[1]), 'actual CPU callback ownership missing')
+    require('D3D8 enumeration table boundary PASS denied=6 forwarded=0 prefix=99 tail_unchanged=1 optional_null=1 teardown_allowed=1; controlled CPU only' in callback.splitlines(), 'actual six typed enumeration denial fixture missing')
+    require(re.search(rb'^D3D8_FRONT_GUARD PASS .*invalid_interfaces=6 non_system_caller=1 no_core_open=1 system_runtime_calls=0 device_permission_null=80070057 enumeration_permission_null=80070057\r?$', completion_members['frontend-null-invalid-guard.stdout.txt'], re.M), 'actual frontend guard completion missing')
+    require(completion_members['original-process-api-diagnostics.stdout.raw'] == members['process-api-diagnostics.stdout.txt'], 'readonly observation was not retained exactly')
+    identity = verify_module_identities(lines(members['process-api-diagnostics.stdout.txt'].decode('utf-8')))
+    require([x['name'] for x in identity['modules']] == ['kernel32.dll', 'kernelbase.dll', 'gdi32.dll'], 'actual physical three-module identity differs')
+    descriptor = read_json(completion_members['completion-manifest-10.json'])
+    require(descriptor['source_commit'] == PROBE_SOURCE and descriptor['old_result_sha256'] == digest(members['result.json'])
+        and descriptor['expected_remaining_children'] == 35, 'actual completion scope differs')
+    for member, name in [('executed-completion-helper.ps1', 'complete-native-d3d8-CPU09.ps1'),
+            ('invoke-native-d3d8-completion.ps1', 'invoke-native-d3d8-completion.ps1')]:
+        rows = [x for x in descriptor['inputs'] if x['name'] == name]
+        require(len(rows) == 1 and digest(completion_members[member]) == rows[0]['sha256'], 'actual completion helper differs')
+    parent = read_json(completion_members['completion-parent.process.json'])
+    raw = {'Pid': parent['pid'], 'ProcessHandle': parent['retained_process_handle'], 'Exited': parent['exited'],
+        'ExitCodeAvailable': parent['exit_code_available'], 'PipesDrained': parent['pipes_drained'], 'TimedOut': parent['timeout'],
+        'ChildStillRunning': parent['child_still_running'], 'Failure': parent['capture_failure'], 'ExitCode': parent['exit'],
+        'StdoutBytes': parent['stdout_bytes'], 'StderrBytes': parent['stderr_bytes'], 'Seconds': parent['seconds'], 'StartUtc': parent['start_utc']}
+    require(parent['runner_sha256'] == RAW and parent['deadline_ms'] == 1100000, 'actual native completion parent differs')
+    closed(raw, completion_members['completion-parent.stdout.raw'], completion_members['completion-parent.stderr.raw'], 1100000)
+    return {'objects': 5, 'PEs': 4, 'policy_checks': 503, 'callback_checks': c['callback_checks'], 'typed_denials': 6,
+            'malformed_CLI': 32, 'owned_build_children': 16, 'owned_completion_children': 35, 'owned_completion_parent': 1,
+            'original_module_identities': identity, 'readonly_diagnostic_replays': 0, 'compiler_replays': 0,
             'runtime_factories': 0, 'KMT_calls': 0, 'core_loads': 0, 'hardware_admission': False}
+
+
+def read_native_archive(path):
+    members = {}
+    with tarfile.open(path, 'r:gz') as original:
+        for member in original:
+            if member.isdir():
+                continue
+            name = PurePosixPath(member.name.removeprefix('./'))
+            require(member.isfile() and not name.is_absolute() and '..' not in name.parts and str(name) not in members,
+                    'unsafe or duplicate native original member')
+            members[str(name)] = original.extractfile(member).read()
+    return members
 
 
 def verify_archive(archive, collection_path, manifest_path):
@@ -515,7 +580,9 @@ def verify_archive(archive, collection_path, manifest_path):
     native_archive_bytes = Path(native['original_archive_path']).read_bytes()
     require(digest(native_proof_bytes) == native['original_proof_sha256'] and digest(native_archive_bytes) == native['original_archive_sha256'], 'accepted original native CPU receipt/archive changed')
     native_proof = read_json(native_proof_bytes)
-    require(native_proof['verified'] and native_proof['source_commit'] == PROBE_SOURCE and native_proof['archive_sha256'] == native['original_archive_sha256'], 'independent strict native CPU acceptance mismatch')
+    require(native_proof['verified'] and native_proof['source_commit'] == PROBE_SOURCE and native_proof['archive_sha256'] == native['completion_archive_sha256'] and native_proof['build_archive_sha256'] == native['original_archive_sha256'], 'independent strict native CPU acceptance mismatch')
+    require(digest(Path(native['completion_archive_path']).read_bytes()) == native['completion_archive_sha256']
+        and digest(Path(native['posthash_original_path']).read_bytes()) == native['posthash_original_sha256'], 'accepted completion/posthash original chain changed')
     config = read_json(contents['task-config-original.json'])
     task = read_json(contents['task-result-original.json'])
     finalized = read_json(contents['task-collection-original.json'])
@@ -578,29 +645,23 @@ def verify_archive(archive, collection_path, manifest_path):
     for key in ('independent_admission', 'registry_driver_writes', 'installation', 'VM_changes'):
         require(result[key] is False, 'unexpected runner admission or persistent mutation')
     files = {row['role']: row for row in manifest['files'] if phase in row['phases']}
-    with tarfile.open(Path(native['original_archive_path']), 'r:gz') as original:
-        native_members = {}
-        for member in original:
-            if member.isdir():
-                continue
-            name = PurePosixPath(member.name.removeprefix('./'))
-            require(member.isfile() and not name.is_absolute() and '..' not in name.parts and str(name) not in native_members,
-                    'unsafe or duplicate native CPU original member')
-            native_members[str(name)] = original.extractfile(member).read()
-        native_result = read_json(native_members['result.json'])
-        native_cpu_details = verify_native_identity_cpu(native_result, native_members)
-        for role, path in (('probe', 'probe/d3d8-runtime-probe.exe'), ('frontend', 'front/viogpu-d3d8-runtime-front.dll')):
-            data = native_members[path]
-            pin = next(row for row in manifest['files'] if row['role'] == role)
-            require(digest(data) == pin['sha256'] and len(data) == pin['bytes'], 'actual native I386 output chain mismatch')
-            row = [item for item in native_result['outputs'] if item['path'] == pin['path']]
-            require(len(row) == 1 and row[0]['sha256'] == pin['sha256'] and row[0]['machine'] == 0x14c, 'native PE/probe output receipt mismatch')
+    native_members = read_native_archive(Path(native['original_archive_path']))
+    completion_members = read_native_archive(Path(native['completion_archive_path']))
+    native_result = read_json(native_members['result.json'])
+    native_cpu_details = verify_native_identity_cpu(native_result, native_members, completion_members,
+        read_json(Path(native['posthash_original_path']).read_bytes()))
+    for role, path in (('probe', 'probe/d3d8-runtime-probe.exe'), ('frontend', 'front/viogpu-d3d8-runtime-front.dll')):
+        data = native_members[path]
+        pin = next(row for row in manifest['files'] if row['role'] == role)
+        require(digest(data) == pin['sha256'] and len(data) == pin['bytes'], 'actual native I386 output chain mismatch')
+        row = [item for item in native_result['outputs'] if item['path'] == pin['path']]
+        require(len(row) == 1 and row[0]['sha256'] == pin['sha256'] and row[0]['machine'] == 0x14c, 'native PE/probe output receipt mismatch')
     require(len(manifest['files']) == 6 and {row['role'] for row in manifest['files']} == {'probe', 'frontend', *PAYLOADS}, 'exact six phase input definitions required')
     require(files.keys() == ({'probe'} if phase == 'names' else {'probe', 'frontend', *PAYLOADS}), 'unexpected selected phase input')
     for row in manifest['files']:
         if row['role'] in PAYLOADS:
             size, sha, name = PAYLOADS[row['role']]
-            folder = r'C:\Users\Public\DxvkD3D8Candidate-d7e5c7d-37648387721'
+            folder = r'C:\Users\Public\DxvkD3D8Candidate-de72dc2-37711793677'
             require(row['bytes'] == size and row['sha256'] == sha and row['path'] == folder + chr(92) + name, 'original I386 payload/config pin mismatch')
     require({row['role'] for row in result['inputs_before']} == files.keys(), 'exact phase payload set mismatch')
     for row in result['inputs_before']:

@@ -49,10 +49,10 @@ Require ($Output -cmatch '^C:\\Users\\Public\\DxvkD3D8SystemPhase-(names|enumera
 Require ((Hash $Manifest) -ceq $ManifestHash) 'Reviewed manifest changed'
 $config=Json $Manifest
 Require ($config.schema -ceq 'system-d3d8-phase-inputs-v1' -and $config.ready) 'Actual native CPU/source inputs are still pending'
-Require ($config.probe_source -ceq '66bfbdf73d32d7213af439a69cb569730b018f55' -and $config.core_source -ceq 'd7e5c7d46b8ce889e993bfab66a3b78b076c49d1' -and [string]$config.core_ci_run -ceq '37648387721') 'Exact separate harness/production identities required'
+Require ($config.probe_source -ceq 'e3ac12646a1b55742d575109063ae78507af5cec' -and $config.core_source -ceq 'de72dc2e97bd8e4ea70c5bf89c26918d06065723' -and [string]$config.core_ci_run -ceq '37711793677') 'Exact separate harness/production identities required'
 Require ($config.loader_source -ceq '6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7' -and $config.icd_source -ceq '8443c71a5ab32b9d58b904fa51f4bf2f9089db8d') 'Original distinct loader and ICD sources required'
 Require ($config.adapter_luid -ceq 'ec6b000000000000' -and $config.source_id -eq 0) 'Fresh selected adapter identity required'
-Require ($config.native_cpu.accepted -and $config.native_cpu.source -ceq $config.probe_source -and $config.native_cpu.original_archive_sha256 -cmatch '^[0-9a-f]{64}$' -and $config.native_cpu.original_proof_sha256 -cmatch '^[0-9a-f]{64}$') 'Accepted original native CPU proof required'
+Require ($config.native_cpu.accepted -and $config.native_cpu.source -ceq $config.probe_source -and $config.native_cpu.original_archive_sha256 -ceq '9ab984590d37ba47a761d81ea76fbc42a8ed87666ca67ced1ef8f107e31b7ddc' -and $config.native_cpu.original_proof_sha256 -cmatch '^[0-9a-f]{64}$' -and $config.native_cpu.completion_archive_sha256 -cmatch '^[0-9a-f]{64}$' -and $config.native_cpu.posthash_original_sha256 -ceq 'd9e37a95907f0274ca4b962abba0e6b5052fcd96ea60a69e3a781ba0f74584eb') 'Accepted original split native CPU proof required'
 Require ((Hash $Authorization) -ceq $AuthorizationHash) 'Explicit phase authorization changed'
 $auth=Json $Authorization
 Require ($auth.authorized -and $auth.owner -cin @('/root','/root/verify_ewdk_build') -and $auth.phase -ceq $Phase -and $auth.manifest_sha256 -ceq $ManifestHash -and $auth.output -ceq $Output) 'Exact exclusive phase ownership required'

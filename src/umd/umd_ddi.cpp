@@ -1564,11 +1564,14 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info,
 bool subresourceBox(const SubresourceInfo& info, const D3D10_DDI_BOX* input, D3D11_BOX& box) {
   if (input && (input->left < 0 || input->top < 0 || input->front < 0 ||
       input->right < 0 || input->bottom < 0 || input->back < 0)) return false;
+  const uint64_t width = info.blockBytes ? dxvk::umd::physicalBlockExtent(info.width) : info.width;
+  const uint64_t height = info.blockBytes ? dxvk::umd::physicalBlockExtent(info.height) : info.height;
+  if (!input && (width > UINT32_MAX || height > UINT32_MAX)) return false;
   box = input ? D3D11_BOX{UINT(input->left), UINT(input->top), UINT(input->front),
                          UINT(input->right), UINT(input->bottom), UINT(input->back)}
-              : D3D11_BOX{0, 0, 0, info.width, info.height, info.depth};
+              : D3D11_BOX{0, 0, 0, UINT(width), UINT(height), info.depth};
   return box.left <= box.right && box.top <= box.bottom && box.front <= box.back
-      && box.right <= info.width && box.bottom <= info.height && box.back <= info.depth;
+      && box.right <= width && box.bottom <= height && box.back <= info.depth;
 }
 void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstIndex,
     UINT x, UINT y, UINT z, D3D10DDI_HRESOURCE src, UINT srcIndex, const D3D10_DDI_BOX* input) {
@@ -1600,8 +1603,9 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
           || source.blockBytes != destination.blockBytes || source.samples != 1 || destination.samples != 1
           || !dxvk::umd::copyBlockRegion2D(source.width, source.height, destination.width, destination.height,
               {box.left, box.top, box.right, box.bottom}, x, y, source.blockBytes)))
-      || !dxvk::umd::volumeCopyFits({destination.width, destination.height, destination.depth}, x, y, z,
-          {box.right - box.left, box.bottom - box.top, box.back - box.front})) {
+      || (source.blockBytes ? z != 0
+        : !dxvk::umd::volumeCopyFits({destination.width, destination.height, destination.depth}, x, y, z,
+            {box.right - box.left, box.bottom - box.top, box.back - box.front}))) {
     device->error(E_INVALIDARG); return;
   }
   if (!readSharedSurface(device, get(src)->shared)) return;

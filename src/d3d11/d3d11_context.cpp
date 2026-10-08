@@ -5752,6 +5752,23 @@ namespace dxvk {
     if (!util::isBlockAligned(offset, extent, formatInfo->blockSize, mipExtent))
       return;
 
+    if (formatInfo->flags.test(DxvkFormatFlag::BlockCompressed)) {
+      // D3D boxes address physical padded blocks; Vulkan image dimensions
+      // remain logical. Clip only unused edge texels, retaining the complete
+      // encoded blocks read from the caller's rows.
+      if (uint32_t(offset.x) >= mipExtent.width
+       || uint32_t(offset.y) >= mipExtent.height
+       || uint32_t(offset.z) >= mipExtent.depth)
+        return;
+      VkExtent3D physicalExtent = util::computeBlockExtent(
+        util::computeBlockCount(mipExtent, formatInfo->blockSize), formatInfo->blockSize);
+      if (extent.width > physicalExtent.width - uint32_t(offset.x)
+       || extent.height > physicalExtent.height - uint32_t(offset.y)
+       || extent.depth > physicalExtent.depth - uint32_t(offset.z))
+        return;
+      extent = util::snapExtent3D(offset, extent, mipExtent);
+    }
+
     auto stagingSlice = AllocStagingBuffer(util::computeImageDataSize(packedFormat, extent));
 
     util::packImageData(stagingSlice.mapPtr(0),

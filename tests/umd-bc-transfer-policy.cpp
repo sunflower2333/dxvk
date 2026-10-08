@@ -12,10 +12,9 @@ static void compare(uint32_t w, uint32_t h, dxvk::umd::BlockBox2D box,
   // Independent oracle: count actual compressed row intervals, including only
   // bytes read in the final row. No production ceil/span helper is used here.
   bool expected = w && h && (bytes == 8 || bytes == 16) && box.left < box.right
-    && box.top < box.bottom && box.right <= w && box.bottom <= h
+    && box.top < box.bottom && box.right <= (uint64_t(w)+3)/4*4 && box.bottom <= (uint64_t(h)+3)/4*4
     && (box.left & 3) == 0 && (box.top & 3) == 0
-    && ((box.right & 3) == 0 || box.right == w)
-    && ((box.bottom & 3) == 0 || box.bottom == h);
+    && (box.right & 3) == 0 && (box.bottom & 3) == 0;
   uint64_t span = 0;
   if (expected) {
     const uint64_t row = uint64_t((uint64_t(box.right) + 3) / 4 - box.left / 4) * bytes;

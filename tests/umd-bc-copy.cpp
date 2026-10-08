@@ -115,7 +115,7 @@ struct Texture {
     std::vector<D3D11_SUBRESOURCE_DATA> publicData(mips*layers);
     for (UINT mip=0;mip<mips;++mip) {
       const UINT w=std::max(1u,width>>mip),h=std::max(1u,height>>mip);
-      shapes[mip]={w,h,1,w,h,1};
+      shapes[mip]={w,h,1,(w+3u)&~3u,(h+3u)&~3u,1};
       for (UINT layer=0;layer<layers;++layer) {
         const UINT sub=mip+layer*mips,row=((w+3)/4)*blockBytes,rows=(h+3)/4,pitch=row+7;
         expected[sub].resize(row*rows); initialBytes[sub].assign(size_t(pitch)*rows+16,0xe7);
@@ -247,10 +247,10 @@ static void exercise(Fixture& f,Fixture& foreign,DXGI_FORMAT srcFmt,DXGI_FORMAT 
   Texture destination(f,dstFmt,cube,0xa3);
   const UINT layer=destination.layers-1;
   const D3D10_DDI_BOX interior{4,4,0,12,12,1}; region(destination,source,layer*5,8,4,0,&interior,false);
-  const D3D10_DDI_BOX edge{cube?0:4,0,0,cube?4:6,4,1}; region(destination,source,layer*5+2,cube?0u:4u,0,2,&edge,true);
+  const D3D10_DDI_BOX edge{cube?0:4,0,0,cube?4:8,4,1}; region(destination,source,layer*5+2,cube?0u:4u,0,2,&edge,true);
   region(destination,source,layer*5+3,0,0,3,nullptr,false);
-  const D3D10_DDI_BOX tiny{0,0,0,1,1,1}; region(destination,source,layer*5+4,0,0,4,&tiny,true);
-  const D3D10_DDI_BOX toInterior{0,0,0,cube?2:3,2,1}; region(destination,source,layer*5,4,12,3,&toInterior,false);
+  const D3D10_DDI_BOX tiny{0,0,0,4,4,1}; region(destination,source,layer*5+4,0,0,4,&tiny,true);
+  const D3D10_DDI_BOX toInterior{0,0,0,4,4,1}; region(destination,source,layer*5,4,12,3,&toInterior,false);
   const D3D10_DDI_BOX oneBlock{0,0,0,4,4,1}; region(destination,destination,layer*5,0,0,0,&oneBlock,true);
   snapshot(destination,2,"destination"); snapshot(source,2,"source");
   invalid(destination,source,foreign); snapshot(destination,3,"destination"); snapshot(source,3,"source");

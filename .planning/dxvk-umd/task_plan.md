@@ -8,24 +8,27 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Latest checkpoint (2026-10-08): target is released to ROOT after combined
-cube native02 failed at missing runtimeobject.lib, before any reference fixture.
-ROOT proof f1b472e9 directly joins the254 original files,160 Git inputs,
-398 package members,16AA64COFF,11 closed native children and13 absent host
-owners; release4021b90e is accepted. Actual first-party diagnostics remain0.
-The full release-library scan also found AdvApi32 and Synchronization defaults;
-DX10 prepares fresh03 with all11 original libraries, unchanged8528 source,
-strict flags and oracles. Previous failed originals remain immutable.
+Latest checkpoint (2026-10-08): DX11 exclusively owns the target for one
+frozen CPU03 ARM64 SO/volume build-only attempt, authorization dd72d77d.
+ROOT accepted cube native03 failure/release with direct proof efd74363:
+391 original files,160 Git sources,16AA64COFF+1PE,6 helper and2 CI AST,
+12 native children and13 host owners closed. All11 release libraries link.
+WARP initialization/updates/faces pass, but scoped mip generation leaves
+face0 mip4 at ff040001 rather than ff000000; exact failed word and metadata
+are retained. No retry or full-suite/hardware acceptance. DX10 diagnoses
+and repairs the GPU-only selected mip path locally; no target calls.
 
-ROOT local integration branch3213fda combines8528 cube production with7a47
-cube andf96 SO/volume real-KMT probes. Meson/build/shipping and38 ARM cases
-pass local registration checks. DX11 CPU03 prepared-input review99d9b777
-joins25 Git sources,37 package members,17 bundle members and actual11-library
-plus4localCOFF directive streams; native linking remains pending. Owned
-CPU03 handoff review1bbb7e5a is accepted for preparation only, queued after
-cube03. DX8 physical-identity repair66bfbdf is frozen locally with4I386COFF/
-2PE zero diagnostics and91 GCC/Clang controls; CPU08/native names remain
-pending. ROOT will integrate its single added fixture while preserving38.
+ROOT local integration branch086fe36 combines8528 cube production,7a47 cube
+andf96 SO/volume KMT probes,66b shared I386 identity and5624 typed modern
+cube-array RTV/DSV. Meson/build/shipping and40 ARM cases pass local joins
+(da51f591). Existing27 phase controls retained. Modern cube views have ROOT
+source/local-original review937634af; actual native references pending.
+DX11 CPU03 prepared99d9b777 and owned handoff1bbb7e5a remain immutable.
+DX8 identity ROOT94aaa5ea joins889 local inputs,5I386COFF/3PE/16 zero-exit
+commands and91 controls per GCC/Clang. CPU08 prepared ROOT0630c8e3 joins21
+sources (18Git+3original licensed), frozen helpers/host AST/actual dry plan;
+its native build/physical observation is queued after CPU03. EWDK develops
+a separate phase verifier against all27 existing controls locally.
 
 Live CI37689715890 on published3d397608 remains PASS. Four redundant push
 workflows remain disabled. No new push or target hardware admission. User

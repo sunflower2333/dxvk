@@ -2,7 +2,7 @@
 """Verify original clip/cull SO programs, captured words and query counters."""
 import argparse, hashlib, json, re, struct, tempfile
 from pathlib import Path
-SOURCE_SHA256="b40b6f856a0c014d2e87b6b7e7267e0ad5ebde779d660f8ebcc3f9a293e4c8e5"
+SOURCE_SHA256="99f1c6067fd4aa7213b4cddfc39b8878409b6c3413f390fe2c82b2a1e13b2028"
 def shader_cases():
     index=0
     for model in (40,41):

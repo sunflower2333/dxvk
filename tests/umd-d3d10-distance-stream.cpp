@@ -46,7 +46,8 @@ struct V {
 };
 V make(uint id,uint alternate) {
   V o;o.p=float4(float(id),0,0,1);o.clip0=float4(-1,-2,-3,-4);
-  o.clip1=float2(asfloat(0x80000000),float(id)+0.5+8*alternate);
+  // IDs 0..2 retain negative zero; the input-dependent bits prevent FXC constant folding.
+  o.clip1=float2(asfloat(0x80000000u | (id & 0xfffffffcu)),float(id)+0.5+8*alternate);
   o.cull=float2(-0.25-float(id)-8*alternate,2+float(id)+8*alternate);
   o.data=0x7fc01234+8*alternate+id;return o;
 }
@@ -95,12 +96,18 @@ static Words expected(bool geometry,bool sparse,UINT alternate) {
   return result;
 }
 static void retainScene(UINT model,bool geometry,bool sparse,UINT alternate,const char* role,const Words& data,const Counters& counters) {
-  CHECK(data==expected(geometry,sparse,alternate));
-  CHECK(counters[0]==3&&counters[1]==1&&counters[2]==0&&counters[3]==0&&counters[4]==1&&counters[5]==1);
   char name[128];CHECK(std::snprintf(name,sizeof(name),"distance-model%u-gs%u-sparse%u-alternate%u-%s.bin",model,UINT(geometry),UINT(sparse),alternate,role)>0);
   retain(name,data.data(),sizeof(data));
   CHECK(std::snprintf(name,sizeof(name),"distance-model%u-gs%u-sparse%u-alternate%u-%s-query.bin",model,UINT(geometry),UINT(sparse),alternate,role)>0);
   retain(name,counters.data(),sizeof(counters));++buffers;
+}
+static void checkScene(UINT model,bool geometry,bool sparse,UINT alternate,const char* role,const Words& data,const Counters& counters) {
+  const auto oracle=expected(geometry,sparse,alternate);
+  for(UINT word=0;word<data.size();++word)if(data[word]!=oracle[word])
+    std::fprintf(stderr,"D3D10 distance SO model=%u gs=%u sparse=%u alternate=%u role=%s word=%u actual=%08x expected=%08x\n",
+      model,UINT(geometry),UINT(sparse),alternate,role,word,data[word],oracle[word]);
+  CHECK(data==oracle);
+  CHECK(counters[0]==3&&counters[1]==1&&counters[2]==0&&counters[3]==0&&counters[4]==1&&counters[5]==1);
 }
 static std::array<D3D10DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY,3> declaration(const Program& p,bool sparse) {
   const D3D10DDIARG_SIGNATURE_ENTRY *clip0=nullptr,*clip1=nullptr,*cull=nullptr,*data=nullptr;
@@ -210,8 +217,10 @@ template<class Table>static void model(bool model41){Program vs("vs",model41?"vs
     Native<Table> native;const std::array<D3D10DDI_HSHADER,2> vertices={native.vertex(vs),native.vertex(alternate)};Public reference(model41,{&vs,&alternate});
     const auto stream=native.stream(geometry?gs:vs,geometry,sparse);const auto publicStream=reference.stream(geometry?gs:vs,sparse);
     for(UINT producer=0;producer<2;++producer){Counters nc{},pc{};const auto actual=native.draw(vertices[producer],stream,nc);
-      const auto original=reference.draw(producer,publicStream.Get(),pc);CHECK(actual==original);
-      retainScene(model41?41:40,geometry,sparse,producer,"native",actual,nc);retainScene(model41?41:40,geometry,sparse,producer,"public",original,pc);++scenes;}
+      const auto original=reference.draw(producer,publicStream.Get(),pc);
+      retainScene(model41?41:40,geometry,sparse,producer,"native",actual,nc);retainScene(model41?41:40,geometry,sparse,producer,"public",original,pc);
+      checkScene(model41?41:40,geometry,sparse,producer,"native",actual,nc);checkScene(model41?41:40,geometry,sparse,producer,"public",original,pc);
+      CHECK(actual==original);++scenes;}
   }
 }
 int main(){caller=GetCurrentThreadId();policy();retain("distance-original.hlsl",source,sizeof(source)-1);

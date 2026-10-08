@@ -65,6 +65,7 @@ $cases = [ordered]@{
     'dxvk-umd-bc-copy-policy-test.exe' = '(?m)^BC regional copy policy PASS checks=164777 edge_blocks=1 hardware_admission=0\r?$'
     'dxvk-umd-bc-copy-test.exe' = '(?m)^BC regional copy PASS checks=\d+ profiles=2 scenes=20 copies=160 rejections=400 noops=120 snapshots=180 subresources=3600 bytes=237312 raw_files=540 hardware_admission=0\r?$'
     'dxvk-umd-depth-stencil-copy-test.exe' = '(?m)^Depth stencil regional copy PASS checks=[1-9][0-9]* profiles=3 families=2 copies=16 rejections=74 noops=12 snapshots=50 pixels=4100 bytes_each_native_public=24600 raw_files=150 hardware_admission=0\r?$'
+    'dxvk-umd-depth-stencil-copy-1d-test.exe' = '(?m)^Depth stencil 1D regional copy PASS checks=[1-9][0-9]* profiles=3 families=2 copies=22 rejections=68 noops=12 snapshots=68 pixels=1360 bytes_each_native_public=4080 raw_files=204 hardware_admission=0\r?$'
     'dxvk-umd-compute-container-test.exe' = 'compute container PASS checks=\d+ exact tokens/hash and malformed SM5 controls'
     'dxvk-umd-sm5-container-test.exe' = 'SM5 signatures/interfaces PASS checks=\d+ exact tokens/hash, GS streams, patch factors, typed/depth outputs, native table IDs'
     'dxvk-umd-legacy-api-test.exe' = 'legacy8/9 API bounds PASS checks=\d+; renderer framing follows, admission unchanged'
@@ -113,6 +114,7 @@ $originalDirectories = @{
     'dxvk-umd-msaa-copy-test.exe' = 'arm64-msaa-copy-originals'
     'dxvk-umd-bc-copy-test.exe' = 'arm64-bc-copy-originals'
     'dxvk-umd-depth-stencil-copy-test.exe' = 'arm64-depth-stencil-copy-originals'
+    'dxvk-umd-depth-stencil-copy-1d-test.exe' = 'arm64-depth-stencil-copy-1d-originals'
     'dxvk-umd-tex2d-srv-remaining-test.exe' = 'arm64-tex2d-srv-remaining-originals'
     'dxvk-umd-dxgi-blt-test.exe' = 'arm64-dxgi-blt-originals'
     'dxvk-umd-dxgi-primary-test.exe' = 'arm64-dxgi-primary-originals'
@@ -203,6 +205,14 @@ foreach ($name in $cases.Keys) {
         $depthCopyVerified = Get-Content -LiteralPath $depthCopyReview -Raw | ConvertFrom-Json
         if ($depthCopyVerified.verified -ne $true -or $depthCopyVerified.profiles -ne 3 -or $depthCopyVerified.families -ne 2 -or $depthCopyVerified.copies -ne 16 -or $depthCopyVerified.rejections -ne 74 -or $depthCopyVerified.noops -ne 12 -or $depthCopyVerified.snapshots -ne 50 -or $depthCopyVerified.pixels -ne 4100 -or $depthCopyVerified.bytes_each_native_public -ne 24600 -or $depthCopyVerified.byte_observations -ne 49200 -or $depthCopyVerified.raw_files -ne 150 -or $depthCopyVerified.hardware_admission -ne $false -or $depthCopyVerified.registration -ne $false) {
             throw 'ARM64 packed depth/stencil independent reader totals or admission flags changed'
+        }
+    } elseif ($name -ceq 'dxvk-umd-depth-stencil-copy-1d-test.exe') {
+        $depthCopy1dReview = Join-Path $root 'arm64-depth-stencil-copy-1d-originals-verified.json'
+        & python (Join-Path $PSScriptRoot '../tests/verify-depth-stencil-copy-1d-originals.py') --directory $childDirectory --stdout $out --output $depthCopy1dReview
+        if ($LASTEXITCODE) { throw 'Independent ARM64 Texture1D depth/stencil native/public storage originals failed' }
+        $depthCopy1dVerified = Get-Content -LiteralPath $depthCopy1dReview -Raw | ConvertFrom-Json
+        if ($depthCopy1dVerified.verified -ne $true -or $depthCopy1dVerified.profiles -ne 3 -or $depthCopy1dVerified.families -ne 2 -or $depthCopy1dVerified.copies -ne 22 -or $depthCopy1dVerified.rejections -ne 68 -or $depthCopy1dVerified.noops -ne 12 -or $depthCopy1dVerified.snapshots -ne 68 -or $depthCopy1dVerified.pixels -ne 1360 -or $depthCopy1dVerified.bytes_each_native_public -ne 4080 -or $depthCopy1dVerified.byte_observations -ne 8160 -or $depthCopy1dVerified.raw_files -ne 204 -or $depthCopy1dVerified.hardware_admission -ne $false -or $depthCopy1dVerified.registration -ne $false) {
+            throw 'ARM64 Texture1D depth/stencil independent reader totals or admission flags changed'
         }
     } elseif ($name -ceq 'dxvk-umd-dxgi-shared-resolve-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-shared-resolve-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-dxgi-shared-resolve-originals-verified.json')

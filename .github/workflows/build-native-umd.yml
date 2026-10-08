@@ -174,3 +174,4 @@ jobs:
             candidate/arm64-msaa-copy-originals/**
             candidate/arm64-bc-copy-originals/**
             candidate/arm64-depth-stencil-copy-originals/**
+            candidate/arm64-depth-stencil-copy-1d-originals/**

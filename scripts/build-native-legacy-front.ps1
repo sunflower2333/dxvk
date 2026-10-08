@@ -145,12 +145,14 @@ try {
     $env:LIB = $Arm64EcLibraryDirectories -join ';'
     $ecObject = Join-Path $output 'front-arm64ec.obj'
     Invoke-FrontTool 'compile-arm64ec' 'cl.exe' ($commonCompile + @('/arm64EC',('"' + $source + '"'),('/Fo"' + $ecObject + '"')))
-    Invoke-FrontTool 'link-arm64x' 'link.exe' @('/nologo','/DLL','/MACHINE:ARM64X','/WX','/DEBUG:FULL',
-        ('"' + $ecObject + '"'),('@"' + $mergeRsp + '"'),
+    # Keep the merge file as original evidence. LINK cannot expand an @file
+    # embedded in Invoke-FrontTool's response file, so splice the same inputs.
+    Invoke-FrontTool 'link-arm64x' 'link.exe' (@('/nologo','/DLL','/MACHINE:ARM64X','/WX','/DEBUG:FULL',
+        ('"' + $ecObject + '"')) + $nativeInputs + @(
         ('/DEFARM64NATIVE:"' + $definition + '"'),('/DEF:"' + $definition + '"'),
         ('/OUT:"' + (Join-Path $output 'viogpu_dxvk_legacy.dll') + '"'),
         ('/PDB:"' + (Join-Path $output 'viogpu_dxvk_legacy.pdb') + '"'),
-        ('/LINKREPROFULLPATHRSP:"' + (Join-Path $output 'arm64x-original-link-inputs.rsp') + '"'),'kernel32.lib')
+        ('/LINKREPROFULLPATHRSP:"' + (Join-Path $output 'arm64x-original-link-inputs.rsp') + '"'),'kernel32.lib'))
     $hybrid = Join-Path $output 'viogpu_dxvk_legacy.dll'
     Invoke-FrontTool 'hybrid-headers' 'dumpbin.exe' @('/headers','/loadconfig',('"' + $hybrid + '"'))
     Invoke-FrontTool 'hybrid-exports' 'dumpbin.exe' @('/exports',('"' + $hybrid + '"'))

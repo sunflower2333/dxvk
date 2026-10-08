@@ -17,12 +17,19 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <wrl/client.h>
 
 static constexpr unsigned width=7, height=5, pitch=40, bytes=pitch*height;
 static std::atomic<unsigned> checks{0};
 static unsigned images,pixels,acquisitions,releases,releaseAttempts,locks,unlocks,renders,contexts,contextCloses;
 static unsigned runtimeTerminalReleases,runtimeTerminalMapClosures;
 static unsigned errorCallbacks,failedOpenFrames;
+static unsigned sharedPresentImages,sharedPresentPixels,sharedPresents,sharedModes,sharedNegativeCases;
+static bool sharedPresentChecks=false;
+static D3DKMT_HANDLE expectedPresentHandle;
+static std::function<void()> presentAction,modeAction;
+static Microsoft::WRL::ComPtr<ID3D11Device> publicDevice;
+static Microsoft::WRL::ComPtr<ID3D11DeviceContext> publicContext;
 static DWORD caller;
 static char adapterCookie,deviceCookie,coreCookie,contextCookie;
 static LUID selected{0x13572468,-73};
@@ -71,7 +78,13 @@ static void kernelPixels(D3DKMT_HANDLE handle,unsigned seed,bool write) {
   for (unsigned y=0;y<height;++y) for (unsigned x=0;x<width;++x) {
     auto at=value.data()+y*pitch+4*x;auto expected=color(seed,x,y);
     if (write) std::memcpy(at,&expected,4);
-    else { uint32_t actual;std::memcpy(&actual,at,4);CHECK(actual==expected); }
+    else {
+      uint32_t actual;std::memcpy(&actual,at,4);
+      if (actual!=expected) std::fprintf(stderr,
+        "Opened primary kernel pixel failure format=%u seed=%u x=%u y=%u actual=%08x expected=%08x\n",
+        value.info.format,seed,x,y,actual,expected);
+      CHECK(actual==expected);
+    }
   }
   guards(value);
 }
@@ -193,7 +206,20 @@ static HRESULT APIENTRY render(HANDLE device,D3DDDICB_RENDER* request) {
   request->pNewPatchLocationList=patchLists[buffer];request->NewPatchLocationListSize=8;
   if (renderAction) std::exchange(renderAction,{})();return S_OK;
 }
-static HRESULT APIENTRY present(HANDLE,DXGIDDICB_PRESENT*) { CHECK(false);return E_FAIL; }
+static HRESULT APIENTRY present(HANDLE device,DXGIDDICB_PRESENT* request) {
+  callback();CHECK(sharedPresentChecks && device==&deviceCookie && request);
+  CHECK(request->hSrcAllocation==expectedPresentHandle && backing.count(expectedPresentHandle));
+  CHECK(request->hContext==&contextCookie && request->pDXGIContext==&adapterCookie && !request->hDstAllocation);
+  CHECK(!backing.at(expectedPresentHandle).mapped);++sharedPresents;
+  if (presentAction) std::exchange(presentAction,{})();return S_OK;
+}
+static HRESULT APIENTRY mode(HANDLE device,D3DDDICB_SETDISPLAYMODE* request) {
+  callback();CHECK(sharedPresentChecks && device==&deviceCookie && request);
+  CHECK(request->hPrimaryAllocation==expectedPresentHandle && expectedPresentHandle==borrowedHandle);
+  CHECK(backing.count(expectedPresentHandle) && !backing.at(expectedPresentHandle).internal
+    && backing.at(expectedPresentHandle).info.flags==1 && !request->PrivateDriverFormatAttribute);
+  ++sharedModes;if (modeAction) std::exchange(modeAction,{})();return S_OK;
+}
 static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime,HRESULT result) { callback();CHECK(runtime.handle==&coreCookie && FAILED(result));lastError=result;++errorCallbacks; }
 static void runtimeTerminalCleanup() {
   CHECK(!runtimeValid && GetCurrentThreadId()==caller && internalCount()==1);
@@ -205,7 +231,9 @@ static void runtimeTerminalCleanup() {
 HRESULT dxvk::umd::createDevice(const LUID& luid,D3D_FEATURE_LEVEL level,
     ID3D11Device** device,ID3D11DeviceContext** context,const RuntimeBackend*) noexcept {
   CHECK(!std::memcmp(&luid,&selected,sizeof(luid)));
-  return D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,&level,1,D3D11_SDK_VERSION,device,nullptr,context);
+  const HRESULT hr=D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,&level,1,D3D11_SDK_VERSION,device,nullptr,context);
+  if (hr==S_OK && sharedPresentChecks) { publicDevice=*device;publicContext=*context; }
+  return hr;
 }
 HRESULT dxvk::umd::isStagingResourceBusy(ID3D11DeviceContext*,ID3D11Resource*,BOOL*) noexcept { return E_NOTIMPL; }
 HRESULT dxvk::umd::flushRuntimeSubmission(ID3D11DeviceContext* context) noexcept { context->Flush();return S_OK; }
@@ -218,7 +246,7 @@ struct Storage {
 static D3DDDI_DEVICECALLBACKS kernelCallbacks() {
   D3DDDI_DEVICECALLBACKS value{};value.pfnAllocateCb=allocate;value.pfnDeallocateCb=deallocate;
   value.pfnLockCb=lock;value.pfnUnlockCb=unlock;value.pfnCreateContextCb=createContext;
-  value.pfnDestroyContextCb=destroyContext;value.pfnRenderCb=render;return value;
+  value.pfnDestroyContextCb=destroyContext;value.pfnRenderCb=render;value.pfnSetDisplayModeCb=mode;return value;
 }
 template<typename Table>
 struct Fixture {
@@ -260,7 +288,7 @@ template<typename F>
 struct Texture {
   F& fixture;Storage storage;D3D10DDI_HRESOURCE handle;char runtime;
   bool live=true;
-  Texture(F& f,DXGI_FORMAT format,bool staging=false,bool presentable=false,Foreign* foreign=nullptr)
+  Texture(F& f,DXGI_FORMAT format,bool staging=false,bool presentable=false,Foreign* foreign=nullptr,bool sharing=false)
   :fixture(f),storage(f.table.pfnCalcPrivateResourceSize(f.device,nullptr)),handle{storage.data} {
     lastError=S_OK;
     if (foreign) {
@@ -275,6 +303,7 @@ struct Texture {
       desc.Usage=staging?D3D10_DDI_USAGE_STAGING:D3D10_DDI_USAGE_DEFAULT;
       desc.BindFlags=staging?0:D3D10_DDI_BIND_RENDER_TARGET|D3D10_DDI_BIND_SHADER_RESOURCE;
       if (presentable) desc.BindFlags|=D3D10_DDI_BIND_PRESENT;
+      if (sharing) desc.MiscFlags=D3D10_DDI_RESOURCE_MISC_SHARED;
       desc.MapFlags=staging?D3D10_DDI_CPU_ACCESS_READ:0;desc.SampleDesc.Count=1;desc.MipLevels=desc.ArraySize=1;
       f.table.pfnCreateResource(f.device,&desc,handle,{&runtime});
     }
@@ -535,6 +564,163 @@ static void ownership() {
   }
   CHECK(internalCount()==0 && backing.count(foreign.handle));
 }
+template<typename F>
+static HRESULT sharedPresent(F& f,Texture<F>& texture,bool displayMode=false) {
+  if (displayMode) {
+    DXGI_DDI_ARG_SETDISPLAYMODE args{};args.hDevice=reinterpret_cast<DXGI_DDI_HDEVICE>(f.device.pDrvPrivate);
+    args.hResource=texture.dxgi();return f.dxgi.pfnSetDisplayMode(&args);
+  }
+  DXGI_DDI_ARG_PRESENT args{};args.hDevice=reinterpret_cast<DXGI_DDI_HDEVICE>(f.device.pDrvPrivate);
+  args.hSurfaceToPresent=texture.dxgi();args.Flags.Blt=1;args.pDXGIContext=&adapterCookie;
+  return f.dxgi.pfnPresent(&args);
+}
+template<typename F>
+static void sharedPresentRead(F& f,Texture<F>& source,Texture<F>& staging,
+    unsigned profile,unsigned kind,unsigned format,unsigned snapshot,unsigned seed) {
+  std::array<uint32_t,width*height> native{},publicWords{},kernel{};
+  lastError=S_OK;f.table.pfnResourceCopy(f.device,staging.handle,source.handle);CHECK(lastError==S_OK);
+  D3D10DDI_MAPPED_SUBRESOURCE mapped{};
+  f.table.pfnStagingResourceMap(f.device,staging.handle,0,D3D10_DDI_MAP_READ,0,&mapped);
+  CHECK(lastError==S_OK && mapped.pData && mapped.RowPitch>=width*4);
+  const auto nativePitch=mapped.RowPitch;
+  for (unsigned y=0;y<height;++y) std::memcpy(native.data()+y*width,static_cast<uint8_t*>(mapped.pData)+y*mapped.RowPitch,width*4);
+  f.table.pfnStagingResourceUnmap(f.device,staging.handle,0);CHECK(lastError==S_OK);
+  // An independent public API resource uses the same original caller words.
+  // Retain both actual readbacks, not the generated expected array.
+  const auto values=image(seed);D3D11_TEXTURE2D_DESC desc{};
+  desc.Width=width;desc.Height=height;desc.MipLevels=desc.ArraySize=1;
+  desc.Format=dxvk::umd::allocationFormat(format);desc.SampleDesc.Count=1;
+  desc.Usage=D3D11_USAGE_DEFAULT;desc.BindFlags=D3D11_BIND_RENDER_TARGET;
+  D3D11_SUBRESOURCE_DATA initial{values.data(),width*4,width*height*4};
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> publicSource,publicStaging;
+  CHECK(publicDevice && publicContext && publicDevice->CreateTexture2D(&desc,&initial,&publicSource)==S_OK);
+  desc.Usage=D3D11_USAGE_STAGING;desc.BindFlags=0;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+  CHECK(publicDevice->CreateTexture2D(&desc,nullptr,&publicStaging)==S_OK);
+  publicContext->CopyResource(publicStaging.Get(),publicSource.Get());
+  D3D11_MAPPED_SUBRESOURCE publicMap{};CHECK(publicContext->Map(publicStaging.Get(),0,D3D11_MAP_READ,0,&publicMap)==S_OK);
+  CHECK(publicMap.pData && publicMap.RowPitch>=width*4);const auto publicPitch=publicMap.RowPitch;
+  for (unsigned y=0;y<height;++y) std::memcpy(publicWords.data()+y*width,static_cast<uint8_t*>(publicMap.pData)+y*publicMap.RowPitch,width*4);
+  publicContext->Unmap(publicStaging.Get(),0);
+  const auto& allocation=backing.at(expectedPresentHandle);guards(allocation);
+  for (unsigned y=0;y<height;++y) std::memcpy(kernel.data()+y*width,allocation.data()+y*allocation.info.pitch,width*4);
+  const uint32_t metadata[]{width,height,format,seed,nativePitch,publicPitch,allocation.info.pitch,
+    uint32_t(allocation.info.size),expectedPresentHandle,allocation.info.flags};
+  char name[160];
+  auto write=[&](const char* suffix,const void* data,size_t size) {
+    std::snprintf(name,sizeof(name),"shared-present-%u-%u-%u-%u.%s.bin",profile,kind,format,snapshot,suffix);save(name,data,size);
+  };
+  write("native.u32",native.data(),sizeof(native));write("public.u32",publicWords.data(),sizeof(publicWords));
+  write("kernel.u32",kernel.data(),sizeof(kernel));write("metadata.u32",metadata,sizeof(metadata));
+  write("allocation",&allocation.info,sizeof(allocation.info));
+  for (unsigned y=0;y<height;++y) for (unsigned x=0;x<width;++x) {
+    const auto at=y*width+x,expected=color(seed,x,y);
+    CHECK(native[at]==expected && publicWords[at]==expected && kernel[at]==expected);++sharedPresentPixels;
+  }
+  ++sharedPresentImages;
+}
+template<typename Table>
+static void sharedPresentProfile(unsigned index) {
+  using F=Fixture<Table>;
+  for (unsigned format=1;format<=3;++format) {
+    Foreign foreign(format);const auto acquired=acquisitions,released=releases;
+    {
+      F f;const auto dxgiFormat=dxvk::umd::allocationFormat(format);
+      Texture<F> opened(f,dxgiFormat,false,false,&foreign),staging(f,dxgiFormat,true);
+      expectedPresentHandle=foreign.handle;
+      CHECK(acquisitions==acquired+1 && internalCount()==1);
+      CHECK(sharedPresent(f,opened)==S_OK);
+      sharedPresentRead(f,opened,staging,index,0,format,0,1);
+      kernelPixels(foreign.handle,2,true);
+      CHECK(sharedPresent(f,opened)==S_OK);
+      sharedPresentRead(f,opened,staging,index,0,format,1,2);
+      opened.update(3);CHECK(sharedPresent(f,opened,true)==S_OK);
+      sharedPresentRead(f,opened,staging,index,0,format,2,3);
+      kernelPixels(foreign.handle,7,true);CHECK(sharedPresent(f,opened,true)==S_OK);
+      sharedPresentRead(f,opened,staging,index,0,format,3,7);
+      opened.update(3);const auto before=sharedPresents;
+      lockAction=[&] {
+        CHECK(sharedPresent(f,opened)==DXGI_ERROR_WAS_STILL_DRAWING);
+        CHECK(f.resolve(opened.dxgi())==DXGI_ERROR_WAS_STILL_DRAWING);sharedNegativeCases+=2;
+      };
+      CHECK(sharedPresent(f,opened)==S_OK && sharedPresents==before+1);
+    }
+    CHECK(acquisitions==acquired+1 && releases==released+1 && internalCount()==0 && backing.count(foreign.handle));
+  }
+  for (unsigned format:{1u,3u}) {
+    const auto acquired=acquisitions,released=releases;
+    F f;const auto dxgiFormat=dxvk::umd::allocationFormat(format);
+    Texture<F> source(f,dxgiFormat,false,true,nullptr,true),staging(f,dxgiFormat,true);
+    CHECK(acquisitions==acquired+1 && internalCount()==1);
+    expectedPresentHandle=0;
+    for (const auto& entry:backing) if (entry.second.resource==&source.runtime) {
+      CHECK(!expectedPresentHandle);expectedPresentHandle=entry.first;
+    }
+    CHECK(expectedPresentHandle && backing.at(expectedPresentHandle).info.flags==2);
+    D3D10DDIARG_CREATERENDERTARGETVIEW viewDesc{};viewDesc.hDrvResource=source.handle;
+    viewDesc.Format=dxgiFormat;viewDesc.ResourceDimension=D3D10DDIRESOURCE_TEXTURE2D;
+    viewDesc.Tex2D.ArraySize=1;
+    Storage viewStorage(f.table.pfnCalcPrivateRenderTargetViewSize(f.device,&viewDesc));
+    D3D10DDI_HRENDERTARGETVIEW view{viewStorage.data};
+    f.table.pfnCreateRenderTargetView(f.device,&viewDesc,view,{});CHECK(lastError==S_OK);
+    source.update(4);CHECK(sharedPresent(f,source)==S_OK);
+    sharedPresentRead(f,source,staging,index,1,format,0,4);
+    auto& allocation=backing.at(expectedPresentHandle);
+    for (unsigned y=0;y<height;++y) for (unsigned x=0;x<width;++x) {
+      const auto value=color(5,x,y);std::memcpy(allocation.data()+y*allocation.info.pitch+x*4,&value,4);
+    }
+    CHECK(sharedPresent(f,source)==S_OK);
+    sharedPresentRead(f,source,staging,index,1,format,1,5);
+    source.retire();CHECK(releases==released && internalCount()==1);
+    CHECK(sharedPresent(f,source)==E_INVALIDARG);++sharedNegativeCases;
+    f.table.pfnDestroyRenderTargetView(f.device,view);viewStorage.poison();
+    CHECK(releases==released+1 && internalCount()==0);
+  }
+  // Invalid shape rejection must happen before acquiring a second backing.
+  for (unsigned failure=0;failure<6;++failure) {
+    F f;D3D10DDI_MIPINFO mip{width,height,1,width,height,1};typename F::Desc desc{};
+    desc.pMipInfoList=&mip;desc.ResourceDimension=D3D10DDIRESOURCE_TEXTURE2D;
+    desc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;desc.Usage=D3D10_DDI_USAGE_DEFAULT;
+    desc.BindFlags=D3D10_DDI_BIND_PRESENT|D3D10_DDI_BIND_RENDER_TARGET;
+    desc.MiscFlags=D3D10_DDI_RESOURCE_MISC_SHARED;desc.MipLevels=desc.ArraySize=desc.SampleDesc.Count=1;
+    DXGI_DDI_PRIMARY_DESC primary{};
+    switch (failure) {
+      case 0: desc.SampleDesc.Count=4;break;
+      case 1: desc.MapFlags=D3D10_DDI_CPU_ACCESS_READ;break;
+      case 2: desc.ArraySize=2;break;
+      case 3: desc.MipLevels=2;break;
+      case 4: desc.Format=DXGI_FORMAT_B8G8R8X8_UNORM;break;
+      case 5:
+        primary.ModeDesc.Width=width;primary.ModeDesc.Height=height;primary.ModeDesc.Format=desc.Format;
+        primary.ModeDesc.RefreshRate={60000,1001};
+        primary.ModeDesc.ScanlineOrdering=DXGI_DDI_MODE_SCANLINE_ORDER_PROGRESSIVE;
+        primary.ModeDesc.Rotation=DXGI_DDI_MODE_ROTATION_IDENTITY;
+        primary.ModeDesc.Scaling=DXGI_DDI_MODE_SCALING_UNSPECIFIED;
+        desc.pPrimaryDesc=&primary;break;
+    }
+    Storage storage(f.table.pfnCalcPrivateResourceSize(f.device,&desc));std::memset(storage.data,0x6d,128);
+    const auto acquired=acquisitions;lastError=S_OK;char runtime;
+    f.table.pfnCreateResource(f.device,&desc,{storage.data},{&runtime});
+    CHECK(lastError==DXGI_ERROR_UNSUPPORTED && acquisitions==acquired && internalCount()==0);
+    for (unsigned i=0;i<128;++i) CHECK(static_cast<uint8_t*>(storage.data)[i]==0x6d);
+    ++sharedNegativeCases;
+  }
+  for (bool terminal:{false,true}) {
+    Foreign foreign;F f;Texture<F> opened(f,DXGI_FORMAT_R8G8B8A8_UNORM,false,false,&foreign);
+    expectedPresentHandle=foreign.handle;opened.update(6);const auto before=sharedPresents;
+    lockAction=[&] { opened.retire();if (terminal) f.retire(); };
+    CHECK(sharedPresent(f,opened)==DXGI_ERROR_DEVICE_REMOVED && sharedPresents==before);
+    CHECK(internalCount()==0 && backing.count(foreign.handle));++sharedNegativeCases;
+  }
+  for (bool displayMode:{false,true}) for (bool terminal:{false,true}) {
+    Foreign foreign;F f;Texture<F> opened(f,DXGI_FORMAT_R8G8B8A8_UNORM,false,false,&foreign);
+    expectedPresentHandle=foreign.handle;opened.update(6);
+    auto retire=[&] { opened.retire();if (terminal) f.retire(); };
+    if (displayMode) modeAction=retire;else presentAction=retire;
+    CHECK(sharedPresent(f,opened,displayMode)==DXGI_ERROR_DEVICE_REMOVED);
+    CHECK(internalCount()==0 && backing.count(foreign.handle));++sharedNegativeCases;
+  }
+  publicContext.Reset();publicDevice.Reset();
+}
 int main() {
   caller=GetCurrentThreadId();profile<D3D10DDI_DEVICEFUNCS>(0);profile<D3D10_1DDI_DEVICEFUNCS>(1);profile<D3D11DDI_DEVICEFUNCS>(2);
   openFrames<D3D10DDI_DEVICEFUNCS>();openFrames<D3D10_1DDI_DEVICEFUNCS>();openFrames<D3D11DDI_DEVICEFUNCS>();
@@ -545,7 +731,16 @@ int main() {
   CHECK(runtimeTerminalReleases==4 && runtimeTerminalMapClosures==2);
   CHECK(errorCallbacks==78 && failedOpenFrames==78);
   CHECK(!allocateBefore && !allocateAfter && !deallocateAction && !lockAction && !unlockAction && !renderAction);
+  const auto openedPrimaryChecks=checks.load(),openedPrimaryCallbacks=errorCallbacks;
+  sharedPresentChecks=true;
+  sharedPresentProfile<D3D10DDI_DEVICEFUNCS>(0);sharedPresentProfile<D3D10_1DDI_DEVICEFUNCS>(1);sharedPresentProfile<D3D11DDI_DEVICEFUNCS>(2);
+  CHECK(sharedPresentImages==48 && sharedPresentPixels==1680 && sharedPresents==45 && sharedModes==24 && sharedNegativeCases==60);
+  CHECK(backing.empty() && contexts==contextCloses && locks==unlocks+runtimeTerminalMapClosures
+    && acquisitions==releases+runtimeTerminalReleases);
+  CHECK(!presentAction && !modeAction && !lockAction);
   for (auto page:retiredPages) CHECK(VirtualFree(page,0,MEM_RELEASE));
   std::printf("DXGI opened primary PASS checks=%u profiles=3 formats=3 images=%u pixels=%u failures=%u callbacks=%u runtime_terminal_releases=%u runtime_terminal_maps=%u hardware_admission=0\n",
-    checks.load(),images,pixels,failedOpenFrames,errorCallbacks,runtimeTerminalReleases,runtimeTerminalMapClosures);
+    openedPrimaryChecks,images,pixels,failedOpenFrames,openedPrimaryCallbacks,runtimeTerminalReleases,runtimeTerminalMapClosures);
+  std::printf("DXGI shared present PASS profiles=3 images=%u pixels=%u presents=%u modes=%u negatives=%u raw_files=240 hardware_admission=0\n",
+    sharedPresentImages,sharedPresentPixels,sharedPresents,sharedModes,sharedNegativeCases);
 }

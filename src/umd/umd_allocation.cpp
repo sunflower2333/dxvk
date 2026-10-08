@@ -868,8 +868,8 @@ HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG
   if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (!available()) return DXGI_ERROR_UNSUPPORTED;
   if (m_primaryActive) return DXGI_ERROR_WAS_STILL_DRAWING;
-  // Initial windowed blit path only. Primary/flip, opened shared resources,
-  // stereo and explicit destinations require their own ownership support.
+  // Windowed source blits, including opened primary sources with an owned
+  // staging allocation. Flip, stereo and explicit destinations remain gated.
   if (source.m_owner != this || !source.m_handle || !source.m_published
       || args.SrcSubResourceIndex || args.DstSubResourceIndex
       || args.hDstResource || !args.pDXGIContext || args.Flags.Value != 1)
@@ -948,7 +948,10 @@ HRESULT RuntimeMemory::setDisplayModeImpl(RuntimeAllocation& allocation,
     && (!live || live()); };
   if (!valid()) return DXGI_ERROR_DEVICE_REMOVED;
   if (!primaryAvailable()) return DXGI_ERROR_UNSUPPORTED;
-  if (!allocation.primary() || allocation.m_opened || !allocation.m_published) return E_INVALIDARG;
+  // OpenResource owns a usable device handle to the existing primary even
+  // though allocation destruction belongs to its creating process. Setting
+  // scanout neither acquires nor releases that borrowed ownership.
+  if (!allocation.primary() || !allocation.m_published) return E_INVALIDARG;
   if (m_primaryActive) return DXGI_ERROR_WAS_STILL_DRAWING;
   m_primaryActive = true;
   struct ModeScope { bool& flag; ~ModeScope() { flag = false; } } scope{m_primaryActive};

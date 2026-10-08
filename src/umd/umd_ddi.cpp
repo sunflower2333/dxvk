@@ -254,6 +254,12 @@ constexpr auto deviceEntry = &DeviceEntry<decltype(function), function, predicat
 struct ResourceRetirement;
 struct PresentSurface {
   dxvk::umd::RuntimeAllocation allocation;
+  // A shared present resource has exactly one allocation owner. Views and
+  // suspended presentation both pin that owner; neither can release it early.
+  std::shared_ptr<dxvk::umd::SharedSurface> shared;
+  dxvk::umd::RuntimeAllocation& backing() {
+    return shared ? shared->allocation : allocation;
+  }
   ComPtr<ID3D11Texture2D> readback;
   std::atomic<bool> active{false};
 };
@@ -274,7 +280,7 @@ struct Resource {
   UINT primaryDriverFlags = 0;
   std::shared_ptr<dxvk::umd::RuntimeAllocation> allocationOwner() const {
     if (shared) return {shared, &shared->allocation};
-    if (present) return {present, &present->allocation};
+    if (present) return {present, &present->backing()};
     return {};
   }
 };
@@ -282,7 +288,8 @@ struct ResourceRetirement final : dxvk::umd::RuntimeService::Retirement {
   std::optional<Resource> resource;
   void release() noexcept override {
     auto device = resource->owner;
-    const HRESULT hr = resource->present ? resource->present->allocation.release() : S_OK;
+    const HRESULT hr = resource->present && !resource->present->shared
+      ? resource->present->allocation.release() : S_OK;
     resource->present.reset();
     // A view may still hold the surface; its allocation retires with the last
     // reference, not with this resource. An opened allocation is never
@@ -675,7 +682,7 @@ void trackSharedSurface(Device* device,
 // gets its attempt and the first failure is what is reported: stopping at that
 // failure would leave every surface after it stale as well, which is strictly
 // more corruption than the one that already went wrong.
-HRESULT publishSharedSurfaces(Device* device) {
+HRESULT publishSharedSurfaces(Device* device, const dxvk::umd::SharedSurface* excluded = nullptr) {
   if (!device->anySharedSurface) return S_OK;
   // A callback may append to the weak registry or retire a resource while a
   // transfer is suspended. Pin the sweep and backend references beforehand.
@@ -685,7 +692,8 @@ HRESULT publishSharedSurfaces(Device* device) {
   std::vector<std::shared_ptr<dxvk::umd::SharedSurface>> surfaces;
   surfaces.reserve(device->sharedSurfaces.size());
   for (auto& entry : device->sharedSurfaces)
-    if (auto surface = entry.lock()) surfaces.push_back(std::move(surface));
+    if (auto surface = entry.lock(); surface && surface.get() != excluded)
+      surfaces.push_back(std::move(surface));
   HRESULT result = S_OK;
   for (auto& surface : surfaces) {
     const HRESULT hr = dxvk::umd::publishSharedSurface(backend.Get(),
@@ -826,6 +834,11 @@ HRESULT openResourceData(Device* device, const D3D10DDIARG_OPENRESOURCE* args,
     if (FAILED(hr)) return hr;
     resource->backend = surface->cache;
     resource->nativeBindFlags = D3D10_DDI_BIND_SHADER_RESOURCE | D3D10_DDI_BIND_RENDER_TARGET;
+    if (info.flags == 1) {
+      resource->present = std::make_shared<PresentSurface>();
+      resource->present->shared = surface;
+      resource->nativeBindFlags |= D3D10_DDI_BIND_PRESENT;
+    }
     trackSharedSurface(device, surface);
     resource->shared = std::move(surface);
     return S_OK;
@@ -879,11 +892,10 @@ HRESULT createResourceData(Device* device,
       || (args->SampleDesc.Count > 1 && args->pInitialDataUP))) {
     return DXGI_ERROR_UNSUPPORTED;
   }
-  // A presentable shared surface would need one allocation to serve both the
-  // present path's ownership rules and the shared cache's, which is the
-  // primary/DXGI contract this bridge still reports as missing. Refuse the
-  // combination rather than half-implement it.
-  if (shared && (presentable || !sharedSurfaceShape(*args) || !runtime.handle
+  // Plain shared present buffers use the same linear allocation for both
+  // contracts. Shared scanout creation still needs a shareable primary-pair
+  // ABI; primaryResourcePlan above deliberately does not admit that shape.
+  if (shared && (!sharedSurfaceShape(*args) || !runtime.handle
       || !device->memory.available())) {
     return DXGI_ERROR_UNSUPPORTED;
   }
@@ -943,7 +955,7 @@ HRESULT createResourceData(Device* device,
       resource->backend = texture;
     }
     if (hr == S_OK && !resource->backend) hr = E_FAIL;
-    if (hr == S_OK && presentable) {
+    if (hr == S_OK && presentable && !shared) {
       resource->present = std::make_shared<PresentSurface>();
       const auto format = args->Format == DXGI_FORMAT_B8G8R8X8_UNORM
         ? args->Format : dxvk::umd::bltLinearFormat(args->Format);
@@ -957,6 +969,10 @@ HRESULT createResourceData(Device* device,
     if (hr == S_OK && shared) {
       hr = createSharedResource(device, resource, *args, runtime.handle);
       if (FAILED(hr)) { resource->shared.reset(); resource->backend.Reset(); }
+      else if (presentable) {
+        resource->present = std::make_shared<PresentSurface>();
+        resource->present->shared = resource->shared;
+      }
     }
     return hr == S_OK || FAILED(hr) ? hr : E_FAIL;
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
@@ -2935,6 +2951,7 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
   try {
     // A nested Present for another resource can also reenter the same shared
     // publication sweep while its staging texture is mapped.
+    if (device->resolvingShared) return DXGI_ERROR_WAS_STILL_DRAWING;
     if (device->presentActive.exchange(true)) return DXGI_ERROR_WAS_STILL_DRAWING;
     struct DevicePresentScope {
       Device* device;
@@ -2958,9 +2975,9 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
       const auto entry = resourceStorage.find(resource);
       if (entry == resourceStorage.end() || entry->second.owner != device
           || entry->second.phase != ResourcePhase::Live) return E_INVALIDARG;
-      if (!resource->backend || !resource->present || !resource->present->allocation.handle())
+      if (!resource->backend || !resource->present || !resource->present->backing().handle())
         return E_INVALIDARG;
-      if (primaryOnly && !resource->present->allocation.primary()) return DXGI_DDI_ERR_UNSUPPORTED;
+      if (primaryOnly && !resource->present->backing().primary()) return DXGI_DDI_ERR_UNSUPPORTED;
       reservation = entry->second.reservation;
       surface = resource->present; image = resource->backend;
     }
@@ -2969,8 +2986,10 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
     if (surface->active.exchange(true)) return DXGI_ERROR_WAS_STILL_DRAWING;
     struct PresentScope {
       PresentSurface* surface;
-      ~PresentScope() { surface->active = false; }
-    } presentScope{surface.get()};
+      Device* device;
+      ~PresentScope() { device->resolvingShared = nullptr; surface->active = false; }
+    } presentScope{surface.get(), device};
+    if (surface->shared) device->resolvingShared = surface->shared.get();
     auto stillLive = [&] {
       std::lock_guard<std::mutex> lock(resourceStorageMutex);
       const auto entry = resourceStorage.find(resource);
@@ -2980,9 +2999,29 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
     };
     // Pin the presentation owner before the shared-surface sweep: publishing
     // any other dirty surface can itself retire this Resource through LockCb.
-    HRESULT hr = publishSharedSurfaces(device);
+    HRESULT hr = publishSharedSurfaces(device, surface->shared.get());
     if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
     if (FAILED(hr)) return hr;
+    if (surface->shared) {
+      // A clean opened cache may be stale after another process's writes.
+      // Present/SetDisplayMode are handoff boundaries even when a draw already
+      // read the cache in this epoch. Refresh a clean cache unconditionally;
+      // dirty local writes remain authoritative and must not be overwritten.
+      if (!surface->shared->state.dirty) dxvk::umd::invalidateSharedSurface(*surface->shared);
+      // Refresh before the synchronized upload owed by Present/SetDisplayMode;
+      // uploading the old local cache would erase the owner's current frame.
+      hr = dxvk::umd::refreshSharedSurface(backend.Get(), context.Get(),
+        device->memory, *surface->shared, device->sharedEpoch);
+      if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      hr = dxvk::umd::transferSharedSurface(backend.Get(), context.Get(),
+        device->memory, *surface->shared, true);
+      if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      dxvk::umd::sharedPublished(surface->shared->state, device->sharedEpoch);
+      hr = submit(surface->backing(), stillLive);
+      return stillLive() ? hr : DXGI_ERROR_DEVICE_REMOVED;
+    }
     ComPtr<ID3D11Texture2D> source;
     hr = image.As(&source);
     if (FAILED(hr)) return hr;

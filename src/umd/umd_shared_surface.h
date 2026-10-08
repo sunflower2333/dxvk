@@ -5,6 +5,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <cstdint>
+#include <atomic>
 
 namespace dxvk::umd {
 
@@ -63,6 +64,9 @@ struct SharedSurface {
   // The rules live in umd_shared_policy.h, where they are tested without a
   // device; this struct only carries them alongside the D3D objects.
   SharedState state;
+  // A runtime LockCb can reenter Flush/Resolve while this staging image is
+  // mapped. Reject that second transfer instead of recursively mapping it.
+  std::atomic<bool> transferring{false};
 };
 
 // Lazily create the transfer buffer matching the cache.
@@ -85,6 +89,11 @@ inline HRESULT transferSharedSurface(ID3D11Device* device, ID3D11DeviceContext* 
     RuntimeMemory& memory, SharedSurface& surface, bool publish) {
   if (!device || !context || !surface.cache || !surface.allocation.handle())
     return E_INVALIDARG;
+  if (surface.transferring.exchange(true)) return DXGI_ERROR_WAS_STILL_DRAWING;
+  struct TransferScope {
+    std::atomic<bool>& active;
+    ~TransferScope() { active = false; }
+  } transferScope{surface.transferring};
   HRESULT hr = sharedStaging(device, surface);
   if (FAILED(hr)) return hr;
   if (publish) context->CopyResource(surface.staging.Get(), surface.cache.Get());

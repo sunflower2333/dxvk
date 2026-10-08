@@ -2,6 +2,7 @@
 """Check opened-primary pixels and borrowed padding without fixture helpers."""
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -9,11 +10,16 @@ import struct
 
 
 def verify(directory, stdout):
+    lines = stdout.read_text(encoding='utf-8').splitlines()
+    if len(lines) != 2 or lines[1] != (
+            'DXGI shared present PASS profiles=3 images=48 pixels=1680 '
+            'presents=45 modes=24 negatives=60 raw_files=240 hardware_admission=0'):
+        raise ValueError('shared-present fixture marker')
     marker = re.fullmatch(
         r'DXGI opened primary PASS checks=([1-9][0-9]*) profiles=3 formats=3 '
         r'images=36 pixels=1260 failures=78 callbacks=78 runtime_terminal_releases=4 '
         r'runtime_terminal_maps=2 hardware_admission=0\r?\n?',
-        stdout.read_text(encoding='utf-8'))
+        lines[0])
     if not marker:
         raise ValueError('opened-primary fixture marker')
     names = {
@@ -80,10 +86,15 @@ def verify(directory, stdout):
                         (172 + 13 * x + 19 * y) % 256, 255))
                     if row[4 * x:4 * x + 4] != expected_bytes:
                         raise ValueError(f'{stem}: borrowed pixel ({x},{y})')
+    reader_path = Path(__file__).resolve().parents[1] / 'tests/verify-shared-present-originals.py'
+    specification = importlib.util.spec_from_file_location('shared_present_originals', reader_path)
+    reader = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(reader)
+    shared_present = reader.verify(directory)
     return dict(verified=True, profiles=3, formats=3, images=36, pixels=1260,
         borrowed_padding_images=9, failure_frames=78, error_callbacks=78,
         runtime_terminal_releases=4, runtime_terminal_mapping_closures=2,
-        originals=rows, checks=int(marker[1]), hardware_admission=False,
+        originals=rows, checks=int(marker[1]), shared_present=shared_present, hardware_admission=False,
         ordinary_runtime_admission=False)
 
 

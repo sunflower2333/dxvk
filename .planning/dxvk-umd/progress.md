@@ -1,5 +1,24 @@
 # Progress
 
+2026-10-08 current continuation: prioritize actual VM DX8/DX9 enablement.
+CPU08 native parser/build/collector and7 host transports all0; ROOT945dba7b
+directly rejoins107 original TAR files,21 sources,4I386COFF/3PE,18 closed
+native build children,91 predicates/4 malformed CLI and3 physical pairs/6
+closes. EWDK finalizes explicit release before855 system names attempt.
+CPU03 SO/volume actual oracle invocation failed D9002/LNK1104; ROOTa7a6ce97
+accepts156 originals and release0175b8ff, with3COFF/2PE including partial
+oracle output. CPU04 helper-only separate compile/link is frozen locally.
+ROOT6b source/local-original reviewd1b48152 passed; the prior inline reviewer
+incorrectly required exit0 for negative controls. Corrected persisted reader
+joins their actual expected exit1 and retained stderr. Six local strictCOFF
+and production oracle boundaries unchanged. Aggregate3d19c53 merged into
+main, adding6b mip correction to855/5624/66b/f96/7a47/8528 integration.
+Merged73 physical phase controlsPASS;40 runtime registrations retained.
+CI public-cube reader hooks and ARM raw-artifact retention added. One push
+queued for combined source; actual native6b/5624 and real GPU probes pending.
+DX11 local audit found no standard legacy OpenAdapter export; implementation
+and reversible deployment preparation assigned. No default registration yet.
+
 2026-10-08 checkpoint: ROOT accepted combined cube02 failed originals and
 release4021b90e with directproof f1b472e9; target ROOT idle. Failure is missing
 release RuntimeObject import library, before any reference fixture. Complete

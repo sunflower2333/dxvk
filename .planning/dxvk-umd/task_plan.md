@@ -8,34 +8,41 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-Latest checkpoint (2026-10-08): DX11 exclusively owns the target for one
-frozen CPU03 ARM64 SO/volume build-only attempt, authorization dd72d77d.
-ROOT accepted cube native03 failure/release with direct proof efd74363:
-391 original files,160 Git sources,16AA64COFF+1PE,6 helper and2 CI AST,
-12 native children and13 host owners closed. All11 release libraries link.
-WARP initialization/updates/faces pass, but scoped mip generation leaves
-face0 mip4 at ff040001 rather than ff000000; exact failed word and metadata
-are retained. No retry or full-suite/hardware acceptance. DX10 diagnoses
-and repairs the GPU-only selected mip path locally; no target calls.
+Latest checkpoint (2026-10-08): prioritize genuine VM DX8/DX9 enablement,
+following the user's observation that the default runtime is not replaced.
+EWDK exclusively owns target CPU08 under authorization16e1ff88. Actual native
+parser/build/collection and all7 host transports have completed successfully.
+ROOT direct original review945dba7b verifies107 TAR files,18 Git+3licensed
+sources,4I386COFF+3PE,18 closed build children,91 predicate checks,4 malformed
+CLI exits and3 physical system-module pairs/6 successful handle closures.
+Compiler575/SDK13/libraries9 remain unchanged. This is CPU/identity evidence;
+no factory/KMT/core/GPU call or installation. Explicit target release is being
+finalized before the actual855 names, enumerate, offscreen and Present phases.
 
-ROOT local integration branch086fe36 combines8528 cube production,7a47 cube
-andf96 SO/volume KMT probes,66b shared I386 identity and5624 typed modern
-cube-array RTV/DSV. Meson/build/shipping and40 ARM cases pass local joins
-(da51f591). Existing27 phase controls retained. Modern cube views have ROOT
-source/local-original review937634af; actual native references pending.
-DX11 CPU03 prepared99d9b777 and owned handoff1bbb7e5a remain immutable.
-DX8 identity ROOT94aaa5ea joins889 local inputs,5I386COFF/3PE/16 zero-exit
-commands and91 controls per GCC/Clang. CPU08 prepared ROOT0630c8e3 joins21
-sources (18Git+3original licensed), frozen helpers/host AST/actual dry plan;
-its native build/physical observation is queued after CPU03. EWDK develops
-a separate phase verifier against all27 existing controls locally.
+Source3d19c53 is now merged into the main working branch. It combines8528
+cube production,7a47/f96 real-KMT probes,66b identity,5624 typed cube targets,
+855 physical phase validation and6b15247 GPU-only scoped cube mip correction.
+ROOT6b source/local proofd1b48152 rejoins160 frozen inputs,341 original compiler
+inputs,6 strict x64/x86 COFF compiles,6 LLVM inspections and2 positive/4
+negative reader executions; original336 files/7 readbacks/10380 words remain
+unchanged. Modern target review937634af and prepared02ab84a5 remain valid;
+separate native6b and5624 WARP references are pending. All40 ARM registrations
+remain present. Merged73 phase controls pass, including the unchanged27 prefix.
 
-Live CI37689715890 on published3d397608 remains PASS. Four redundant push
-workflows remain disabled. No new push or target hardware admission. User
-authorizes passwordless Administrator for build operations; actual graphics
-must retain limitedUSER/session1. Next: corrected cube03 native references,
-CPU03 SO/volume build, DX8 CPU08 identity, then matching single-push CI and
-real viogpu probes. Ordinary Microsoft-runtime DX8-DX11/Present/DWM remainopen.
+SO/volume CPU03 failed after two passing native probe builds because the
+combined oracle compile/link command misrouted linker flags (D9002/LNK1104
+OLDNAMES). ROOTa7a6ce97 accepts original156-file archive191e5e8d and release
+0175b8ff, retaining3COFF+2PE including the partial failed oracle object.
+Corrected helper-only CPU04 is frozen locally, not target-authorized.
+
+DX11 now works locally on the missing standard legacy OpenAdapter/runtime9
+path and reversible deployment. Existing private DX9 GPU proof cannot admit
+default binding. No source or proof guard is relaxed to label it installed.
+Latest publishedCI37689715890 on3d397608 remains PASS. A single new push will
+test the merged source; the four redundant workflows remain disabled. New CI
+hooks independently verify the273 public cube observations and retain every
+ARM cube original alongside the strict production oracle. Actual graphics
+remain limitedUSER/session1. Ordinary-runtime DX8-DX11/Present/DWM stay open.
 
 ### Retained prior checkpoints
 

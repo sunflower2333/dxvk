@@ -151,3 +151,8 @@ jobs:
             candidate/arm64-*.txt
             candidate/arm64-*.json
             candidate/arm64-texture3d-originals/**
+            candidate/arm64-texturecube-originals/**
+            candidate/arm64-cube-array-resource-originals/**
+            candidate/arm64-cube-srv-mips-originals/**
+            candidate/arm64-cube-array-mips-originals/**
+            candidate/arm64-cube-array-targets-originals/**

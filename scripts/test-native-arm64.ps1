@@ -119,6 +119,8 @@ foreach ($name in $cases.Keys) {
     if ($name -ceq 'dxvk-umd-texturecube-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-cube-originals.py') $childDirectory --output (Join-Path $root 'arm64-texturecube-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 cube original oracle failed' }
+        & python (Join-Path $PSScriptRoot 'verify-native-cube-public-mips-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-texturecube-public-mips-originals-verified.json')
+        if ($LASTEXITCODE) { throw 'Independent ARM64 public cube observations failed' }
     } elseif ($name -ceq 'dxvk-umd-cube-array-resource-test.exe') {
         & python (Join-Path $PSScriptRoot 'verify-native-cube-array-resource-originals.py') $childDirectory --stdout $out --output (Join-Path $root 'arm64-cube-array-resource-originals-verified.json')
         if ($LASTEXITCODE) { throw 'Independent ARM64 cube-array resource original oracle failed' }

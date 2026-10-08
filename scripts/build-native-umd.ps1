@@ -180,6 +180,8 @@ if ($arch -ne 'arm64') {
         Invoke-BoundedFixture "build-umd/src/umd/dxvk-umd-$fixture-test.exe" "$fixture-test" $cubeOriginals
         if ($fixture -ceq 'texturecube') {
             & python (Join-Path $PSScriptRoot 'verify-native-cube-originals.py') $cubeOriginals --output (Join-Path $OutputDirectory 'texturecube-originals-verified.json')
+            if ($LASTEXITCODE) { throw 'Independent original cube production oracle failed' }
+            & python (Join-Path $PSScriptRoot 'verify-native-cube-public-mips-originals.py') $cubeOriginals --stdout (Join-Path $OutputDirectory 'texturecube-test.txt') --output (Join-Path $OutputDirectory 'texturecube-public-mips-originals-verified.json')
         } elseif ($fixture -ceq 'cube-array-resource') {
             & python (Join-Path $PSScriptRoot 'verify-native-cube-array-resource-originals.py') $cubeOriginals --stdout (Join-Path $OutputDirectory 'cube-array-resource-test.txt') --output (Join-Path $OutputDirectory 'cube-array-resource-originals-verified.json')
         } elseif ($fixture -ceq 'cube-srv-mips') {

@@ -1,5 +1,21 @@
 # Findings
 
+2026-10-08 actual CPU08 fixes the prior ARM-Windows logical-path mismatch:
+the I386 process's logicalSystem32 and explicitSysWOW64 handles select the
+same mapped SyChpe32 file IDs, full sizes/hashes and selected PE headers for
+Kernel32/KernelBase/GDI32. ROOT945dba7b validates raw records and all6 closes
+without a suffix whitelist. Exact Process2/Directory2 API ownership retained.
+This CPU evidence grants no runtime factory or hardware acceptance.
+
+Default DX9 is still missing a standard OpenAdapter export; the private test
+entry and1152-pixel hardware result do not enable the Microsoft runtime.
+Existing app-local d3d8/d3d9 packaging is unsuitable for this system UMD goal.
+Agent implements the bounded public legacy path and reversible registration.
+Cube6b normalization allocates GPU scratch owners before recording and copies
+back only selected generated mips; source/tail/other faces remain unchanged.
+ROOTd1b48152 checks actual compiler and negative-reader originals. CI will
+validate both273 public observations and unchanged336 production raw files.
+
 2026-10-08 release-library closure: inspecting first-party COFF alone misses
 release CRT archive-member dependencies. Actual libcmt defaults request
 RuntimeObject; libcpmt defaults request AdvApi32/Synchronization/UUID. ROOT

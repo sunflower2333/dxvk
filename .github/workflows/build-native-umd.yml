@@ -166,3 +166,4 @@ jobs:
             candidate/arm64-resource-copy-cast-originals/**
             candidate/arm64-bc-update-originals/**
             candidate/arm64-d3d10-system-shader-originals/**
+            candidate/arm64-d3d10-depth-originals/**

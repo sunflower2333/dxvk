@@ -3,6 +3,7 @@
 #include "umd_adapter_identity.h"
 #include "umd_runtime_bridge.h"
 #include "umd_runtime_service.h"
+#include "umd_runtime_diagnostics.h"
 #include <map>
 #include <mutex>
 
@@ -22,7 +23,16 @@ public:
   // that DDI returns and the runtime may invalidate handles and backing.
   HRESULT close();
   template<typename Function> HRESULT serviceCall(Function&& function) {
-    return m_service ? m_service->invoke(std::forward<Function>(function)) : function();
+    if (!m_diagnostics.enabled())
+      return m_service ? m_service->invoke(std::forward<Function>(function)) : function();
+    bool entered = false;
+    auto invoke = [&] { entered = true; return function(); };
+    const HRESULT hr = m_service ? m_service->invoke(invoke) : invoke();
+    if (FAILED(hr)) {
+      std::lock_guard<std::recursive_mutex> lock(m_mutex);
+      traceFailure(entered ? "callback-result" : "callback-dispatch", hr);
+    }
+    return hr;
   }
 
 private:
@@ -44,6 +54,12 @@ private:
   RuntimeGpu() = default;
   HRESULT identity();
   HRESULT context();
+  RuntimeGpuDiagnosticInfo traceInfo() const;
+  HRESULT traceFailure(const char* stage, HRESULT hr,
+    const RuntimeGpuDiagnosticInfo& info, bool callback = false, HRESULT callbackHr = S_OK);
+  HRESULT traceFailure(const char* stage, HRESULT hr, bool callback = false, HRESULT callbackHr = S_OK) {
+    return traceFailure(stage, hr, traceInfo(), callback, callbackHr);
+  }
   HRESULT unlock(Allocation& allocation);
   HRESULT release(Allocation& allocation);
   Allocation* find(void* token);
@@ -60,6 +76,7 @@ private:
   static const mwd_callbacks s_callbacks;
 
   std::recursive_mutex m_mutex;
+  RuntimeGpuDiagnostics m_diagnostics;
   std::shared_ptr<RuntimeService> m_service;
   HANDLE m_device = nullptr, m_context = nullptr;
   D3DDDI_DEVICECALLBACKS m_callbacks = {};

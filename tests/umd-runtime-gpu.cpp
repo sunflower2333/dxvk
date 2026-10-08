@@ -1,6 +1,7 @@
 #include "../src/umd/umd_runtime_gpu.h"
 #include "../src/umd/umd_allocation.h"
 #include "../src/umd/umd_api.h"
+#include "umd-runtime-diagnostics.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -631,6 +632,7 @@ static void runtimeTeardown() {
 }
 
 int main() {
+  checks += runtimeDiagnosticsControls();
   {
     auto scope = setup(); auto cb = f->bridge.create.callbacks; auto owner = f->bridge.create.owner;
     CHECK(mwd_callbacks_valid(cb)); f->input = {};

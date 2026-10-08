@@ -63,6 +63,11 @@ std::shared_ptr<RuntimeGpu> RuntimeGpu::create(HANDLE device,
     const D3DDDI_DEVICECALLBACKS& cb, std::shared_ptr<const AdapterIdentity> identity,
     std::shared_ptr<RuntimeService> service) {
   auto result = std::shared_ptr<RuntimeGpu>(new RuntimeGpu);
+  char diagnosticFlag[2] = {};
+  const DWORD diagnosticFlagBytes = GetEnvironmentVariableA("TU_WDDM_DIAGNOSTICS",
+    diagnosticFlag, sizeof(diagnosticFlag));
+  result->m_diagnostics = RuntimeGpuDiagnostics(RuntimeGpuDiagnostics::enabledFlag(
+    diagnosticFlagBytes == 1 ? diagnosticFlag : nullptr));
   result->m_device = device;
   result->m_identity = std::move(identity);
   result->m_service = std::move(service);
@@ -84,6 +89,19 @@ RuntimeGpu::Call::Call(void* ptr)
 RuntimeGpu::Call::~Call() { --value->m_active; }
 bool RuntimeGpu::Call::live(bool cleanup) const {
   return value->m_live && (cleanup || !value->m_closing) && value->m_device && value->m_identity;
+}
+
+RuntimeGpuDiagnosticInfo RuntimeGpu::traceInfo() const {
+  RuntimeGpuDiagnosticInfo info;
+  info.generation = m_info.generation ? m_info.generation : m_identity ? m_identity->generation : 0;
+  info.context = m_info.context_id; info.queue = m_info.queue_id;
+  return info;
+}
+HRESULT RuntimeGpu::traceFailure(const char* stage, HRESULT hr,
+    const RuntimeGpuDiagnosticInfo& info, bool callback, HRESULT callbackHr) {
+  if (FAILED(hr)) m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::Failure,
+    stage, hr, info, callback, callbackHr);
+  return hr;
 }
 
 HRESULT RuntimeGpu::identity() {
@@ -119,7 +137,9 @@ HRESULT RuntimeGpu::context() {
   Create info; info.generation = m_identity->generation;
   D3DDDICB_CREATECONTEXT create = {};
   create.EngineAffinity = 1; create.pPrivateDriverData = &info; create.PrivateDriverDataSize = sizeof(info);
-  hr = exact(cb.pfnCreateContextCb(m_device, &create));
+  const HRESULT callbackHr = cb.pfnCreateContextCb(m_device, &create);
+  hr = exact(callbackHr);
+  traceFailure("create-context-callback", hr, true, callbackHr);
   if (!m_live) return DXGI_ERROR_DEVICE_REMOVED;
   m_context = create.hContext;
   if (hr == S_OK && !m_context) hr = E_FAIL;
@@ -130,7 +150,9 @@ HRESULT RuntimeGpu::context() {
     D3DDDICB_ESCAPE escape = {};
     escape.hDevice = m_device; escape.hContext = m_context;
     escape.pPrivateDriverData = &reply; escape.PrivateDriverDataSize = sizeof(reply);
-    hr = exact(cb.pfnEscapeCb(m_identity->runtime, &escape));
+    const HRESULT escapeHr = cb.pfnEscapeCb(m_identity->runtime, &escape);
+    hr = exact(escapeHr);
+    traceFailure("context-escape-callback", hr, true, escapeHr);
     if (!m_live || !m_identity->available()) hr = DXGI_ERROR_DEVICE_REMOVED;
   }
   if (hr == S_OK && (!reply.header.valid(sizeof(reply)) || reply.opcode != 1 || reply.flags
@@ -141,6 +163,9 @@ HRESULT RuntimeGpu::context() {
       || !create.pAllocationList || !create.AllocationListSize || create.AllocationListSize > 1024
       || !create.pPatchLocationList || !create.PatchLocationListSize || create.PatchLocationListSize > 1024)) hr = E_FAIL;
   if (hr == S_OK) hr = identity();
+  // Preserve the validation failure before balancing teardown can return a
+  // different HRESULT or retire this owner from inside DestroyContextCb.
+  traceFailure("context-validation", hr);
   if (hr == S_OK) {
     std::memcpy(m_info.luid, &m_identity->luid, sizeof(LUID));
     m_info.generation = reply.generation; m_info.va_start = reply.start; m_info.va_size = reply.size;
@@ -148,6 +173,8 @@ HRESULT RuntimeGpu::context() {
     m_commands = create.pCommandBuffer; m_commandSize = create.CommandBufferSize;
     m_allocationList = create.pAllocationList; m_allocationCount = create.AllocationListSize;
     m_patchList = create.pPatchLocationList; m_patchCount = create.PatchLocationListSize;
+    m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::ContextReady,
+      "context", S_OK, traceInfo());
   } else if (m_live && m_context) {
     D3DDDICB_DESTROYCONTEXT destroy = {}; destroy.hContext = m_context;
     const HRESULT cleanup = exact(cb.pfnDestroyContextCb(m_device, &destroy));
@@ -155,7 +182,7 @@ HRESULT RuntimeGpu::context() {
     if (cleanup == S_OK) m_context = nullptr;
     else hr = cleanup; // Retain ownership for close/retry when destroy fails.
   }
-  return hr;
+  return traceFailure("context-validation", hr);
 }
 
 RuntimeGpu::Allocation* RuntimeGpu::find(void* token) {
@@ -169,10 +196,10 @@ int32_t MWD_CALL RuntimeGpu::getContext(void* ptr, mwd_context_info* out) {
   if (!out) return E_POINTER;
   *out = {};
   Call call(ptr); auto& self = *call.value;
-  if (!call.live()) return DXGI_ERROR_DEVICE_REMOVED;
+  if (!call.live()) return self.traceFailure("context-owner", DXGI_ERROR_DEVICE_REMOVED);
   const HRESULT hr = self.context();
   if (hr == S_OK) *out = self.m_info;
-  return hr;
+  return self.traceFailure("context", hr);
 }
 int32_t MWD_CALL RuntimeGpu::allocate(void* ptr, uint64_t size, uint64_t alignment,
     uint64_t requested, uint32_t flags, mwd_allocation* out) {
@@ -330,22 +357,34 @@ int32_t MWD_CALL RuntimeGpu::unmap(void* ptr, void* token) {
 int32_t MWD_CALL RuntimeGpu::submit(void* ptr, const void* stream, uint32_t size,
     const mwd_reference* refs, uint32_t count) {
   Call call(ptr); auto& self = *call.value;
-  if (!call.live()) return DXGI_ERROR_DEVICE_REMOVED;
+  auto diagnostic = self.traceInfo(); diagnostic.references = count; diagnostic.streamBytes = size;
+  self.m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::SubmitEntered,
+    "submit", S_OK, diagnostic);
+  auto failure = [&](const char* stage, HRESULT hr, uint32_t index = UINT32_MAX,
+                     bool callback = false, HRESULT callbackHr = S_OK) {
+    diagnostic.index = index;
+    return self.traceFailure(stage, hr, diagnostic, callback, callbackHr);
+  };
+  if (!call.live()) return failure("submit-owner", DXGI_ERROR_DEVICE_REMOVED);
   if (!stream || size < 8 || size > 65536 || !refs || !count || count > 1024 || self.m_submitting)
-    return E_INVALIDARG;
+    return failure("submit-arguments", E_INVALIDARG);
   const uint64_t offset = sizeof(Render) + uint64_t(count) * sizeof(Reference), bytes = offset + size;
   if (bytes > self.m_commandSize || count > self.m_allocationCount || count > self.m_patchCount
-      || !self.m_commands || !self.m_allocationList || !self.m_patchList) return E_INVALIDARG;
+      || !self.m_commands || !self.m_allocationList || !self.m_patchList)
+    return failure("submit-buffers", E_INVALIDARG);
   // Validate all owners/ranges before modifying runtime-owned command buffers.
   for (uint32_t i = 0; i < count; ++i) {
     auto* a = self.find(refs[i].token);
     if (!a || a->pending || !a->handle || !refs[i].flags || (refs[i].flags & ~3u)
         || ((a->flags & 8u) && (refs[i].flags & 2u)) || refs[i].offset > UINT32_MAX
         || refs[i].offset > a->size || !refs[i].length || refs[i].length > a->size - refs[i].offset
-        || refs[i].patch_offset % 4 || refs[i].patch_offset > size - 8) return E_INVALIDARG;
+        || refs[i].patch_offset % 4 || refs[i].patch_offset > size - 8)
+      return failure("submit-reference", E_INVALIDARG, i);
+    if (self.m_diagnostics.enabled() && a->locked) ++diagnostic.lockedReferences;
     for (uint32_t j = 0; j < i; ++j) {
       const uint64_t x = refs[i].patch_offset, y = refs[j].patch_offset;
-      if (refs[i].token == refs[j].token || (x < y + 8 && y < x + 8)) return E_INVALIDARG;
+      if (refs[i].token == refs[j].token || (x < y + 8 && y < x + 8))
+        return failure("submit-alias", E_INVALIDARG, i);
     }
   }
   struct References {
@@ -357,7 +396,7 @@ int32_t MWD_CALL RuntimeGpu::submit(void* ptr, const void* stream, uint32_t size
   }
   Pending pending(self.m_submitting);
   HRESULT hr = self.identity();
-  if (FAILED(hr)) return hr;
+  if (FAILED(hr)) return failure("submit-identity", hr);
   Render header;
   header.header.size = uint32_t(bytes); header.generation = self.m_info.generation;
   header.count = count; header.stream = uint32_t(offset); header.size = size;
@@ -376,17 +415,27 @@ int32_t MWD_CALL RuntimeGpu::submit(void* ptr, const void* stream, uint32_t size
   request.pNewCommandBuffer = self.m_commands; request.NewCommandBufferSize = self.m_commandSize;
   request.pNewAllocationList = self.m_allocationList; request.NewAllocationListSize = self.m_allocationCount;
   request.pNewPatchLocationList = self.m_patchList; request.NewPatchLocationListSize = self.m_patchCount;
-  hr = exact(self.m_callbacks.pfnRenderCb(self.m_device, &request));
-  if (!call.live()) return DXGI_ERROR_DEVICE_REMOVED;
+  const HRESULT callbackHr = self.m_callbacks.pfnRenderCb(self.m_device, &request);
+  hr = exact(callbackHr);
+  // Record the original callback result before cleanup or replacement-buffer
+  // validation can replace the final failure. Positive non-S_OK stays visible.
+  failure("render-callback", hr, UINT32_MAX, true, callbackHr);
+  if (!call.live()) return failure("submit-after-callback-owner", DXGI_ERROR_DEVICE_REMOVED);
   // Callback replacement buffers become authoritative on failure too.
   self.m_commands = request.pNewCommandBuffer; self.m_commandSize = request.NewCommandBufferSize;
   self.m_allocationList = request.pNewAllocationList; self.m_allocationCount = request.NewAllocationListSize;
   self.m_patchList = request.pNewPatchLocationList; self.m_patchCount = request.NewPatchLocationListSize;
   if (!self.m_commands || self.m_commandSize < sizeof(Render) || self.m_commandSize > 65536
       || !self.m_allocationList || !self.m_allocationCount || self.m_allocationCount > 1024
-      || !self.m_patchList || !self.m_patchCount || self.m_patchCount > 1024) { self.m_removed = true; return E_FAIL; }
+      || !self.m_patchList || !self.m_patchCount || self.m_patchCount > 1024) {
+    self.m_removed = true;
+    return failure("submit-replacements", E_FAIL, UINT32_MAX, true, callbackHr);
+  }
   if (FAILED(hr)) return hr;
   hr = self.identity();
+  if (FAILED(hr)) return failure("submit-after-callback-identity", hr);
+  if (hr == S_OK) self.m_diagnostics.record(stderr, RuntimeGpuDiagnostics::Event::SubmitSucceeded,
+    "submit", hr, diagnostic, true, callbackHr);
   if (hr == S_OK && self.m_service) self.m_service->requestAmortizedProcessing();
   return hr;
 }
@@ -408,7 +457,9 @@ int32_t MWD_CALL RuntimeGpu::completed(void* ptr, uint32_t* out) {
   return hr;
 }
 int32_t MWD_CALL RuntimeGpu::status(void* ptr) {
-  Call call(ptr); return call.live(true) ? call.value->identity() : DXGI_ERROR_DEVICE_REMOVED;
+  Call call(ptr);
+  const HRESULT hr = call.live(true) ? call.value->identity() : DXGI_ERROR_DEVICE_REMOVED;
+  return call.value->traceFailure("status", hr);
 }
 
 HRESULT RuntimeGpu::close() {

@@ -1,0 +1,3 @@
+# Findings
+
+SYSTEMD9 actualCreateDevice9 failed80004005 afterprivateAdreno830 firstnonempty queue failed-4, entries3 references6 nextfence1 last0. Allpublicfactory/identifier/format steps succeeded. Earlycontext_close/device_close is physicaladapterquerycleanup, also present in acceptedUSER06 D10 andD10.1. Runtime-ownedICD correctlyhas0 nativeKMT handles. ExactMesa8443 sharedrender silentlyreturnsfalse forcontext/status/reference/nativepacket/callbacksubmit guards; underlyingHRESULT unknown. Current RuntimeGpu context/submit guards have no stage logging. MSCreateContextCb explicitlyrequirescontextduringCreateDevice; current source complies. MSLockCb warns lockedrender mayfail; no actualHRESULT establishes this hypothesis.

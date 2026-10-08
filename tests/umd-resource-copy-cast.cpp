@@ -262,7 +262,19 @@ static void perform(Fixture& f,UINT kind,DXGI_FORMAT srcFormat,DXGI_FORMAT dstFo
       submission="public-region-after-native-readback";
     }
     const D3D11_BOX apiBox{UINT(box.left),UINT(box.top),UINT(box.front),UINT(box.right),UINT(box.bottom),UINT(box.back)};
-    f.context->CopySubresourceRegion(destination.reference.Get(),dstSub,x,y,z,source.reference.Get(),srcSub,&apiBox);
+    if (attributeVolumeCast) {
+      // Independent public composition of the legal raw-bit conversion and
+      // same-format regional operation; use the public source's own descriptor.
+      ComPtr<ID3D11Texture3D> publicSource, bridge;
+      apiOk(source.reference.As(&publicSource));
+      D3D11_TEXTURE3D_DESC desc{}; publicSource->GetDesc(&desc);
+      desc.Format=dstFormat; desc.Usage=D3D11_USAGE_DEFAULT;
+      desc.BindFlags=desc.CPUAccessFlags=desc.MiscFlags=0;
+      apiOk(f.backend->CreateTexture3D(&desc,nullptr,&bridge));
+      f.context->CopyResource(bridge.Get(),publicSource.Get());
+      deviceRemoved=f.backend->GetDeviceRemovedReason(); CHECK(deviceRemoved==S_OK);
+      f.context->CopySubresourceRegion(destination.reference.Get(),dstSub,x,y,z,bridge.Get(),srcSub,&apiBox);
+    } else f.context->CopySubresourceRegion(destination.reference.Get(),dstSub,x,y,z,source.reference.Get(),srcSub,&apiBox);
     if (attributeVolumeCast) {
       deviceRemoved=f.backend->GetDeviceRemovedReason(); CHECK(deviceRemoved==S_OK);
     }

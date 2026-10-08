@@ -42,3 +42,48 @@ explicit creation, copy, Flush, Map and device-removal HRESULT checkpoints.
 It loads no physical driver and registers nothing. Strict local x86/x64 COFF
 compilation is source evidence; actual Windows execution is required to
 resolve the cause. No WARP workaround or production format rejection is inferred.
+
+## Scoped graphics implementation after the standalone execution
+
+ROOT built the standalone programs with the target's native ARM64 EWDK CL/LINK.
+Separate FL10_1 and FL11_0 devices pass same-format 3D region copies, while
+direct R32_UINT-to-R9 and R9-to-R32_SINT regions immediately sample device
+removal `887a0020` after CopySubresourceRegion. The documented conversion and
+valid geometry remain unchanged; the isolated public calls reproduce this
+backend failure without loading the physical driver.
+
+The fresh bridge producer, source SHA256
+`1878959af5808750c44c7288ff5a876dfa418bd525ca363175cf1f349dc22575`,
+passes all four direction/feature-level processes. Each checks the complete
+source-shaped destination-format temporary after CopyResource, then performs
+same-format CopySubresourceRegion with the original mip, box and destination
+offset. Every process passes 88 checks and saves three 584-byte originals:
+temporary, final destination and unchanged source. Independent fixed row
+fragments verify all 12 original files (7008 bytes). Original process, compiler
+and checkpoint records are retained under
+`artifacts/copy-cast-volume-native-20261008/repro-03/originals/DxvkWarpVolumeRepro-20261008-03`.
+Each process owns a separate `run-profile-case` raw directory.
+
+The production CopyRegion path uses that composition only after its existing
+ownership, dimension, documented format compatibility, usage, bounds, depth
+and shared-resource validation, for unequal formats involving R9 on a 3D
+texture. The preceding compatibility check permits precisely R32_UINT/SINT
+as the other format. A temporary Texture3D preserves the complete source
+width, height, depth and mip count, uses the destination format, DEFAULT
+usage and no binds, CPU access or misc flags. CopyResource reinterprets all
+source bits; same-format CopySubresourceRegion preserves the original selected
+subresource, box and XYZ. The temporary is released through the normal COM
+resource lifetime after submission. Allocation/creation failures reach the
+existing native error path before either bridge copy is issued.
+
+The typed fixture independently composes the two public calls from its actual
+public source descriptor. Native calls still receive actual R9/integer
+resources and the original literal Copy/ConvertRegion arguments. Native
+staging readback still completes before public submission. All 320 observations,
+640 raw planes, source checks, manifest bytes, 92 rejections and six literal
+native empty boxes retain their earlier definitions and independent reader.
+This costs an additional full-source temporary allocation and full-source
+copy for this narrow exceptional region path. No CPU transfer fallback,
+new format or hardware admission is introduced. Standalone WARP success
+proves the composed backend calls and fixed byte region; the complete typed
+native fixture still requires its current Windows/CI execution.

@@ -1566,6 +1566,27 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
   if (!readSharedSurface(device, get(src)->shared)) return;
   if (!wroteSharedRegion(device, get(dst)->shared)) return;
   try {
+    if (source.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D
+        && source.format != destination.format
+        && (source.format == DXGI_FORMAT_R9G9B9E5_SHAREDEXP
+          || destination.format == DXGI_FORMAT_R9G9B9E5_SHAREDEXP)) {
+      // WARP removes its device on a legal direct 3D R9/UINT-or-SINT region
+      // copy. Reinterpret the complete source into the destination format
+      // first, then copy the unchanged box between identical formats.
+      ComPtr<ID3D11Texture3D> texture, bridge;
+      HRESULT hr = get(src)->backend.As(&texture);
+      if (FAILED(hr)) { device->error(hr); return; }
+      D3D11_TEXTURE3D_DESC desc = {}; texture->GetDesc(&desc);
+      desc.Format = destination.format;
+      desc.Usage = D3D11_USAGE_DEFAULT;
+      desc.BindFlags = 0; desc.CPUAccessFlags = 0; desc.MiscFlags = 0;
+      hr = device->backend->CreateTexture3D(&desc, nullptr, &bridge);
+      if (FAILED(hr)) { device->error(hr); return; }
+      device->context->CopyResource(bridge.Get(), texture.Get());
+      device->context->CopySubresourceRegion(get(dst)->backend.Get(), dstIndex, x, y, z,
+        bridge.Get(), srcIndex, input ? &box : nullptr);
+      return;
+    }
     device->context->CopySubresourceRegion(get(dst)->backend.Get(), dstIndex, x, y, z,
       get(src)->backend.Get(), srcIndex, input ? &box : nullptr);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }

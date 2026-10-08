@@ -64,7 +64,7 @@ namespace dxvk {
             void*                             pData,
             UINT                              GetDataFlags);
     
-    void DoDeferredEnd();
+    D3D11QueryTicket DoDeferredEnd();
 
     bool IsScoped() const {
       return m_desc.Query != D3D11_QUERY_EVENT

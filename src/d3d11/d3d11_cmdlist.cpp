@@ -2,6 +2,8 @@
 #include "d3d11_device.h"
 #include "d3d11_buffer.h"
 #include "d3d11_texture.h"
+#include "d3d11_command_replay.h"
+#include <cassert>
 
 namespace dxvk {
     
@@ -101,13 +103,24 @@ namespace dxvk {
 
   void D3D11CommandList::EmitToCsThread(
     const D3D11ChunkDispatchProc& DispatchProc) {
-    for (const auto& query : m_queries)
-      query->DoDeferredEnd();
+    std::size_t endIndex = 0;
+    const D3D11CommandReplay<Com<D3D11Query, false>, D3D11QueryTicket> replay(m_order,
+      [] (const Com<D3D11Query, false>& query) {
+        return query->CaptureTicket();
+      },
+      [&] (const D3D11RecordedOperation<Com<D3D11Query, false>>& operation) {
+        assert(endIndex < m_queries.size());
+        assert(operation.query == m_queries[endIndex]);
+        assert(operation.endOccurrence == endIndex + 1);
+        return m_queries[endIndex++]->DoDeferredEnd();
+      });
+    assert(endIndex == m_queries.size());
 
-    // Readiness is still the public all-End-up-front policy above. The ordered
-    // records do not evaluate predicates or retain historical GPU results yet.
+    // Public readiness remains all-End-up-front. Each API replay owns its
+    // ordered ticket bindings; this view does not evaluate or suppress work.
     size_t j = 0;
-    for (const auto& operation : m_order.operations()) {
+    for (const auto& replayOperation : replay.operations()) {
+      const auto& operation = replayOperation.recorded;
       if (operation.type != D3D11RecordedOperationType::Chunk)
         continue;
       const size_t i = size_t(operation.chunkId);

@@ -700,7 +700,16 @@ static void sharedPresentProfile(unsigned index) {
     Storage storage(f.table.pfnCalcPrivateResourceSize(f.device,&desc));std::memset(storage.data,0x6d,128);
     const auto acquired=acquisitions;lastError=S_OK;char runtime;
     f.table.pfnCreateResource(f.device,&desc,{storage.data},{&runtime});
-    CHECK(lastError==DXGI_ERROR_UNSUPPORTED && acquisitions==acquired && internalCount()==0);
+    // A non-null primary descriptor enters the primary fallback contract
+    // before generic shared-shape validation; preserve its exact DDI status.
+    const HRESULT expectedError=failure==5?DXGI_DDI_ERR_UNSUPPORTED:DXGI_ERROR_UNSUPPORTED;
+    if (lastError!=expectedError || acquisitions!=acquired || internalCount()!=0) std::fprintf(stderr,
+      "Shared creation rejection failure profile=%u case=%u format=%u samples=%u map=%u mips=%u arrays=%u primary=%u "
+      "actual=%08lx expected=%08lx acquisitions=%u baseline=%u internal=%zu\n",
+      index,failure,unsigned(desc.Format),desc.SampleDesc.Count,desc.MapFlags,desc.MipLevels,desc.ArraySize,
+      unsigned(desc.pPrimaryDesc!=nullptr),static_cast<unsigned long>(lastError),static_cast<unsigned long>(expectedError),
+      acquisitions,acquired,internalCount());
+    CHECK(lastError==expectedError && acquisitions==acquired && internalCount()==0);
     for (unsigned i=0;i<128;++i) CHECK(static_cast<uint8_t*>(storage.data)[i]==0x6d);
     ++sharedNegativeCases;
   }

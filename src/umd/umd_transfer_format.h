@@ -80,4 +80,27 @@ inline uint32_t transferTexelBytes(DXGI_FORMAT format) {
   }
 }
 
+// Separate block storage from texel storage. Existing scalar/volume transfer
+// users must not silently treat one compressed block as one logical texel.
+inline uint32_t transferBlockBytes(DXGI_FORMAT format) {
+  switch (format) {
+    case DXGI_FORMAT_BC1_TYPELESS:
+    case DXGI_FORMAT_BC1_UNORM:
+    case DXGI_FORMAT_BC1_UNORM_SRGB:
+    case DXGI_FORMAT_BC4_TYPELESS:
+    case DXGI_FORMAT_BC4_UNORM:
+    case DXGI_FORMAT_BC4_SNORM: return 8;
+    case DXGI_FORMAT_BC2_TYPELESS:
+    case DXGI_FORMAT_BC2_UNORM:
+    case DXGI_FORMAT_BC2_UNORM_SRGB:
+    case DXGI_FORMAT_BC3_TYPELESS:
+    case DXGI_FORMAT_BC3_UNORM:
+    case DXGI_FORMAT_BC3_UNORM_SRGB:
+    case DXGI_FORMAT_BC5_TYPELESS:
+    case DXGI_FORMAT_BC5_UNORM:
+    case DXGI_FORMAT_BC5_SNORM: return 16;
+    default: return 0;
+  }
+}
+
 }

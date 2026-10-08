@@ -16,6 +16,7 @@
 #include "umd_transfer_policy.h"
 #include "umd_transfer_format.h"
 #include "umd_resource_copy.h"
+#include "umd_block_transfer.h"
 #include "umd_generate_mips.h"
 #include "umd_blt.h"
 #include "umd_state.h"
@@ -1463,12 +1464,14 @@ void APIENTRY checkMultisample(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT coun
 
 struct SubresourceInfo {
   UINT width = 0, height = 1, depth = 1, texelBytes = 1;
+  UINT blockBytes = 0;
   D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
   DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
   D3D11_USAGE usage = D3D11_USAGE_DEFAULT;
   UINT bindings = 0;
 };
-bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
+bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info,
+    bool allowBlockCompressed = false) {
   resource->backend->GetType(&info.dimension);
   if (info.dimension == D3D11_RESOURCE_DIMENSION_BUFFER) {
     if (index) return false;
@@ -1502,7 +1505,10 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info) {
     info.height = desc.Height >> mip; if (!info.height) info.height = 1;
     info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
     info.texelBytes = dxvk::umd::transferTexelBytes(info.format);
-    return info.texelBytes != 0;
+    // Block uploads have their own alignment/pitch checks. Keep other callers
+    // closed until they implement their independent block-copy contract.
+    if (allowBlockCompressed) info.blockBytes = dxvk::umd::transferBlockBytes(info.format);
+    return info.texelBytes != 0 || info.blockBytes != 0;
   }
   if (info.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
     ComPtr<ID3D11Texture3D> texture;
@@ -1560,8 +1566,10 @@ void APIENTRY updateResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT in
     const D3D10_DDI_BOX* input, const void* source, UINT rowPitch, UINT depthPitch) {
   auto device = get(h);
   if (!owned(device, get(dst))) return;
+  if (input && (input->left >= input->right || input->top >= input->bottom
+      || input->front >= input->back)) return;
   SubresourceInfo destination; D3D11_BOX box;
-  if (!subresourceInfo(get(dst), index, destination) || destination.usage != D3D11_USAGE_DEFAULT
+  if (!subresourceInfo(get(dst), index, destination, true) || destination.usage != D3D11_USAGE_DEFAULT
       || (destination.bindings & D3D11_BIND_DEPTH_STENCIL)
       || !subresourceBox(destination, input, box)
       || (input && (destination.bindings & D3D11_BIND_CONSTANT_BUFFER))) {
@@ -1573,7 +1581,11 @@ void APIENTRY updateResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT in
   // callers before the backend can read rows from runtime-owned source data.
   const uint64_t addressable = source
     ? uint64_t(UINTPTR_MAX) - reinterpret_cast<uintptr_t>(source) + 1 : 0;
-  const bool validSpan = destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D
+  const bool validSpan = destination.blockBytes
+    ? dxvk::umd::uploadBlockSpan(destination.width, destination.height,
+        {box.left, box.top, box.right, box.bottom}, destination.blockBytes,
+        rowPitch, addressable, requiredBytes)
+    : destination.dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D
     ? dxvk::umd::uploadVolumeSpan({box.right - box.left, box.bottom - box.top, box.back - box.front},
         destination.texelBytes, rowPitch, depthPitch, addressable, requiredBytes)
     : dxvk::umd::uploadSpan(box.right - box.left, box.bottom - box.top, destination.texelBytes,

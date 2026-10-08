@@ -1,0 +1,9 @@
+# Findings
+
+Baseline e208191. transferTexelBytes rejects BC formats, and subresourceInfo consequently rejects updates despite supported backend creation. Copy-path agent owns copy compatibility and full-resource descriptor checks; this agent owns updateResource and shared block geometry/subresourceInfo.
+
+Microsoft local DDI ResourceUpdateSubresourceUP doc specifies destination coordinates/source pointer/byte row and depth pitches, but local snapshot labels the callback as DefaultConstantBufferUpdateSubresourceUP and contains no BC-specific contract. Microsoft Learn Block Compression (Direct3D10) confirms4x4 blocks, BC1/BC4 8 bytes and BC2/BC3/BC5 16 bytes, mip physical padding, and using actual mapped pitch. Public UpdateSubresource confirms signed/reversed/equal empty boxes are no-ops. Existing upstream DXVK UpdateTexture validates block offset and extent against logical mip edge before dispatch; use this primary implementation to cross-check edge behavior.
+
+Implementation boundary agreed: copy paths retain existing BC rejection by default; update-only subresourceInfo opt-in recognizes legal BC1–5 Texture2D/cube backend. transferTexelBytes will still return0 for BC so Texture3D/uncompressed scalar users are not accidentally widened.
+
+Final original-scope distinction: all six strict COFF compiles and six LLVM object reopen calls are actual owned children with separate start/closed raw/reaped receipts. Actual-MD selected input pins are current readback only; they do not prove historical before-compile or full toolchain immutability. Native compressed-byte fixture and its counters are expected until actual Windows/WARP execution. Local control generator is synthetic and independently reconstructs payloads; its ten rejection controls exercise original-file data/inventory/layout validation, not target rendering.

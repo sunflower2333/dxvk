@@ -1,6 +1,7 @@
 # Build a real ARM64X legacy entry in the selected ARM64 MSVC environment.
 # No module/probe execution or registration is performed by this producer.
 param([Parameter(Mandatory=$true)][string]$OutputDirectory,
+      [Parameter(Mandatory=$true)][string[]]$Arm64EcLibraryDirectories,
       [string]$SourceManifestPath='',
       [ValidatePattern('^(|[0-9a-f]{64})$')][string]$SourceManifestSha256='')
 $ErrorActionPreference = 'Stop'
@@ -94,6 +95,25 @@ function Invoke-FrontTool([string]$Name, [string]$Command, [string[]]$Arguments)
 $completed = $false
 $failure = $null
 $nativeLibraryEnvironment = $env:LIB
+$ecLibraries = [IO.Path]::GetFullPath((Join-Path $env:VCToolsInstallDir 'lib\arm64ec'))
+$x64Libraries = [IO.Path]::GetFullPath((Join-Path $env:VCToolsInstallDir 'lib\x64'))
+$Arm64EcLibraryDirectories = @($Arm64EcLibraryDirectories | ForEach-Object { [IO.Path]::GetFullPath($_) })
+if ($Arm64EcLibraryDirectories.Count -lt 3 -or
+    $Arm64EcLibraryDirectories -notcontains $ecLibraries -or
+    $Arm64EcLibraryDirectories -notcontains $x64Libraries) {
+    throw 'Reviewed ARM64EC support-object, x64 CRT and SDK library directories are required'
+}
+foreach ($directory in $Arm64EcLibraryDirectories) {
+    if (!$directory -or $directory -match '(?i)[\\/]arm64[\\/]?$' -or
+        $directory.Contains(';') -or $directory.Contains("`r") -or
+        $directory.Contains("`n") -or !(Test-Path -LiteralPath $directory -PathType Container)) {
+        throw 'ARM64EC library paths must be actual scalar directories'
+    }
+}
+if (!(Test-Path -LiteralPath (Join-Path $ecLibraries 'chkstk_arm64ec.obj') -PathType Leaf) -or
+    !(Test-Path -LiteralPath (Join-Path $x64Libraries 'libcmt.lib') -PathType Leaf)) {
+    throw 'Actual ARM64EC support object and x64-compatible static CRT are required'
+}
 try {
     $nativeObject = Join-Path $output 'front-arm64.obj'
     $nativeDll = Join-Path $output 'viogpu_dxvk_legacy_native.dll'
@@ -120,16 +140,17 @@ try {
     $nativeInputPins | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $output 'arm64-original-link-inputs.json') -Encoding UTF8
     $mergeRsp = Join-Path $output 'arm64-merge-inputs.rsp'
     $nativeInputs | Set-Content -LiteralPath $mergeRsp -Encoding ascii
-    $ecLibraries = Join-Path $env:VCToolsInstallDir 'lib/arm64ec'
-    if (-not (Test-Path -LiteralPath (Join-Path $ecLibraries 'libcmt.lib') -PathType Leaf)) { throw 'Actual ARM64EC static CRT is required' }
-    $env:LIB = $ecLibraries + ';' + $nativeLibraryEnvironment
+    # ARM64EC accepts x64-compatible libraries; native ARM64 libraries belong
+    # only to the preserved ARM64 merge response, never the EC search path.
+    $env:LIB = $Arm64EcLibraryDirectories -join ';'
     $ecObject = Join-Path $output 'front-arm64ec.obj'
     Invoke-FrontTool 'compile-arm64ec' 'cl.exe' ($commonCompile + @('/arm64EC',('"' + $source + '"'),('/Fo"' + $ecObject + '"')))
     Invoke-FrontTool 'link-arm64x' 'link.exe' @('/nologo','/DLL','/MACHINE:ARM64X','/WX','/DEBUG:FULL',
         ('"' + $ecObject + '"'),('@"' + $mergeRsp + '"'),
         ('/DEFARM64NATIVE:"' + $definition + '"'),('/DEF:"' + $definition + '"'),
         ('/OUT:"' + (Join-Path $output 'viogpu_dxvk_legacy.dll') + '"'),
-        ('/PDB:"' + (Join-Path $output 'viogpu_dxvk_legacy.pdb') + '"'),'kernel32.lib')
+        ('/PDB:"' + (Join-Path $output 'viogpu_dxvk_legacy.pdb') + '"'),
+        ('/LINKREPROFULLPATHRSP:"' + (Join-Path $output 'arm64x-original-link-inputs.rsp') + '"'),'kernel32.lib')
     $hybrid = Join-Path $output 'viogpu_dxvk_legacy.dll'
     Invoke-FrontTool 'hybrid-headers' 'dumpbin.exe' @('/headers','/loadconfig',('"' + $hybrid + '"'))
     Invoke-FrontTool 'hybrid-exports' 'dumpbin.exe' @('/exports',('"' + $hybrid + '"'))
@@ -168,6 +189,7 @@ try {
     [ordered]@{schema='native-legacy-arm64x-build-v1';source_commit=$sourceCommit;source_mode=$sourceMode;
         source_manifest_sha256=$(if ($sourceMode -ceq 'actual-git-checkout') { $null } else { $SourceManifestSha256 });completed=$completed;
         passed=($completed -and $stable);failure=$failure;source_stable=$stable;stages=$stages.ToArray();
+        arm64ec_library_directories=$Arm64EcLibraryDirectories;
         core_layout=[ordered]@{native='arm64/viogpudxvk.dll';emulated_x64='x64/viogpudxvk.dll';wow='x86/viogpudxvk.dll'};
         module_or_probe_executed=$false;registry_modified=$false;installation=$false
     } | ConvertTo-Json -Depth 12 | Set-Content (Join-Path $output 'native-legacy-front-build.json') -Encoding UTF8

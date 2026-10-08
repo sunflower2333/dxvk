@@ -16,7 +16,15 @@ the process lifetime because its published DDI tables outlive `OpenAdapter`.
 The frontend performs no work in DllMain.
 
 `build-native-legacy-front.ps1` must run in an actual ARM64 MSVC developer
-environment with the real ARM64EC static CRT available. Seven retained-handle
+environment. `-Arm64EcLibraryDirectories` supplies the reviewed matching
+ARM64EC support-object directory, x64-compatible static CRT directory and x64
+SDK import/UCRT directories. ARM64EC's support directory contains objects; it
+does not need its own `libcmt.lib`. The EC library search contains no native
+ARM64 library directory. The original native ARM64 inputs reach the hybrid
+link solely through the captured native response. This follows Microsoft's
+[ARM64EC library compatibility](https://learn.microsoft.com/en-us/windows/arm/arm64ec)
+and [ARM64X build route](https://learn.microsoft.com/en-us/windows/arm/arm64x-build).
+Seven retained-handle
 native tool stages compile ARM64, link the native view and capture its actual
 full link inputs, compile `/arm64EC`, merge `/MACHINE:ARM64X`, and inspect
 headers/load configuration, exports and imports. Each tool has a 60-second

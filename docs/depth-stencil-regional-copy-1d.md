@@ -10,6 +10,17 @@ An ordinary typeless color control copies source subresource 0, box [1,4), into 
 
 The fixed recipe has 22 copies, 68 rejected calls, 12 empty no-ops and 68 snapshots. It observes 1360 logical pixels and 4080 bytes per native/public role, in exactly 204 files. Each snapshot retains native/public logical storage and 20-word metadata containing fixed resource/recipe values and eight observed row pitches. The literal reader independently reconstructs both roles, including untouched mip/array data and color-box borders. It never uses native/public agreement as an oracle and never masks depth storage bits. Its synthetic integer-byte generator and 38 corruption controls establish reader behavior only.
 
-Build `src/umd/dxvk-umd-depth-stencil-copy-1d-test.exe` with the existing native Meson configuration. Run it in a fresh original-output directory, retain stdout/stderr and verify the directory with `tests/verify-depth-stencil-copy-1d-originals.py --directory <originals> --stdout <retained-stdout> --output <fresh-proof>`. Actual native WARP execution and ordinary-system-runtime/hardware admission remain pending until genuine process originals are obtained. Positive matched multisampled depth copies and legacy cube observations remain separate evidence gaps; 1D resources do not have multisampling.
+Build `src/umd/dxvk-umd-depth-stencil-copy-1d-test.exe` with the existing native Meson configuration. Run it in a fresh original-output directory, retain stdout/stderr and verify the directory with `tests/verify-depth-stencil-copy-1d-originals.py --directory <originals> --stdout <retained-stdout> --output <fresh-proof>`. The native WARP verification is recorded below; ordinary-system-runtime and hardware admission remain pending. Positive matched multisampled depth copies and legacy cube observations remain separate evidence gaps; 1D resources do not have multisampling.
 
 Primary contracts are the local Microsoft DDI `PFND3D10DDI_RESOURCECOPYREGION` and Tex1D depth-view descriptions; the [D3D11 Texture1D descriptor](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_texture1d_desc), [D3D11 copy restrictions](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copysubresourceregion), and [FL11.0 D16/D32 format targets](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/format-support-for-direct3d-11-0-feature-level-hardware).
+
+## Native reference verification (2026-10-08)
+
+The ARM64 EWDK build and WARP fixture completed on the VM. Its original 204
+files pass the complete 1360-pixel, 4080-byte-per-role oracle after correcting
+the reader's R16_TYPELESS metadata constant to 53. The SDK enum and the native
+fixture both use 53; the previous reader incorrectly used R16_FLOAT's 54.
+Only the two reader metadata constants changed. Pixel patterns, copy,
+rejection and no-op counts, and all 38 malformed-original controls are exact.
+This establishes the controlled WARP reference behavior; ordinary runtime and
+hardware execution remain pending.

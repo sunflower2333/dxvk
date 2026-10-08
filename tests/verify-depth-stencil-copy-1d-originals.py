@@ -21,7 +21,7 @@ def recipe():
 def shape(profile, family, case):
     actual = 1-family if case == 6 else family
     stride = (2, 4)[actual]
-    storage = (54, 39)[actual]
+    storage = (53, 39)[actual]
     depth = (55, 40)[actual]
     fmt = depth if case in (0, 5, 8) or (case in (1, 2, 3, 4) and profile > 0) else storage
     seed = {0:17, 5:17, 6:67, 7:107, 8:131, 9:47, 10:47, 11:71}.get(case, 93)
@@ -117,7 +117,7 @@ def selftest(root):
         profile, family, case = row
         actual = family ^ (case == 6)
         stride = 4 if actual else 2
-        storage = 39 if actual else 54
+        storage = 39 if actual else 53
         typed = case in (0, 5, 8) or (1 <= case <= 4 and profile != 0)
         fmt = (40 if actual else 55) if typed else storage
         seed = {0:17, 5:17, 6:67, 7:107, 8:131, 9:47, 10:47, 11:71}.get(case, 93)

@@ -2,6 +2,7 @@
 """Verify typed shared-handoff readbacks using independent pixel arithmetic."""
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -26,7 +27,7 @@ def rgba(seed, x, y):
     return bytes((seed + 3 * x, seed + 7 * y, 11 * (x + y), 255))
 
 
-def verify(directory, stdout):
+def verify_legacy(directory, stdout):
     require(directory.is_dir(), 'Original readback directory is absent')
     require(stdout.is_file() and not stdout.is_symlink(), 'Original stdout is absent')
     raw = stdout.read_bytes()
@@ -80,6 +81,17 @@ def verify(directory, stdout):
                 backend='WARP production-DDI reference', hardware_admission=False,
                 keyed_mutex_admission=False, gdi_admission=False,
                 oracle='literal RGBA axis arithmetic plus original allocation padding and canaries')
+
+
+def verify(directory, stdout):
+    proof = verify_legacy(directory, stdout)
+    path = Path(__file__).with_name('verify-native-shared-transfer-predicate-originals.py')
+    spec = importlib.util.spec_from_file_location('native_shared_transfer_predicate_originals', path)
+    require(spec is not None and spec.loader is not None, 'Shared transfer predicate reader is absent')
+    reader = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reader)
+    proof['shared_transfer_predicate'] = reader.verify(directory, stdout)
+    return proof
 
 
 def main():

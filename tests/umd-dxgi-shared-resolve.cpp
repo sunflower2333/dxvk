@@ -4,6 +4,8 @@
 #include "../src/umd/umd_adapter.h"
 #include "../src/umd/umd_api.h"
 #include "../src/umd/umd_allocation.h"
+#include "../src/umd/umd_blt_shader.h"
+#include <wrl/client.h>
 #include <array>
 #include <atomic>
 #include <cstdio>
@@ -18,6 +20,7 @@
 
 static std::atomic<unsigned> checks{0};
 static unsigned snapshots, pixels, locks, unlocks, submissions, releases;
+static unsigned predicateSnapshots, predicatePixels;
 static DWORD caller;
 static HRESULT lastError = S_OK, lockResult = S_OK, unlockResult = S_OK, submissionResult = S_OK;
 static LUID selected{0x12345678, -43};
@@ -330,9 +333,141 @@ static void profile(unsigned index) {
   }
   CHECK(backings.empty() && !lockAction && !submissionAction && lastError == S_OK);
 }
+static void predicateSave(const void* address, UINT pitch, UINT depthPitch,
+    unsigned seed, unsigned profile, unsigned test) {
+  CHECK(address && pitch >= width * 4);
+  std::array<uint32_t, width * height> actual{};
+  for (unsigned y = 0; y < height; ++y) std::memcpy(actual.data() + y * width,
+    static_cast<const uint8_t*>(address) + size_t(y) * pitch, width * 4);
+  const uint32_t metadata[]{width, height, test, seed, pitch, depthPitch, 28, profile};
+  char name[120]; std::snprintf(name, sizeof(name), "shared-transfer-predicate-%u-%u.actual.u32.bin", profile, test);
+  save(name, actual.data(), sizeof(actual));
+  std::snprintf(name, sizeof(name), "shared-transfer-predicate-%u-%u.metadata.u32.bin", profile, test);
+  save(name, metadata, sizeof(metadata));
+  for (unsigned y = 0; y < height; ++y) for (unsigned x = 0; x < width; ++x) {
+    const auto wanted = expected(seed, x, y);
+    if (actual[y * width + x] != wanted) std::fprintf(stderr,
+      "Shared predicate mismatch profile=%u case=%u seed=%u x=%u y=%u actual=%08x expected=%08x\n",
+      profile, test, seed, x, y, actual[y * width + x], wanted);
+    CHECK(actual[y * width + x] == wanted); ++predicatePixels;
+  }
+  ++predicateSnapshots;
+}
+template<typename F>
+static void predicateRead(F& f, Texture<F>& source, Texture<F>& staging,
+    unsigned seed, unsigned profile, unsigned test) {
+  lastError = S_OK; f.table.pfnResourceCopy(f.device, staging.handle, source.handle); CHECK(lastError == S_OK);
+  D3D10DDI_MAPPED_SUBRESOURCE mapped{};
+  f.table.pfnStagingResourceMap(f.device, staging.handle, 0, D3D10_DDI_MAP_READ, 0, &mapped);
+  CHECK(lastError == S_OK);
+  predicateSave(mapped.pData, mapped.RowPitch, mapped.DepthPitch, seed, profile, test);
+  f.table.pfnStagingResourceUnmap(f.device, staging.handle, 0); CHECK(lastError == S_OK);
+}
+static void predicateBacking(D3DKMT_HANDLE allocation, unsigned seed, unsigned profile, unsigned test) {
+  backingPixels(allocation, seed, false);
+  const auto& backing = backings.at(allocation);
+  CHECK(backing.info.pitch == 40 && backing.info.size == 200 && backing.data.size() == 232);
+  const uint32_t metadata[]{width, height, test, seed, backing.info.pitch, uint32_t(backing.info.size), 28, profile};
+  char name[120]; std::snprintf(name, sizeof(name), "shared-transfer-predicate-%u-%u.actual.bin", profile, test);
+  save(name, backing.data.data(), backing.data.size());
+  std::snprintf(name, sizeof(name), "shared-transfer-predicate-%u-%u.metadata.u32.bin", profile, test);
+  save(name, metadata, sizeof(metadata)); ++predicateSnapshots; predicatePixels += width * height;
+}
+template<typename Table>
+static void predicateProfile(unsigned index) {
+  using F = Fixture<Table>; using Microsoft::WRL::ComPtr;
+  F f; auto context = f.contextKey; ComPtr<ID3D11Device> backend; context->GetDevice(&backend);
+  std::vector<unsigned char> vertex, pixel; CHECK(dxvk::umd::bltShaderContainers(vertex, pixel));
+  ComPtr<ID3D11VertexShader> vs; ComPtr<ID3D11PixelShader> ps;
+  CHECK(backend->CreateVertexShader(vertex.data(), vertex.size(), nullptr, &vs) == S_OK);
+  CHECK(backend->CreatePixelShader(pixel.data(), pixel.size(), nullptr, &ps) == S_OK);
+  const D3D11_VIEWPORT viewport{3, 4, 17, 19, .25f, .75f}; const D3D11_RECT scissor{31, 37, 41, 43};
+  D3D11_RASTERIZER_DESC rasterDesc{}; rasterDesc.FillMode = D3D11_FILL_SOLID;
+  rasterDesc.CullMode = D3D11_CULL_FRONT; rasterDesc.ScissorEnable = TRUE; rasterDesc.DepthClipEnable = TRUE;
+  ComPtr<ID3D11RasterizerState> raster; CHECK(backend->CreateRasterizerState(&rasterDesc, &raster) == S_OK);
+  D3D11_TEXTURE2D_DESC appDesc{}; appDesc.Width = appDesc.Height = 4;
+  appDesc.MipLevels = appDesc.ArraySize = appDesc.SampleDesc.Count = 1;
+  appDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; appDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+  ComPtr<ID3D11Texture2D> target; ComPtr<ID3D11RenderTargetView> view;
+  CHECK(backend->CreateTexture2D(&appDesc, nullptr, &target) == S_OK);
+  CHECK(backend->CreateRenderTargetView(target.Get(), nullptr, &view) == S_OK);
+  context->RSSetViewports(1, &viewport); context->RSSetScissorRects(1, &scissor); context->RSSetState(raster.Get());
+  context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+  context->VSSetShader(vs.Get(), nullptr, 0); context->PSSetShader(ps.Get(), nullptr, 0);
+  auto targetView = view.Get(); context->OMSetRenderTargets(1, &targetView, nullptr);
+  ComPtr<ID3D11Predicate> predicate; const D3D11_QUERY_DESC queryDesc{D3D11_QUERY_OCCLUSION_PREDICATE, 0};
+  CHECK(backend->CreatePredicate(&queryDesc, &predicate) == S_OK);
+  context->Begin(predicate.Get()); context->End(predicate.Get()); context->Flush();
+  BOOL visible = TRUE; HRESULT result = S_FALSE; const auto started = GetTickCount64();
+  while (result == S_FALSE && GetTickCount64() - started < 10000) {
+    result = context->GetData(predicate.Get(), &visible, sizeof(visible), D3D11_ASYNC_GETDATA_DONOTFLUSH);
+    if (result == S_FALSE) SwitchToThread();
+  }
+  CHECK(result == S_OK && visible == FALSE);
+  auto state = [&] {
+    ComPtr<ID3D11Predicate> seenPredicate; BOOL value = TRUE;
+    context->GetPredication(&seenPredicate, &value); CHECK(seenPredicate.Get() == predicate.Get() && value == FALSE);
+    UINT count = 1; D3D11_VIEWPORT seenViewport{}; context->RSGetViewports(&count, &seenViewport);
+    CHECK(count == 1 && !std::memcmp(&seenViewport, &viewport, sizeof(viewport)));
+    count = 1; D3D11_RECT seenScissor{}; context->RSGetScissorRects(&count, &seenScissor);
+    CHECK(count == 1 && !std::memcmp(&seenScissor, &scissor, sizeof(scissor)));
+    ComPtr<ID3D11RasterizerState> seenRaster; context->RSGetState(&seenRaster); CHECK(seenRaster.Get() == raster.Get());
+    D3D11_PRIMITIVE_TOPOLOGY topology{}; context->IAGetPrimitiveTopology(&topology);
+    CHECK(topology == D3D11_PRIMITIVE_TOPOLOGY_POINTLIST);
+    ComPtr<ID3D11VertexShader> seenVS; context->VSGetShader(&seenVS, nullptr, nullptr); CHECK(seenVS.Get() == vs.Get());
+    ComPtr<ID3D11PixelShader> seenPS; context->PSGetShader(&seenPS, nullptr, nullptr); CHECK(seenPS.Get() == ps.Get());
+    ComPtr<ID3D11RenderTargetView> seenView; context->OMGetRenderTargets(1, &seenView, nullptr); CHECK(seenView.Get() == view.Get());
+  };
+  Backing external; external.info.width = width; external.info.height = height;
+  external.info.pitch = 40; external.info.size = 200; external.info.format = 3;
+  external.data.assign(232, 0xa5); CHECK(backings.emplace(9002, std::move(external)).second);
+  {
+    Texture<F> opened(f, false, false, 0, 9002), staging(f, false, true), canary(f, false, false, 3);
+    backingPixels(9002, 17, true);
+    context->SetPredication(predicate.Get(), FALSE);
+    lockResult = E_OUTOFMEMORY; lastError = S_OK;
+    f.table.pfnResourceCopy(f.device, canary.handle, opened.handle); CHECK(lastError == E_OUTOFMEMORY);
+    lockResult = S_OK; lastError = S_OK;
+    f.table.pfnResourceCopy(f.device, canary.handle, opened.handle); CHECK(lastError == S_OK); state();
+    // The internal allocation->cache hop must happen, but these application
+    // copies remain suppressed. A retry must not memoize the failed download.
+    const auto refreshedLocks = locks; backingPixels(9002, 31, true);
+    f.table.pfnResourceCopy(f.device, canary.handle, opened.handle); CHECK(lastError == S_OK && locks == refreshedLocks); state();
+    context->SetPredication(nullptr, FALSE);
+    predicateRead(f, opened, staging, 17, index, 0);
+    CHECK(locks == refreshedLocks); // Source observation must use the completed snapshot, not redownload seed31.
+    predicateRead(f, canary, staging, 3, index, 1);
+    opened.update(19); context->SetPredication(predicate.Get(), FALSE);
+    CHECK(f.resolve(opened.dxgi()) == S_OK); state(); predicateBacking(9002, 19, index, 2);
+    context->SetPredication(nullptr, FALSE); opened.update(23);
+    context->SetPredication(predicate.Get(), FALSE); lockResult = E_OUTOFMEMORY;
+    CHECK(f.resolve(opened.dxgi()) == E_OUTOFMEMORY); state(); lockResult = S_OK;
+    predicateBacking(9002, 19, index, 3);
+    CHECK(f.resolve(opened.dxgi()) == S_OK); state(); predicateBacking(9002, 23, index, 4);
+    // Update remains an app operation, and Map remains non-predicated.
+    canary.update(29); state(); context->SetPredication(nullptr, FALSE);
+    predicateRead(f, canary, staging, 3, index, 5);
+    lastError = S_OK; f.table.pfnResourceCopy(f.device, staging.handle, opened.handle); CHECK(lastError == S_OK);
+    // The completed ownership handoff invalidated the cache; this clear
+    // predicate read refreshes seed23. Use a second dedicated seed17 staging
+    // source to keep the Map control independent of later publication seeds.
+    Texture<F> mapSource(f, false, false, 17);
+    f.table.pfnResourceCopy(f.device, staging.handle, mapSource.handle); CHECK(lastError == S_OK);
+    context->SetPredication(predicate.Get(), FALSE);
+    D3D10DDI_MAPPED_SUBRESOURCE mapped{};
+    f.table.pfnStagingResourceMap(f.device, staging.handle, 0, D3D10_DDI_MAP_READ, 0, &mapped);
+    CHECK(lastError == S_OK); predicateSave(mapped.pData, mapped.RowPitch, mapped.DepthPitch, 17, index, 6);
+    f.table.pfnStagingResourceUnmap(f.device, staging.handle, 0); CHECK(lastError == S_OK); state();
+    context->SetPredication(nullptr, FALSE);
+  }
+  CHECK(backings.erase(9002) == 1); // The borrowed allocation never owes DeallocateCb.
+}
 int main() {
   caller = GetCurrentThreadId();
   profile<D3D10DDI_DEVICEFUNCS>(0); profile<D3D10_1DDI_DEVICEFUNCS>(1); profile<D3D11DDI_DEVICEFUNCS>(2);
+  predicateProfile<D3D10DDI_DEVICEFUNCS>(0); predicateProfile<D3D10_1DDI_DEVICEFUNCS>(1); predicateProfile<D3D11DDI_DEVICEFUNCS>(2);
+  CHECK(predicateSnapshots == 21 && predicatePixels == 735 && backings.empty() && bridges.empty() && lastError == S_OK);
+  std::printf("DXGI shared transfer predicate PASS profiles=3 snapshots=21 pixels=735 hardware_admission=0\n");
   CHECK(snapshots == 15 && pixels == 525 && bridges.empty());
   std::printf("DXGI shared resolve PASS checks=%u profiles=3 snapshots=%u pixels=%u hardware_admission=0\n", checks.load(), snapshots, pixels);
 }

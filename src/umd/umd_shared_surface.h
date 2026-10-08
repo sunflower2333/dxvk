@@ -82,6 +82,27 @@ inline HRESULT sharedStaging(ID3D11Device* device, SharedSurface& surface) {
   return device->CreateTexture2D(&desc, nullptr, &surface.staging);
 }
 
+// Ownership transfers are internal work, independent of an application's
+// predicate and bindings. Keep Map on the immediate context: deferred Map
+// cannot read/write STAGING, and the synchronized Map is our completion barrier.
+inline HRESULT copySharedSurface(ID3D11Device* device, ID3D11DeviceContext* context,
+    ID3D11Texture2D* destination, ID3D11Texture2D* source) {
+  using Microsoft::WRL::ComPtr;
+  if (!device || !context || !source || !destination
+      || context->GetType() != D3D11_DEVICE_CONTEXT_IMMEDIATE) return E_INVALIDARG;
+  ComPtr<ID3D11DeviceContext> commands;
+  HRESULT hr = device->CreateDeferredContext(0, &commands);
+  if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  if (!commands) return E_FAIL;
+  commands->CopyResource(destination, source);
+  ComPtr<ID3D11CommandList> list;
+  hr = commands->FinishCommandList(FALSE, &list);
+  if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+  if (!list) return E_FAIL;
+  context->ExecuteCommandList(list.Get(), TRUE);
+  return device->GetDeviceRemovedReason();
+}
+
 // One body for both directions, for the same reason RuntimeMemory has one:
 // the staging hop, the synchronized map that acts as the GPU barrier and the
 // balancing unmap are identical, and only the order of the two copies differs.
@@ -96,13 +117,16 @@ inline HRESULT transferSharedSurface(ID3D11Device* device, ID3D11DeviceContext* 
   } transferScope{surface.transferring};
   HRESULT hr = sharedStaging(device, surface);
   if (FAILED(hr)) return hr;
-  if (publish) context->CopyResource(surface.staging.Get(), surface.cache.Get());
+  if (publish) {
+    hr = copySharedSurface(device, context, surface.staging.Get(), surface.cache.Get());
+    if (FAILED(hr)) return hr;
+  }
   D3D11_MAPPED_SUBRESOURCE mapped = {};
   // The synchronized map is the completion barrier in both directions: it
-  // waits for the copy just queued, or for the pipeline to finish reading the
-  // staging buffer that the previous refresh left in flight. STAGING cannot
-  // take MAP_WRITE_DISCARD, so this wait is structural; a second staging
-  // buffer would hide it and is the obvious next optimization, not a fix.
+  // waits for the readback just queued. A refresh write preserves the staging
+  // bytes still consumed by an earlier GPU read; the backend can wait or
+  // rename that storage. STAGING cannot take MAP_WRITE_DISCARD, so keep the
+  // ordinary synchronized Map and its ordering/storage-isolation contract.
   hr = context->Map(surface.staging.Get(), 0,
     publish ? D3D11_MAP_READ : D3D11_MAP_WRITE, 0, &mapped);
   if (FAILED(hr)) return hr;
@@ -110,7 +134,7 @@ inline HRESULT transferSharedSurface(ID3D11Device* device, ID3D11DeviceContext* 
                : memory.download(surface.allocation, mapped.pData, mapped.RowPitch);
   context->Unmap(surface.staging.Get(), 0);
   if (FAILED(hr)) return hr;
-  if (!publish) context->CopyResource(surface.cache.Get(), surface.staging.Get());
+  if (!publish) return copySharedSurface(device, context, surface.cache.Get(), surface.staging.Get());
   return S_OK;
 }
 

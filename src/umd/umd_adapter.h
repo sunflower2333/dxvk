@@ -4,6 +4,10 @@
 #include "umd_adapter_identity.h"
 #include "umd_interface.h"
 
+// Dedicated forwarding target for ordinary SYSTEM D3D11 validation at FL10.0.
+// It retains strict runtime callbacks and does not change production admission.
+extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter11Fl10_0ForValidation(D3D10DDIARG_OPENADAPTER* args);
+
 namespace dxvk::umd {
 
 HRESULT queryRuntimeIdentity(D3D10DDI_HRTADAPTER runtime,

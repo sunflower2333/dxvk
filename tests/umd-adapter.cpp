@@ -169,6 +169,7 @@ static UINT buildFor(UINT interfaceVersion) {
 
 static void nativeInterfaces();
 static void modernExportNegatives();
+static void validationNegotiation();
 
 int main() {
   CHECK(VioGpuDxvkOpenAdapterForTest(nullptr) == E_INVALIDARG);
@@ -266,10 +267,11 @@ int main() {
   CHECK(functions.pfnCloseAdapter(open.hAdapter) == S_OK);
   modernExportNegatives();
   nativeInterfaces();
+  validationNegotiation();
   std::printf("adapter lifecycle PASS checks=%u; mock runtime and backend, no GPU\n", checks);
 }
 
-static D3D10DDI_HADAPTER openModern(D3D10_2DDI_ADAPTERFUNCS& functions) {
+static D3D10DDI_HADAPTER openModern(D3D10_2DDI_ADAPTERFUNCS& functions, bool validation = false) {
   D3DDDI_ADAPTERCALLBACKS callbacks = {};
   callbacks.pfnQueryAdapterInfoCb = query;
   D3D10DDIARG_OPENADAPTER args = {};
@@ -277,7 +279,8 @@ static D3D10DDI_HADAPTER openModern(D3D10_2DDI_ADAPTERFUNCS& functions) {
   args.Interface = args.Version = 0xffffffff;
   args.pAdapterCallbacks = &callbacks;
   args.pAdapterFuncs_2 = &functions;
-  CHECK(VioGpuDxvkOpenAdapter10_2ForTest(&args) == S_OK);
+  CHECK((validation ? VioGpuDxvkOpenAdapter11Fl10_0ForValidation(&args)
+    : VioGpuDxvkOpenAdapter10_2ForTest(&args)) == S_OK);
   CHECK(args.hAdapter.pDrvPrivate && functions.pfnGetSupportedVersions && functions.pfnGetCaps);
   return args.hAdapter;
 }
@@ -359,9 +362,10 @@ enum class CreationCase {
   QueryFailureAfterBackend, QueryExceptionAfterBackend
 };
 
-static void creationFixture(UINT interfaceVersion, UINT version, UINT flags, CreationCase action) {
+static void creationFixture(UINT interfaceVersion, UINT version, UINT flags, CreationCase action,
+    bool validation = false) {
   D3D10_2DDI_ADAPTERFUNCS functions = {};
-  auto adapter = openModern(functions);
+  auto adapter = openModern(functions, validation);
   const auto selected = dxvk::umd::nativeInterface(interfaceVersion);
   const bool newerDxgi = dxvk::umd::nativeDxgiUses1_1(interfaceVersion, version);
   SIZE_T tableBytes = sizeof(D3D10DDI_DEVICEFUNCS);
@@ -483,7 +487,7 @@ static void creationFixture(UINT interfaceVersion, UINT version, UINT flags, Cre
   queryHook = backendHook = nullptr; verifyKernel = false; expectedDxgiCallbacks = nullptr;
   CHECK(functions.pfnCloseAdapter(adapter) == (closed ? E_INVALIDARG : S_OK));
   // A later adapter allocation must never make this closed token valid again.
-  const auto replacement = openModern(functions);
+  const auto replacement = openModern(functions, validation);
   CHECK(replacement.pDrvPrivate != adapter.pDrvPrivate);
   CHECK(functions.pfnCloseAdapter(adapter) == E_INVALIDARG);
   CHECK(functions.pfnCloseAdapter(replacement) == S_OK);
@@ -597,5 +601,154 @@ static void nativeInterfaces() {
   count = 3; versionStorage.fill(0xa5);
   CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, versions) == S_OK && count == 0);
   CHECK(versionStorage.matches(versionBefore));
+  CHECK(functions->pfnCloseAdapter(open.hAdapter) == S_OK);
+}
+
+static void validationNegotiation() {
+  static_assert(D3D11_0_DDI_SUPPORTED == UINT64(0x000b000a00020000),
+    "Validation selects the documented exact D3D11.0 build2 interface");
+  static_assert(D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0) == 1,
+    "Validation publishes only the documented FL10.0 pipeline bit");
+  static_assert(D3D11DDI_CREATEDEVICE_FLAG_SINGLETHREADED == 0x10,
+    "Logical FL10.0 accepts only the caller's SINGLETHREADED flag");
+  CHECK(VioGpuDxvkOpenAdapter11Fl10_0ForValidation(nullptr) == E_INVALIDARG);
+  GuardedBytes adapterTable(sizeof(D3D10_2DDI_ADAPTERFUNCS));
+  auto functions = adapterTable.as<D3D10_2DDI_ADAPTERFUNCS>();
+  D3DDDI_ADAPTERCALLBACKS callbacks = {}; callbacks.pfnQueryAdapterInfoCb = query;
+  D3D10DDIARG_OPENADAPTER open = {};
+  open.pAdapterFuncs_2 = functions; open.pAdapterCallbacks = &callbacks;
+  open.hRTAdapter.handle = &adapterCookie; open.Interface = open.Version = UINT32_MAX;
+  const std::vector<unsigned char> zeroAdapter(sizeof(D3D10_2DDI_ADAPTERFUNCS), 0);
+  for (unsigned invalid = 0; invalid < 4; ++invalid) {
+    auto request = open; adapterTable.fill(0xa5);
+    if (invalid == 0) request.pAdapterCallbacks = nullptr;
+    if (invalid == 1) request.hRTAdapter = {};
+    if (invalid == 2) callbacks.pfnQueryAdapterInfoCb = nullptr;
+    if (invalid == 3) oldReply = true;
+    const auto before = queryCalls;
+    CHECK(VioGpuDxvkOpenAdapter11Fl10_0ForValidation(&request)
+      == (invalid == 3 ? DXGI_ERROR_UNSUPPORTED : E_INVALIDARG));
+    CHECK(!request.hAdapter.pDrvPrivate && adapterTable.snapshot() == zeroAdapter);
+    CHECK(queryCalls == before + (invalid == 3 ? 1u : 0u));
+    callbacks.pfnQueryAdapterInfoCb = query; oldReply = false;
+  }
+  CHECK(VioGpuDxvkOpenAdapter11Fl10_0ForValidation(&open) == S_OK);
+  UINT32 count = 77;
+  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, nullptr) == S_OK && count == 1);
+  GuardedBytes versions(sizeof(UINT64)); versions.fill(0xa5);
+  const auto versionBefore = versions.snapshot();
+  count = 0;
+  queryHook = [&] { count = UINT32_MAX; };
+  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, versions.as<UINT64>()) == E_OUTOFMEMORY);
+  CHECK(count == 1 && versions.matches(versionBefore));
+  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, versions.as<UINT64>()) == S_OK);
+  CHECK(count == 1 && *versions.as<UINT64>() == D3D11_0_DDI_SUPPORTED);
+
+  GuardedBytes capsStorage(sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS));
+  D3D10_2DDIARG_GETCAPS caps = {};
+  caps.pData = capsStorage.data(); caps.DataSize = sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS);
+  for (auto type : {D3D11DDICAPS_3DPIPELINESUPPORT, D3D11DDICAPS_THREADING, D3D11DDICAPS_SHADER}) {
+    caps.Type = type; capsStorage.fill(0xa5);
+    CHECK(functions->pfnGetCaps(open.hAdapter, &caps) == S_OK);
+    UINT bits = UINT32_MAX; std::memcpy(&bits, capsStorage.data(), sizeof(bits));
+    CHECK(bits == (type == D3D11DDICAPS_3DPIPELINESUPPORT ? 1u : 0u));
+  }
+  caps.Type = D3D11DDICAPS_3DPIPELINESUPPORT;
+  for (unsigned invalid = 0; invalid < 4; ++invalid) {
+    auto request = caps; capsStorage.fill(0xa5); const auto before = capsStorage.snapshot();
+    if (invalid == 0) request.DataSize -= 1;
+    if (invalid == 1) request.DataSize += 1;
+    if (invalid == 2) request.pInfo = &privateCookie;
+    if (invalid == 3) request.Type = static_cast<D3D10_2DDICAPS_TYPE>(0xffffffff);
+    const auto beforeQueries = queryCalls;
+    CHECK(functions->pfnGetCaps(open.hAdapter, &request)
+      == (invalid == 3 ? DXGI_ERROR_UNSUPPORTED : E_INVALIDARG));
+    CHECK(capsStorage.matches(before) && queryCalls == beforeQueries);
+  }
+  UINT alternate = 0x12345678;
+  queryHook = [&] { caps.pData = &alternate; caps.Type = D3D11DDICAPS_SHADER; caps.DataSize = 1; };
+  CHECK(functions->pfnGetCaps(open.hAdapter, &caps) == S_OK);
+  CHECK(capsStorage.as<D3D11DDI_3DPIPELINESUPPORT_CAPS>()->Caps == 1 && alternate == 0x12345678);
+  caps.pData = capsStorage.data(); caps.Type = D3D11DDICAPS_3DPIPELINESUPPORT;
+  caps.DataSize = sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS);
+
+  GuardedBytes table(sizeof(D3D11DDI_DEVICEFUNCS)), dxgi(sizeof(DXGI1_1_DDI_BASE_FUNCTIONS));
+  table.fill(0xa5); dxgi.fill(0x3c);
+  const auto tableBefore = table.snapshot(), dxgiBefore = dxgi.snapshot();
+  D3D11DDI_CORELAYER_DEVICECALLBACKS core = {}; core.pfnSetErrorCb = setError;
+  DXGI_DDI_BASE_CALLBACKS dxgiCallbacks = {}; dxgiCallbacks.pfnPresentCb = presentStub;
+  D3DDDI_DEVICECALLBACKS kernel = {};
+  kernel.pfnAllocateCb = allocateStub; kernel.pfnDeallocateCb = deallocateStub;
+  kernel.pfnLockCb = lockStub; kernel.pfnUnlockCb = unlockStub;
+  kernel.pfnCreateContextCb = createContextStub; kernel.pfnDestroyContextCb = destroyContextStub;
+  D3D10DDIARG_CREATEDEVICE create = {};
+  create.Interface = D3D11_0_DDI_INTERFACE_VERSION;
+  create.Version = (D3D11_0_DDI_BUILD_VERSION << 16) | DXGI_RESOLVE_SHARED_RESOURCE;
+  create.hRTDevice.handle = &deviceCookie; create.hRTCoreLayer.handle = &coreCookie;
+  create.hDrvDevice.pDrvPrivate = &privateCookie; create.pKTCallbacks = &kernel;
+  create.p11UMCallbacks = &core; create.p11DeviceFuncs = table.as<D3D11DDI_DEVICEFUNCS>();
+  create.DXGIBaseDDI.pDXGIBaseCallbacks = &dxgiCallbacks;
+  create.DXGIBaseDDI.pDXGIDDIBaseFunctions2 = dxgi.as<DXGI1_1_DDI_BASE_FUNCTIONS>();
+  for (UINT flags = 0; flags < 256; ++flags) {
+    D3D10DDIARG_CALCPRIVATEDEVICESIZE size = {create.Interface, create.Version, flags};
+    CHECK(functions->pfnCalcPrivateDeviceSize(open.hAdapter, &size) == (flags == 0 || flags == 0x10 ? 256u : 0u));
+  }
+  const auto beforeCalls = deviceCalls, beforeQueries = queryCalls;
+  for (unsigned invalid = 0; invalid < 19; ++invalid) {
+    auto request = create; auto kernelCopy = kernel; request.pKTCallbacks = &kernelCopy;
+    if (invalid == 0) { request.Interface = D3D10_0_DDI_INTERFACE_VERSION; request.Version = D3D10_0_DDI_BUILD_VERSION << 16; }
+    if (invalid == 1) { request.Interface = D3D10_1_DDI_INTERFACE_VERSION; request.Version = D3D10_1_DDI_BUILD_VERSION << 16; }
+    if (invalid == 2) request.Interface = D3D11_1_DDI_INTERFACE_VERSION;
+    if (invalid == 3) request.Version = ((D3D11_0_DDI_BUILD_VERSION - 1) << 16) | 0xffff;
+    if (invalid == 4) request.Flags = 2; // SDK pipeline10.1, never advertised here.
+    if (invalid == 5) request.Flags = 4; // SDK pipeline11.0, never advertised here.
+    if (invalid == 6) request.Flags = D3D10DDI_CREATEDEVICE_FLAG_DISABLE_EXTRA_THREAD_CREATION;
+    if (invalid == 7) request.Flags = 0x80000000;
+    if (invalid == 8) kernelCopy.pfnAllocateCb = nullptr;
+    if (invalid == 9) kernelCopy.pfnDeallocateCb = nullptr;
+    if (invalid == 10) kernelCopy.pfnLockCb = nullptr;
+    if (invalid == 11) kernelCopy.pfnUnlockCb = nullptr;
+    if (invalid == 12) kernelCopy.pfnCreateContextCb = nullptr;
+    if (invalid == 13) kernelCopy.pfnDestroyContextCb = nullptr;
+    if (invalid == 14) request.DXGIBaseDDI.pDXGIBaseCallbacks = nullptr;
+    if (invalid == 15) dxgiCallbacks.pfnPresentCb = nullptr;
+    if (invalid == 16) request.DXGIBaseDDI.pDXGIDDIBaseFunctions2 = nullptr;
+    if (invalid == 17) request.p11UMCallbacks = nullptr;
+    if (invalid == 18) request.p11DeviceFuncs = nullptr;
+    CHECK(functions->pfnCreateDevice(open.hAdapter, &request)
+      == (invalid < 8 ? DXGI_ERROR_UNSUPPORTED : E_INVALIDARG));
+    dxgiCallbacks.pfnPresentCb = presentStub;
+    CHECK(table.matches(tableBefore) && dxgi.matches(dxgiBefore));
+    CHECK(deviceCalls == beforeCalls && queryCalls == beforeQueries);
+  }
+  capsStorage.fill(0xa5); const auto capsBefore = capsStorage.snapshot();
+  queryHook = [&] { CHECK(functions->pfnCloseAdapter(open.hAdapter) == S_OK); };
+  CHECK(functions->pfnGetCaps(open.hAdapter, &caps) == DXGI_ERROR_DEVICE_REMOVED);
+  CHECK(capsStorage.matches(capsBefore));
+  CHECK(functions->pfnCreateDevice(open.hAdapter, &create) == E_INVALIDARG);
+
+  for (UINT revision : {0u, UINT(DXGI_RESOLVE_SHARED_RESOURCE)}) {
+    for (UINT flags : {0u, UINT(D3D11DDI_CREATEDEVICE_FLAG_SINGLETHREADED)}) {
+      for (CreationCase action : {CreationCase::Success, CreationCase::BackendFailure,
+        CreationCase::AllocationFailure, CreationCase::PositiveStatus, CreationCase::CloseBeforeBackend,
+        CreationCase::CloseAfterBackend, CreationCase::ResetAfterBackend,
+        CreationCase::QueryFailureAfterBackend, CreationCase::QueryExceptionAfterBackend})
+        creationFixture(D3D11_0_DDI_INTERFACE_VERSION, (D3D11_0_DDI_BUILD_VERSION << 16) | revision,
+          flags, action, true);
+    }
+  }
+  // The tag belongs to an adapter token; it cannot spill into either old entry.
+  const auto generic = openModern(*functions);
+  capsStorage.fill(0xa5);
+  CHECK(functions->pfnGetCaps(generic, &caps) == S_OK);
+  CHECK(capsStorage.as<D3D11DDI_3DPIPELINESUPPORT_CAPS>()->Caps == 0);
+  count = 77;
+  CHECK(functions->pfnGetSupportedVersions(generic, &count, nullptr) == S_OK && count == 3);
+  CHECK(functions->pfnCloseAdapter(generic) == S_OK);
+  CHECK(OpenAdapter10_2(&open) == S_OK);
+  count = 77;
+  CHECK(functions->pfnGetSupportedVersions(open.hAdapter, &count, nullptr) == S_OK && count == 0);
+  CHECK(functions->pfnGetCaps(open.hAdapter, &caps) == S_OK);
+  CHECK(capsStorage.as<D3D11DDI_3DPIPELINESUPPORT_CAPS>()->Caps == 0);
   CHECK(functions->pfnCloseAdapter(open.hAdapter) == S_OK);
 }

@@ -13,6 +13,7 @@ struct Adapter {
   std::atomic<bool> closed{false}, removed{false};
   std::atomic_flag querying = ATOMIC_FLAG_INIT;
   bool development = false;
+  bool validation11Fl10_0 = false;
   UINT legacyInterface = 0;
 };
 
@@ -32,6 +33,11 @@ HRESULT state(const std::shared_ptr<Adapter>& adapter) noexcept {
 }
 
 bool admitted(const Adapter& adapter, UINT interfaceVersion, UINT flags = 0) {
+  // Only the dedicated SYSTEM-validation entry may break the ordinary-proof
+  // dependency cycle. Its tag remains owned by this adapter until CloseAdapter.
+  if (adapter.validation11Fl10_0)
+    return interfaceVersion == D3D11_0_DDI_INTERFACE_VERSION
+      && !(flags & ~D3D11DDI_CREATEDEVICE_FLAG_SINGLETHREADED);
   return (!adapter.legacyInterface || adapter.legacyInterface == interfaceVersion)
     && (adapter.development || dxvk::umd::runtimeSupportsNativeInterface(interfaceVersion, flags));
 }
@@ -246,24 +252,29 @@ HRESULT APIENTRY getCaps(D3D10DDI_HADAPTER handle, const D3D10_2DDIARG_GETCAPS* 
   HRESULT hr = current(adapter);
   if (FAILED(hr)) return hr;
   D3D11DDI_3DPIPELINESUPPORT_CAPS pipelines = {};
-  if (dxvk::umd::runtimeSupportsD3D10())
-    pipelines.Caps |= D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0);
-  if (dxvk::umd::runtimeMissingD3D10_1Requirements() == 0)
-    pipelines.Caps |= D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_1);
-  if (dxvk::umd::runtimeMissingD3D11Requirements(D3D_FEATURE_LEVEL_11_0) == 0)
-    pipelines.Caps |= D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_11_0);
+  if (adapter->validation11Fl10_0) {
+    pipelines.Caps = D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0);
+  } else {
+    if (dxvk::umd::runtimeSupportsD3D10())
+      pipelines.Caps |= D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0);
+    if (dxvk::umd::runtimeMissingD3D10_1Requirements() == 0)
+      pipelines.Caps |= D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_1);
+    if (dxvk::umd::runtimeMissingD3D11Requirements(D3D_FEATURE_LEVEL_11_0) == 0)
+      pipelines.Caps |= D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_11_0);
+  }
   std::lock_guard<std::mutex> lock(adaptersMutex);
   hr = state(adapter);
   if (FAILED(hr)) return hr;
-  // Development tables do not advertise unproven feature levels, threading,
-  // command lists, or optional shader capabilities to the runtime.
+  // Generic development tables retain production pipeline policy. Dedicated
+  // validation advertises only FL10.0, with no optional threading/shader bits.
   if (input.Type == D3D11DDICAPS_3DPIPELINESUPPORT)
     std::memcpy(input.pData, &pipelines, sizeof(pipelines));
   else std::memset(input.pData, 0, expected);
   return S_OK;
 }
 
-HRESULT open(D3D10DDIARG_OPENADAPTER* args, bool modern, bool development) {
+HRESULT open(D3D10DDIARG_OPENADAPTER* args, bool modern, bool development,
+    bool validation11Fl10_0 = false) {
   if (!args) return E_INVALIDARG;
   args->hAdapter = {};
   auto legacyOutput = modern ? nullptr : args->pAdapterFuncs;
@@ -295,6 +306,7 @@ HRESULT open(D3D10DDIARG_OPENADAPTER* args, bool modern, bool development) {
     auto adapter = std::make_shared<Adapter>();
     adapter->identity = std::move(identity);
     adapter->development = development;
+    adapter->validation11Fl10_0 = validation11Fl10_0;
     adapter->legacyInterface = interfaceVersion;
     {
       std::lock_guard<std::mutex> lock(adaptersMutex);
@@ -336,4 +348,9 @@ extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapterForTest(D3D10DDIARG_OPENADAPTER
 }
 extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter10_2ForTest(D3D10DDIARG_OPENADAPTER* args) {
   return dxvk::umd::openAdapterForTest(args, true);
+}
+extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter11Fl10_0ForValidation(D3D10DDIARG_OPENADAPTER* args) {
+  // This remains production-strength callback validation and real device
+  // creation. The separate validation frontend owns any temporary binding.
+  return open(args, true, false, true);
 }

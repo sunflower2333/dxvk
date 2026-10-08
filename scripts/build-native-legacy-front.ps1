@@ -115,6 +115,41 @@ if (!(Test-Path -LiteralPath (Join-Path $ecLibraries 'chkstk_arm64ec.obj') -Path
     throw 'Actual ARM64EC support object and x64-compatible static CRT are required'
 }
 try {
+    # /LINKREPROFULLPATHRSP records explicit inputs, not the /DEFAULTLIB
+    # directives in the compiled object. Preserve native static CRT inputs
+    # before the ARM64EC link changes LIB to its x64-compatible search path.
+    if ([string]::IsNullOrWhiteSpace($nativeLibraryEnvironment)) {
+        throw 'The selected native ARM64 library environment is required'
+    }
+    [string[]]$nativeLibraryDirectories = @($nativeLibraryEnvironment.Split(';') | Where-Object {
+        ![string]::IsNullOrWhiteSpace($_)
+    } | ForEach-Object { [IO.Path]::GetFullPath($_) })
+    [string[]]$nativeStaticCrtInputs = @()
+    $nativeStaticCrtPins = @()
+    foreach ($name in @('libcmt.lib','libvcruntime.lib','libucrt.lib','oldnames.lib')) {
+        $selected = $null
+        for ($index = 0; $index -lt $nativeLibraryDirectories.Count; $index++) {
+            $directory = $nativeLibraryDirectories[$index]
+            $candidate = Join-Path $directory $name
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                if ($directory -notmatch '(?i)[\\/]arm64[\\/]?$') {
+                    throw "The selected native CRT input is not ARM64: $candidate"
+                }
+                $selected = [IO.Path]::GetFullPath($candidate)
+                $nativeStaticCrtPins += [ordered]@{name=$name;path=$selected;
+                    library_directory_index=$index;
+                    bytes=(Get-Item -LiteralPath $selected).Length;
+                    sha256=(Get-FileHash -LiteralPath $selected -Algorithm SHA256).Hash.ToLowerInvariant()}
+                break
+            }
+        }
+        if (!$selected) { throw "Missing selected native static CRT library: $name" }
+        $nativeStaticCrtInputs += ('"' + $selected + '"')
+    }
+    [ordered]@{schema='native-legacy-explicit-arm64-static-crt-inputs-v1';
+        original_native_LIB=$nativeLibraryEnvironment;library_directories=$nativeLibraryDirectories;
+        inputs=$nativeStaticCrtPins
+    } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $output 'arm64-explicit-static-crt-inputs.json') -Encoding UTF8
     $nativeObject = Join-Path $output 'front-arm64.obj'
     $nativeDll = Join-Path $output 'viogpu_dxvk_legacy_native.dll'
     $nativePdb = Join-Path $output 'viogpu_dxvk_legacy_native.pdb'
@@ -122,9 +157,9 @@ try {
     $commonCompile = @('/nologo','/std:c++17','/Zc:preprocessor','/EHsc','/MT','/O1','/W4','/WX',
         '/DWIN32_LEAN_AND_MEAN','/DNOMINMAX','/D_WIN32_WINNT=0x0A00','/c')
     Invoke-FrontTool 'compile-arm64' 'cl.exe' ($commonCompile + @(('"' + $source + '"'),('/Fo"' + $nativeObject + '"')))
-    Invoke-FrontTool 'link-arm64' 'link.exe' @('/nologo','/DLL','/MACHINE:ARM64','/WX','/DEBUG:FULL',
+    Invoke-FrontTool 'link-arm64' 'link.exe' (@('/nologo','/DLL','/MACHINE:ARM64','/WX','/DEBUG:FULL',
         ('"' + $nativeObject + '"'),('/DEF:"' + $definition + '"'),('/OUT:"' + $nativeDll + '"'),
-        ('/PDB:"' + $nativePdb + '"'),('/LINKREPROFULLPATHRSP:"' + $nativeRsp + '"'),'kernel32.lib')
+        ('/PDB:"' + $nativePdb + '"'),('/LINKREPROFULLPATHRSP:"' + $nativeRsp + '"'),'kernel32.lib') + $nativeStaticCrtInputs)
     # Preserve the actual full ARM64 static-CRT/import/object inputs; do not
     # guess them from a list of requested names or reuse an x64 CRT directory.
     [string[]]$nativeInputs = @(Get-Content -LiteralPath $nativeRsp | Where-Object {
@@ -138,6 +173,15 @@ try {
             sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()}
     })
     $nativeInputPins | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $output 'arm64-original-link-inputs.json') -Encoding UTF8
+    foreach ($explicit in $nativeStaticCrtPins) {
+        $captured = @($nativeInputPins | Where-Object {
+            [StringComparer]::OrdinalIgnoreCase.Equals($_.path, $explicit.path)
+        })
+        if ($captured.Count -ne 1 -or $captured[0].bytes -ne $explicit.bytes -or
+            $captured[0].sha256 -cne $explicit.sha256) {
+            throw "Native full-path response omitted or changed a static CRT input: $($explicit.path)"
+        }
+    }
     $mergeRsp = Join-Path $output 'arm64-merge-inputs.rsp'
     $nativeInputs | Set-Content -LiteralPath $mergeRsp -Encoding ascii
     # ARM64EC accepts x64-compatible libraries; native ARM64 libraries belong

@@ -114,6 +114,8 @@ ninja -C build-umd src/umd/dxvk-umd-shader10-profile-test.exe src/umd/dxvk-umd-d
 if ($LASTEXITCODE) { throw 'D3D10 system shader profile and typed FXC fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d10-depth-test.exe
 if ($LASTEXITCODE) { throw 'D3D10 depth and null-pixel-shader fixture build failed' }
+ninja -C build-umd src/umd/dxvk-umd-distance-stream-policy-test.exe src/umd/dxvk-umd-d3d10-distance-stream-test.exe
+if ($LASTEXITCODE) { throw 'Clip/cull distance Stream Output policy and typed fixture build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d11-compute-probe.exe src/umd/dxvk-umd-compute-oracle-test.exe
 if ($LASTEXITCODE) { throw 'Typed D3D11 compute probe/oracle failed to build' }
 ninja -C build-umd src/umd/dxvk-umd-d3d11-cube-probe.exe src/umd/dxvk-umd-cube-probe-oracle-test.exe
@@ -323,6 +325,18 @@ if ($arch -ne 'arm64') {
     }
     & python (Join-Path $PSScriptRoot '../tests/verify-d3d10-depth-originals.py') --directory $depthOriginals --output (Join-Path $OutputDirectory 'd3d10-depth-originals-verified.json')
     if ($LASTEXITCODE) { throw 'Independent D3D10 depth DXBC/token/plane/query originals failed' }
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-distance-stream-policy-test.exe distance-stream-policy-test
+    if ((Get-Content -LiteralPath (Join-Path $OutputDirectory 'distance-stream-policy-test.txt') -Raw) -notmatch '(?m)^distance stream policy PASS checks=108 packed_semantics=1 full_union_ordinal=1 hardware_admission=0\r?$') {
+        throw 'Clip/cull distance Stream Output policy fixture did not pass'
+    }
+    $distanceStreamOriginals = Join-Path $OutputDirectory 'd3d10-distance-stream-originals'
+    New-Item -ItemType Directory -Path $distanceStreamOriginals -ErrorAction Stop | Out-Null
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d10-distance-stream-test.exe d3d10-distance-stream-test $distanceStreamOriginals
+    if ((Get-Content -LiteralPath (Join-Path $OutputDirectory 'd3d10-distance-stream-test.txt') -Raw) -notmatch '(?m)^D3D10 distance SO PASS checks=\d+ scenes=16 words=1024 original_buffers=32 query_frames=32 fxc_programs=6 hardware_admission=0\r?$') {
+        throw 'D3D10 clip/cull distance Stream Output fixture did not pass'
+    }
+    & python (Join-Path $PSScriptRoot '../tests/verify-d3d10-distance-stream-originals.py') --directory $distanceStreamOriginals --output (Join-Path $OutputDirectory 'd3d10-distance-stream-originals-verified.json')
+    if ($LASTEXITCODE) { throw 'Independent D3D10 clip/cull distance DXBC/token/SO/query originals failed' }
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-compute-container-test.exe compute-container-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-compute-oracle-test.exe compute-oracle-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-sm5-container-test.exe sm5-container-test
@@ -377,7 +391,7 @@ if ($exports -notmatch '\bVioGpuDxvkOpenAdapter10_2ForTest\b') { throw 'Missing 
 if ($exports -notmatch 'VioGpuDxvkCreateDdiTestDevice' -or $exports -notmatch '\bVioGpuDxvkQueryVulkanLoader\b' -or $exports -notmatch '\bVioGpuDxvkOpenAdapter9ForTest\b' -or $exports -notmatch '\bOpenAdapter\b' -or $exports -notmatch '\bOpenAdapter10\b' -or $exports -notmatch '\bOpenAdapter10_2\b' -or $exports -match '\bD3D(?:8|9|10|11|12)Create(?:Device|9|8)\b') { throw 'Unexpected native UMD exports' }
 if ($exports -notmatch '\bVioGpuDxvkProbeD3D9BackendForTest\b' -or $exports -match '\bDirect3DCreate(?:8|9)(?:Ex|On12)?\b') { throw 'Unexpected embedded D3D9 exports' }
 $exports | Set-Content (Join-Path $OutputDirectory 'exports.txt')
-foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-volume-policy-test.exe', 'dxvk-umd-texture3d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d9-public-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-d3d8-system-identity-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe', 'dxvk-umd-residency-transaction-test.exe', 'dxvk-umd-dxgi-residency-test.exe', 'dxvk-umd-allocation-terminal-test.exe', 'dxvk-umd-dxgi-shared-resolve-test.exe', 'dxvk-umd-dxgi-blt-test.exe', 'dxvk-umd-primary-policy-test.exe', 'dxvk-umd-dxgi-primary-test.exe', 'dxvk-umd-open-primary-policy-test.exe', 'dxvk-umd-dxgi-open-primary-test.exe', 'dxvk-umd-uav-texture-policy-test.exe', 'dxvk-umd-texture-uav-test.exe', 'dxvk-umd-copy-format-test.exe', 'dxvk-umd-resource-copy-cast-test.exe', 'dxvk-umd-bc-transfer-policy-test.exe', 'dxvk-umd-bc-update-test.exe', 'dxvk-umd-shader10-profile-test.exe', 'dxvk-umd-d3d10-system-shader-test.exe', 'dxvk-umd-d3d10-depth-test.exe')) {
+foreach ($name in @('dxvk-umd-rotation-test.exe', 'dxvk-umd-native-entry-test.exe', 'dxvk-umd-native-lifetime-test.exe', 'dxvk-umd-allocation-test.exe', 'dxvk-umd-runtime-gpu-test.exe', 'dxvk-umd-system-runtime-test.exe', 'dxvk-umd-predication-test.exe', 'dxvk-umd-stream-output-test.exe', 'dxvk-umd-query-test.exe', 'dxvk-umd-texture1d-test.exe', 'dxvk-umd-volume-policy-test.exe', 'dxvk-umd-texture3d-test.exe', 'dxvk-umd-d3d9-adapter-test.exe', 'dxvk-umd-d3d9-public-adapter-test.exe', 'dxvk-umd-d3d11-device-test.exe', 'dxvk-umd-compute-container-test.exe', 'dxvk-umd-sm5-container-test.exe', 'dxvk-umd-legacy-api-test.exe', 'dxvk-umd-d3d8-sm1-test.exe', 'dxvk-umd-d3d8-system-identity-test.exe', 'dxvk-umd-private-children-test.exe', 'dxvk-umd-input-formats-test.exe', 'dxvk-umd-d3d10-formats-test.exe', 'dxvk-umd-multisample-policy-test.exe', 'dxvk-umd-d3d9-buffer-copy-test.exe', 'dxvk-umd-d3d9-runtime-callbacks-test.exe', 'dxvk-umd-sm41-container-test.exe', 'dxvk-umd-d3d10-shader-test.exe', 'dxvk-umd-residency-transaction-test.exe', 'dxvk-umd-dxgi-residency-test.exe', 'dxvk-umd-allocation-terminal-test.exe', 'dxvk-umd-dxgi-shared-resolve-test.exe', 'dxvk-umd-dxgi-blt-test.exe', 'dxvk-umd-primary-policy-test.exe', 'dxvk-umd-dxgi-primary-test.exe', 'dxvk-umd-open-primary-policy-test.exe', 'dxvk-umd-dxgi-open-primary-test.exe', 'dxvk-umd-uav-texture-policy-test.exe', 'dxvk-umd-texture-uav-test.exe', 'dxvk-umd-copy-format-test.exe', 'dxvk-umd-resource-copy-cast-test.exe', 'dxvk-umd-bc-transfer-policy-test.exe', 'dxvk-umd-bc-update-test.exe', 'dxvk-umd-shader10-profile-test.exe', 'dxvk-umd-d3d10-system-shader-test.exe', 'dxvk-umd-d3d10-depth-test.exe', 'dxvk-umd-distance-stream-policy-test.exe', 'dxvk-umd-d3d10-distance-stream-test.exe')) {
     # Test-only WARP binaries are separate from the production import gate.
     # Include ARM64 fixtures for execution by the target validation owner.
     $path = Join-Path 'build-umd/src/umd' $name

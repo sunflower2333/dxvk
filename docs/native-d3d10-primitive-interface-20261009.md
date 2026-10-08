@@ -47,8 +47,16 @@ four-component vector boundaries constrain shader IO packing. The intended
 result is a separate PrimitiveID row in both stages. Actual new FXC signatures,
 the retained matching check and full pixel oracle must confirm that result.
 
-Local x86/x64 strict SDK compilation checks C++ and typed DDI usage only.
-It does not compile HLSL, execute FXC, run WARP, or admit hardware. Fresh FXC
-register packing and all four native/public scenes require the separate
-complete native attempt03, including the original49-file pixel reader. Both
-failed attempts01 and02 remain immutable, with their distinct failure prefixes.
+Native attempt03 now passes on ARM64 and x64 under the target Windows VM.
+Actual FXC SM4/4.1 signatures put GS output and PS input PrimitiveID at
+register3/mask1, while DATA0 occupies register2/mask15. Each full fixture passes
+2894 checks. The unchanged 49-file reader runs once per architecture and passes
+18494 checks, including all 18432 literal observations across four scenes,
+24 frames and 12 FXC programs. GS0 remains7 and GS1 remains44. ARM64 and x64
+reader originals are retained in the workspace artifact packet
+`artifacts/d3d10-system-shader-native-20261009/84e19a4-03/`.
+
+This is controlled native DDI/public WARP verification. The separate local
+strict SDK compilation establishes C++ and typed DDI usage; neither scope
+admits ordinary hardware rendering or default deployment. Failed attempts01
+and02 remain immutable with their distinct failure prefixes.

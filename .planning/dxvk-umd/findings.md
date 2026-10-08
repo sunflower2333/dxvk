@@ -1,6 +1,142 @@
 # Findings
 
-## Current checkpoint: native DX9/DX11 builds and CI68 shader correction
+## Current checkpoint: D9 native ABI passed; GS physical packing and D11 lifecycle
+
+MAINa44b7f5 includes reviewed D11Phase0cf, D9ValidateDevicec493,
+GS-input union76f, shared-interfacecec6 and full DATA0-row fixturea44b7f5
+(source84e19a4). Published source remains90ff834. CI68/run37820635406
+is FAILURE; ARM64 producer113460457210 is SUCCESS and ARM64 runtime
+113470495297 is SKIPPED. The exact selected ARM64 core6402048/SHAb411959a
+is accepted only as build output for a scoped diagnostic, not runtime proof.
+
+Actual GS attempt01 built all17 AA64 objects and its EXE, then failed the
+unchanged GS1 uint oracle: 128 covered PrimitiveID lanes were7 versus44.
+Actual attempt02 also built successfully but failed added CHECK159 before
+GS1 shader creation: genuine FXC still assigns GS PrimitiveID o3.x and PS
+v2.y. All six DXBC/token programs are byte-identical between01 and02.
+ROOT3831137/1 and native fixture6052/-1073740791 are retained with the
+failed prefix and original closure; no x64 scene was executed in either
+attempt. Matching native/public images alone never established literal pass.
+
+ROOT reviewed source84e19a4, exact three Git/current/TAR sources and four
+successful original strict x86/x64 compiler/COFF receipts. Independent peer
+found no blocker; source merges as MAINa44b7f5. Matching V/G uint4 DATA0
+reserves a full row, VS broadcasts the original scalar and PS reads .x.
+All non-HLSL C++, 7/44 oracles, physical signature/error/lifetime guards and
+reader body remain byte-exact; only the reader HLSL SHA pin changes. Actual03 now PASSES both ARM64 and x64: ROOT3851299/0 and3854080/0
+build the17 objects/one EXE per view and execute full4-scene fixtures2894
+checks each. The original49-file reader runs exactly once per architecture
+(3853402/0 and3856248/0):18494 checks and18432 literal observations,24
+frames/12FXC programs each. GS/PS PrimitiveID now matches register3/mask1
+(o3.x/v3.x); DATA0 occupies register2/mask15. Original literal7/44, integer,
+depth, clip/cull, front-face and error guards pass. Archive transfer and
+11 recorded native lifetimes per view close; synchronous observer/SSH
+operations finish0 without a self-absence/full-tree claim. ARM reader
+proofd52fa87f and x64 reader350eb1c5 preserve actual originals. This proves
+controlled native DDI/publicWARP fixtures, not ordinary hardware/default.
+Attempts01/02 stay immutable; no repeated synthetic suite is required.
+
+ROOT3840122/0 completed one D9 controlled native EWDK attempt in48.664s:
+ARM64 and x64 build/link/import checks pass (14 objects, two EXEs), each
+fixture exits0 and records618498 checks plus the new typed ValidateDevice
+marker and D8/Vista markers. All nine native build/fixture children succeed;
+31 sources and42 selected inputs are unchanged. The archive3013988 bytes/
+SHA49bfb317 contains the originals; exact observer reports12 recorded
+lifetimes absent. Actual originals are at artifacts/d3d9-validate-device-
+native-20261009/guest-native-d9-validate-76fcd31-01/. Independent finite review151528d1 passes952 joins; ROOT scoped release
+883/SHA67245e56 closes this controlled attempt with pending counts0. Scope
+is mocked renderer/runtime callback ABI on Windows;
+real renderer, system HAL, GPU pixels, registration and default admission
+remain false.
+
+Actual D11 temporary offscreen binding failed before factory at
+'effective-modern-validation-name': raw native slot2 readback was correct,
+but all genuine KMT names still selected Mesa. Original probe8580 exits1;
+the old ROOT native childwrapper10884/0 masked the owner failure through
+bare exit, so future host must propagate LASTEXITCODE. No candidate core or
+front loaded and no GPU pixels were admitted. Raw six values and effective
+Mesa names were restored, held probe reaped, desktop/KMD retained; ROOT
+3813979/0 confirms six recorded PIDs/two exact tasks absent. Independent
+failure/restoration/closure reviewe23f6d43 is accepted with pending counts0.
+
+The installed KMD source audit identifies no UMD filename selector/cache or
+filename registry read. Exact Windows adoption timing remains unproved.
+A bounded same-owner Api11/offscreen lifecycle extension is being prepared:
+rescue armed before exact-device restart; fresh forward identity/LUID;
+raw restore then release/reap original probe before reverse restart and
+fresh effective Mesa/desktop proof. Original/forward/restored LUIDs remain
+separate; generation2 may repeat. No lifecycle target call is authorized
+until ROOT reviews the concrete source and native CPU controls.
+
+Next: one consolidated reviewed source/plan push to the sole enabled push
+workflow. Optional lifecycle source55be6e5 is frozen separately with local
+147 strict helper checks and16 native memory-phase cases pending; the
+original named job must prove ActiveProcesses0 before reverse restart.
+Review/native CPU validation precedes the real same-owner experiment.
+Then continue actual SYSTEM
+D11/D10/D9/D8 GPU creation, readback, Present and DWM. ROOT alone owns target
+calls. VM default remains Mesa; ordinary DX8-11 replacement and standing
+HDR/VPU/perf/0copy program remain incomplete.
+
+## Previous checkpoint: CI68 GS failure; native binding metadata passed
+
+Published90ff834/CI37820635406 is completed FAILURE: ARM64backend, identity
+and shader-profile pass; x86/x64backend fail and ARM64runtime is skipped.
+Both actual native shader failures retain HRESULT80070057/exit-1073740791;
+the preceding model40/gs0 scene passes256pixels/2304words with native/public
+readbacks equal. The retained six FXC shaders repeat byte-exact01=04/02=05/
+03=06. The source diagnosis is a GS Clip/Cull runtime-input signature annotation
+missing before producer/consumer linkage. A narrow source fix is in progress;
+no new core is admitted. Frozen originals/proof36464/SHA5de8b122 at
+artifacts/dxvk-trunk-integration-20261008/ci68-status-port_dx11-01/ join both
+9025-member ZIPs and actual closed29localchildren. ROOT reviewed selected raw
+failures, pins and closed originals. Success collector/reader remain unexecuted.
+
+Present CPU build3746235/0 is accepted: eight tools, twoobjects/twoEXEs,
+ARM64probe1091072/SHA26a5c209 and x64probe1095680/SHAcbfd60f7. Reader03
+3764857/0 normalizes both header path sets without weakening exact closure,
+joins original6865961/SHA7c4f9836 archive and preserved reader02failure.
+Explicit ROOT3765198/0 file-only release closes all pending ownership counts.
+No frontend rebuild, factory, probe execution or hardware admission occurred.
+
+BindingCPU02 ROOT3766432/0 passes23.815s: eight native PS5.1 AST files,
+18actual-source in-memory restoration cases/88checks, strict native FrameworkArm64
+csc build and all93metadata controls. Actual directory is
+C:\Windows\Microsoft.NET\FrameworkArm64\v4.0.30319\; no PATH search/fallback.
+Five CPU stages and separate observed collection complete; source and compiler
+pins remain unchanged. Finite3774910/0 proof14722/SHA3ce00398 is accepted; explicit ROOT3776890/0
+file-only release closes CPU02. Native readonly inventoryROOT3777046/0 passes
+51.346s and finds the four exact historical ARM64 Vulkan files at namedUSER06
+output/module-100. Primary path fails closed because its JSON is absent; that
+original is retained. Loader720384/3001217c, ICD13968896/1b0cb01a, dependency
+232960/5843de3b and JSON220/bd78e207 match the historical selected pins. Finite
+original closure14722/SHA3ce00398 is distinct from inventory14549/SHA37a06cae;
+ROOT3780749/0 explicitly releases inventory. No module, registry or GPU calls.
+
+D9 ValidateDevice f0020bf is merged as MAINc4935e8 after ROOT and independent
+peer source/original reviewe1f9a4e1. Exact typed
+Vista slot forwards real embedded renderer HRESULT/count, stages output and
+rechecks observed callback retirement. Six x86/x64 COFFs and two139-control
+GCC/Clang runs pass. ROOT3772801/0 joins five Git/current/archived/consumed files
+and actual portable raw outputs. Native Windows fixture/HAL remains pending;
+capabilities and default registration remain unchanged.
+
+MAINc4935e8 retains accepted D11Phase and D9ValidateDevice, unpushed. Next:
+ROOT has superseded the self-added six-success prerequisite for one ARM64
+diagnostic: existing approvedpayload source requires actual selected producer
+SUCCESS, not globalrunSUCCESS. port_dx11 is collecting exactly actualARM64
+artifact11570031321 (40141352/SHA205f77e4) and successfuljob113460457210 from
+CI68. Globalfailure and skippedARM runtime remain explicit; no fullfixture or
+default admission. Prepare one temporary SYSTEM D11offscreen attempt with
+actualARMcore/config pins, accepted786front/probe, exactcurrentprivateVulkan,
+live adapter/KMD/KMT and existing reversibleowner. In parallel execute complete
+corrected native shader fixture using targetEWDK and consolidate reviewed
+source changes in one push. After scoped diagnosis and genuine currentCI,
+continue actual SYSTEM D11/D10/D9/D8 GPU
+creation/readback/Present and restore. VM default remains Mesa; DWM replacement,
+ordinary DX8-11 hardware and standing HDR/VPU/perf/0copy are not complete.
+
+## Previous checkpoint: native DX9/DX11 builds and CI68 shader correction
 
 VM default UMD remains Mesa. Ordinary SYSTEM DX8-11 hardware creation, draw,
 readback, Present and DWM/Explorer replacement are incomplete. ROOT alone owns

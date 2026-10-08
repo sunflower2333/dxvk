@@ -345,5 +345,64 @@ for mode in ('offscreen', 'present'):
     assert dispatch_pixels(legacy_pixels, mode, core_identity, False)['offscreen_pixels'] == 448
     checks.append({'label': 'archive-production-dispatch-legacy-' + mode, 'accepted_synthetic': True})
 assert len(checks) == 136
+frontend_path = r'C:\Users\Public\DxvkD3D8Runtime-fbd7afd-lifetime03\front\viogpu-d3d8-runtime-front.dll'
+acquire = (f'D3D8_FRONTEND_REFERENCE path={frontend_path} machine=014c owned=1 '
+    'preloaded_adoption=0 hold_through_runtime_teardown=1')
+release = f'D3D8_FRONTEND_REFERENCE_RELEASE path={frontend_path} released=1'
+def with_frontend_owner(text):
+    rows = text.splitlines()
+    first_open = next(i for i, row in enumerate(rows) if row.startswith('SYSTEM_D3D8_OPEN_BEGIN '))
+    rows.insert(first_open, acquire)
+    complete = next(i for i, row in enumerate(rows) if row.startswith('D3D8_COMPLETE '))
+    rows.insert(complete, release)
+    return '\n'.join(rows) + '\n'
+def dispatch_held(text, mode, path=frontend_path):
+    return phase.verify_runtime_stdout(text, mode, 'ec6b000000000000', 0, core_identity, True, path)
+for mode in ('offscreen', 'present'):
+    held = with_frontend_owner(pixel_fixture(mode == 'present'))
+    detail = dispatch_held(held, mode)
+    assert detail['frontend_owned_through_runtime_teardown'] and detail['offscreen_pixels'] == 448
+    assert detail['screen_pixels'] == (64 if mode == 'present' else 0)
+    checks.append({'label': 'archive-dispatch-held-frontend-' + mode, 'accepted_synthetic': True})
+    for label, old, new in [
+        ('missing-acquisition', acquire + '\n', ''), ('missing-release', release + '\n', ''),
+        ('duplicate-acquisition', acquire, acquire + '\n' + acquire), ('duplicate-release', release, release + '\n' + release),
+        ('adopts-preloaded-frontend', 'preloaded_adoption=0', 'preloaded_adoption=1'),
+        ('missing-runtime-hold', 'hold_through_runtime_teardown=1', 'hold_through_runtime_teardown=0'),
+        ('release-failed', 'released=1', 'released=0'),
+        ('wrong-frontend-module', 'path=' + frontend_path, 'path=' + frontend_path.replace('fbd7afd', 'badbeef')),
+    ]:
+        reject_pixel(mode + '-frontend-' + label, dispatch_held, held.replace(old, new), mode)
+    reject_pixel(mode + '-frontend-identity-not-explicit', dispatch_pixels, held, mode)
+    reject_pixel(mode + '-frontend-released-before-runtime-teardown', dispatch_held,
+        release + '\n' + held.replace(release + '\n', ''), mode)
+    reject_pixel(mode + '-frontend-acquired-after-runtime-construction', dispatch_held,
+        held.replace(acquire + '\n', '') + acquire + '\n', mode)
+    reject_pixel(mode + '-frontend-release-after-completion', dispatch_held,
+        held.replace(release + '\n', '') + release + '\n', mode)
+    reject_pixel(mode + '-frontend-runtime-record-after-release', dispatch_held,
+        held.replace(release + '\n', release + '\nSYSTEM_D3D8_CLOSE adapter=1 runtime=1 hr=00000000 remaining=0 live_devices=0\n'), mode)
+assert len(checks) == 164
+held_enumeration = with_frontend_owner(owned_enumeration)
+assert dispatch_held(held_enumeration, 'enumerate')['frontend_owned_through_runtime_teardown']
+checks.append({'label': 'archive-dispatch-held-frontend-enumeration', 'accepted_synthetic': True})
+reject_pixel('enumeration-frontend-owner-missing', dispatch_held, owned_enumeration, 'enumerate')
+reject_pixel('enumeration-frontend-owner-released-early', dispatch_held,
+    release + '\n' + held_enumeration.replace(release + '\n', ''), 'enumerate')
+reject_pixel('frontend-acquisition-before-private-pins', dispatch_held,
+    acquire + '\n' + held_enumeration.replace(acquire + '\n', ''), 'enumerate')
+reject_pixel('frontend-acquisition-wrong-machine', dispatch_held,
+    held_enumeration.replace('machine=014c owned=1', 'machine=aa64 owned=1'), 'enumerate')
+reject_pixel('frontend-owner-borrowed', dispatch_held,
+    held_enumeration.replace('machine=014c owned=1', 'machine=014c owned=0'), 'enumerate')
+reject_pixel('frontend-explicit-identity-differs', dispatch_held,
+    held_enumeration, 'enumerate', frontend_path.replace('fbd7afd', 'badbeef'))
+reject('lifetime-build-unaccepted', phase.verify_frontend_lifetime_native_build,
+       {'accepted': False, 'source': phase.LIFETIME_SOURCE}, {'accepted': True, 'source': phase.SETUP_SOURCE})
+reject('lifetime-build-relabels-old-source', phase.verify_frontend_lifetime_native_build,
+       {'accepted': True, 'source': phase.SETUP_SOURCE}, {'accepted': True, 'source': phase.SETUP_SOURCE})
+reject('lifetime-build-lacks-original-guard-admission', phase.verify_frontend_lifetime_native_build,
+       {'accepted': True, 'source': phase.LIFETIME_SOURCE}, {'accepted': False, 'source': phase.SETUP_SOURCE})
+assert len(checks) == 174
 print(json.dumps({'status': 'PASS', 'scope': 'synthetic names/process/mapped-file/runtime-dispatch/pixel protocol controls only', 'checks': checks,
                   'actual_runtime_calls': 0, 'actual_native_processes': 0, 'GPU_runs': 0, 'target_calls': 0}, indent=2))

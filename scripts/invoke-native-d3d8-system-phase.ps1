@@ -22,6 +22,9 @@ if ($Action -ceq 'Prepare') {
   Require ($ManifestHash -cmatch '^[0-9a-f]{64}$' -and (Hash $Manifest) -ceq $ManifestHash) 'Reviewed actual-input manifest required'
   $pins=Read $Manifest
   Require ($pins.schema -ceq 'system-d3d8-phase-inputs-v1' -and $pins.ready -and $pins.native_cpu.accepted -and $pins.native_setup.accepted -and $pins.native_setup.source -ceq '37b8a2dde5bfe7022ccc676594c1f57621cc8ff9') 'Base CPU and changed native setup originals have not been admitted'
+  if ($null -ne $pins.PSObject.Properties['native_lifetime']) {
+    Require ($pins.probe_source -ceq 'fbd7afdbdd277d9b2327a13efda5a0aca3905b25' -and $pins.native_lifetime.accepted -and $pins.native_lifetime.source -ceq $pins.probe_source -and $pins.native_lifetime.reader.sha256 -ceq 'fa6dff4f0f0faf33475ba1200de534fdeddb37a5654a3963d037435ef1b39253') 'Fresh native lifetime build and exact original reader required'
+  } else { Require ($pins.probe_source -ceq $pins.native_setup.source) 'Original setup/probe source mismatch' }
   $expected=@('run-native-d3d8-system-phase.ps1','invoke-native-d3d8-system-phase.ps1','collect-native-d3d8-system-phase.ps1','owned-raw-process-f4bf37f-02.cs','inspect-process-token.ps1','inspect-viogpu-readiness-fast-02.ps1','verify-registration-originals-09.py')
   Require ((@($pins.helpers.name|Sort-Object)-join ',') -ceq (@($expected|Sort-Object)-join ',')) 'Exact reviewed helper set required'
   Require ($pins.user.account -ceq 'DROIDVM\USER' -and $pins.user.sid -ceq 'S-1-5-21-362894365-441372107-2852668596-1000') 'Original USER identity required'

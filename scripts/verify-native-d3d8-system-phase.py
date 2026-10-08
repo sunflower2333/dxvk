@@ -11,6 +11,8 @@ from pathlib import Path, PurePosixPath
 
 PROBE_SOURCE = 'e3ac12646a1b55742d575109063ae78507af5cec'
 SETUP_SOURCE = '37b8a2dde5bfe7022ccc676594c1f57621cc8ff9'
+LIFETIME_SOURCE = 'fbd7afdbdd277d9b2327a13efda5a0aca3905b25'
+LIFETIME_READER = 'fa6dff4f0f0faf33475ba1200de534fdeddb37a5654a3963d037435ef1b39253'
 OWNED_ICD_SHA = 'f50169e3e0efc6dea34fe0ce109228c79ce1df817a5508fb13a759c71d780ff3'
 CORE_SOURCE = 'de72dc2e97bd8e4ea70c5bf89c26918d06065723'
 RUN = 37711793677
@@ -602,19 +604,60 @@ def verify_owned_icd_native_setup(setup):
     return proof, read_json(members['result.json']), members
 
 
-def verify_runtime_stdout(text, phase, luid, source, core_identity, owned_icd_setup=False):
+def verify_frontend_lifetime_native_build(lifetime, setup):
+    """Admit changed probe/frontend bytes separately from the unchanged guard base."""
+    require(lifetime['accepted'] and lifetime['source'] == LIFETIME_SOURCE
+        and setup['accepted'] and setup['source'] == SETUP_SOURCE, 'separate lifetime/setup admission required')
+    for name in ('archive', 'proof', 'reader', 'ROOT_admission', 'outer'):
+        row = lifetime[name]; data = Path(row['path']).read_bytes()
+        require(len(data) == row['bytes'] and digest(data) == row['sha256'], 'lifetime original pin differs: ' + name)
+    require(lifetime['reader']['bytes'] == 19299 and lifetime['reader']['sha256'] == LIFETIME_READER,
+            'exact frozen lifetime original reader required')
+    root = read_json(Path(lifetime['ROOT_admission']['path']).read_bytes())
+    require(root['root_originals_direct_review'] and root['native_build_scope_accepted']
+        and root['source_commit'] == LIFETIME_SOURCE and root['new_COFF'] == root['new_PE'] == 2
+        and root['unchanged_guard_source_commit'] == SETUP_SOURCE and root['current_full_state_before_after_post_equal']
+        and root['protected_static34_equal'] and not root['HAL_admitted'], 'ROOT lifetime build scope mismatch')
+    for key, original in (('original_archive', 'archive'), ('original_native_scope_review', 'proof'),
+                          ('independent_reader', 'reader'), ('outer', 'outer')):
+        require(root[key] == lifetime[original], 'ROOT lifetime original join differs: ' + key)
+    attempt = Path(lifetime['attempt_directory'])
+    require(Path(lifetime['archive']['path']).parent == attempt and Path(lifetime['proof']['path']).parent == attempt,
+            'lifetime originals must belong to one actual attempt')
+    spec = importlib.util.spec_from_file_location('frozen_lifetime_native_originals', Path(lifetime['reader']['path']))
+    reader = importlib.util.module_from_spec(spec); spec.loader.exec_module(reader)
+    canonical = reader.review(attempt, Path(lifetime['outer']['path']))
+    proof = read_json(Path(lifetime['proof']['path']).read_bytes())
+    require(canonical == proof and proof['verified'] and proof['native_build_accepted']
+        and proof['overall_attempt_status'] == 'PASS' and proof['source_commit'] == LIFETIME_SOURCE
+        and proof['guard_base_source_commit'] == SETUP_SOURCE and proof['guard_original_overall_attempt_status'] == 'FAIL'
+        and proof['new_COFF'] == proof['new_PE'] == 2 and proof['actual_build_children_closed'] == 14
+        and proof['total_native_children_closed'] == 17 and proof['policy_fixture_replays'] == proof['base_35_fixture_replays'] == 0
+        and proof['unchanged_guard_reused']['original_archive'] == setup['archive']
+        and proof['unchanged_guard_reused']['ROOT_build_scope'] == setup['ROOT_admission'],
+        'actual lifetime binary/fixture/source/guard canonical review failed')
+    members = read_native_archive(Path(lifetime['archive']['path']))
+    return proof, read_json(members['result.json']), members
+
+
+def verify_runtime_stdout(text, phase, luid, source, core_identity, owned_icd_setup=False, frontend_path=None):
     """Dispatch only with the core tuple already joined by the archive reader."""
     require(isinstance(core_identity, dict) and set(core_identity) == {'source', 'run', 'sha256'},
             'explicit joined runtime core identity required')
-    if phase == 'enumerate':
-        return verify_enumeration(text, luid, source, core_identity=core_identity,
-                                  owned_icd_setup=owned_icd_setup)
-    require(phase in ('offscreen', 'present'), 'runtime phase required')
-    runtime_identity = verify_runtime_module_callers(lines(text))
     spec = importlib.util.spec_from_file_location('pixels', Path(__file__).with_name('verify-native-d3d8-system-device.py'))
     pixels = importlib.util.module_from_spec(spec); spec.loader.exec_module(pixels)
+    if frontend_path is not None:
+        require(owned_icd_setup, 'new frontend lifetime requires explicit owned ICD setup')
+    if phase == 'enumerate':
+        detail = verify_enumeration(text, luid, source, core_identity=core_identity,
+                                   owned_icd_setup=owned_icd_setup)
+        if pixels.verify_frontend_reference(lines(text), frontend_path):
+            detail['frontend_owned_through_runtime_teardown'] = True
+        return detail
+    require(phase in ('offscreen', 'present'), 'runtime phase required')
+    runtime_identity = verify_runtime_module_callers(lines(text))
     detail = pixels.verify(text, 'front-' + phase, luid, source, core_identity=core_identity,
-                           owned_icd_setup=owned_icd_setup)
+                           owned_icd_setup=owned_icd_setup, frontend_path=frontend_path)
     detail['physical_runtime_identities'] = runtime_identity
     return detail
 
@@ -643,7 +686,9 @@ def verify_archive(archive, collection_path, manifest_path):
     manifest = read_json(manifest_bytes)
     require(manifest['schema'] == 'system-d3d8-phase-inputs-v1' and manifest['ready'] and manifest['native_cpu']['accepted'], 'native inputs still pending')
     owned_setup = 'native_setup' in manifest
-    probe_source = SETUP_SOURCE if owned_setup else PROBE_SOURCE
+    held_frontend = 'native_lifetime' in manifest
+    require(not held_frontend or owned_setup, 'frontend lifetime requires original owned ICD setup')
+    probe_source = LIFETIME_SOURCE if held_frontend else SETUP_SOURCE if owned_setup else PROBE_SOURCE
     require(manifest['probe_source'] == probe_source and manifest['native_cpu']['source'] == PROBE_SOURCE
         and manifest['core_source'] == CORE_SOURCE and manifest['core_ci_run'] == RUN, 'separate base/setup/core source identity mismatch')
     require(manifest['loader_source'] == '6a6878c614c8c6dbe81ee7a9f1176bdb52dc7dd7' and manifest['icd_source'] == '8443c71a5ab32b9d58b904fa51f4bf2f9089db8d', 'distinct original loader/ICD source mismatch')
@@ -727,9 +772,13 @@ def verify_archive(archive, collection_path, manifest_path):
     native_cpu_details = verify_native_identity_cpu(native_result, native_members, completion_members,
         read_json(Path(native['posthash_original_path']).read_bytes()))
     setup_details = None
+    lifetime_details = None
     output_result, output_members = native_result, native_members
     if owned_setup:
         setup_details, output_result, output_members = verify_owned_icd_native_setup(manifest['native_setup'])
+    if held_frontend:
+        lifetime_details, output_result, output_members = verify_frontend_lifetime_native_build(
+            manifest['native_lifetime'], manifest['native_setup'])
     for role, path in (('probe', 'probe/d3d8-runtime-probe.exe'), ('frontend', 'front/viogpu-d3d8-runtime-front.dll')):
         data = output_members[path]
         pin = next(row for row in manifest['files'] if row['role'] == role)
@@ -772,13 +821,15 @@ def verify_archive(archive, collection_path, manifest_path):
         require(command['arguments'] == arguments, 'exact selected runtime command mismatch')
         core_identity = {'source': manifest['core_source'], 'run': manifest['core_ci_run'],
                          'sha256': files['core']['sha256']}
-        detail = verify_runtime_stdout(text, phase, luid, source, core_identity, owned_setup)
+        detail = verify_runtime_stdout(text, phase, luid, source, core_identity, owned_setup,
+                                      files['frontend']['path'] if held_frontend else None)
     return {'schema': 'system-d3d8-phase-admission-v1', 'verified': True, 'phase': phase, 'manifest_sha256': digest(manifest_bytes),
             'probe_source': probe_source, 'core_source': CORE_SOURCE, 'core_ci_run': RUN, 'luid': luid, 'source': source, 'sid': SID,
             'registered_I386_filename': registered, 'original_archive_sha256': digest(raw_archive), 'original_archive_bytes': len(raw_archive),
             'original_files': len(contents), 'stdout_sha256': digest(stdout), 'process_sha256': digest(contents['output/process-original.json']),
             'collection_sha256': digest(collection_path.read_bytes()), 'details': detail, 'registration': registration,
             'native_cpu_details': native_cpu_details, 'native_setup_details': setup_details,
+            **({'native_lifetime_details': lifetime_details} if held_frontend else {}),
             'scope': 'one original closed genuine system8 USER phase; later phases require a separate explicit target handoff'}
 
 

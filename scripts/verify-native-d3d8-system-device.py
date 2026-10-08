@@ -16,7 +16,34 @@ PAYLOADS = {'viogpudxvk.dll': CORE_HASH,
             'freedreno_icd.json': '74d7d5d6ae9432cde2d802507ed59bbe4c2f2b95d01e7ac3c2b56e9691932c80'}
 
 
-def verify(text, mode, luid, source, core_identity=None, owned_icd_setup=False):
+def verify_frontend_reference(rows, frontend_path=None):
+    """Join the selected frontend owner to actual construction and teardown."""
+    acquired = [row for row in rows if row.startswith('D3D8_FRONTEND_REFERENCE ')]
+    released = [row for row in rows if row.startswith('D3D8_FRONTEND_REFERENCE_RELEASE ')]
+    if frontend_path is None:
+        assert not acquired and not released, 'frontend owner requires explicit joined frontend identity'
+        return False
+    assert isinstance(frontend_path, str) and re.fullmatch(
+        r'C:\\Users\\Public\\DxvkD3D8Runtime-[A-Za-z0-9-]+\\front\\viogpu-d3d8-runtime-front\.dll', frontend_path)
+    acquire = (f'D3D8_FRONTEND_REFERENCE path={frontend_path} machine=014c owned=1 '
+        'preloaded_adoption=0 hold_through_runtime_teardown=1')
+    release = f'D3D8_FRONTEND_REFERENCE_RELEASE path={frontend_path} released=1'
+    assert acquired == [acquire] and released == [release], 'exact single owned frontend acquisition/release required'
+    begin, end = rows.index(acquire), rows.index(release)
+    opens = [i for i, row in enumerate(rows) if row.startswith('SYSTEM_D3D8_OPEN_BEGIN ')]
+    pins = [i for i, row in enumerate(rows) if row.startswith(('D3D8_PAYLOAD_PIN ', 'D3D8_DERIVED_ICD_PIN '))]
+    teardown = [i for i, row in enumerate(rows) if row.startswith(
+        ('SYSTEM_D3D8_LIFETIME ', 'SYSTEM_D3D8_DEVICE_DESTROY ', 'SYSTEM_D3D8_CLOSE '))]
+    restored = [i for i, row in enumerate(rows) if row.startswith('D3D8_SELECTOR restored=1 protection_restored=1 ')]
+    complete = [i for i, row in enumerate(rows) if row.startswith('D3D8_COMPLETE ')]
+    assert opens and pins and teardown and len(restored) == len(complete) == 1
+    assert max(pins) < begin < min(opens), 'frontend owner must follow payload pins and precede construction'
+    assert max(opens + teardown + restored) < end < complete[0], 'frontend owner released before final runtime teardown'
+    assert complete[0] == end + 1, 'frontend owner release must immediately precede successful completion'
+    return True
+
+
+def verify(text, mode, luid, source, core_identity=None, owned_icd_setup=False, frontend_path=None):
     assert mode in ('front-offscreen', 'front-present')
     assert type(owned_icd_setup) is bool
     if core_identity is None:
@@ -29,6 +56,7 @@ def verify(text, mode, luid, source, core_identity=None, owned_icd_setup=False):
     core_path = rf'C:\Users\Public\DxvkD3D8Candidate-{core_commit[:7]}-{core_run}' + ('-icd02' if owned_icd_setup else '') + r'\viogpudxvk.dll'
     text = text.replace('\r\n', '\n')
     rows = text.splitlines()
+    frontend_held = verify_frontend_reference(rows, frontend_path)
     assert not re.search(r'^(?:D3D8_(?:ERROR|FAILED|UNAVAILABLE)|SYSTEM_D3D8_(?:CREATE_BLOCKED|DEVICE_DESTROY_FAILED))\b', text, re.M)
     runtime = [r for r in rows if r.startswith('D3D8_RUNTIME ')]
     assert len(runtime) == 1
@@ -116,7 +144,8 @@ def verify(text, mode, luid, source, core_identity=None, owned_icd_setup=False):
     complete=re.findall(rf'^D3D8_COMPLETE mode={mode} adapters=([1-9]\d*) create_device=1 presents={present} registry_writes=0$',text,re.M)
     assert len(complete)==1
     return {'status':'PASS','scope':'retained genuine system8 selected runtime stdout only; source/CIPE/token/SYS/dependency/readiness/process originals must be joined separately',
-            'offscreen_pixels':448,'screen_pixels':64*present,'core_devices':len(creates),'mode':mode,'luid':luid,'source':source}
+            'offscreen_pixels':448,'screen_pixels':64*present,'core_devices':len(creates),'mode':mode,'luid':luid,'source':source,
+            **({'frontend_owned_through_runtime_teardown':True} if frontend_held else {})}
 
 
 if __name__ == '__main__':

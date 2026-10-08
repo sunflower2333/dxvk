@@ -3,6 +3,7 @@
 #include <functional>
 
 #include "d3d11_context.h"
+#include "d3d11_command_order.h"
 
 namespace dxvk {
   
@@ -26,6 +27,15 @@ namespace dxvk {
     
     void AddQuery(
             D3D11Query*         pQuery);
+
+    void AddQueryBegin(
+            D3D11Query*         pQuery,
+            bool                Implicit);
+
+    void AddPredication(
+            D3D11Query*         pQuery,
+            BOOL                Value,
+            bool                Hint);
     
     uint64_t AddChunk(
             DxvkCsChunkRef&&    Chunk,
@@ -36,6 +46,10 @@ namespace dxvk {
 
     void EmitToCsThread(
       const D3D11ChunkDispatchProc& DispatchProc);
+
+    uint64_t GetCurrentChunkId(bool Empty) const {
+      return D3D11RecordedCurrentChunkId(m_chunks.size(), Empty);
+    }
 
     void TrackResourceUsage(
             ID3D11Resource*     pResource,
@@ -63,6 +77,7 @@ namespace dxvk {
     std::vector<ChunkEntry>             m_chunks;
     std::vector<Com<D3D11Query, false>> m_queries;
     std::vector<TrackedResource>        m_resources;
+    D3D11CommandOrder<Com<D3D11Query, false>> m_order;
 
     D3DDestructionNotifier              m_destructionNotifier;
 

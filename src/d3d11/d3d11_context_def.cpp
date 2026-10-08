@@ -57,10 +57,13 @@ namespace dxvk {
     if (unlikely(entry != m_queriesBegun.end()))
       return;
 
+    FlushCsChunk();
+    m_commandList->AddQueryBegin(query.ptr(), false);
     EmitCs([cQuery = query]
     (DxvkContext* ctx) {
       cQuery->Begin(ctx);
     });
+    FlushCsChunk();
 
     m_queriesBegun.push_back(std::move(query));
   }
@@ -75,6 +78,8 @@ namespace dxvk {
 
     Com<D3D11Query, false> query(static_cast<D3D11Query*>(pAsync));
 
+    FlushCsChunk();
+
     if (query->IsScoped()) {
       auto entry = std::find(
         m_queriesBegun.begin(),
@@ -83,10 +88,12 @@ namespace dxvk {
       if (likely(entry != m_queriesBegun.end())) {
         m_queriesBegun.erase(entry);
       } else {
+        m_commandList->AddQueryBegin(query.ptr(), true);
         EmitCs([cQuery = query]
         (DxvkContext* ctx) {
           cQuery->Begin(ctx);
         });
+        FlushCsChunk();
       }
     }
 
@@ -96,6 +103,7 @@ namespace dxvk {
     (DxvkContext* ctx) {
       cQuery->End(ctx);
     });
+    FlushCsChunk();
   }
 
 
@@ -159,7 +167,7 @@ namespace dxvk {
     // Record any chunks from the given command list into the
     // current command list and deal with context state
     auto commandList = static_cast<D3D11CommandList*>(pCommandList);
-    m_chunkId = m_commandList->AddCommandList(commandList);
+    m_commandList->AddCommandList(commandList);
     
     // Restore deferred context state
     if (RestoreContextState)
@@ -193,7 +201,6 @@ namespace dxvk {
     // Any use of ExecuteCommandList will reset command list state
     // before the command list is actually executed.
     m_commandList = CreateCommandList();
-    m_chunkId = 0;
     
     if (RestoreDeferredContextState)
       RestoreCommandListState();
@@ -377,6 +384,7 @@ namespace dxvk {
 
 
   void D3D11DeferredContext::FinalizeQueries() {
+    FlushCsChunk();
     for (auto& query : m_queriesBegun) {
       m_commandList->AddQuery(query.ptr());
 
@@ -384,6 +392,7 @@ namespace dxvk {
       (DxvkContext* ctx) {
         cQuery->End(ctx);
       });
+      FlushCsChunk();
     }
 
     m_queriesBegun.clear();
@@ -396,13 +405,13 @@ namespace dxvk {
   
   
   void D3D11DeferredContext::EmitCsChunk(DxvkCsChunkRef&& chunk) {
-    m_chunkId = m_commandList->AddChunk(std::move(chunk), m_estimatedCost);
+    m_commandList->AddChunk(std::move(chunk), m_estimatedCost);
     m_estimatedCost = 0u;
   }
 
 
   uint64_t D3D11DeferredContext::GetCurrentChunkId() const {
-    return m_csChunk->empty() ? m_chunkId : m_chunkId + 1;
+    return m_commandList->GetCurrentChunkId(m_csChunk->empty());
   }
 
 

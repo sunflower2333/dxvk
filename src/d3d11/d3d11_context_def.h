@@ -91,9 +91,6 @@ namespace dxvk {
     // Begun and ended queries, will also be stored in command list
     std::vector<Com<D3D11Query, false>> m_queriesBegun;
 
-    // Chunk ID within the current command list
-    uint64_t m_chunkId = 0ull;
-
     D3DDestructionNotifier m_destructionNotifier;
 
     HRESULT MapBuffer(

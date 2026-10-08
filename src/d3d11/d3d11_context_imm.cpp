@@ -127,10 +127,12 @@ namespace dxvk {
     if (unlikely(!query->DoBegin()))
       return;
 
+    FlushCsChunk();
     EmitCs([cQuery = Com<D3D11Query, false>(query)]
     (DxvkContext* ctx) {
       cQuery->Begin(ctx);
     });
+    FlushCsChunk();
   }
 
 
@@ -142,17 +144,21 @@ namespace dxvk {
     
     auto query = static_cast<D3D11Query*>(pAsync);
 
-    if (unlikely(!query->DoEnd())) {
+    const bool implicitBegin = !query->DoEnd();
+    FlushCsChunk();
+    if (unlikely(implicitBegin)) {
       EmitCs([cQuery = Com<D3D11Query, false>(query)]
       (DxvkContext* ctx) {
         cQuery->Begin(ctx);
       });
+      FlushCsChunk();
     }
 
     EmitCs([cQuery = Com<D3D11Query, false>(query)]
     (DxvkContext* ctx) {
       cQuery->End(ctx);
     });
+    FlushCsChunk();
 
     if (unlikely(query->TrackStalls())) {
       query->NotifyEnd();

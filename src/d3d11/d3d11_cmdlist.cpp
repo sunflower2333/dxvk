@@ -51,11 +51,23 @@ namespace dxvk {
   
   void D3D11CommandList::AddQuery(D3D11Query* pQuery) {
     m_queries.emplace_back(pQuery);
+    m_order.addQueryEnd(Com<D3D11Query, false>(pQuery));
+  }
+
+
+  void D3D11CommandList::AddQueryBegin(D3D11Query* pQuery, bool Implicit) {
+    m_order.addQueryBegin(Com<D3D11Query, false>(pQuery), Implicit);
+  }
+
+
+  void D3D11CommandList::AddPredication(D3D11Query* pQuery, BOOL Value, bool Hint) {
+    m_order.addPredicate(Com<D3D11Query, false>(pQuery), Value, Hint);
   }
 
 
   uint64_t D3D11CommandList::AddChunk(DxvkCsChunkRef&& Chunk, uint64_t Cost) {
     m_chunks.emplace_back(std::move(Chunk), Cost);
+    m_order.addChunk(m_chunks.size() - 1);
     return m_chunks.size() - 1;
   }
   
@@ -72,9 +84,11 @@ namespace dxvk {
     for (const auto& query : pCommandList->m_queries)
       m_queries.push_back(query);
 
+    m_order.append(pCommandList->m_order, baseChunkId);
+
     for (const auto& resource : pCommandList->m_resources) {
       TrackedResource entry = resource;
-      entry.chunkId += baseChunkId;
+      entry.chunkId = D3D11RelocatedChunkId(entry.chunkId, baseChunkId);
 
       m_resources.push_back(std::move(entry));
     }
@@ -90,7 +104,13 @@ namespace dxvk {
     for (const auto& query : m_queries)
       query->DoDeferredEnd();
 
-    for (size_t i = 0, j = 0; i < m_chunks.size(); i++) {
+    // Readiness is still the public all-End-up-front policy above. The ordered
+    // records do not evaluate predicates or retain historical GPU results yet.
+    size_t j = 0;
+    for (const auto& operation : m_order.operations()) {
+      if (operation.type != D3D11RecordedOperationType::Chunk)
+        continue;
+      const size_t i = size_t(operation.chunkId);
       // If there are resources to track for the current chunk,
       // use a strong flush hint to dispatch GPU work quickly.
       GpuFlushType flushType = GpuFlushType::ImplicitWeakHint;

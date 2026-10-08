@@ -9,22 +9,43 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 ## Current step
 
 
-Local integration now includes terminal allocation cleanup ae69df3 (frozen
-b7f5afd), DX8 internal factory enumeration afa1ebb (frozen e3ac126), and
-ARM64X legacy frontend f8e8317/078b1fc (frozen2e875aa/2c25bd5). ROOT03128797
-reopens502 original files/76Git/335compiler/10COFF/14closed local children;
-original residency assertion remains unchanged. Main integration preserves
-all43 ARM cases and adds terminal44; actual93 protocol controls PASS.
-Full frozen e3 helper restored after merge audit found dropped provider pins
-and two malformed CLI cases. Native CPU09 has actual5COFF/4PE and readonly
-identity diagnostic PASS but helper failed on stale D3D8_PROCESS_MACHINE
-marker; original122-file TAR9ab98459 retained, remaining35CPU children pending.
-EWDK owns target while retaining bounded posthash observer of the same attempt;
-next completion-only recipe needs review, no unchanged rebuild. Native ARM64X
-packet ROOTf8ab881e joins12TAR/4Git/37current14.50+28000 tool/header/lib pins,
-8 additional captures pending in actual attempt; no target authorization yet.
-No default driver registration changed; genuine HAL/offscreen/Present open.
-One combined push/newCI44 follows the narrow marker correction.
+Published main2996a6139c5911ba878096a258d214ec499e8034 soleCI37718012323
+completed allsixSUCCESS. ROOTf549b652 rejoinsfiveZIP/9416originalmembers,
+985Git+5links/fourcanonical/132closed actualnativefixtures plus18cube and
+threevolume originalreaders, allPASS; collectioneb54909f closesallhostchildren.
+No redundant workflow or oldCI retry. Main0c3d872 locally adds typed DXGI1.1
+shared-resource Resolve from frozen28881e4: ROOT8f427aa1 directly joins1160
+original members/78Git/321compiler/26closed local children/fourstrictCOFF and
+allreadercontrols. Main exact frozen production bytes and all44 prior ARM
+patterns preserved+Resolve45; shipping31+Resolve32 and helper2996 unchanged.
+Next meaningful push is this reviewed newResolve slice afterCI44 originals.
+
+CPU09 actualfiveI386COFF/fourPE and16closed native children retained after
+stale diagnostic-marker failure; original122-fileTAR9ab98459 and bounded
+same-attempt posthash preserve source35/compiler575/SDK13/lib9/state. ROOT
+e8b23fbe accepts failed release. Marker-only e5bfaf→2996a61 matches actual
+8356-byte readonly trace, five exactpatterns/threephysicalpairs/sixcloses.
+ROOTfd122859 reopens complete prepared completion-only packet: no unchanged
+compile/diagnostic replay. ActualCPU10 completedPASS underauth40617663; ROOTa1d07a8f reopens96+122
+originals and accepts35fixtures/parent/collector/sevenhost/outer closure.
+Policy503/callback77/typeddenial6/CLI32 pass; source35/compiler575/SDK13/lib9
+outputs9/staticstate unchanged; originalCPU09 failure remainsFAIL. TargetROOTidle.
+Source3e750a3→1c96b3f binds actualsplitCPU and freshde72phasepipeline; ROOT
+8e2a0201 joins6frozenGit/current98controls withall93oldretained. Newnative
+AST5/parser, genuinefreshnames/HAL/offscreen/Present remainpending. Original
+de72stagingpreparedROOTb5b972bc joins5TAR/4originalZIPpayloads, no targetstaging.
+
+ARM64X CPU01 failed first exact14.50 Hostarm64/arm64 compile exit2/C1510
+Cannot load language resource clui.dll. NoCOFF/PE/link/EC stage. Original39-file
+TAR111d0914 and selected45tool/header/library beforeafter retained; ROOTdirect
+e433c1ca reopens426 joins, sixnative/ninehost closure and explicitrelease
+acceptedc8f3bc9f. Full compiler/language/backend inputs were not attested.
+DX11 locally prepares exact14.50 resource inventory and genuine ARM/x64 view
+controls; no unchanged retry or mixed14.44 input. Next readonly toolchain inventory awaits concretehostrecipe/admission.
+DX10 separately implements real DXGI Blt; documented primary/display/shared/
+rendererallocation/threading/conversion gaps keep normal10/11 gates closed.
+Default installed viogpud3d line unchanged; genuineHAL/offscreen/Present and
+ordinary-runtime8-11/Display+Render acceptance remain open.
 
 Published main57b3131 native43-case CI37713183282 completedFAILURE: actual
 x86/x64 residency assertion line335 owned.empty(), ARMcompilePASS and

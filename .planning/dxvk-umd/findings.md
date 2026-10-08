@@ -1,5 +1,23 @@
 # Findings
 
+2026-10-08 live: CI2996 allsixSUCCESS after owned-allocation terminal cleanup;
+actual native44 originals still undergoing independent review. Typed shared
+Resolve source28881e4→0c3d872 is integrated locally with exact production bytes,
+all44 priorcases retained+one45; actual original-reader/sanitizer/compiler proof
+8f427aa1, hardwareandwholeprofile admission remainsclosed. Genuine ordinary
+DX10/11 still require Blt/gamma/primary/display, SHARED+PRESENT ownership,
+rendering allocation association and documented threading/conversion edges.
+ARM64X selected executable pins alone missed language/backend input closure:
+actual first compiler C1510/clui failure produced noCOFF/PE. Preserved original
+39-file failure and ROOT426join/allownedclosure; exact14.50 resource inventory
+must determine cause before a changed producer attempt. Recovered x86 native
+compiler uses matching14.50, so old14.44 resource mixing is unwarranted.
+DX8 CPU09 helper marker failed after real readonlyidentity; use exactactual
+SYSTEM_PROCESS_ID marker and run only35unexecuted fixtures, not rebuild.
+CPU10 actual35PASS and ROOTa1d07a8f release accepted; new3e currentphase
+binding preserves93+5controls, nativeparser/HAL remainpending. No default
+replacement/runtime success inferred.
+
 Actual SystemD3D8 factory enumeration requires an internal device before HAL
 GetDeviceCaps. Enum08 original113180-byte stdout proves Interface8/69632/flags0
 and obsolete command/list sizes0, with one readonly frontend block8876086a

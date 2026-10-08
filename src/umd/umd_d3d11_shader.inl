@@ -110,6 +110,15 @@ HRESULT createNativeShader11(Device* device, const UINT* code, D3D10DDI_HSHADER 
       dxvk::umd::ShaderCode11 decoded;
       if (!dxvk::umd::decodeShader11(codeStage, code, code[1], decoded)) return E_INVALIDARG;
       if (signature) {
+        if (existingLegacyStorage && codeStage == ShaderStage::Geometry) {
+          std::vector<dxvk::umd::ShaderInputSignature10> inputs;
+          for (UINT i = 0; i < signature->NumInputSignatureEntries; ++i) {
+            const auto& entry = signature->pInputSignature[i];
+            inputs.push_back({UINT(entry.SystemValue), entry.Register, entry.Mask});
+          }
+          if (!dxvk::umd::shader10GeometryInputs(decoded, inputs.data(), inputs.size())
+              || !dxvk::umd::shader10Profile(decoded, device->featureLevel >= D3D_FEATURE_LEVEL_10_1)) return E_INVALIDARG;
+        }
         signatureOrdinals11(decoded.inputs, signature->pInputSignature, signature->NumInputSignatureEntries);
         signatureOrdinals11(decoded.outputs, signature->pOutputSignature, signature->NumOutputSignatureEntries);
       }

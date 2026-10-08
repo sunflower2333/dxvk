@@ -56,7 +56,7 @@ $cases = [ordered]@{
     'dxvk-umd-resource-copy-cast-test.exe' = '(?m)^Resource copy cast passed: \d+ checks, 320 observations, 134624 bytes each native/public, 92 rejections\r?$'
     'dxvk-umd-bc-transfer-policy-test.exe' = '(?m)^PASS BC block upload policy: checks=5780432\r?$'
     'dxvk-umd-bc-update-test.exe' = '(?m)^PASS native BC1-5 updates: uploads=552 noops=136 rejects=408 snapshots=840 bytes=130944 checks=\d+\r?$'
-    'dxvk-umd-shader10-profile-test.exe' = '(?m)^D3D10 shader profile PASS checks=615 retained_tokens=1 hardware_admission=0\r?$'
+    'dxvk-umd-shader10-profile-test.exe' = '(?m)^D3D10 shader profile PASS checks=2302 retained_tokens=1 hardware_admission=0\r?$'
     'dxvk-umd-d3d10-system-shader-test.exe' = '(?m)^D3D10 system shader PASS checks=\d+ scenes=4 pixels=1024 words=9216 original_frames=24 fxc_programs=12 hardware_admission=0\r?$'
     'dxvk-umd-d3d10-depth-test.exe' = '(?m)^D3D10 depth PASS checks=\d+ scenes=12 pixels=3072 words=3072 original_frames=24 queries=24 fxc_programs=8 hardware_admission=0\r?$'
     'dxvk-umd-distance-stream-policy-test.exe' = '(?m)^distance stream policy PASS checks=108 packed_semantics=1 full_union_ordinal=1 hardware_admission=0\r?$'

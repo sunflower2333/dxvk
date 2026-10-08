@@ -1788,6 +1788,15 @@ void createShader(D3D10DDI_HDEVICE h, const UINT* code, D3D10DDI_HSHADER out,
         || !dxvk::umd::shader10Profile(decoded, device->featureLevel >= D3D_FEATURE_LEVEL_10_1)) {
       device->error(E_INVALIDARG); return;
     }
+    std::vector<dxvk::umd::ShaderInputSignature10> inputs;
+    for (UINT i = 0; i < signature->NumInputSignatureEntries; ++i) {
+      const auto& entry = signature->pInputSignature[i];
+      inputs.push_back({UINT(entry.SystemValue), entry.Register, entry.Mask});
+    }
+    if (!dxvk::umd::shader10GeometryInputs(decoded, inputs.data(), inputs.size())
+        || !dxvk::umd::shader10Profile(decoded, device->featureLevel >= D3D_FEATURE_LEVEL_10_1)) {
+      device->error(E_INVALIDARG); return;
+    }
     signatureOrdinals11(decoded.inputs, signature->pInputSignature, signature->NumInputSignatureEntries);
     signatureOrdinals11(decoded.outputs, signature->pOutputSignature, signature->NumOutputSignatureEntries);
     candidate.withStreamOutput = true;

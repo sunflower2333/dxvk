@@ -36,7 +36,119 @@ static void container(const ShaderCode11& shader) {
   const auto chunk = parsed.getCodeChunk(); CHECK(chunk.getSize() == (shader.tokens.size()+2)*4);
   CHECK(!std::memcmp(chunk.getData(8),shader.tokens.data(),shader.tokens.size()*4));
 }
+// Exact CI68 FXC02/05 GS tokens; the union below is independently specified
+// by its original ISGN, not by the production annotation helper.
+static void geometryUnionControls() {
+  const uint32_t tokens[]={
+    0x00020040u,0x00000090u,0x05000061u,0x002010f2u,0x00000003u,0x00000000u,0x00000001u,0x0400005fu,
+    0x00201072u,0x00000003u,0x00000001u,0x0400005fu,0x00201082u,0x00000003u,0x00000001u,0x0400005fu,
+    0x00201012u,0x00000003u,0x00000002u,0x0200005fu,0x0000b000u,0x02000068u,0x00000001u,0x0100185du,
+    0x0100285cu,0x04000067u,0x001020f2u,0x00000000u,0x00000001u,0x04000067u,0x00102072u,0x00000001u,
+    0x00000002u,0x04000067u,0x00102082u,0x00000001u,0x00000003u,0x03000065u,0x00102012u,0x00000002u,
+    0x04000066u,0x00102012u,0x00000003u,0x00000007u,0x0200005eu,0x00000003u,0x06000036u,0x001020f2u,
+    0x00000000u,0x00201e46u,0x00000000u,0x00000000u,0x06000036u,0x00102072u,0x00000001u,0x00201246u,
+    0x00000000u,0x00000001u,0x06000036u,0x00102082u,0x00000001u,0x0020103au,0x00000000u,0x00000001u,
+    0x06000036u,0x00102012u,0x00000002u,0x0020100au,0x00000000u,0x00000002u,0x0600001eu,0x00100012u,
+    0x00000000u,0x0000b001u,0x00004001u,0x00000025u,0x05000036u,0x00102012u,0x00000003u,0x0010000au,
+    0x00000000u,0x01000013u,0x06000036u,0x001020f2u,0x00000000u,0x00201e46u,0x00000001u,0x00000000u,
+    0x06000036u,0x00102072u,0x00000001u,0x00201246u,0x00000001u,0x00000001u,0x06000036u,0x00102082u,
+    0x00000001u,0x0020103au,0x00000001u,0x00000001u,0x06000036u,0x00102012u,0x00000002u,0x0020100au,
+    0x00000001u,0x00000002u,0x05000036u,0x00102012u,0x00000003u,0x0010000au,0x00000000u,0x01000013u,
+    0x06000036u,0x001020f2u,0x00000000u,0x00201e46u,0x00000002u,0x00000000u,0x06000036u,0x00102072u,
+    0x00000001u,0x00201246u,0x00000002u,0x00000001u,0x06000036u,0x00102082u,0x00000001u,0x0020103au,
+    0x00000002u,0x00000001u,0x06000036u,0x00102012u,0x00000002u,0x0020100au,0x00000002u,0x00000002u,
+    0x05000036u,0x00102012u,0x00000003u,0x0010000au,0x00000000u,0x01000013u,0x01000009u,0x0100003eu,
+  };
+  ShaderCode11 raw; CHECK(decodeShader11(ShaderStage::Geometry,tokens,sizeof(tokens)/4,raw));
+  CHECK(raw.inputs.size()==4&&raw.inputs[1].systemValue==0&&raw.inputs[1].registerIndex==1&&raw.inputs[1].mask==15);
+  const std::vector<ShaderInputSignature10> signature={{1,0,15},{2,1,7},{3,1,8},{0,2,1}};
+  const std::vector<ShaderIo11> producer={{1,0,15,ShaderScalar::Float32},{2,1,7,ShaderScalar::Float32},
+    {3,1,8,ShaderScalar::Float32},{0,2,1,ShaderScalar::Uint32}};
+  std::vector<ShaderIo11> linked;
+  CHECK(!linkShader11Outputs(producer,raw.inputs,0,linked)&&linked.empty());
+  auto annotated=raw;CHECK(shader10GeometryInputs(annotated,signature.data(),signature.size()));
+  CHECK(annotated.tokens==raw.tokens&&annotated.inputs.size()==5);
+  CHECK(annotated.inputs[1].systemValue==2&&annotated.inputs[1].mask==7&&annotated.inputs[1].scalar==ShaderScalar::Float32);
+  CHECK(annotated.inputs[2].systemValue==3&&annotated.inputs[2].mask==8&&annotated.inputs[2].scalar==ShaderScalar::Float32);
+  CHECK(annotated.inputs[3].systemValue==0&&annotated.inputs[3].registerIndex==2&&annotated.inputs[3].scalar==ShaderScalar::Uint32);
+  CHECK(annotated.inputs[4].systemValue==7&&annotated.inputs[4].registerIndex==UINT32_MAX&&annotated.inputs[4].mask==1);
+  CHECK(shader10Profile(annotated,false)&&shader10Profile(annotated,true));container(annotated);
+  CHECK(linkShader11Outputs(producer,annotated.inputs,0,linked));
+  // Every assignment of four physical components to ordinary/clip/cull.
+  // This includes all three categories in one register and unaligned masks.
+  for(uint32_t assignment=0;assignment<81;++assignment){
+    uint32_t value=assignment,masks[3]{};
+    for(uint32_t component=0;component<4;++component){masks[value%3]|=1u<<component;value/=3;}
+    std::vector<ShaderInputSignature10> rows={{1,0,15},{0,2,1},{0,15,15}};
+    for(uint32_t kind=0;kind<3;++kind)if(masks[kind])rows.push_back({kind?kind+1:0,1,masks[kind]});
+    auto changed=raw;CHECK(shader10GeometryInputs(changed,rows.data(),rows.size()));
+    CHECK(shader10Profile(changed,false)&&changed.tokens==raw.tokens);
+    uint32_t seen=0;
+    for(const auto& input:changed.inputs)if(input.registerIndex==1){
+      CHECK(!(seen&input.mask));seen|=input.mask;
+      const auto kind=input.systemValue?input.systemValue-1:0;
+      CHECK(kind<3&&input.mask==masks[kind]);
+      CHECK(input.scalar==(kind?ShaderScalar::Float32:ShaderScalar::Uint32));
+    }
+    CHECK(seen==15);
+    for(const auto& input:changed.inputs)CHECK(input.registerIndex!=15);
+    container(changed);
+  }
+  auto same=[](const auto& a,const auto& b){
+    if(a.size()!=b.size())return false;
+    for(size_t i=0;i<a.size();++i)if(a[i].systemValue!=b[i].systemValue||a[i].registerIndex!=b[i].registerIndex
+      ||a[i].mask!=b[i].mask||a[i].scalar!=b[i].scalar||a[i].stream!=b[i].stream||a[i].semanticIndex!=b[i].semanticIndex)return false;
+    return true;
+  };
+  auto reject=[&](ShaderCode11 code,std::vector<ShaderInputSignature10> rows){
+    const auto before=code.inputs;const auto beforeTokens=code.tokens;
+    CHECK(!shader10GeometryInputs(code,rows.data(),rows.size()));CHECK(same(code.inputs,before)&&code.tokens==beforeTokens);
+  };
+  for(uint32_t invalid=0;invalid<14;++invalid){
+    auto rows=signature;
+    if(invalid==0)rows.push_back(rows[1]);
+    else if(invalid==1)rows.push_back({0,1,1});
+    else if(invalid==2)rows[1].mask=0;
+    else if(invalid==3)rows[1].mask=16;
+    else if(invalid==4)rows[1].registerIndex=32;
+    else if(invalid==5)rows[1].systemValue=4;
+    else if(invalid==6)rows[1].systemValue=7;
+    else if(invalid==7)rows[1].systemValue=11;
+    else if(invalid==8)rows[1].mask=3;
+    else if(invalid==9)rows[0].systemValue=0;
+    else if(invalid==10)rows[1].systemValue=1;
+    else if(invalid==11)rows.push_back({0,UINT32_MAX,1});
+    else if(invalid==12)rows.push_back({7,UINT32_MAX,2});
+    else rows.resize(33,{0,30,1});
+    reject(raw,rows);
+  }
+  auto changed=raw;CHECK(!shader10GeometryInputs(changed,nullptr,1));CHECK(same(changed.inputs,raw.inputs));
+  for(auto stage:{ShaderStage::Vertex,ShaderStage::Pixel}){changed=raw;changed.stage=stage;reject(changed,signature);}
+  changed=raw;changed.inputs[0].scalar=ShaderScalar::Uint32;reject(changed,signature);
+  changed=raw;changed.inputs[1].scalar=ShaderScalar::Unknown;reject(changed,signature);
+  changed=raw;changed.inputs[1].scalar=ShaderScalar::Float32;reject(changed,signature);
+  changed=raw;changed.inputs.back().mask=2;reject(changed,signature);
+  changed=raw;changed.inputs.back().scalar=ShaderScalar::Float32;reject(changed,signature);
+  changed=raw;changed.tokens[20]|=1u<<20;reject(changed,signature); // indexed dedicated PrimitiveID
+  changed=raw;changed.tokens[20]|=1u;reject(changed,signature); // altered scalar declaration
+  changed=raw;changed.tokens[20]|=16u;reject(changed,signature); // reserved scalar mask bits
+  for(uint32_t size:{0u,1u,2u,4u,6u}){changed=raw;changed.tokens[9]=size;reject(changed,signature);}
+  for(uint32_t dimensions:{0u,1u,3u}){changed=raw;changed.tokens[8]=(changed.tokens[8]&~(3u<<20))|(dimensions<<20);reject(changed,signature);}
+  changed=raw;changed.tokens[23]=(changed.tokens[23]&~(63u<<11))|(1u<<11);reject(changed,signature); // point versus array3
+  auto withDedicated=signature;withDedicated.push_back({7,UINT32_MAX,1});changed=raw;
+  CHECK(shader10GeometryInputs(changed,withDedicated.data(),withDedicated.size()));
+  CHECK(same(changed.inputs,annotated.inputs));
+  auto repeated=signature;repeated[1].mask=1;repeated.push_back({2,1,2});repeated.push_back({2,1,4});changed=raw;
+  CHECK(shader10GeometryInputs(changed,repeated.data(),repeated.size()));
+  CHECK(same(changed.inputs,annotated.inputs));container(changed);
+  repeated={{1,0,15},{0,1,1},{0,1,2},{2,1,4},{3,1,8},{0,2,1}};changed=raw;
+  CHECK(shader10GeometryInputs(changed,repeated.data(),repeated.size()));
+  CHECK(changed.inputs.size()==6&&changed.inputs[1].systemValue==0&&changed.inputs[1].mask==3);
+  container(changed);
+}
+
 int main() {
+  geometryUnionControls();
   auto instance = program(ShaderStage::Vertex,0x40,8,1); CHECK(shader10Profile(instance,false)); container(instance);
   auto front = program(ShaderStage::Pixel,0x40,9,64); CHECK(shader10Profile(front,false)); container(front);
   auto primitive = program(ShaderStage::Pixel,0x40,7,64); CHECK(shader10Profile(primitive,false)); container(primitive);

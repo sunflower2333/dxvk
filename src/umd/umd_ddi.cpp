@@ -18,6 +18,7 @@
 #include "umd_transfer_format.h"
 #include "umd_resource_copy.h"
 #include "umd_block_transfer.h"
+#include "umd_sample_copy.h"
 #include "umd_generate_mips.h"
 #include "umd_blt.h"
 #include "umd_state.h"
@@ -1467,13 +1468,14 @@ void APIENTRY checkMultisample(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT coun
 struct SubresourceInfo {
   UINT width = 0, height = 1, depth = 1, texelBytes = 1;
   UINT blockBytes = 0;
+  UINT samples = 1, quality = 0;
   D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
   DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
   D3D11_USAGE usage = D3D11_USAGE_DEFAULT;
   UINT bindings = 0;
 };
 bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info,
-    bool allowBlockCompressed = false) {
+    bool allowBlockCompressed = false, bool allowMultisampledColorCopy = false) {
   resource->backend->GetType(&info.dimension);
   if (info.dimension == D3D11_RESOURCE_DIMENSION_BUFFER) {
     if (index) return false;
@@ -1499,13 +1501,15 @@ bool subresourceInfo(Resource* resource, UINT index, SubresourceInfo& info,
     ComPtr<ID3D11Texture2D> texture;
     if (FAILED(resource->backend.As(&texture))) return false;
     D3D11_TEXTURE2D_DESC desc = {}; texture->GetDesc(&desc);
-    if (!desc.MipLevels || index / desc.MipLevels >= desc.ArraySize || desc.SampleDesc.Count != 1)
+    if (!desc.MipLevels || index / desc.MipLevels >= desc.ArraySize || !desc.SampleDesc.Count
+        || (desc.SampleDesc.Count != 1 && (!allowMultisampledColorCopy || desc.MipLevels != 1)))
       return false;
     const UINT mip = index % desc.MipLevels;
     if (mip >= D3D11_REQ_MIP_LEVELS) return false;
     info.width = desc.Width >> mip; if (!info.width) info.width = 1;
     info.height = desc.Height >> mip; if (!info.height) info.height = 1;
     info.format = desc.Format; info.usage = desc.Usage; info.bindings = desc.BindFlags;
+    info.samples = desc.SampleDesc.Count; info.quality = desc.SampleDesc.Quality;
     info.texelBytes = dxvk::umd::transferTexelBytes(info.format);
     // Block uploads have their own alignment/pitch checks. Keep other callers
     // closed until they implement their independent block-copy contract.
@@ -1544,9 +1548,12 @@ void APIENTRY copyRegion(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE dst, UINT dstInd
   // checks; the runtime still supplies valid owned resource handles.
   if (input && (input->left >= input->right || input->top >= input->bottom || input->front >= input->back)) return;
   SubresourceInfo source, destination; D3D11_BOX box;
-  if (!subresourceInfo(get(src), srcIndex, source) || !subresourceInfo(get(dst), dstIndex, destination)
+  if (!subresourceInfo(get(src), srcIndex, source, false, true)
+      || !subresourceInfo(get(dst), dstIndex, destination, false, true)
       || source.dimension != destination.dimension || !dxvk::umd::copyFormatsCompatible(destination.format, source.format)
       || ((source.bindings | destination.bindings) & D3D11_BIND_DEPTH_STENCIL)
+      || !dxvk::umd::sampleRegionCopyContract({source.width, source.height, source.samples, source.quality},
+          {destination.width, destination.height, destination.samples, destination.quality}, input != nullptr, x, y, z)
       || destination.usage == D3D11_USAGE_IMMUTABLE || !subresourceBox(source, input, box)) {
     device->error(E_INVALIDARG); return;
   }

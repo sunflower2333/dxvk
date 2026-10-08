@@ -8,47 +8,65 @@ ARM64, x64 and x86 are required; an app-local runtime is not the target.
 
 ## Current step
 
-## Current checkpoint: five reviewed ports, CI61 failure retained, CPU08 pending
+## Current checkpoint: reviewed ports and actual frontend loads; next CI66
 
-VM default UMD remains Mesa. Ordinary system-runtime DX8-11 draw/readback/Present
-and DWM/Explorer replacement have not passed. Latest hardware-accepted historical
-core remains18452d7/USER06; no failed/new source is promoted to that evidence.
+VM default UMD remains Mesa. Ordinary system-runtime DX8-11 hardware
+creation/draw/readback/Present and DWM/Explorer replacement remain incomplete.
 
-CI61/37772962325 for e7954d7 is terminal FAILURE: identity/shader/ARMbackend pass,
-x86/x64 fail resource-copy-cast-test, ARM runtime is skipped. ROOT3298650/0
-reopens11500 original ZIP members,80 native children,1106 blobs+5links,
-9 GH transports/2 collectors and all completed literal readers. Proof2662711/
-9f176b89 is artifacts/root-CI61-failure-originals-independent-review-01/actual-CI61-failure-originals-reviewed-01.json.
-Only48 paired copy observations exist; the manifest is empty. Exact failed
-exit is -1073741819, checks9950/callbacks14/HRESULT88760870. The first reversed-X
-public call is located by source CHECK accounting, not a recorded phase trace.
+Current reviewed source union is50df75336ef246e1c6e7c2fb866351a3baf1fc45.
+Ordered predicate/query recording, optional shared primary, full color MSAA
+region copies, combined native harness, owned issued-query tickets, corrected
+frontend probe, volume-copy diagnostics, real GPU volume bridge and owning
+query replay mapping are merged. The next harness has66 ARM64 cases,
+53 mandatory and76 full shipping fixtures,198 expected native child processes.
+A single consolidated push publishes this union and checkpoint; no extra
+workflow activation or manual dispatch.
 
-Reviewed source integrated: distanceSO f54ab4a->2e9cd67, minimal harness
-7e91e14->77c0ae6, query-generation prerequisite4551189->9dc3e72,
-actual dumpbin CSR guard100f0ea->ef8af0f, copy fixturee8b0500->4e178f4.
-ROOT3298560/0 joins the distance/query/harness frozen source/compiler/helper
-originals52397/168ce63a; ROOT3302100/0 passes four merged strict O2 official-header
-COFF compilations plus four LLVM reopens102401/1dd56c04. ROOT3327487/0 joins
-both focused failure fixes and genuine originals. New harness is63 native ARM
-cases/50 mandatory/73 complete shipping union; next push is one consolidated
-Native UMD run after CI61 terminal. No workflow activation/manual dispatch.
+CPU08 actual target EWDK builds passed all9 frontend and8 ARM64/x64 view
+stages. The corrected frontend probe now also PASSED actual ROOT3434800/0:
+ARM64 and x64 executables load the same1282048/1c040ae9 ARM64X frontend and
+matching historical18452 cores, preserving typed arguments/canaries and
+returning expected null/unsupported errors. Actual original reader657 checks,
+independent743 checks,15 native children and11 host transports all close.
+ROOT module-only admission1974/9b354cef and explicit release988/ee86784d are
+under artifacts/legacy-runtime-deploy-20261008/native-arm64x-front-ae65140-negative-forward-03.
+This proves module loading and typed negative forwarding, not valid runtime
+creation, rendering, registration or default replacement.
 
-CPU07 b5ee276 final04 actual stage/native PS5.1 parse/copy pass; five native
-tool stages pass (ARM64 CL/LINK, EC CL, both dumpbins). Producer rejects an
-unprinted archive pathname before hybrid LINK. Actual copied ARM64 helper
-is1136438/e140f4af and has genuine A641 definitions/AntiDependency aliases.
-All189 originals,1366 forensic checks,11 native children and10 host transports
-are closed and reviewed; native_build_passed=false, hybrid/views unattempted.
-ROOT3279723/0 admits only that failed attempt and explicit target release9954eb58.
-Target is now released to ROOT; fresh CPU08 packet from100f0ea is being prepared,
-with identical native15/native6/hybrid19/frontend9/views8 policy. Old attempts
-remain immutable. Corrected target mixed DLL build/load has not passed.
+Previously published beb465c sole Native UMD37777560861 is terminal FAILURE.
+Both x86/x64 fail the3D R32_UINT-to-R9 regional-copy case after120 saved
+paired observations; later fixtures did not execute. Actual standalone target
+WARP repro02 independently reproduces DXGI_ERROR_DRIVER_INTERNAL_ERROR887a0020
+for both FL10_1 and11_0 direct calls; same-format controls pass. Repro03
+successfully uses whole-resource GPU reinterpretation followed by same-format
+regional copying in all4 forward/reverse profiles. Its12 raw originals pass
+7008 independently checked bytes. Both direct reverse controls retain the same
+failure. No CPU fallback or capability widening is introduced.
 
-Next work: actual63-case CI outcomes and raw reader admission; CPU08 native
-build and views; ordered predication replay plus retained query generations;
-optional shared primary ownership and full color MSAA regional-copy semantics.
-Ordinary feature masks, full public predication, scanout pair ABI, actual target
-resource/shader/threading coverage and default replacement remain incomplete.
+Production bridgefe57 is merged2380832 and diagnosticsbe04 mergedd96c1fd.
+Current merged DDI strict optimized official-header x86/x64 compilation and
+LLVM reopen pass, actual3449883/0, proof178017/22080265 at
+artifacts/merged-bridge-ddi-20261008-01/merged-bridge-ddi-verified-01.json.
+The complete320/640 native volume fixture still requires the next CI run.
+Earlier merged MSAA/optional DDI+fixtures pass6 strict COFF/LLVM checks,
+proof143663/a08d4db4. Owning query replayf7b70 is independently reviewed3088
+checks and current9 files retain its exact original strict compiles.
+
+Ordinary-runtime source/doc audit separates real UMD gaps from broader public
+DXVK work. Outer UMD already implements predication; public SetPredication
+alone is not its baseline blocker. D10 tables have101/103 required slots
+filled; optional D11 command-list slots do not block baseline creation.
+BC regional copies are a concrete mandatory resource gap and are actively
+being implemented. D10.1/11 depth regional and extended-format requirements
+need their exact contracts. Shader/SO/opened/MRT/primary/threading hardware
+coverage and ordinary runtime creation are still due. Admission masks remain
+unchanged while each real contract is completed and tested.
+
+Next: collect actual CI66 originals for this exact published source; review
+and merge BC regional copies; verify required D10_0 semantics and then run
+ordinary system-runtime hardware creation/draw/readback/Present. Keep target
+ownership with ROOT; last module attempt is fully released. Preserve one VM,
+8192MiB memory, separate Android8022 and Windows22 management services.
 
 ## Previous checkpoint: CI60 correction and KMD build
 
@@ -1976,3 +1994,6 @@ fresh heldfrontendHAL enumerate01 under98ce33fa and correctedenumouter;
 targetexclusiveDX8. Publicdevice/offscreen448/Present64 remainpending.
 Sharedprimary114cbd frozenlocal15files/2newfixture/90raw next52cases39shipped
 is separatefromCI50 correction; compiler/originalsource archivepending.
+
+
+Actual CI63 publication and target attempt (2026-10-08): ROOT3329923/0 pushed beb465c once; sole push Native UMD37777560861 confirmed by original3331326/0 and ROOT direct query open. Current63/50/73/189 collector preparation is frozen; execution/admission pending. ROOT CPU08 prepared originals3335761/0 passed716 checks/107inputs/52native members, source100f0ea and separatebd601 view/copy origins. One CPU-only ROOT authorization3336405/0 binds latest accepted CPU07release9954/admission665d. Upload3338963/0 and native stage3340068/0 pass; native parse/build/views pending. Target solely owned ROOT; no default Mesa replacement or new hardware admission.

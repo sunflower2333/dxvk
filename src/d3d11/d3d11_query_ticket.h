@@ -19,6 +19,14 @@ namespace dxvk {
       return m_id;
     }
 
+    void issueEnd() {
+      m_endIssued.store(true, std::memory_order_release);
+    }
+
+    bool endIssued() const {
+      return m_endIssued.load(std::memory_order_acquire);
+    }
+
     void completeEnd() {
       m_endRecorded.store(true, std::memory_order_release);
     }
@@ -29,6 +37,7 @@ namespace dxvk {
 
   private:
     const uint64_t m_id;
+    std::atomic<bool> m_endIssued = { false };
     std::atomic<bool> m_endRecorded = { false };
   };
 

@@ -1,0 +1,166 @@
+{
+  "schema": "system-d3d8-descendant-template-lock-v1",
+  "historical_run": "frontend-lifetime-fbd7afd-01",
+  "original_templates": [
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-enumerate-handoff-frontend-lifetime-fbd7afd-01/deferred-limited-user-i386-enumerate-frontend-lifetime-fbd7afd-01.py",
+      "bytes": 16630,
+      "sha256": "8a54641fdd2996976fab73b86d3728703d0330b94917eab1a4952a8ef411b5c7"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-enumerate-handoff-frontend-lifetime-fbd7afd-01/enumerate-authorization.template.json",
+      "bytes": 1057,
+      "sha256": "168b8db77422acd252f0dc48c673b6903f7890adaf9fc986aac370bae046cddb"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-enumerate-handoff-frontend-lifetime-fbd7afd-01/execute-owned-current-phase-01.py",
+      "bytes": 2992,
+      "sha256": "85ba08eff183e5a59a2118f62ad9488d392354139178330fe42eefe038dcbb4e"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-enumerate-handoff-frontend-lifetime-fbd7afd-01/i386-enumerate-inputs-01.json",
+      "bytes": 9170,
+      "sha256": "4ba55d1bbd398c8fa344ddc2eaa04af9a3f4a5683774231ad80034191ad50f42"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-enumerate-handoff-frontend-lifetime-fbd7afd-01/prepared-i386-enumerate-01.json",
+      "bytes": 7817,
+      "sha256": "16e21cac24c140dfd828137229124aaf2f79998933ffaae36929845570cc2b40"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-enumerate-handoff-frontend-lifetime-fbd7afd-01/review-current-phase-originals-01.py",
+      "bytes": 7629,
+      "sha256": "9df3ffdb2412f5df9f42ee9d3f7fe25c319e6ddd9fd26145ceb89032392427c2"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-names-handoff-frontend-lifetime-fbd7afd-01/deferred-limited-user-i386-names-frontend-lifetime-fbd7afd-01.py",
+      "bytes": 14091,
+      "sha256": "13a6658c1f27eb42e3d48641f848d0bdc79454c119c301aa7bcc93f27e2c62fb"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-names-handoff-frontend-lifetime-fbd7afd-01/execute-owned-current-phase-01.py",
+      "bytes": 2555,
+      "sha256": "fa1878358f28d5edcf35f58e5458ece1691238a5c94b8d85e3c71fecb0016979"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-names-handoff-frontend-lifetime-fbd7afd-01/i386-names-inputs-01.json",
+      "bytes": 7883,
+      "sha256": "692b14bef8e099343366c74802724faa13ff085c59d090303e791ee7304bae41"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-names-handoff-frontend-lifetime-fbd7afd-01/names-authorization.template.json",
+      "bytes": 872,
+      "sha256": "7d72898eec32e9e5d398bc74b6e0deda3622b3003835889fa1c73cd7121c2c3a"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-names-handoff-frontend-lifetime-fbd7afd-01/prepared-i386-names-01.json",
+      "bytes": 7802,
+      "sha256": "7b82440a82bdebc538941f79452406ee4e79088ad68ac84a28170e08c43e8375"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-names-handoff-frontend-lifetime-fbd7afd-01/review-current-phase-originals-01.py",
+      "bytes": 7617,
+      "sha256": "ceea34fe70bb6a0ead08b5dca5ce3bba63c44c82b873efb9c6f879d44831b58a"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-offscreen-handoff-frontend-lifetime-fbd7afd-01/deferred-limited-user-i386-offscreen-frontend-lifetime-fbd7afd-01.py",
+      "bytes": 17405,
+      "sha256": "a9fc6ade9af3361bdeb5140295b13ad8ad2c42d965c4e40c33929c9738e3b0d2"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-offscreen-handoff-frontend-lifetime-fbd7afd-01/execute-owned-current-phase-01.py",
+      "bytes": 3012,
+      "sha256": "711424af9690a858991d92478f264f442f8a3591b6f1af5fa3e7c46ac8f26b9e"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-offscreen-handoff-frontend-lifetime-fbd7afd-01/i386-offscreen-inputs-01.json",
+      "bytes": 11061,
+      "sha256": "8435126cdf19c81474c544500b2658c4516b56ce1de553017d652ce67f3ff9f1"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-offscreen-handoff-frontend-lifetime-fbd7afd-01/offscreen-authorization.template.json",
+      "bytes": 1135,
+      "sha256": "6b8181e04551772c24f88d4cddeda945aaadb007d7d662c414d83e4d6f1c87df"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-offscreen-handoff-frontend-lifetime-fbd7afd-01/prepared-i386-offscreen-01.json",
+      "bytes": 8398,
+      "sha256": "2587a926fba47003f674ac7a7068eab2d32c46526401d1c68ad3de0a2e75dbf6"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-offscreen-handoff-frontend-lifetime-fbd7afd-01/review-current-phase-originals-01.py",
+      "bytes": 7743,
+      "sha256": "d18964e65f7722946b5272b2931dd15d9650c02e6e6c33a5f508d69c4af993ed"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-present-handoff-frontend-lifetime-fbd7afd-01/deferred-limited-user-i386-present-frontend-lifetime-fbd7afd-01.py",
+      "bytes": 17491,
+      "sha256": "1b51152cb24f545bf58c4281de47cde0a76387fea318b8ce76e794e5f64c7d9b"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-present-handoff-frontend-lifetime-fbd7afd-01/execute-owned-current-phase-01.py",
+      "bytes": 3000,
+      "sha256": "3383e4fce3fee6db1b2796ef81d5b7c7fcb09d70d329f1dc62d85f661579141b"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-present-handoff-frontend-lifetime-fbd7afd-01/i386-present-inputs-01.json",
+      "bytes": 11567,
+      "sha256": "99c68442e2d161600f5a62a6f5d4ec799a54cf57b5c5d7d4293e37e55372901e"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-present-handoff-frontend-lifetime-fbd7afd-01/prepared-i386-present-01.json",
+      "bytes": 8881,
+      "sha256": "e613ec959cbf2504a67a8c4f0df6ee6a817bc9939d3509f36acb08a6915293df"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-present-handoff-frontend-lifetime-fbd7afd-01/present-authorization.template.json",
+      "bytes": 1136,
+      "sha256": "0eb3e297b008f0b5c8ee731ccd7cf2c68419b6ecf7f879e94c249e0769fafe98"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/limited-user-i386-present-handoff-frontend-lifetime-fbd7afd-01/review-current-phase-originals-01.py",
+      "bytes": 7735,
+      "sha256": "b9c29eb7158ba65d4012f10965aa7a97547758ab37c7ab6607a02b5c8addb502"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/phase-native-parser-handoff-frontend-lifetime-fbd7afd-01/collect-phase-native-parser-prefix-01.ps1",
+      "bytes": 3872,
+      "sha256": "a079733fd3b99e1ccc1ac5d8d8495b888a95c83ceb8f4399bb03dfbe27c5eeb8"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/phase-native-parser-handoff-frontend-lifetime-fbd7afd-01/deferred-phase-native-parser-frontend-lifetime-fbd7afd-01.py",
+      "bytes": 9671,
+      "sha256": "e4a4ae90d45964eefe9027015a96d504bde4848c19849134da69e27e89d36081"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/phase-native-parser-handoff-frontend-lifetime-fbd7afd-01/execute-owned-current-parser-01.py",
+      "bytes": 2398,
+      "sha256": "b2a2879ad795dd170d4ddd8ca0c35b1965ee75a36dd3e92dc0a083b77b20012d"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/phase-native-parser-handoff-frontend-lifetime-fbd7afd-01/ownership-authorization.template.json",
+      "bytes": 1054,
+      "sha256": "5df0b97361e6056a359f9e172eb1aa01ea7b1ca271270f745139ba4011c2341f"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/phase-native-parser-handoff-frontend-lifetime-fbd7afd-01/phase-parser-inputs-01.json",
+      "bytes": 6490,
+      "sha256": "a1f279e537f4df6153b165f8e2f2d86f950e04b9f7e739c38a9f02b23b381ac5"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/phase-native-parser-handoff-frontend-lifetime-fbd7afd-01/prepared-phase-parser-01.json",
+      "bytes": 8675,
+      "sha256": "423d3ecf2b16c539e6df7575af59f86fae618c0e2d13a05b43395f32d88f2d5b"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/phase-native-parser-handoff-frontend-lifetime-fbd7afd-01/review-native-parser-frontend-lifetime-originals-01.py",
+      "bytes": 12421,
+      "sha256": "93dad34a2317cdd31291051dcfffc405508426497143ba2785ceca8f479c1efa"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/artifacts/dxvk-native-d3d8-system-device-20261008/phase-native-parser-handoff-frontend-lifetime-fbd7afd-01/run-phase-native-parser-prefix-01.ps1",
+      "bytes": 9285,
+      "sha256": "348aa83a28aa7606ad2dda218a25f7a3dcb9474dbbbef328277cf7f3193d4916"
+    }
+  ]
+}

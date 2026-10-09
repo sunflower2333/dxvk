@@ -1,45 +1,168 @@
 # Findings
 
-## Live continuation 2026-10-09: D11 budget fix integrated, native verification queued
+## Live checkpoint: query105 native accepted and diagnostics merged for next CI
 
-MAIN now includes a7a9a19 (API10/11 Vulkan loader error-only logging) and
-494bda844401f0d5e96a741bf8719acc32ad3602 (owned invocation hold budget).
-Independent source reviews pass; native CPU04 is being prepared, not passed.
-Expected source scope: production AST6/combined8/WoW producer4, pure220,
-WoW390, argv9/diagnostics8/routing79/census5, invocation25cases/52checks/
-3sourcefunctions. Startup120s, invocation-to-hold120s, overall240s;
-retained child115s, worker480s, watchdog600s/task900s. Strict guards unchanged.
+MAIN225a02a includes querytrace1da441e (source2897) and separate diagnostic
+probe wrapper (sourcedb70). Production source exactfive pins join local x64/x86
+strict Microsoft syntax and real ARM64 EWDK threeCOFF/oneCPUPE. ROOT native
+upload31773/build31956/collect32181/transfer32348 allclosed0; source12/tool76
+rows75unique stable. Once extraction32869 admits63members/53regular files;
+sole finite reader32939/0 accepts actual105checks,7children+producer+collector
+closed. Proof5618/SHA248d21e0; CPU/activityrelease6411/SHA1436cc5d accepted.
+No fixture/compiler/extraction/reader replay; hardware and ordinary gatesfalse.
 
-Actual D11 quiet hardware05 failed its controller hold wait. Bound-to-probe
-invocation was72.213s; raw tuple replay began7.906s after invocation. Neither
-raw replay nor later lifecycle reverse proves a completed115s child timeout,
-factory entry/return or a rendering fault. Stdout0/stderr4096/identity-only
-originals are retained; no success reader ran. Fresh read-only recovery02
-passes original raw6/all3effectiveMesa/KMD/USERdesktop/devnode, recorded
-lifetimes/tasks/job absent and current valid160 with immediate exact recheck.
-ROOT recovery release6717/SHA32aa7742; desktop recovered automatically.
-New D11 hardware06 and DX8 packets are being prepared with source494bda8;
-core source remains actual96d1663, not a claimed build at the owner SHA.
+Prefix D10.1 observer30886/0 passes current raw6/all3Mesa/signedKMD/original
+USERdesktop/healthydevnode/freshvalid160+immediateexact;5recordedlifetimes absent,
+23inputpins,3ROOTphases/10transportsclosed. Actualrelease8401/SHA270172c9 and
+finalobserver345692/SHAc60616ef accepted. No task/job IDs were created, so no
+manufactured task/job absence or full-tree claim. ApplyproducerPID unknown.
+CorrectedD10.1 preparation05 uses owner progress7def plus bootstraprawd8cf;
+independentsourcepeer passes, freshactual02 pending. Failed01 remainsimmutable.
 
-CI run37852733974/1 for published96d1663 is verified COMPLETE SUCCESS.
-Both genuine ARM64 and I386 cores remain accepted build-only (combined
-handoff17742/2f3ee4b8). MSAA now passes BOTH ARM64 fresh02 and x64 original01,
-52205checks each; combined finite audit38562/729044f8, ARM release0d08aab3,
-x64 release36926f08. Ordinary DX8 native I386 probeCPU is accepted, exact
-probe669696/44d03443, source1dc1cf2, ROOT CPU release1846/815d10c6.
-These CPU results do not prove ordinary SYSTEM GPU rendering.
+SourceId02 source/core/transport peers PASS. ROOT now queries original USER
+session1/Limited with one exactly owned task and retainedworker/query handles,
+two primarymonitor/current160 joins and partialKMTfailure telemetry. It binds
+actualquery105activity1436 explicitly, no SourceId0fallback. Actualresultpending.
 
-D10.1 CPU03 stage/parse passed; actual build failed before any compiler/tool
-because EWDK D: was absent (Join-Path, driverline31). Failed prefix collected
-and transferred once; final known-child observer passed with4 recorded
-native lifetimes absent. ROOT all7 outer wrappers closed (build exit1,
-other6 exit0); failed-prefix release and fresh04 packet preparation underway.
-Remount the same original EWDK read-only, verify selected tool/profile paths,
-and build in fresh roots; never overwrite03 or invoke its success reader.
+Diagnostic wrapper ordinaryprobe source remains identical14ca and9CLIargs
+unchanged; it enables querytrace only in its owned child and labels admission0.
+Localstrictx64/x86 wrapper syntax passes; native wrapperPE is pending separately.
+It is not wired into ordinary CI admission and intentionally produces stderr;
+never run the ordinary successreader or relax stderr guards for this binary.
+A genuine newCIcore containing query and D9Render metadata is still required.
 
-ROOT remains sole target caller. Default Mesa remains active. Ordinary SYSTEM
-DX8-11 literal pixels/Present, recovery and replacement admission are still
-UNPROVED. Goal stays active until actual remote tests pass.
+One consolidated batchpush is next; existing published5ce CI37858808112 is
+COMPLETE SUCCESS. Only build-native-umd handles push; other workflows manual.
+Default Mesa and all real ordinarySYSTEM DX8-11/defaultreplacement gates remain
+unproved. Goal active.
+
+
+## Live checkpoint: D10.1 hardware01 stopped at strict Runner pin before binding
+
+ROOT Stage21627/0 (20.3029s) passes fresh current LUID003631a2/gen2/caps0,
+paired160, raw6 exact last recovery, all3Mesa, signedKMD,21/17 source/payload
+and22owner operands. Stage extract9120 and readonly6508 are retained closed0;
+three target transports close0. ROOT reviewed actual Stage and called Apply01.
+
+Actual Apply23162/1 closes in29.574s without timeout, all four transports and
+both collectors closed, collections[]. Immediate readonly4896 closed0; retained
+same-owner7752/start00:17:48.0653221Z closes1/drained in1.6523s. Actual failure:
+Pinned file differs: source/scripts/owned-raw-process-f4bf37f-02.cs. Frozen a0
+owner lines706-710 expects progress7def for Api10; only Api11 uses rawd8cf.
+Preparation03 inherited D11 rawd8cf as its owner Runner. The bootstrap d8cf is
+correct and distinct. Only apply-original/driver-state-before were produced;
+actual apply-original mutation=false. No task/job/binding/D3D factory or probe
+was created. Unknown synchronous Applyproducer PID remains unknown.
+
+Source-only finite-prefix readonly observer is being prepared to establish
+current raw6/Mesa/KMD/current160/USER/devnode and recorded native closure.
+Fresh namespace02 source preparation will select accepted progress7def for the
+owner while preserving rawd8cf bootstrap, CPU/source/front/core identities and
+all strict pin guards. No failed01 archive/receipt/namespace is overwritten.
+No ordinary success reader ran. D10.1 hardware success remains unproved.
+
+
+## Live continuation 2026-10-09: D9 native70 accepted; ordinary D10.1 actual attempt started
+
+MAIN59917b5 merges bounded opt-in D9 actual RenderCb allocation/patch metadata,
+source0d02f17. Strict native ARM64 EWDK twoCOFF/onePE and70 output checks pass.
+ROOT four phases1555/2604/3980/4664 and once finite reader14812 all close0;
+CPU release3954/SHAe1ec008c accepts17sources/76rows75unique/6children plus
+producer/collector. No RenderCb root cause or hardware fix is established.
+Commit a0 and59917 remain unpushed pending D11 query trace native verification.
+
+Actual live SourceId01 failed in USER SSH Session0; query actor4848 returned1,
+ROOT7119/1 and three transports closed. No usable SourceId/LUID was obtained;
+actual OpenAdapterFromHdc status and cleanup flags are unknown because the old
+C# throws before serialization. ROOT readonly activity release4285/SHA8fb10470
+carries actual hardware07 recovery748 and observere156 as reference. A fresh
+USER Session1 Limited owned-interactive query02 is being prepared; no fixed0
+operand or callback/registration workaround is admitted.
+
+D11 opt-in adapter query telemetry source2897c80,parenta0 preserves all current
+160-byte identity continuity guards, callback inputs and HRESULTs. Source peer
+and strict local Microsoft SDK x64/x86 syntax compile pass. Native105 checks
+and separate diagnostic child wrapper native build remain pending. Local MS
+driver docs explicitly use QueryAdapterInfoCb after Open in version discovery;
+do not assume post-Open callback is unsupported or drop continuity checks.
+
+Ordinary D10.1 preparation03 source peer passes. ROOT materializer20999/0 closes,
+using actual native5b CPUe260, lifecycle a0CPU94b, genuine96d ARM core19a,
+latest actual readonly activity8fb and separate accepted KMD observere156.
+Exact21sources/17payload/39archive/18static+4live22args reviewed. ROOT
+StageReadOnly01 is now running. No D10.1 SYSTEM factory/pixel/Present result yet.
+The target queue remains ROOT-owned through Apply and actual recovery.
+
+Default Mesa remains active; ordinary SYSTEM DX8-11 and permanent replacement
+remain unproved. Goal stays active.
+
+
+## Live continuation 2026-10-09: native CPU05 accepted; D11 actual factory failure and recovery verified
+
+MAIN a0dab8b24d9a78a13cd4e0d8f592276382635c99 includes quiet API10/11
+loader logging, owned-invocation hold budgets, and the corrected low-frequency
+clock test inputs360/361. Production clock arithmetic did not change in a0.
+Native Windows CPU05 and its once-only finite reader pass: production AST6,
+combined8/WoW producer4, pure220/WoW390, argv assignments5/cases9,
+diagnostic8/routing79/census5, invocation25cases/52checks/3functions.
+Five retained native children, three ROOT/transport pairs, and reader4169282/0
+are closed. ROOT CPU release2748/SHA94b68aa6 is accepted; no hardware admission.
+Failed CPU04 and its fixture inputs remain immutable; no controls were repeated.
+
+GitHub run37858808112/attempt1 at published5ce1b93 is COMPLETE SUCCESS:
+identity, shaderCPU, ARM64/x86/x64 backends and ARM64 runtime all passed.
+Actual hardware07 deliberately uses separately accepted genuine core96d1663
+(run37852733974/1), actual14ca front/probe, and lifecycle ownera0. These source
+identities remain separate. Frozen07 source peer passes. ROOT materialized
+once successfully (4173844/0); earlier local4173271/1 was only a wrong core
+handoff path before any output or target call. Stage4175165/0 passes raw6,
+all3Mesa/current valid160, signedKMD,21source/17payload rows and22operands.
+Apply4177878/1 failed; all collections0/no collection failures. Actual probe
+10216/start23:50:00.7618594Z exited1, retained/drained, no timeout,30.5137s.
+It called the actual SYSTEM D3D11 factory and returned80004005/E_FAIL at
+ordinary-system-d3d11-create-device; pixels0/heldfailure/stderr772. Typed
+Win7 Create callback was invoked but private-size telemetry returnSize=0,
+not successful size admission. Caps128/129 returnedE_FAIL after Open success.
+Source current(adapter) reuses retained runtime QueryAdapterInfoCb before any
+embedded renderer; callback HRESULT/lifecycle contract are under investigation.
+Three ZINK physical-device enumeration error rounds and missing private loader/
+ICD/z-1 at held census are facts, not proof that DXVK initialization was reached.
+No success reader ran; diagnostic and ordinary admission remain distinct.
+
+Fresh observer4187509/0 independently verifies restored raw6/all3Mesa/KMD/
+USERdesktop/healthydevnode/current valid160+immediate exact recheck. Eleven
+recorded native lifetimes, two exact tasks and named job are absent;3 ROOT
+phase parents and10 target transports closed. New ROOT recovery release12979/
+SHA748d96ba is accepted. Current observedLUID003631a2/Generation2/caps0
+is observation data, never a future fixed identity. Missing Applyproducer
+nativePID remains unknown. No reboot/image/package/RAM change was needed.
+
+D10.1 CPU04 now completes13 tools (9 frontend/4probe),3COFF/3PE,
+30headers/97selected rows/85paths/10sources. Original once-only reader4160690/1
+fails on case-sensitive final kernel32.Lib/lib RSP text. A direct finite saved
+artifact continuation handles only that final Windows path and parses actual
+import module rows rather than dumpbin's inspected-image filename echo.
+Remaining guards pass,19774/SHAfaddb288, local4171944/0 closed. ROOT artifact
+artifact admission release4011/SHAe260fdc4 is accepted; no native/compiler/old-reader/controls rerun.
+Known native17/transport11/ROOT7 lifetimes are already scoped closed,
+ROOT activity release12409/SHAe1e4a1db. EWDK D: read-only remount02 passed.
+
+DX8 ordinary offscreen05/Present06 source preparation03 is frozen at ownera0,
+with genuine I386 core96d and accepted ordinary probe1dc/private tuple. Live
+ROOT-reviewed SourceId, actual SYSTEM rendering and recovery remain pending.
+D9 bounded pre-RenderCb allocation/patch diagnostics source0d02f17 passes
+independent review and Linux strict ASan/UBSan70 output checks exactly once.
+Native affected-TU/controls packet is being prepared; not merged/pushed yet.
+No RenderCb root cause or contract-changing fix is proved by existing E_FAIL.
+
+Hardware05 failure and its prior recovery32aa remain immutable provenance.
+Hardware07 is the latest actual recovery748d96ba; activity authorization for
+future tests must explicitly use the newest scoped release after each target
+operation. Source-only D11/ICD investigation found no slot2 name dependency in
+Turnip's direct KMT enumeration; no loader/slot workaround is justified yet.
+
+Default Mesa remains active. Ordinary SYSTEM DX8-11 literal pixels/Present,
+recovery and default replacement remain UNPROVED. Goal stays active.
 
 ## Live checkpoint 2026-10-09: ColorFill passed, ordinary GPU gate active
 

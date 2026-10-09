@@ -42,7 +42,8 @@ bool admitted(const Adapter& adapter, UINT interfaceVersion, UINT flags = 0) {
     && (adapter.development || dxvk::umd::runtimeSupportsNativeInterface(interfaceVersion, flags));
 }
 
-HRESULT current(const std::shared_ptr<Adapter>& adapter) noexcept {
+HRESULT current(const std::shared_ptr<Adapter>& adapter,
+    dxvk::umd::RuntimeQueryStage stage) noexcept {
   HRESULT hr = state(adapter);
   if (FAILED(hr)) return hr;
   // Runtime callbacks can synchronously reenter the UMD. Never hold the
@@ -52,7 +53,7 @@ HRESULT current(const std::shared_ptr<Adapter>& adapter) noexcept {
   try {
     const auto& expected = *adapter->identity;
     dxvk::umd::RuntimeIdentity observed;
-    hr = dxvk::umd::queryRuntimeIdentity(expected.runtime, expected.query, observed);
+    hr = dxvk::umd::queryRuntimeIdentity(expected.runtime, expected.query, observed, stage);
     if (FAILED(state(adapter))) return DXGI_ERROR_DEVICE_REMOVED;
     if (FAILED(hr)) return hr;
     if (std::memcmp(observed.luid.data(), &expected.luid, sizeof(LUID))
@@ -72,7 +73,8 @@ SIZE_T APIENTRY privateDeviceSize(D3D10DDI_HADAPTER handle,
   if (FAILED(state(adapter)) || !args) return 0;
   const auto input = *args;
   if (!dxvk::umd::supportedNativeInterface(input.Interface, input.Version, input.Flags)
-      || !admitted(*adapter, input.Interface, input.Flags) || FAILED(current(adapter))) return 0;
+      || !admitted(*adapter, input.Interface, input.Flags)
+      || FAILED(current(adapter, dxvk::umd::RuntimeQueryStage::CalcPrivateDeviceSize))) return 0;
   const SIZE_T size = VioGpuDxvkPrivateDeviceSize();
   std::lock_guard<std::mutex> lock(adaptersMutex);
   return SUCCEEDED(state(adapter)) ? size : 0;
@@ -82,7 +84,7 @@ template<typename Functions, typename DxgiFunctions>
 HRESULT createAndPublish(const std::shared_ptr<Adapter>& adapter,
     D3D10DDIARG_CREATEDEVICE& local, Functions& table, Functions* output,
     DxgiFunctions& dxgi, DxgiFunctions* dxgiOutput) {
-  HRESULT hr = current(adapter);
+  HRESULT hr = current(adapter, dxvk::umd::RuntimeQueryStage::CreateDeviceBeforeBackend);
   if (FAILED(hr)) return hr;
   hr = dxvk::umd::createAdapterDevice(adapter->identity, &local);
   if (FAILED(hr)) return hr;
@@ -93,7 +95,7 @@ HRESULT createAndPublish(const std::shared_ptr<Adapter>& adapter,
     ~DeviceGuard() { if (handle.pDrvPrivate) destroy(handle); }
   } guard{local.hDrvDevice, table.pfnDestroyDevice};
   if (hr != S_OK) return E_FAIL;
-  hr = current(adapter);
+  hr = current(adapter, dxvk::umd::RuntimeQueryStage::CreateDeviceAfterBackend);
   {
     // Serialize the final state check and both output writes with CloseAdapter.
     // Backend destruction runs after unlocking because it may call the runtime.
@@ -226,7 +228,7 @@ HRESULT APIENTRY supportedVersions(D3D10DDI_HADAPTER handle, UINT32* entries, UI
   if (admitted(*adapter, D3D10_1_DDI_INTERFACE_VERSION)) supported[required++] = D3D10_1_DDI_SUPPORTED;
   if (admitted(*adapter, D3D11_0_DDI_INTERFACE_VERSION)) supported[required++] = D3D11_0_DDI_SUPPORTED;
   if (admitted(*adapter, D3D11_0_7_DDI_INTERFACE_VERSION)) supported[required++] = D3D11_0_7_DDI_SUPPORTED;
-  hr = current(adapter);
+  hr = current(adapter, dxvk::umd::RuntimeQueryStage::GetSupportedVersions);
   if (FAILED(hr)) return hr;
   std::lock_guard<std::mutex> lock(adaptersMutex);
   hr = state(adapter);
@@ -250,7 +252,12 @@ HRESULT APIENTRY getCaps(D3D10DDI_HADAPTER handle, const D3D10_2DDIARG_GETCAPS* 
   }
   if (input.DataSize != expected) return E_INVALIDARG;
   auto adapter = retain(handle);
-  HRESULT hr = current(adapter);
+  const auto stage = input.Type == D3D11DDICAPS_THREADING
+    ? dxvk::umd::RuntimeQueryStage::GetCapsThreading
+    : input.Type == D3D11DDICAPS_SHADER
+      ? dxvk::umd::RuntimeQueryStage::GetCapsShader
+      : dxvk::umd::RuntimeQueryStage::GetCapsPipelines;
+  HRESULT hr = current(adapter, stage);
   if (FAILED(hr)) return hr;
   D3D11DDI_3DPIPELINESUPPORT_CAPS pipelines = {};
   if (adapter->validation11Fl10_0) {
@@ -296,7 +303,8 @@ HRESULT open(D3D10DDIARG_OPENADAPTER* args, bool modern, bool development,
   const auto query = args->pAdapterCallbacks->pfnQueryAdapterInfoCb;
   try {
     dxvk::umd::RuntimeIdentity reply;
-    HRESULT hr = dxvk::umd::queryRuntimeIdentity(runtime, query, reply);
+    HRESULT hr = dxvk::umd::queryRuntimeIdentity(runtime, query, reply,
+      dxvk::umd::RuntimeQueryStage::OpenAdapter);
     if (FAILED(hr)) return hr;
     auto identity = std::make_shared<dxvk::umd::AdapterIdentity>();
     std::memcpy(&identity->luid, reply.luid.data(), sizeof(LUID));

@@ -7,7 +7,15 @@
 
 namespace dxvk::umd {
 
+// Diagnostic labels only. They do not select a query or alter its contract.
+enum class RuntimeQueryStage {
+  Continuity, OpenAdapter, GetSupportedVersions,
+  GetCapsThreading, GetCapsShader, GetCapsPipelines,
+  CalcPrivateDeviceSize, CreateDeviceBeforeBackend, CreateDeviceAfterBackend
+};
+
 HRESULT queryRuntimeIdentity(HANDLE runtime,
-  PFND3DDDI_QUERYADAPTERINFOCB query, RuntimeIdentity& result);
+  PFND3DDDI_QUERYADAPTERINFOCB query, RuntimeIdentity& result,
+  RuntimeQueryStage stage = RuntimeQueryStage::Continuity);
 
 }

@@ -11,7 +11,8 @@ extern "C" HRESULT APIENTRY VioGpuDxvkOpenAdapter11Fl10_0ForValidation(D3D10DDIA
 namespace dxvk::umd {
 
 HRESULT queryRuntimeIdentity(D3D10DDI_HRTADAPTER runtime,
-  PFND3DDDI_QUERYADAPTERINFOCB query, RuntimeIdentity& result);
+  PFND3DDDI_QUERYADAPTERINFOCB query, RuntimeIdentity& result,
+  RuntimeQueryStage stage = RuntimeQueryStage::Continuity);
 
 HRESULT createAdapterDevice(const std::shared_ptr<const AdapterIdentity>& identity,
   D3D10DDIARG_CREATEDEVICE* args);

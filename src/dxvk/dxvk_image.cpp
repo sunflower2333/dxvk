@@ -166,7 +166,8 @@ namespace dxvk {
     const DxvkImageCreateInfo&  createInfo,
           VkImage               imageHandle,
           DxvkMemoryAllocator&  allocator,
-          VkMemoryPropertyFlags memFlags)
+          VkMemoryPropertyFlags memFlags,
+          std::shared_ptr<void> owner)
   : DxvkPagedResource(allocator),
     m_vkd           (device->vkd()),
     m_properties    (memFlags),
@@ -183,7 +184,7 @@ namespace dxvk {
     allocationInfo.resourceCookie = cookie();
 
     VkImageCreateInfo imageInfo = getImageCreateInfo(DxvkImageUsageInfo());
-    assignStorage(m_allocator->importImageResource(imageInfo, allocationInfo, imageHandle));
+    assignStorage(m_allocator->importImageResource(imageInfo, allocationInfo, imageHandle, std::move(owner)));
   }
 
 
@@ -414,6 +415,28 @@ namespace dxvk {
     }
 
     return old;
+  }
+
+
+  void DxvkImage::assignStorageIdentity(const DxvkImageStorageIdentity& identity) noexcept {
+    m_storage = identity.storage;
+    m_imageInfo = m_storage->getImageInfo();
+    m_info.flags = identity.flags;
+    m_info.tiling = identity.tiling;
+    m_info.layout = identity.layout;
+    m_info.shared = identity.shared;
+    m_unifiedLayoutEnabled = identity.unifiedLayout;
+    m_stableAddress = true;
+    m_version += 1u;
+    // Rotation only admits one complete color subresource. Updating its
+    // global layout does not allocate per-subresource tracking storage.
+    trackLayout(getAvailableSubresources(), identity.layout);
+    resetTracking();
+    if (!(m_properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+      auto common = m_properties & m_storage->getMemoryProperties();
+      updateResidencyStatus((common & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+        ? DxvkResourceResidency::Resident : DxvkResourceResidency::Evicted);
+    }
   }
 
 

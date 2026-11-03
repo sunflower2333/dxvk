@@ -93,6 +93,7 @@ namespace dxvk {
     // Serialize query issue state with Begin/End, including a deferred list's
     // API-side End bookkeeping. Never wait for a predicate inside a CS task.
     D3D10DeviceLock lock = LockContext();
+    m_device->pollCompletions();
 
     // Get query status directly from the query object
     auto query = static_cast<D3D11Query*>(pAsync);
@@ -318,6 +319,7 @@ namespace dxvk {
           UINT                        MapFlags,
           D3D11_MAPPED_SUBRESOURCE*   pMappedResource) {
     D3D10DeviceLock lock = LockContext();
+    m_device->pollCompletions();
 
     if (unlikely(!pResource))
       return E_INVALIDARG;
@@ -358,6 +360,7 @@ namespace dxvk {
           ID3D11Resource*             pResource,
           BOOL*                       pBusy) {
     D3D10DeviceLock lock = LockContext();
+    m_device->pollCompletions();
     if (!pBusy) return E_POINTER;
     *pBusy = TRUE;
     if (!pResource) return E_INVALIDARG;

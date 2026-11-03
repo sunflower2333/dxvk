@@ -68,15 +68,23 @@ int main() {
     MWD_RUNTIME_ABI_VERSION, sizeof(mwd_callbacks), 1};
   CHECK(supportsRuntimeBackend(support));
   CHECK(!supportsRuntimeBackend(mwd_support{}));
-  for (int i = 0; i < 4; ++i) {
+  auto native = support;
+  native.flags |= MWD_SUPPORT_NATIVE_SURFACE;
+  CHECK(supportsRuntimeBackend(native));
+  CHECK(supportsNativeSurface(native));
+  CHECK(!supportsNativeSurface(support));
+  for (int i = 0; i < 6; ++i) {
     auto bad = support;
     switch (i) {
       case 0: bad.magic ^= 1; break;
       case 1: ++bad.version; break;
       case 2: ++bad.size; break;
-      case 3: bad.flags = 3; break;
+      case 3: bad.flags = MWD_SUPPORT_NATIVE_SURFACE; break;
+      case 4: bad.flags = 5; break;
+      case 5: bad.flags = 0; break;
     }
     CHECK(!supportsRuntimeBackend(bad));
+    CHECK(!supportsNativeSurface(bad));
   }
   const AdapterLuid luid = {1,2,3,4,5,6,7,8};
   mwd_context_info info = {};
@@ -100,15 +108,16 @@ int main() {
   std::weak_ptr<void> weak = runtime.owner;
   void* original = runtime.create.owner;
   {
+    runtime.disableExtraThreads = true;
     RuntimeBackendSnapshot snapshot(&runtime);
     const auto* retained = snapshot.get();
-    CHECK(retained && validRuntimeBackend(*retained));
+    CHECK(retained && validRuntimeBackend(*retained) && retained->disableExtraThreads);
     CHECK(retained->create.callbacks != &callbacks);
     CHECK(retained->create.owner == original);
     runtime = {};
     callbacks = {};
     CHECK(!weak.expired());
-    CHECK(validRuntimeBackend(*retained));
+    CHECK(validRuntimeBackend(*retained) && retained->disableExtraThreads);
     CHECK(retained->create.callbacks->context(original, &info) == 0);
     CHECK(retained->create.callbacks->status(original) == 0);
   }

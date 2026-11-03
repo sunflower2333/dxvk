@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Ordinary Microsoft SYSTEM D3D9/9Ex only. ROOT owns any temporary binding.
+// Ordinary Microsoft SYSTEM D3D8 or D3D9/9Ex. The owner manages persistent binding.
+// Build with DXVK_SYSTEM_D3D8 for the genuine I386 D3D8 runtime; no API delegation.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -9,7 +10,29 @@
 #pragma warning(push)
 #pragma warning(disable: 4201) // Anonymous SDK/WDK structures; source warnings remain strict.
 #endif
+#if defined(DXVK_SYSTEM_D3D8)
+#include "umd-d3d8-api.h"
+#define LEGACY_TAG "D8_SYSTEM"
+#define LEGACY_SCHEMA "ordinary-system-d3d8"
+using LegacyApi = IDirect3D8;
+using LegacyNormal = IDirect3D8;
+using LegacyDevice = IDirect3DDevice8;
+using LegacyExtended = IDirect3DDevice8;
+using LegacySurface = IDirect3DSurface8;
+using LegacyIdentifier = D3DADAPTER_IDENTIFIER8;
+using LegacyViewport = D3DVIEWPORT8;
+#else
 #include <d3d9.h>
+#define LEGACY_TAG "D9_SYSTEM"
+#define LEGACY_SCHEMA "ordinary-system-d3d9"
+using LegacyApi = IDirect3D9Ex;
+using LegacyNormal = IDirect3D9;
+using LegacyDevice = IDirect3DDevice9;
+using LegacyExtended = IDirect3DDevice9Ex;
+using LegacySurface = IDirect3DSurface9;
+using LegacyIdentifier = D3DADAPTER_IDENTIFIER9;
+using LegacyViewport = D3DVIEWPORT9;
+#endif
 #include <d3dkmthk.h>
 #if defined(_MSC_VER)
 #pragma warning(pop)
@@ -32,7 +55,7 @@ void require(bool value, const char* stage, HRESULT hr = E_FAIL) {
   if (!value) throw Failure{stage, hr};
 }
 void exact(HRESULT hr, const char* stage) {
-  std::printf("D9_SYSTEM_STEP stage=%s hr=%08lx\n", stage, static_cast<unsigned long>(hr));
+  std::printf(LEGACY_TAG "_STEP stage=%s hr=%08lx\n", stage, static_cast<unsigned long>(hr));
   require(hr == S_OK, stage, hr);
 }
 std::wstring absolute(const WCHAR* input) {
@@ -78,7 +101,7 @@ struct SystemModules {
     require(module != nullptr, "load-system-module", HRESULT_FROM_WIN32(GetLastError()));
     owned.push_back(module);
     require(!_wcsicmp(loaded(module).c_str(), expected.c_str()), "exact-system-module");
-    std::printf("D9_SYSTEM_MODULE name=%ls path=%ls\n", name, expected.c_str());
+    std::printf(LEGACY_TAG "_MODULE name=%ls path=%ls\n", name, expected.c_str());
     return module;
   }
 };
@@ -132,7 +155,7 @@ void verifyModules(const std::array<std::wstring, 4>& paths) {
   for (size_t role = 0; role < paths.size(); ++role) {
     const HMODULE module = GetModuleHandleW(leaf(paths[role]).c_str());
     require(module && !_wcsicmp(loaded(module).c_str(), paths[role].c_str()), "factory-loaded-exact-candidate-tuple");
-    std::printf("D9_SYSTEM_CANDIDATE_MODULE role=%zu path=%ls\n", role, paths[role].c_str());
+    std::printf(LEGACY_TAG "_CANDIDATE_MODULE role=%zu path=%ls\n", role, paths[role].c_str());
   }
 }
 constexpr UINT Width = 16, Height = 16;
@@ -152,15 +175,24 @@ Pixels expected(UINT frame) {
 struct Vertex { float x, y, z, rhw; UINT color; };
 struct Frame { UINT pitch = 0, screenAttempts = 0; HRESULT cooperative = E_FAIL, present = E_FAIL; };
 std::array<Frame, 2> frameResults{};
-void configure(IDirect3DDevice9* device) {
+void configure(LegacyDevice* device) {
+#if defined(DXVK_SYSTEM_D3D8)
+  exact(device->SetVertexShader(D3DFVF_XYZRHW | D3DFVF_DIFFUSE), "fixed-function-fvf");
+  exact(device->SetPixelShader(0), "fixed-function-ps");
+  exact(device->SetTexture(0, nullptr), "fixed-function-untextured");
+#else
   exact(device->SetVertexShader(nullptr), "fixed-function-vs");
   exact(device->SetPixelShader(nullptr), "fixed-function-ps");
   exact(device->SetTexture(0, nullptr), "fixed-function-untextured");
   exact(device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE), "fixed-function-fvf");
+#endif
   const std::pair<D3DRENDERSTATETYPE, DWORD> states[]{
     {D3DRS_ZENABLE,FALSE},{D3DRS_ZWRITEENABLE,FALSE},{D3DRS_LIGHTING,FALSE},{D3DRS_FOGENABLE,FALSE},
     {D3DRS_CULLMODE,D3DCULL_NONE},{D3DRS_ALPHABLENDENABLE,FALSE},{D3DRS_ALPHATESTENABLE,FALSE},
-    {D3DRS_SCISSORTESTENABLE,FALSE},{D3DRS_DITHERENABLE,FALSE},{D3DRS_SRGBWRITEENABLE,FALSE},
+    {D3DRS_DITHERENABLE,FALSE},
+#if !defined(DXVK_SYSTEM_D3D8)
+    {D3DRS_SCISSORTESTENABLE,FALSE},{D3DRS_SRGBWRITEENABLE,FALSE},
+#endif
     {D3DRS_COLORWRITEENABLE,15},{D3DRS_MULTISAMPLEMASK,0xffffffffu}};
   for (const auto& state : states) exact(device->SetRenderState(state.first, state.second), "fixed-function-render-state");
   exact(device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1), "fixed-function-color-op");
@@ -168,7 +200,7 @@ void configure(IDirect3DDevice9* device) {
   exact(device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1), "fixed-function-alpha-op");
   exact(device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE), "fixed-function-alpha-arg");
   exact(device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE), "fixed-function-next-stage");
-  const D3DVIEWPORT9 viewport{0,0,Width,Height,0.0f,1.0f};
+  const LegacyViewport viewport{0,0,Width,Height,0.0f,1.0f};
   exact(device->SetViewport(&viewport), "exact-viewport");
 }
 void pump() {
@@ -201,19 +233,32 @@ void screen(HWND window, UINT frame, const std::wstring& directory) {
   save(directory, frame ? L"draw-screen.raw" : L"clear-screen.raw", pixels.data(), DWORD(sizeof(pixels)));
   require(matched, "literal-visible-screen-rgb");
 }
-void render(IDirect3DDevice9* device, IDirect3DDevice9Ex* extended, HWND window,
+void render(LegacyDevice* device, LegacyExtended* extended, HWND window,
     bool present, const std::wstring& directory) {
-  ComPtr<IDirect3DSurface9> target, staging;
+  ComPtr<LegacySurface> target, staging;
+#if defined(DXVK_SYSTEM_D3D8)
+  exact(device->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &target), "public-backbuffer");
+#else
   exact(device->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &target), "public-backbuffer");
+#endif
   D3DSURFACE_DESC desc{}; exact(target->GetDesc(&desc), "actual-backbuffer-description");
   require(desc.Width == Width && desc.Height == Height && desc.Format == D3DFMT_A8R8G8B8
-    && desc.MultiSampleType == D3DMULTISAMPLE_NONE && desc.MultiSampleQuality == 0 && desc.Pool == D3DPOOL_DEFAULT,
+    && desc.MultiSampleType == D3DMULTISAMPLE_NONE
+#if !defined(DXVK_SYSTEM_D3D8)
+    && desc.MultiSampleQuality == 0
+#endif
+    && desc.Pool == D3DPOOL_DEFAULT,
     "exact-backbuffer-geometry-format");
+#if defined(DXVK_SYSTEM_D3D8)
+  exact(device->CreateImageSurface(Width, Height, desc.Format, &staging), "public-systemmem-readback");
+  exact(device->SetRenderTarget(target.Get(), nullptr), "public-render-target");
+#else
   exact(device->CreateOffscreenPlainSurface(Width, Height, desc.Format, D3DPOOL_SYSTEMMEM, &staging, nullptr), "public-systemmem-readback");
   exact(device->SetRenderTarget(0, target.Get()), "public-render-target");
+#endif
   configure(device);
   for (UINT frame = 0; frame < 2; ++frame) {
-    std::printf("D9_SYSTEM_FRAME_BEGIN frame=%u\n", frame);
+    std::printf(LEGACY_TAG "_FRAME_BEGIN frame=%u\n", frame);
     exact(device->Clear(0, nullptr, D3DCLEAR_TARGET, frame ? 0xff421a75u : 0xff173b61u, 1.0f, 0), "public-clear-base");
     if (!frame) {
       for (const auto& region : ClearRegions) {
@@ -230,7 +275,11 @@ void render(IDirect3DDevice9* device, IDirect3DDevice9Ex* extended, HWND window,
       }
       exact(device->EndScene(), "public-end-scene");
     }
+#if defined(DXVK_SYSTEM_D3D8)
+    exact(device->CopyRects(target.Get(), nullptr, 0, staging.Get(), nullptr), "public-blocking-readback-copy");
+#else
     exact(device->GetRenderTargetData(target.Get(), staging.Get()), "public-blocking-readback-copy");
+#endif
     D3DLOCKED_RECT mapped{}; exact(staging->LockRect(&mapped, nullptr, D3DLOCK_READONLY), "public-readback-lock");
     const uint64_t span = mapped.Pitch >= LONG(Width*4) ? uint64_t(Height-1)*UINT(mapped.Pitch)+Width*4 : 0;
     const bool valid = mapped.pBits && span && span <= uint64_t(UINTPTR_MAX)-reinterpret_cast<uintptr_t>(mapped.pBits)+1;
@@ -244,12 +293,16 @@ void render(IDirect3DDevice9* device, IDirect3DDevice9Ex* extended, HWND window,
     frameResults[frame].cooperative = device->TestCooperativeLevel();
     exact(frameResults[frame].cooperative, "actual-device-cooperative-state");
     if (present) {
+#if defined(DXVK_SYSTEM_D3D8)
+      frameResults[frame].present = device->Present(nullptr, nullptr, nullptr, nullptr);
+#else
       frameResults[frame].present = extended ? extended->PresentEx(nullptr, nullptr, nullptr, nullptr, 0)
         : device->Present(nullptr, nullptr, nullptr, nullptr);
+#endif
       exact(frameResults[frame].present, "ordinary-system-present");
       screen(window, frame, directory);
     }
-    std::printf("D9_SYSTEM_FRAME_DONE frame=%u pixels=256 presents=%u\n", frame, present ? 1u : 0u);
+    std::printf(LEGACY_TAG "_FRAME_DONE frame=%u pixels=256 presents=%u\n", frame, present ? 1u : 0u);
   }
 }
 }
@@ -261,10 +314,10 @@ int wmain(int argc, WCHAR** argv) {
     return 2;
   }
   SystemModules modules;
-  ComPtr<IDirect3D9> normal;
-  ComPtr<IDirect3D9Ex> api;
-  ComPtr<IDirect3DDevice9> device;
-  ComPtr<IDirect3DDevice9Ex> extended;
+  ComPtr<LegacyNormal> normal;
+  ComPtr<LegacyApi> api;
+  ComPtr<LegacyDevice> device;
+  ComPtr<LegacyExtended> extended;
   HWND window = nullptr;
   HANDLE hold = nullptr;
   DWORD holdMs = 0;
@@ -272,8 +325,15 @@ int wmain(int argc, WCHAR** argv) {
   int result = 1;
   bool outputCreated = false;
   try {
+    require(SetProcessDPIAware() != FALSE, "physical-pixel-dpi-context");
+#if defined(DXVK_SYSTEM_D3D8)
+    static_assert(sizeof(void*) == 4, "SYSTEM D3D8 requires I386");
+    const bool ex = false, present = !std::wcscmp(argv[2], L"present");
+    require(!std::wcscmp(argv[1], L"8"), "explicit-api");
+#else
     const bool ex = !std::wcscmp(argv[1], L"9ex"), present = !std::wcscmp(argv[2], L"present");
     require(ex || !std::wcscmp(argv[1], L"9"), "explicit-api");
+#endif
     require(present || !std::wcscmp(argv[2], L"offscreen"), "explicit-phase");
     const LUID luid = parseLuid(argv[3]);
     const std::array<std::wstring, 4> tuple{absolute(argv[4]),absolute(argv[5]),absolute(argv[6]),absolute(argv[7])};
@@ -295,7 +355,11 @@ int wmain(int argc, WCHAR** argv) {
     }
     require(CreateDirectoryW(directory.c_str(), nullptr) != FALSE, "fresh-output-directory", HRESULT_FROM_WIN32(GetLastError())); outputCreated = true;
     for (const auto& path : tuple) require(!GetModuleHandleW(leaf(path).c_str()), "candidate-tuple-not-preloaded");
+#if defined(DXVK_SYSTEM_D3D8)
+    const HMODULE runtime = modules.load(L"d3d8.dll"), gdi = modules.load(L"gdi32.dll");
+#else
     const HMODULE runtime = modules.load(L"d3d9.dll"), gdi = modules.load(L"gdi32.dll");
+#endif
     Kmt kmt; kmt.query = symbol<decltype(&D3DKMTQueryAdapterInfo)>(gdi, "D3DKMTQueryAdapterInfo");
     kmt.close = symbol<decltype(&D3DKMTCloseAdapter)>(gdi, "D3DKMTCloseAdapter");
     D3DKMT_OPENADAPTERFROMLUID opened{}; opened.AdapterLuid = luid;
@@ -309,9 +373,30 @@ int wmain(int argc, WCHAR** argv) {
     require(dxvk::umd::readRuntimeIdentity(identityBytes.data(), identityBytes.size(), identity)
       && !std::memcmp(identity.luid.data(), &luid, sizeof(luid)), "actual-runtime-luid-generation");
     const auto selected = kmt.name();
-    std::printf("D9_SYSTEM_SELECTED api=%ls phase=%ls luid=%08x:%08x generation=%llu effective_umd=%ls\n",
+    std::printf(LEGACY_TAG "_SELECTED api=%ls phase=%ls luid=%08x:%08x generation=%llu effective_umd=%ls\n",
       argv[1], argv[2], UINT(luid.HighPart), UINT(luid.LowPart), static_cast<unsigned long long>(identity.generation), selected.c_str());
     require(!_wcsicmp(selected.c_str(), tuple[0].c_str()), "actual-native-kmt-candidate-name");
+#if defined(DXVK_SYSTEM_D3D8)
+    normal.Attach(symbol<decltype(&Direct3DCreate8)>(runtime, "Direct3DCreate8")(D3D_SDK_VERSION));
+    require(normal.Get() != nullptr, "ordinary-system-factory-8");
+    UINT ordinal = UINT_MAX;
+    const UINT count = normal->GetAdapterCount(); require(count && count <= 16, "bounded-public-adapters");
+    for (UINT i = 0; i < count; ++i) {
+      const HMONITOR monitor = normal->GetAdapterMonitor(i);
+      MONITORINFOEXW info{}; info.cbSize = sizeof(info);
+      require(monitor && GetMonitorInfoW(monitor, &info), "public-adapter-monitor");
+      HDC dc = CreateDCW(L"DISPLAY", info.szDevice, nullptr, nullptr); require(dc != nullptr, "adapter-monitor-dc");
+      D3DKMT_OPENADAPTERFROMHDC current{}; current.hDc = dc;
+      const NTSTATUS openedMonitor = symbol<decltype(&D3DKMTOpenAdapterFromHdc)>(gdi, "D3DKMTOpenAdapterFromHdc")(&current);
+      const BOOL releasedDc = DeleteDC(dc);
+      require(!openedMonitor && current.hAdapter && releasedDc, "public-monitor-kmt-identity");
+      D3DKMT_CLOSEADAPTER closed{}; closed.hAdapter = current.hAdapter;
+      require(!kmt.close(&closed), "public-monitor-kmt-close");
+      if (equalLuid(luid, current.AdapterLuid)) { require(ordinal == UINT_MAX, "unique-public-selected-luid"); ordinal = i; }
+    }
+    require(ordinal != UINT_MAX, "public-selected-luid-present");
+    LegacyNormal* factory = normal.Get();
+#else
     exact(symbol<decltype(&Direct3DCreate9Ex)>(runtime, "Direct3DCreate9Ex")(D3D_SDK_VERSION, &api), "ordinary-system-factory-9ex");
     UINT ordinal = UINT_MAX;
     const UINT count = api->GetAdapterCount(); require(count && count <= 16, "bounded-public-adapters");
@@ -320,18 +405,36 @@ int wmain(int argc, WCHAR** argv) {
       if (equalLuid(luid, current)) { require(ordinal == UINT_MAX, "unique-public-selected-luid"); ordinal = i; }
     }
     require(ordinal != UINT_MAX, "public-selected-luid-present");
-    D3DADAPTER_IDENTIFIER9 adapter{}; exact(api->GetAdapterIdentifier(ordinal, 0, &adapter), "public-adapter-identifier");
+    LegacyNormal* factory = api.Get();
+#endif
+    LegacyIdentifier adapter{}; exact(factory->GetAdapterIdentifier(ordinal, 0, &adapter), "public-adapter-identifier");
     require(adapter.VendorId == 0x1af4 && adapter.DeviceId == 0x1050, "actual-viogpu-public-identity");
-    std::printf("D9_SYSTEM_IDENTITY ordinal=%u vendor=%08x device=%08x driver=%.*s description=%.*s\n",
+    std::printf(LEGACY_TAG "_IDENTITY ordinal=%u vendor=%08x device=%08x driver=%.*s description=%.*s\n",
       ordinal, UINT(adapter.VendorId), UINT(adapter.DeviceId), int(sizeof(adapter.Driver)), adapter.Driver, int(sizeof(adapter.Description)), adapter.Description);
+#if !defined(DXVK_SYSTEM_D3D8)
     if (!ex) {
       normal.Attach(symbol<decltype(&Direct3DCreate9)>(runtime, "Direct3DCreate9")(D3D_SDK_VERSION)); require(normal.Get() != nullptr, "ordinary-system-factory-9");
-      D3DADAPTER_IDENTIFIER9 same{}; exact(normal->GetAdapterIdentifier(ordinal, 0, &same), "normal-public-adapter-identity");
+      LegacyIdentifier same{}; exact(normal->GetAdapterIdentifier(ordinal, 0, &same), "normal-public-adapter-identity");
       require(normal->GetAdapterCount() == count && same.VendorId == adapter.VendorId && same.DeviceId == adapter.DeviceId
         && !std::memcmp(&same.DeviceIdentifier, &adapter.DeviceIdentifier, sizeof(GUID)), "normal-ex-selected-adapter-match");
     }
-    IDirect3D9* factory = ex ? static_cast<IDirect3D9*>(api.Get()) : normal.Get();
+    factory = ex ? static_cast<LegacyNormal*>(api.Get()) : normal.Get();
+#endif
     D3DDISPLAYMODE display{}; exact(factory->GetAdapterDisplayMode(ordinal, &display), "public-display-format");
+    std::printf(LEGACY_TAG "_DISPLAY format=%u width=%u height=%u refresh=%u\n",
+      unsigned(display.Format), display.Width, display.Height, display.RefreshRate);
+#if defined(DXVK_SYSTEM_D3D8)
+    D3DCAPS8 caps{}; exact(factory->GetDeviceCaps(ordinal, D3DDEVTYPE_HAL, &caps), "public-device-caps");
+    std::printf(LEGACY_TAG "_CAPS caps2=%08lx devcaps=%08lx windowed=%u\n",
+      static_cast<unsigned long>(caps.Caps2), static_cast<unsigned long>(caps.DevCaps),
+      unsigned(bool(caps.Caps2 & D3DCAPS2_CANRENDERWINDOWED)));
+    // These are read-only capability queries, not fullscreen transitions.
+    for (const auto format : {D3DFMT_X8R8G8B8, D3DFMT_A8R8G8B8})
+      for (const BOOL windowed : {FALSE, TRUE})
+        std::printf(LEGACY_TAG "_FORMAT_QUERY target=%u windowed=%u hr=%08lx\n",
+          unsigned(format), unsigned(windowed), static_cast<unsigned long>(
+            factory->CheckDeviceType(ordinal, D3DDEVTYPE_HAL, display.Format, format, windowed)));
+#endif
     exact(factory->CheckDeviceType(ordinal, D3DDEVTYPE_HAL, display.Format, D3DFMT_A8R8G8B8, TRUE), "public-a8-windowed-target-support");
     WNDCLASSW klass{}; klass.lpfnWndProc = DefWindowProcW; klass.hInstance = GetModuleHandleW(nullptr); klass.lpszClassName = L"VioGpuD9SystemLiteralWindow";
     require(RegisterClassW(&klass), "register-probe-window");
@@ -342,9 +445,14 @@ int wmain(int argc, WCHAR** argv) {
     D3DPRESENT_PARAMETERS parameters{}; parameters.BackBufferWidth = Width; parameters.BackBufferHeight = Height;
     parameters.BackBufferFormat = D3DFMT_A8R8G8B8; parameters.BackBufferCount = 1; parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
     parameters.SwapEffect = D3DSWAPEFFECT_DISCARD; parameters.hDeviceWindow = window; parameters.Windowed = TRUE;
+#if defined(DXVK_SYSTEM_D3D8)
+    parameters.FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
+    exact(factory->CreateDevice(ordinal, D3DDEVTYPE_HAL, window, D3DCREATE_HARDWARE_VERTEXPROCESSING, &parameters, &device), "ordinary-system-create-device-8");
+#else
     parameters.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
     if (ex) { exact(api->CreateDeviceEx(ordinal, D3DDEVTYPE_HAL, window, D3DCREATE_HARDWARE_VERTEXPROCESSING, &parameters, nullptr, &extended), "ordinary-system-create-device-9ex"); device = extended; }
     else exact(normal->CreateDevice(ordinal, D3DDEVTYPE_HAL, window, D3DCREATE_HARDWARE_VERTEXPROCESSING, &parameters, &device), "ordinary-system-create-device-9");
+#endif
     D3DDEVICE_CREATION_PARAMETERS created{}; exact(device->GetCreationParameters(&created), "public-created-device-identity");
     require(created.AdapterOrdinal == ordinal && created.DeviceType == D3DDEVTYPE_HAL
       && created.BehaviorFlags == D3DCREATE_HARDWARE_VERTEXPROCESSING && created.hFocusWindow == window, "actual-hal-hardware-vertex-device");
@@ -353,7 +461,7 @@ int wmain(int argc, WCHAR** argv) {
     require(!_wcsicmp(kmt.name().c_str(), tuple[0].c_str()), "native-name-stable-through-render"); verifyModules(tuple);
     std::array<unsigned char, dxvk::umd::RuntimeIdentityReplySize> after{};
     kmt.info(KMTQAITYPE_UMDRIVERPRIVATE, after.data(), UINT(after.size())); require(after == identityBytes, "runtime-identity-stable-through-render");
-    const std::string manifest = "{\"schema\":\"ordinary-system-d3d9-literal-v1\",\"api\":" + jsonString(argv[1])
+    const std::string manifest = "{\"schema\":\"" LEGACY_SCHEMA "-literal-v1\",\"api\":" + jsonString(argv[1])
       + ",\"phase\":" + jsonString(argv[2]) + ",\"width\":16,\"height\":16,\"frames\":2,\"pixels\":512,\"presents\":" + std::to_string(present ? 2 : 0)
       + ",\"screenPixels\":" + std::to_string(present ? 512 : 0) + ",\"luidHigh\":" + std::to_string(UINT(luid.HighPart)) + ",\"luidLow\":" + std::to_string(luid.LowPart)
       + ",\"generation\":" + std::to_string(identity.generation) + ",\"capabilities\":" + std::to_string(identity.capabilities)
@@ -364,24 +472,24 @@ int wmain(int argc, WCHAR** argv) {
       + "{\"rowPitch\":" + std::to_string(frameResults[1].pitch) + ",\"cooperative\":0,\"present\":" + std::to_string(frameResults[1].present) + ",\"screenAttempts\":" + std::to_string(frameResults[1].screenAttempts) + "}]}\n";
     save(directory, L"manifest.json", manifest.data(), DWORD(manifest.size()));
     result = 0;
-    std::printf("D9_SYSTEM_RESULTS_READY api=%ls phase=%ls pixels=512 presents=%u screen_pixels=%u production_admission=0\n", argv[1], argv[2], present ? 2u : 0u, present ? 512u : 0u);
+    std::printf(LEGACY_TAG "_RESULTS_READY api=%ls phase=%ls pixels=512 presents=%u screen_pixels=%u production_admission=0\n", argv[1], argv[2], present ? 2u : 0u, present ? 512u : 0u);
   } catch (const Failure& failure) {
-    std::fprintf(stderr, "D9_SYSTEM_FAIL stage=%s hr=%08lx\n", failure.stage, static_cast<unsigned long>(failure.hr));
-  } catch (...) { std::fputs("D9_SYSTEM_FAIL stage=unexpected-exception\n", stderr); }
+    std::fprintf(stderr, LEGACY_TAG "_FAIL stage=%s hr=%08lx\n", failure.stage, static_cast<unsigned long>(failure.hr));
+  } catch (...) { std::fputs(LEGACY_TAG "_FAIL stage=unexpected-exception\n", stderr); }
   if (hold) {
-    const std::string held = "{\"schema\":\"ordinary-system-d3d9-held-v1\",\"pid\":" + std::to_string(GetCurrentProcessId())
+    const std::string held = "{\"schema\":\"" LEGACY_SCHEMA "-held-v1\",\"pid\":" + std::to_string(GetCurrentProcessId())
       + ",\"timeout_ms\":" + std::to_string(holdMs) + ",\"pending_exit\":" + std::to_string(result) + ",\"hold_event\":" + jsonString(holdEvent) + ",\"restoration_proved_by_event\":false}\n";
     try { if (outputCreated) save(directory.substr(0, directory.find_last_of(L"\\")), (leaf(directory) + L".held.json").c_str(), held.data(), DWORD(held.size())); }
-    catch (...) { std::fputs("D9_SYSTEM_FAIL stage=hold-file-write\n", stderr); result = 1; }
-    std::printf("D9_SYSTEM_HELD pid=%lu timeout_ms=%lu pending_exit=%d restoration_not_proved_by_event=1\n", GetCurrentProcessId(), holdMs, result);
-    if (WaitForSingleObject(hold, holdMs) != WAIT_OBJECT_0) { std::fputs("D9_SYSTEM_FAIL stage=hold-release-timeout\n", stderr); result = 1; }
+    catch (...) { std::fputs(LEGACY_TAG "_FAIL stage=hold-file-write\n", stderr); result = 1; }
+    std::printf(LEGACY_TAG "_HELD pid=%lu timeout_ms=%lu pending_exit=%d restoration_not_proved_by_event=1\n", GetCurrentProcessId(), holdMs, result);
+    if (WaitForSingleObject(hold, holdMs) != WAIT_OBJECT_0) { std::fputs(LEGACY_TAG "_FAIL stage=hold-release-timeout\n", stderr); result = 1; }
     CloseHandle(hold);
   }
   if (extended) device.Reset();
-  IDirect3DDevice9* released = extended ? static_cast<IDirect3DDevice9*>(extended.Detach()) : device.Detach();
-  if (released) { const ULONG refs = released->Release(); std::printf("D9_SYSTEM_DEVICE_RELEASE remaining=%lu\n", refs); if (refs) result = 1; }
+  LegacyDevice* released = extended ? static_cast<LegacyDevice*>(extended.Detach()) : device.Detach();
+  if (released) { const ULONG refs = released->Release(); std::printf(LEGACY_TAG "_DEVICE_RELEASE remaining=%lu\n", refs); if (refs) result = 1; }
   normal.Reset(); api.Reset();
   if (window && !DestroyWindow(window)) result = 1;
-  std::printf("D9_SYSTEM_DONE exit=%d production_admission=0 registry_changes=0\n", result);
+  std::printf(LEGACY_TAG "_DONE exit=%d production_admission=0 registry_changes=0\n", result);
   return result;
 }

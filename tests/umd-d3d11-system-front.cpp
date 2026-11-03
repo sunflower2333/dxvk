@@ -13,7 +13,25 @@
 #include "umd-d3d11-system-entry.h"
 
 namespace {
-#if defined(_M_ARM64) && !defined(_M_ARM64EC)
+#if defined(VIOGPU_VALIDATION_FL11_0)
+constexpr char CoreEntry[] = "VioGpuDxvkOpenAdapter11Fl11_0ForValidation";
+#elif defined(VIOGPU_VALIDATION_FL10_1)
+constexpr char CoreEntry[] = "VioGpuDxvkOpenAdapter11Fl10_1ForValidation";
+#else
+constexpr char CoreEntry[] = "VioGpuDxvkOpenAdapter11Fl10_0ForValidation";
+#endif
+#if defined(VIOGPU_VALIDATION_PACKAGED_CORE)
+constexpr WCHAR CoreName[] = L"viogpudxvk.dll";
+#if defined(_M_ARM64EC) || defined(_M_X64)
+constexpr WCHAR RelativeCore[] = L"x64\\viogpudxvk.dll";
+#elif defined(_M_ARM64)
+constexpr WCHAR RelativeCore[] = L"arm64\\viogpudxvk.dll";
+#elif defined(_M_IX86)
+constexpr WCHAR RelativeCore[] = L"x86\\viogpudxvk.dll";
+#else
+#error Unsupported packaged validation frontend architecture
+#endif
+#elif defined(_M_ARM64) && !defined(_M_ARM64EC)
 constexpr WCHAR CoreName[] = L"viogpudxvk.dll";
 #elif defined(_M_X64) || defined(_M_ARM64EC)
 constexpr WCHAR CoreName[] = L"viogpudxvk_x64.dll";
@@ -21,6 +39,9 @@ constexpr WCHAR CoreName[] = L"viogpudxvk_x64.dll";
 constexpr WCHAR CoreName[] = L"viogpudxvk_x86.dll";
 #else
 #error Unsupported validation frontend architecture
+#endif
+#if !defined(VIOGPU_VALIDATION_PACKAGED_CORE)
+constexpr auto& RelativeCore = CoreName;
 #endif
 INIT_ONCE coreOnce = INIT_ONCE_STATIC_INIT;
 SRWLOCK lock = SRWLOCK_INIT;
@@ -99,17 +120,20 @@ BOOL CALLBACK loadCore(PINIT_ONCE, PVOID, PVOID*) {
   WCHAR* slash = std::wcsrchr(paths->expected, L'\\');
   if (!slash) { SetLastError(ERROR_BAD_PATHNAME); return FALSE; }
   slash[1] = 0;
-  if (wcscat_s(paths->expected, CoreName)) { SetLastError(ERROR_FILENAME_EXCED_RANGE); return FALSE; }
+  if (wcscat_s(paths->expected, RelativeCore)) { SetLastError(ERROR_FILENAME_EXCED_RANGE); return FALSE; }
   const auto matches = [&](HMODULE module) {
     size = GetModuleFileNameW(module, paths->actual, 32768);
     return size && size < 32768 && !_wcsicmp(paths->expected, paths->actual);
   };
   const HMODULE existing = GetModuleHandleW(CoreName);
   if (existing && !matches(existing)) { SetLastError(ERROR_INVALID_DLL); return FALSE; }
-  const HMODULE module = LoadLibraryExW(paths->expected, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+  // Match the legacy ARM64X frontend's exact per-architecture core. This
+  // permits one process to use DX8/9 and DX10/11 from the same package.
+  const HMODULE module = LoadLibraryExW(paths->expected, nullptr,
+    LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
   if (!module) return FALSE;
   if (!matches(module)) { FreeLibrary(module); SetLastError(ERROR_INVALID_DLL); return FALSE; }
-  const FARPROC symbol = GetProcAddress(module, "VioGpuDxvkOpenAdapter11Fl10_0ForValidation");
+  const FARPROC symbol = GetProcAddress(module, CoreEntry);
   if (!symbol) { FreeLibrary(module); SetLastError(ERROR_PROC_NOT_FOUND); return FALSE; }
   // A failed SYSTEM CreateDevice can immediately release its adapter/DLL.
   // Keep this test-only trace readable until the bounded probe process exits.

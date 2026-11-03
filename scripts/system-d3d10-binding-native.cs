@@ -199,6 +199,15 @@ public static class DxvkBindingNative01 {
             throw new ArgumentException("Only native DX9/D10/D11 registration slots are supported");
         return ReplaceTupleSlot(original,candidate,nativeSlot);
     }
+    public static void RequireModernBinding(bool enabled,string api,bool lifecycle) {
+        if (enabled && (api != "11" || !lifecycle))
+            throw new ArgumentException("Combined D10/D11 validation requires API11 and lifecycle restoration");
+    }
+    public static DxvkBindingRawValue01 ReplaceNativeModern(DxvkBindingRawValue01 original,string candidate) {
+        // D3D11 may select a downlevel driver in the D10 slot. Keep both
+        // modern slots on the same candidate while preserving legacy/WoW.
+        return ReplaceNativeSlot(ReplaceNativeSlot(original,candidate,1),candidate,2);
+    }
     // API8 uses the ordinary I386 runtime. The native controller still writes
     // the explicit native registry view, but selects the WoW value's slot0.
     public static DxvkBindingRawValue01 ReplaceWowLegacy(DxvkBindingRawValue01 original,string candidate) {

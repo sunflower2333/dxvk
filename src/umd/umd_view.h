@@ -3,6 +3,7 @@
 #include "umd_format.h"
 #include "umd_cube_array_policy.h"
 #include "umd_srv_range.h"
+#include "umd_displayable.h"
 #include <d3d11.h>
 #include <algorithm>
 
@@ -13,15 +14,21 @@ inline bool viewRange(UINT first, UINT count, UINT total) {
 }
 
 // `shared` reports D3D10_DDI_RESOURCE_MISC_SHARED, which is never a D3D11 misc
-// flag here: the embedded renderer has no cross-process image of its own, so
-// sharing is carried by a kernel allocation beside the cache rather than by
-// D3D11_RESOURCE_MISC_SHARED on it. See umd_shared_surface.h.
+// flag here: the UMD shares its kernel allocation and imports native backing
+// into the embedded renderer where supported. The CPU-backed fallback keeps
+// a separate cache. Neither path requests the renderer's independent public
+// D3D11 shared-handle implementation. See umd_shared_surface.h.
 inline bool textureMiscFlags(const D3D10DDIARG_CREATERESOURCE& args, UINT& flags,
     bool* shared = nullptr) {
   flags = 0;
   if (shared) *shared = false;
-  constexpr UINT known = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP | D3D10_DDI_RESOURCE_MISC_SHARED;
-  if (args.MiscFlags & ~known) return false;
+  // DISCARD_ON_PRESENT permits discarding contents after a presentation; it
+  // does not require it. Our cache may retain them. This DDI-only hint has no
+  // corresponding public D3D11 resource flag and must not reach the backend.
+  constexpr UINT known = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP
+    | D3D10_DDI_RESOURCE_MISC_SHARED | D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT
+    | D3DWDDM2_0DDI_RESOURCE_MISC_DISPLAYABLE_SURFACE;
+  if ((args.MiscFlags & ~known) || !displayableSurfaceShape(args)) return false;
   if (args.ResourceDimension == D3D10DDIRESOURCE_TEXTURECUBE)
     flags = D3D11_RESOURCE_MISC_TEXTURECUBE;
   if (args.MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) {

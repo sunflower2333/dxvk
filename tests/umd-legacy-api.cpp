@@ -22,6 +22,11 @@ int main() {
               == (stage == (vertex ? 0xfffe0000u : 0xffff0000u) && major == 1 && minor <= (vertex ? 1u : 4u)));
           CHECK(legacyShaderModelAllowed(LegacyD3DApi::D3D9,version,vertex));
           CHECK(!legacyShaderModelAllowed(LegacyD3DApi(0),version,vertex));
+          CHECK(legacyNativeShaderModelAllowed(LegacyD3DApi::D3D8,version,vertex)
+              == (stage == (vertex ? 0xfffe0000u : 0xffff0000u)
+                  && ((major == 1 && minor <= (vertex ? 1u : 4u)) || (major == 2 && minor == 0))));
+          CHECK(legacyNativeShaderModelAllowed(LegacyD3DApi::D3D9,version,vertex));
+          CHECK(!legacyNativeShaderModelAllowed(LegacyD3DApi(0),version,vertex));
         }
   for (uint32_t limit = 0; limit < 300; ++limit) {
     CHECK(legacyFloatConstantLimit(LegacyD3DApi::D3D8,true,limit) == (limit < 96 ? limit : 96));

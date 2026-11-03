@@ -186,6 +186,9 @@ HRESULT D3D9Backend::copyBuffer(D3D9BufferResource& destination, UINT destinatio
 HRESULT D3D9Backend::setStreamSource(UINT stream, D3D9BufferResource* buffer, UINT offset, UINT stride) {
   return m_state->d3d->SetStreamSource(stream, buffer ? buffer->m_state->vertex.ptr() : nullptr, offset, stride);
 }
+HRESULT D3D9Backend::setStreamSourceFreq(UINT stream, UINT divider) {
+  return m_state->d3d->SetStreamSourceFreq(stream, divider);
+}
 HRESULT D3D9Backend::setIndices(D3D9BufferResource* buffer) {
   return m_state->d3d->SetIndices(buffer ? buffer->m_state->index.ptr() : nullptr);
 }
@@ -253,6 +256,9 @@ HRESULT D3D9Backend::setLightEnabled(UINT index, bool enable) {
 }
 HRESULT D3D9Backend::setRenderState(D3DRENDERSTATETYPE state, DWORD value) {
   return m_state->d3d->SetRenderState(state, value);
+}
+HRESULT D3D9Backend::setWInfo(float wNear, float wFar) {
+  return m_state->d3d->SetNativeWInfo(wNear, wFar);
 }
 HRESULT D3D9Backend::setScene(bool capture) {
   return capture ? m_state->d3d->BeginScene() : m_state->d3d->EndScene();

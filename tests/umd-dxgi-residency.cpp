@@ -5,6 +5,7 @@
 #include "../src/umd/umd_adapter.h"
 #include "../src/umd/umd_api.h"
 #include "../src/umd/umd_allocation.h"
+#include "umd-fixture-identity.h"
 #include <d3d9.h>
 #include <array>
 #include <cstdio>
@@ -47,6 +48,12 @@ static HRESULT APIENTRY adapterQuery(HANDLE adapter, const D3DDDICB_QUERYADAPTER
   set(0, 0x504d5644, 4); set(8, 128, 4); set(16, 3, 8); set(24, generation, 8);
   set(128, 0x44494c56, 4); set(132, 1, 4); set(136, 32, 4); set(140, 1, 4); set(152, 1, 4);
   std::memcpy(bytes + 144, &selected, sizeof(selected)); return S_OK;
+}
+HRESULT dxvk::umd::openKernelIdentity(const RuntimeIdentity& initial,
+    std::shared_ptr<const AdapterIdentitySource>& source) {
+  CHECK(!std::memcmp(initial.luid.data(), &selected, sizeof(selected)));
+  source = std::make_shared<FixtureIdentitySource>(&adapterCookie, adapterQuery);
+  return S_OK;
 }
 static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* request) {
   runtimeCaller(); CHECK(device == &deviceCookie && request && request->hResource);
@@ -207,6 +214,7 @@ struct Texture {
       D3D10DDIARG_OPENRESOURCE args{}; args.NumAllocations = 1; args.pOpenAllocationInfo = &allocation;
       args.hKMResource.handle = 1901;
       f.table.pfnOpenResource(f.device, &args, handle, {&runtime});
+      if (!errors) CHECK(owned.emplace(&runtime, 901).second);
     } else {
       D3D10DDI_MIPINFO mip{2, 2, 1, 2, 2, 1};
       typename F::Desc desc{}; desc.pMipInfoList = &mip;

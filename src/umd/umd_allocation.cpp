@@ -2,6 +2,7 @@
 #include "umd_residency_transaction.h"
 #include "umd_primary_policy.h"
 #include "umd_open_primary_policy.h"
+#include <atomic>
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -15,6 +16,7 @@ struct PrimaryAllocationTransaction {
   D3DDDICB_ALLOCATE request = {};
   D3DDDI_ALLOCATIONINFO slots[2] = {};
   AllocationInfo metadata[2];
+  NativeResourceShare nativeShare;
   RuntimeAllocation* owner = nullptr;
   bool failed = false, stagingOnly = false, consumed = false;
   D3DKMT_HANDLE borrowedPrimary = 0;
@@ -23,7 +25,7 @@ struct PrimaryAllocationTransaction {
   bool acquired() const {
     if (stagingOnly)
       return !failed && !consumed && slots[0].hAllocation && slots[0].hAllocation != borrowedPrimary;
-    return !failed && (request.hKMResource || slots[0].hAllocation || slots[1].hAllocation);
+    return !failed && !consumed && (request.hKMResource || slots[0].hAllocation || slots[1].hAllocation);
   }
 };
 struct PrimaryStagingReleaseTransaction {
@@ -40,6 +42,72 @@ struct PrimaryLockTransaction {
   }
 };
 namespace {
+struct AllocationRejectRecord {
+  std::atomic<uint32_t> complete{0};
+  uint32_t callbackResult = 0, identityResult = 0, allocation = 0, kernelResource = 0;
+  uint32_t thread = 0, width = 0, height = 0, format = 0, stagingAllocation = 0;
+  uint64_t owner = 0, resource = 0;
+};
+struct AllocationRejectTrace {
+  uint32_t size = sizeof(AllocationRejectTrace), version = 1;
+  std::atomic<uint32_t> count{0};
+  uint32_t capacity = 16;
+  AllocationRejectRecord records[16];
+} allocationRejectTrace;
+static_assert(sizeof(AllocationRejectRecord) == 56);
+struct ResidencyCallRecord {
+  std::atomic<uint32_t> complete{0};
+  uint32_t stage = 1, result = uint32_t(E_PENDING), thread = 0;
+  uint64_t owner = 0, context = 0, ticks = 0;
+  uint32_t allocation = 0, staging = 0, submit = uint32_t(E_PENDING);
+  uint32_t signal = uint32_t(E_PENDING), wait = WAIT_FAILED, evict = uint32_t(E_PENDING);
+};
+struct ResidencyCallTrace {
+  uint32_t size = sizeof(ResidencyCallTrace), version = 1;
+  std::atomic<uint32_t> count{0};
+  uint32_t capacity = 64;
+  ResidencyCallRecord records[64];
+} residencyCallTrace;
+static_assert(sizeof(ResidencyCallRecord) == 64);
+struct ResidencyCallScope {
+  ResidencyCallRecord ignored;
+  ResidencyCallRecord* record = &ignored;
+  HRESULT result = E_FAIL;
+  ResidencyCallScope(const void* owner, HANDLE context, D3DKMT_HANDLE allocation, D3DKMT_HANDLE staging) {
+    const DWORD saved = GetLastError();
+    uint32_t index = residencyCallTrace.count.load(std::memory_order_relaxed);
+    while (index < residencyCallTrace.capacity
+        && !residencyCallTrace.count.compare_exchange_weak(index, index + 1, std::memory_order_relaxed)) { }
+    if (index < residencyCallTrace.capacity) record = &residencyCallTrace.records[index];
+    record->owner = uint64_t(uintptr_t(owner)); record->context = uint64_t(uintptr_t(context));
+    record->allocation = allocation; record->staging = staging;
+    record->thread = GetCurrentThreadId(); record->ticks = GetTickCount64();
+    SetLastError(saved);
+  }
+  ~ResidencyCallScope() {
+    record->result = uint32_t(result);
+    record->complete.store(1, std::memory_order_release);
+  }
+};
+void traceAllocationReply(const void* owner, HANDLE resource, UINT width, UINT height,
+    DXGI_FORMAT format, HRESULT callback, HRESULT identity, D3DKMT_HANDLE allocation,
+    D3DKMT_HANDLE kernelResource, D3DKMT_HANDLE staging = 0) {
+  const DWORD savedError = GetLastError();
+  uint32_t index = allocationRejectTrace.count.load(std::memory_order_relaxed);
+  while (index < allocationRejectTrace.capacity
+      && !allocationRejectTrace.count.compare_exchange_weak(index, index + 1,
+        std::memory_order_relaxed)) { }
+  if (index < allocationRejectTrace.capacity) {
+    auto& record = allocationRejectTrace.records[index];
+    record.callbackResult = uint32_t(callback); record.identityResult = uint32_t(identity);
+    record.allocation = allocation; record.kernelResource = kernelResource;
+    record.thread = GetCurrentThreadId(); record.width = width; record.height = height;
+    record.format = format; record.stagingAllocation = staging;
+    record.owner = uint64_t(uintptr_t(owner)); record.resource = uint64_t(uintptr_t(resource));
+    record.complete.store(1, std::memory_order_release);
+  }
+  SetLastError(savedError);
+}
 HRESULT completed(HRESULT hr) { return hr == S_OK || FAILED(hr) ? hr : E_FAIL; }
 static_assert(offsetof(D3DDDI_DEVICECALLBACKS, pfnSetPriorityCb) == 2 * sizeof(PFND3DDDI_ALLOCATECB));
 static_assert(offsetof(D3DDDI_DEVICECALLBACKS, pfnQueryResidencyCb) == 3 * sizeof(PFND3DDDI_ALLOCATECB));
@@ -65,24 +133,45 @@ RuntimeAllocation::RuntimeAllocation(RuntimeAllocation&& other) noexcept
   m_pendingLock = std::move(other.m_pendingLock);
   m_cleanupOwner = std::move(other.m_cleanupOwner);
   m_stagingRelease = std::move(other.m_stagingRelease);
+  m_nativeLease = std::move(other.m_nativeLease);
+  m_nativeShare = std::exchange(other.m_nativeShare, NativeResourceShare{});
   if (m_pendingAllocation) m_pendingAllocation->owner = this;
   if (m_stagingRelease) m_stagingRelease->owner = this;
   if (other.m_tracked) m_owner->replace(other, *this);
 }
 HRESULT RuntimeAllocation::release() { return m_owner ? m_owner->release(*this) : S_OK; }
-bool RuntimeAllocation::canRotateWith(const RuntimeAllocation& other) const noexcept {
+HRESULT RuntimeAllocation::completeOpen(HANDLE runtimeResource) noexcept {
+  if (!runtimeResource || !m_owner || !m_opened || m_resource) return E_INVALIDARG;
+  if (m_owner->m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
+  m_resource = runtimeResource;
+  return S_OK;
+}
+bool RuntimeAllocation::rotationIdleWith(const RuntimeAllocation& other) const noexcept {
   const auto mapped = [](const RuntimeAllocation& value) {
     return value.m_locked || (value.m_pendingLock && !value.m_pendingLock->consumed);
   };
-  return !mapped(*this) && !mapped(other) && !m_pendingAllocation && !other.m_pendingAllocation
+  return !mapped(*this) && !mapped(other) && !m_releasing && !other.m_releasing
+    && !m_pendingAllocation && !other.m_pendingAllocation
     && !(m_stagingRelease && m_stagingRelease->inCallback)
     && !(other.m_stagingRelease && other.m_stagingRelease->inCallback)
-    && m_owner == other.m_owner && bool(m_handle) == bool(other.m_handle)
+    && m_owner == other.m_owner && m_generation == other.m_generation
+    && m_info.format == other.m_info.format
+    && m_info.width == other.m_info.width && m_info.height == other.m_info.height;
+}
+bool RuntimeAllocation::canRotateWith(const RuntimeAllocation& other) const noexcept {
+  return rotationIdleWith(other) && bool(m_handle) == bool(other.m_handle)
     && bool(m_stagingHandle) == bool(other.m_stagingHandle)
     && m_opened == other.m_opened && m_ownedStaging == other.m_ownedStaging
-    && m_generation == other.m_generation
-    && m_info.flags == other.m_info.flags && m_info.format == other.m_info.format
-    && m_info.width == other.m_info.width && m_info.height == other.m_info.height;
+    && native() == other.native()
+    && m_info.flags == other.m_info.flags;
+}
+bool RuntimeAllocation::canRotatePresentWith(const RuntimeAllocation& other) const noexcept {
+  const auto owned = [](const RuntimeAllocation& value) {
+    return value.m_owner && value.m_resource && value.m_handle && value.m_generation
+      && !value.m_opened && !value.m_ownedStaging && !value.m_stagingHandle
+      && (value.native() ? value.m_info.flags <= 1 : value.m_info.flags == 2);
+  };
+  return owned(*this) && owned(other) && rotationIdleWith(other);
 }
 void RuntimeAllocation::swapIdentity(RuntimeAllocation& other) noexcept {
   using std::swap;
@@ -147,6 +236,7 @@ void RuntimeMemory::initialize(HANDLE device, const D3DDDI_DEVICECALLBACKS& kern
   m_callbacks.pfnPresentCb = nullptr;
   m_dxgi = dxgi;
   m_identity = std::move(identity);
+  if (m_identity) copyResidencyCallbacks(*m_identity, kernel, m_callbacks);
   m_service = std::move(service);
   m_removed = false;
   m_terminal = false;
@@ -170,7 +260,7 @@ HRESULT RuntimeMemory::checkIdentity() {
   m_querying = true;
   struct QueryScope { bool& querying; ~QueryScope() { querying = false; } } scope{m_querying};
   RuntimeIdentity current;
-  HRESULT hr = queryRuntimeIdentity(m_identity->runtime, m_identity->query, current);
+  HRESULT hr = m_identity->queryCurrent(current);
   if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
   if (!m_identity->available()) hr = DXGI_ERROR_DEVICE_REMOVED;
   if (hr == S_OK && (std::memcmp(current.luid.data(), &m_identity->luid, sizeof(LUID))
@@ -214,7 +304,16 @@ HRESULT RuntimeMemory::allocateImpl(RuntimeAllocation& out, HANDLE resource,
   if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(allocated)) return allocated;
   hr = allocated == S_OK ? checkIdentity() : E_FAIL;
-  if (FAILED(hr) || !allocation.hAllocation || !request.hKMResource) {
+  // Native D3D11 shared/present creation can return S_OK and hAllocation while
+  // withholding hKMResource (observed for DWM's shared 1024x1024 BGRA atlas).
+  // All pixel/residency operations use hAllocation, and DeallocateCb uses the
+  // original hRTResource association. No kernel resource handle is synthesized
+  // or needed by this creator; OpenResource validates its own runtime inputs.
+  if (FAILED(hr) || !allocation.hAllocation) {
+    // Snapshot the rejected callback reply before balancing ownership. This
+    // is bounded process-local diagnostic data; no runtime handles are used.
+    traceAllocationReply(this, resource, width, height, format, allocated, hr,
+      allocation.hAllocation, request.hKMResource);
     // The callback reported allocation success: balance the resource even
     // when its returned handles are incomplete. Never expose a zero handle.
     D3DDDICB_DEALLOCATE cleanup = {};
@@ -294,6 +393,8 @@ HRESULT RuntimeMemory::allocatePrimaryImpl(RuntimeAllocation& out, HANDLE resour
     return FAILED(released) ? released : DXGI_ERROR_DEVICE_REMOVED;
   }
   if (FAILED(allocated)) {
+    traceAllocationReply(this, resource, width, height, format, allocated, allocated,
+      allocations[0].hAllocation, request.hKMResource, allocations[1].hAllocation);
     // A failed allocation acquired no ownership. Do not turn failure into a
     // DeallocateCb call; the construction-time reservation was local only.
     untrack(out); out.m_owner = nullptr; out.m_resource = nullptr; out.m_generation = 0;
@@ -305,9 +406,18 @@ HRESULT RuntimeMemory::allocatePrimaryImpl(RuntimeAllocation& out, HANDLE resour
   out.m_stagingHandle = allocations[1].hAllocation;
   out.m_kernelResource = request.hKMResource;
   hr = allocated == S_OK ? checkIdentity() : E_FAIL;
+  // As with ordinary creator allocations, hKMResource is optional here.
+  // Copy, residency and display use the two actual allocation handles;
+  // DeallocateCb balances their original hRTResource association. OpenResource
+  // still validates its separate sharing handle. Never synthesize one here.
   if (hr == S_OK && (request.hResource != resource || request.NumAllocations != 2
       || request.pAllocationInfo != allocations || !out.m_handle || !out.m_stagingHandle
-      || out.m_handle == out.m_stagingHandle || !out.m_kernelResource)) hr = E_FAIL;
+      || out.m_handle == out.m_stagingHandle)) hr = E_FAIL;
+  // Retain the first missing-hKMResource replies as well as primary failures,
+  // so live DWM can distinguish successful allocation from local rejection.
+  if (hr != S_OK || !out.m_kernelResource)
+    traceAllocationReply(this, resource, width, height, format, allocated, hr,
+      out.m_handle, out.m_kernelResource, out.m_stagingHandle);
   if (hr != S_OK) {
     if (m_terminal || out.m_owner != this) return DXGI_ERROR_DEVICE_REMOVED;
     const HRESULT released = releaseImpl(out);
@@ -315,6 +425,103 @@ HRESULT RuntimeMemory::allocatePrimaryImpl(RuntimeAllocation& out, HANDLE resour
   }
   transaction->owner = nullptr; out.m_pendingAllocation.reset();
   return S_OK;
+}
+
+HRESULT RuntimeMemory::allocateNativeImpl(RuntimeAllocation& out, HANDLE resource,
+    UINT width, UINT height, DXGI_FORMAT format, bool primary, UINT numerator, UINT denominator) {
+  if (!available() || m_callbacks.pfnPresentCb || !m_identity || !m_identity->continuity
+      || (primary && !primaryAvailable())) return DXGI_ERROR_UNSUPPORTED;
+  if (out.m_owner || out.native() || !resource || !width || !height
+      || (primary ? (!numerator || !denominator) : (numerator || denominator))) return E_INVALIDARG;
+  const uint32_t fourcc = format == DXGI_FORMAT_B8G8R8A8_UNORM ? 0x34325241
+    : format == DXGI_FORMAT_R8G8B8A8_UNORM ? 0x34324241 : 0;
+  if (!fourcc) return DXGI_ERROR_UNSUPPORTED;
+  HRESULT hr = completed(checkIdentity());
+  if (hr != S_OK) return hr;
+  RuntimeIdentity initial;
+  std::memcpy(initial.luid.data(), &m_identity->luid, sizeof(LUID));
+  initial.generation = m_identity->generation; initial.capabilities = m_identity->capabilities;
+  // This local lease also pins the AHB through a callback which cancels its
+  // constructing Resource before returning any wrapper handles.
+  std::shared_ptr<NativeSurfaceLease> lease;
+  hr = NativeSurfaceLease::create(initial, m_identity->continuity, width, height, fourcc, lease);
+  if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
+  if (hr != S_OK) return hr;
+  std::shared_ptr<PrimaryAllocationTransaction> transaction;
+  std::unique_ptr<RuntimeAllocation> cleanup;
+  try {
+    transaction = std::make_shared<PrimaryAllocationTransaction>();
+    cleanup = std::make_unique<RuntimeAllocation>();
+  } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+  AllocationInfo info;
+  info.flags = primary ? 1 : 0; info.format = format == DXGI_FORMAT_B8G8R8A8_UNORM ? 1 : 3;
+  info.width = width; info.height = height; info.pitch = lease->info().stride; info.size = lease->info().size;
+  info.refreshNumerator = numerator; info.refreshDenominator = denominator;
+  transaction->metadata[0] = info; transaction->nativeShare = lease->share();
+  const auto share = transaction->nativeShare;
+  auto& slot = transaction->slots[0];
+  slot.pPrivateDriverData = &transaction->metadata[0]; slot.PrivateDriverDataSize = sizeof(info);
+  slot.Flags.Primary = primary;
+  auto& request = transaction->request;
+  request.hResource = resource; request.NumAllocations = 1; request.pAllocationInfo = &slot;
+  request.pPrivateDriverData = &transaction->nativeShare; request.PrivateDriverDataSize = sizeof(share);
+  out.m_owner = this; out.m_resource = resource; out.m_info = info; out.m_generation = initial.generation;
+  out.m_nativeShare = share; out.m_nativeLease = lease;
+  out.m_pendingAllocation = transaction; out.m_cleanupOwner = std::move(cleanup);
+  transaction->owner = &out; track(out);
+  const HRESULT allocated = m_callbacks.pfnAllocateCb(m_device, &request);
+  if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
+  transaction->failed = FAILED(allocated);
+  if (out.m_owner != this || out.m_pendingAllocation != transaction) {
+    HRESULT released = S_OK;
+    if (transaction->owner && transaction->owner->m_owner == this)
+      released = releaseImpl(*transaction->owner);
+    else if (transaction->acquired()) {
+      transaction->consumed = true;
+      D3DDDICB_DEALLOCATE request = {}; request.hResource = resource;
+      released = completed(m_callbacks.pfnDeallocateCb(m_device, &request));
+    }
+    return FAILED(released) ? released : DXGI_ERROR_DEVICE_REMOVED;
+  }
+  if (FAILED(allocated)) {
+    untrack(out); out.m_owner = nullptr; out.m_resource = nullptr; out.m_generation = 0;
+    out.m_nativeShare = {}; out.m_nativeLease.reset();
+    transaction->owner = nullptr; out.m_pendingAllocation.reset();
+    return allocated;
+  }
+  out.m_handle = slot.hAllocation; out.m_kernelResource = request.hKMResource;
+  hr = allocated == S_OK ? completed(checkIdentity()) : E_FAIL;
+  if (hr == S_OK && (request.hResource != resource || request.NumAllocations != 1
+      || request.pAllocationInfo != &slot || request.pPrivateDriverData != &transaction->nativeShare
+      || request.PrivateDriverDataSize != sizeof(share) || !slot.hAllocation
+      || slot.pPrivateDriverData != &transaction->metadata[0] || slot.PrivateDriverDataSize != sizeof(info)
+      || slot.Flags.Value != unsigned(primary) || slot.VidPnSourceId
+      || std::memcmp(&transaction->nativeShare, &share, sizeof(share))
+      || std::memcmp(&transaction->metadata[0], &info, sizeof(info)))) hr = E_FAIL;
+  if (hr != S_OK) {
+    if (m_terminal || out.m_owner != this) return DXGI_ERROR_DEVICE_REMOVED;
+    const HRESULT released = releaseImpl(out);
+    return FAILED(released) ? released : hr;
+  }
+  transaction->owner = nullptr; out.m_pendingAllocation.reset();
+  return S_OK;
+}
+
+HRESULT RuntimeMemory::markNativeSubmittedImpl(RuntimeAllocation& allocation) {
+  if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
+  if (allocation.m_owner != this || !allocation.m_handle || !allocation.native()
+      || !m_identity || !m_identity->continuity) return E_INVALIDARG;
+  const auto key = allocation.m_nativeShare.key;
+  const auto handle = allocation.m_handle;
+  auto live = [&] { return !m_terminal && allocation.m_owner == this
+    && allocation.m_handle == handle && allocation.m_nativeShare.key == key; };
+  HRESULT hr = completed(checkIdentity());
+  if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+  // Host surfaces use the submitted v2 reader/writer references in KMD.
+  // Opcode 11 publishes ordinary exported BOs only, and rejects AHBs.
+  // This state records submission readiness, never GPU completion.
+  allocation.m_published = hr == S_OK;
+  return hr;
 }
 
 HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
@@ -332,9 +539,12 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
     const bool unresolvedRelease = allocation.m_stagingRelease && allocation.m_stagingRelease->inCallback;
     const bool locked = allocation.m_locked || (allocation.m_pendingLock && allocation.m_pendingLock->ownsLock());
     const bool acquired = !allocation.m_pendingAllocation || allocation.m_pendingAllocation->acquired();
+    // The host lease must outlive the wrapper deallocation callback.
+    auto nativeLease = std::move(allocation.m_nativeLease);
+    allocation.m_nativeShare = {};
     if (allocation.m_pendingAllocation) {
       allocation.m_pendingAllocation->owner = nullptr;
-      if (stagingOnly) allocation.m_pendingAllocation->consumed = true;
+      if (stagingOnly || acquired) allocation.m_pendingAllocation->consumed = true;
     }
     if (allocation.m_stagingRelease) {
       allocation.m_stagingRelease->owner = nullptr; allocation.m_stagingRelease->consumed = true;
@@ -362,14 +572,21 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
     // A failed unlock did not release the mapping. Report it and leave that
     // kernel ownership to actual runtime device cleanup, never deallocate a
     // mapped allocation or claim successful driver cleanup.
-    if ((!opened || stagingOnly) && acquired && SUCCEEDED(result)) {
+    if ((!opened || stagingOnly || resource) && acquired && SUCCEEDED(result)) {
       D3DDDICB_DEALLOCATE request = {};
       if (stagingOnly) { request.NumAllocations = 1; request.HandleList = &handle; }
       else request.hResource = resource;
       const HRESULT hr = completed(deallocateCallback(device, &request));
       if (FAILED(hr)) result = hr;
     }
-    return result;
+    // An opened primary owns both an internal staging allocation and this
+    // device's resource association. Closing the latter drops only this open.
+    if (opened && stagingOnly && resource && acquired && SUCCEEDED(result)) {
+      D3DDDICB_DEALLOCATE request = {}; request.hResource = resource;
+      result = completed(deallocateCallback(device, &request));
+    }
+    const HRESULT retired = NativeSurfaceLease::retire(nativeLease);
+    return FAILED(result) ? result : retired;
   }
   if (allocation.m_ownedStaging && allocation.m_stagingRelease && allocation.m_stagingRelease->inCallback)
     return DXGI_ERROR_WAS_STILL_DRAWING;
@@ -386,14 +603,14 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
     if (FAILED(hr)) return hr;
   }
   if (allocation.m_ownedStaging) return releaseStaging(allocation);
-  if (allocation.m_opened) {
-    // A view, not an owner. Dropping it must not reach DeallocateCb: the
-    // allocation outlives this resource and the creating process still uses
-    // it. Retire the local state only.
+  if (allocation.m_opened && !allocation.m_resource) {
+    // An unpublished/failed open never acquired its runtime association.
+    // Successful opens use hResource below, never the foreign raw allocation.
     untrack(allocation);
     allocation.m_owner = nullptr; allocation.m_handle = 0;
     allocation.m_kernelResource = 0; allocation.m_generation = 0;
     allocation.m_published = false; allocation.m_opened = false;
+    allocation.m_nativeShare = {}; allocation.m_nativeLease.reset();
     return S_OK;
   }
   D3DDDICB_DEALLOCATE request = {};
@@ -401,6 +618,8 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   const auto deallocate = m_callbacks.pfnDeallocateCb;
   const HANDLE device = m_device;
   const bool acquired = !allocation.m_pendingAllocation || allocation.m_pendingAllocation->acquired();
+  auto nativeLease = std::move(allocation.m_nativeLease);
+  allocation.m_nativeShare = {};
   if (m_callbacks.pfnPresentCb) {
     // Typed9 serializes destruction with every DDI on this device. Preserve
     // ownership on a failed callback so DestroyResource can retry; guard even
@@ -421,12 +640,18 @@ HRESULT RuntimeMemory::releaseImpl(RuntimeAllocation& allocation) {
   // Retire all user ownership before entering runtime code. A recursive
   // Release/DestroyResource must neither deallocate twice nor touch old state.
   untrack(allocation);
-  if (allocation.m_pendingAllocation) allocation.m_pendingAllocation->owner = nullptr;
+  if (allocation.m_pendingAllocation) {
+    allocation.m_pendingAllocation->owner = nullptr;
+    if (acquired) allocation.m_pendingAllocation->consumed = true;
+  }
   allocation.m_owner = nullptr; allocation.m_resource = nullptr;
   allocation.m_handle = 0; allocation.m_published = false; allocation.m_stagingHandle = 0;
+  allocation.m_opened = false;
   allocation.m_kernelResource = 0; allocation.m_generation = 0;
   allocation.m_pendingAllocation.reset(); allocation.m_pendingLock.reset();
-  return acquired ? completed(deallocate(device, &request)) : S_OK;
+  const HRESULT released = acquired ? completed(deallocate(device, &request)) : S_OK;
+  const HRESULT retired = NativeSurfaceLease::retire(nativeLease);
+  return FAILED(released) ? released : retired;
 }
 
 void RuntimeMemory::detachOpenedPrimary(RuntimeAllocation& allocation) noexcept {
@@ -462,7 +687,14 @@ HRESULT RuntimeMemory::releaseStaging(RuntimeAllocation& allocation) {
   if (SUCCEEDED(released)) {
     transaction->consumed = true;
     if (acquisition) acquisition->consumed = true;
+    const HANDLE openedResource = transaction->owner->m_resource;
     detachOpenedPrimary(*transaction->owner);
+    if (openedResource) {
+      // Detach before the callback: it may destroy the device or another open.
+      D3DDDICB_DEALLOCATE close = {}; close.hResource = openedResource;
+      const HRESULT closed = completed(m_callbacks.pfnDeallocateCb(m_device, &close));
+      if (released == S_OK) return closed;
+    }
   }
   return completed(released);
 }
@@ -564,6 +796,28 @@ HRESULT RuntimeMemory::adoptImpl(RuntimeAllocation& out, D3DKMT_HANDLE allocatio
   return S_OK;
 }
 
+HRESULT RuntimeMemory::adoptNativeImpl(RuntimeAllocation& out, D3DKMT_HANDLE allocation,
+    D3DKMT_HANDLE resource, const AllocationInfo& info, const NativeResourceShare& share) {
+  if (!available() || m_callbacks.pfnPresentCb || !m_identity || !m_identity->continuity)
+    return DXGI_ERROR_UNSUPPORTED;
+  if (out.m_owner || out.native() || !allocation || !validNativeResourceShare(share, info.width)
+      || info.magic != 0x504d5644 || info.version || info.headerSize != sizeof(info) || info.reserved
+      || !info.width || !info.height || info.width > 16384 || info.height > 16384
+      || (info.format != 1 && info.format != 3) || info.flags > 1
+      || info.pitch != share.stride || !info.size || info.size % 4096
+      || info.size > (UINT32_MAX & ~uint64_t(4095)) || info.size < uint64_t(info.pitch) * info.height
+      || info.alignment != 4096 || info.requestedIova || info.resetGeneration || info.contextId
+      || (info.flags ? (!info.refreshNumerator || !info.refreshDenominator)
+                     : (info.refreshNumerator || info.refreshDenominator))) return E_INVALIDARG;
+  const HRESULT hr = completed(checkIdentity());
+  if (hr != S_OK) return hr;
+  out.m_owner = this; out.m_handle = allocation; out.m_kernelResource = resource;
+  out.m_info = info; out.m_nativeShare = share; out.m_generation = m_identity->generation;
+  out.m_opened = true;
+  track(out);
+  return S_OK;
+}
+
 // One body for both directions of the shared-surface copy. Publishing writes
 // this device's cache into the kernel allocation; refreshing reads whatever
 // the owning process last left there. The lock flags, the synchronization
@@ -571,6 +825,7 @@ HRESULT RuntimeMemory::adoptImpl(RuntimeAllocation& out, D3DKMT_HANDLE allocatio
 // them in one place is what stops the two directions drifting apart.
 HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
     UINT rowPitch, bool publish) {
+  if (allocation.native()) return DXGI_ERROR_UNSUPPORTED;
   if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
   if (allocation.m_owner != this || !allocation.m_handle) return E_INVALIDARG;
   if (allocation.m_stagingRelease && allocation.m_stagingRelease->inCallback)
@@ -649,6 +904,7 @@ HRESULT RuntimeMemory::transferImpl(RuntimeAllocation& allocation, void* pixels,
 }
 
 HRESULT RuntimeMemory::uploadImpl(RuntimeAllocation& allocation, const void* pixels, UINT rowPitch) {
+  if (allocation.native()) return DXGI_ERROR_UNSUPPORTED;
   if (!allocation.primary()) return transferImpl(allocation, const_cast<void*>(pixels), rowPitch, true);
   if (m_primaryActive) return DXGI_ERROR_WAS_STILL_DRAWING;
   m_primaryActive = true;
@@ -662,6 +918,7 @@ HRESULT RuntimeMemory::uploadImpl(RuntimeAllocation& allocation, const void* pix
 }
 
 HRESULT RuntimeMemory::downloadImpl(RuntimeAllocation& allocation, void* pixels, UINT rowPitch) {
+  if (allocation.native()) return DXGI_ERROR_UNSUPPORTED;
   if (!allocation.primary()) return transferImpl(allocation, pixels, rowPitch, false);
   if (m_primaryActive) return DXGI_ERROR_WAS_STILL_DRAWING;
   m_primaryActive = true;
@@ -702,7 +959,8 @@ HRESULT RuntimeMemory::copyPrimary(RuntimeAllocation& allocation, bool publish) 
   request.NewCommandBufferSize = buffers.CommandBufferSize;
   request.NewAllocationListSize = buffers.AllocationListSize;
   request.NewPatchLocationListSize = buffers.PatchLocationListSize;
-  hr = m_callbacks.pfnRenderCb(m_device, &request);
+  hr = submitResident(allocation, true, live,
+    [&] { return m_callbacks.pfnRenderCb(m_device, &request); });
   if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
   // A submission consumed the old runtime buffers. Never reuse them when
   // the callback fails or supplies malformed replacements.
@@ -863,16 +1121,152 @@ HRESULT RuntimeMemory::ensureContext() {
   return S_OK;
 }
 
+HRESULT RuntimeMemory::submitResident(RuntimeAllocation& allocation, bool staging,
+    const std::function<bool()>& live, const std::function<HRESULT()>& submit,
+    RuntimeAllocation* destination) {
+  const D3DKMT_HANDLE destinationHandle = destination ? destination->m_handle : 0;
+  ResidencyCallScope trace(this, m_context, allocation.m_handle,
+    staging ? allocation.m_stagingHandle : destinationHandle);
+  return trace.result = [&]() -> HRESULT {
+  if (!m_identity || !m_identity->explicitResidency()) return submit();
+  if (m_terminal) return DXGI_ERROR_DEVICE_REMOVED;
+  if (m_residencyActive) return DXGI_ERROR_WAS_STILL_DRAWING;
+  const auto cb = m_callbacks;
+  if (!cb.pfnMakeResidentCb || !cb.pfnEvictCb || !cb.pfnCreatePagingQueueCb
+      || !cb.pfnDestroyPagingQueueCb || !cb.pfnWaitForSynchronizationObjectFromCpuCb
+      || !cb.pfnSignalSynchronizationObject2Cb)
+    return DXGI_ERROR_UNSUPPORTED;
+  const HANDLE device = m_device;
+  D3DKMT_HANDLE handles[3] = {allocation.m_handle, allocation.m_stagingHandle};
+  UINT count = staging ? 2 : 1;
+  // A destination is written by the same packet. Keep its residency reference
+  // through completion too; aliases need only one reference to that allocation.
+  if (destination && destinationHandle != handles[0]
+      && (!staging || destinationHandle != handles[1])) handles[count++] = destinationHandle;
+  auto owned = [&] { return !m_terminal && m_device == device && allocation.m_owner == this
+    && allocation.m_handle == handles[0] && (!staging || allocation.m_stagingHandle == handles[1])
+    && (!destination || (destination->m_owner == this && destination->m_handle == destinationHandle)); };
+  auto valid = [&] { return owned() && (!live || live()); };
+  if (!valid() || !handles[0] || (staging && !handles[1]) || (destination && !destinationHandle))
+    return DXGI_ERROR_DEVICE_REMOVED;
+  m_residencyActive = true;
+  struct ActiveScope { bool& active; ~ActiveScope() { active = false; } } active{m_residencyActive};
+  if (!m_paging.hPagingQueue) {
+    m_paging = {}; m_paging.Priority = D3DDDI_PAGINGQUEUE_PRIORITY_NORMAL;
+    const HRESULT hr = completed(cb.pfnCreatePagingQueueCb(device, &m_paging));
+    if (!valid()) return DXGI_ERROR_DEVICE_REMOVED;
+    m_pagingReady = hr == S_OK && m_paging.hPagingQueue && m_paging.hSyncObject;
+    if (!m_pagingReady) return FAILED(hr) ? hr : E_FAIL;
+  }
+  if (!m_pagingReady) return E_FAIL;
+  // Allocate the completion event before any DMA is submitted. EnqueueCpuEvent
+  // on this same context, without SignalAtSubmission, retires only after all
+  // preceding packets have completed, including their allocation references.
+  HANDLE completionEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  if (!completionEvent) return HRESULT_FROM_WIN32(GetLastError());
+  struct EventScope { HANDLE event; ~EventScope() { CloseHandle(event); } } completion{completionEvent};
+  // A submission lease owns exactly one residency reference per allocation.
+  // Evict permits immediate eviction; submission alone does not make it safe.
+  // Keep these references through completion, or through terminal allocation
+  // cleanup when completion cannot be established. The paging queue belongs
+  // to the device/context, independently of Vulkan's native BOs.
+  bool acquired = false;
+  uint64_t fence = 0;
+  HRESULT result = E_FAIL;
+  for (unsigned attempt = 0; attempt < 2; ++attempt) {
+    trace.record->stage = 3;
+    D3DDDI_MAKERESIDENT request = {};
+    request.hPagingQueue = m_paging.hPagingQueue;
+    request.NumAllocations = count; request.AllocationList = handles;
+    request.Flags.CantTrimFurther = attempt != 0;
+    const HRESULT hr = cb.pfnMakeResidentCb(device, &request);
+    acquired = hr == S_OK || hr == E_PENDING;
+    if (acquired) {
+      fence = hr == E_PENDING ? request.PagingFenceValue : 0;
+      result = request.hPagingQueue == m_paging.hPagingQueue && request.NumAllocations == count
+        && request.AllocationList == handles && (hr != E_PENDING || fence) ? S_OK : E_FAIL;
+      break;
+    }
+    result = completed(hr);
+    if (!valid() || hr != E_OUTOFMEMORY || attempt) break;
+  }
+  if (!valid()) result = DXGI_ERROR_DEVICE_REMOVED;
+  if (result == S_OK && fence) {
+    trace.record->stage = 4;
+    const D3DKMT_HANDLE sync = m_paging.hSyncObject;
+    HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!event) result = HRESULT_FROM_WIN32(GetLastError());
+    else {
+      D3DDDICB_WAITFORSYNCHRONIZATIONOBJECTFROMCPU request = {};
+      request.ObjectCount = 1; request.ObjectHandleArray = &sync;
+      request.FenceValueArray = &fence; request.hAsyncEvent = event;
+      result = completed(cb.pfnWaitForSynchronizationObjectFromCpuCb(device, &request));
+      if (!valid()) result = DXGI_ERROR_DEVICE_REMOVED;
+      if (result == S_OK) {
+        const DWORD wait = WaitForSingleObject(event, 5000);
+        if (wait != WAIT_OBJECT_0)
+          result = HRESULT_FROM_WIN32(wait == WAIT_FAILED ? GetLastError() : ERROR_TIMEOUT);
+      }
+      CloseHandle(event);
+    }
+  }
+  bool pending = false;
+  if (result == S_OK) {
+    trace.record->stage = 5;
+    result = valid() ? submit() : DXGI_ERROR_DEVICE_REMOVED;
+    trace.record->submit = uint32_t(result);
+    pending = result == S_OK;
+  }
+  if (pending) {
+    if (!valid()) result = DXGI_ERROR_DEVICE_REMOVED;
+    else {
+      D3DDDICB_SIGNALSYNCHRONIZATIONOBJECT2 request = {};
+      request.hContext = m_context;
+      request.Flags.EnqueueCpuEvent = 1;
+      request.CpuEventHandle = completionEvent;
+      trace.record->stage = 6;
+      const HRESULT signal = cb.pfnSignalSynchronizationObject2Cb(device, &request);
+      trace.record->signal = uint32_t(signal);
+      result = completed(signal);
+      if (!valid()) result = DXGI_ERROR_DEVICE_REMOVED;
+      if (result == S_OK) {
+        trace.record->stage = 7;
+        const DWORD wait = WaitForSingleObject(completionEvent, 5000);
+        trace.record->wait = wait;
+        if (wait != WAIT_OBJECT_0)
+          result = HRESULT_FROM_WIN32(wait == WAIT_FAILED ? GetLastError() : ERROR_TIMEOUT);
+        if (!valid()) result = DXGI_ERROR_DEVICE_REMOVED;
+      }
+      if (result == S_OK) pending = false;
+    }
+    if (pending && owned()) m_removed = true;
+  }
+  if (acquired && !pending && owned()) {
+    trace.record->stage = 8;
+    D3DDDICB_EVICT request = {}; request.NumAllocations = count; request.AllocationList = handles;
+    const HRESULT evicted = completed(cb.pfnEvictCb(device, &request));
+    trace.record->evict = uint32_t(evicted);
+    if (FAILED(evicted)) { m_removed = true; result = evicted; }
+  }
+  // Terminal runtime cleanup owns references to already destroyed allocations.
+  // Never issue a late callback after nested DestroyDevice has cleared its owner.
+  return valid() ? result : DXGI_ERROR_DEVICE_REMOVED;
+  }();
+}
+
 HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args,
-    const std::function<bool()>& live) {
+    const std::function<bool()>& live, RuntimeAllocation* destination) {
   if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (!available()) return DXGI_ERROR_UNSUPPORTED;
   if (m_primaryActive) return DXGI_ERROR_WAS_STILL_DRAWING;
-  // Windowed source blits, including opened primary sources with an owned
-  // staging allocation. Flip, stereo and explicit destinations remain gated.
+  // DXGI can supply the destination primary for a blit. Its driver resource
+  // handle must resolve to a pinned allocation owned by this same device.
   if (source.m_owner != this || !source.m_handle || !source.m_published
       || args.SrcSubResourceIndex || args.DstSubResourceIndex
-      || args.hDstResource || !args.pDXGIContext || args.Flags.Value != 1)
+      || bool(args.hDstResource) != bool(destination)
+      || (destination && (destination->m_owner != this || !destination->m_handle))
+      || !args.pDXGIContext || (args.Flags.Value != 1 && args.Flags.Value != 2)
+      || (args.Flags.Flip && !source.primary()))
     return E_INVALIDARG;
   HRESULT hr = checkIdentity();
   if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
@@ -885,16 +1279,19 @@ HRESULT RuntimeMemory::presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG
   if (FAILED(hr)) return hr;
   DXGIDDICB_PRESENT request = {};
   request.hSrcAllocation = source.m_handle;
+  request.hDstAllocation = destination ? destination->m_handle : 0;
   request.pDXGIContext = args.pDXGIContext;
   request.hContext = m_context;
   // The opaque DXGI context carries the runtime's destination and timing.
   // Do not substitute a global scanout escape or override its sync interval.
   const auto present = m_dxgi ? m_dxgi->pfnPresentCb : nullptr;
   if (!present) return DXGI_ERROR_UNSUPPORTED;
-  hr = completed(present(m_device, &request));
+  hr = submitResident(source, false, live,
+    [&] { return completed(present(m_device, &request)); }, destination);
   if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(hr)) return hr;
   hr = checkIdentity();
+  if (hr == S_OK && (!live || live()) && destination && args.Flags.Blt) destination->m_published = true;
   return live && !live() ? DXGI_ERROR_DEVICE_REMOVED : hr;
 }
 
@@ -923,7 +1320,7 @@ HRESULT RuntimeMemory::present9Impl(RuntimeAllocation& source, const D3DDDIARG_P
   request.hSrcAllocation = source.m_handle;
   request.hContext = m_context;
   const auto present = m_callbacks.pfnPresentCb;
-  hr = completed(present(m_device, &request));
+  hr = submitResident(source, false, live, [&] { return completed(present(m_device, &request)); });
   if (live && !live()) return DXGI_ERROR_DEVICE_REMOVED;
   if (FAILED(hr)) return hr;
   hr = checkIdentity();
@@ -931,15 +1328,28 @@ HRESULT RuntimeMemory::present9Impl(RuntimeAllocation& source, const D3DDDIARG_P
 }
 
 HRESULT RuntimeMemory::closeImpl() {
+  if (m_residencyActive && !m_terminal) return DXGI_ERROR_WAS_STILL_DRAWING;
   const auto context = m_context ? m_context : m_creatingContext ? m_contextBuffers.hContext : nullptr;
-  if (!context) return S_OK;
+  const auto paging = m_paging.hPagingQueue;
+  m_paging = {}; m_pagingReady = false;
   D3DDDICB_DESTROYCONTEXT request = {};
   request.hContext = context;
   const auto destroy = m_callbacks.pfnDestroyContextCb;
+  const auto destroyPaging = m_callbacks.pfnDestroyPagingQueueCb;
   const HANDLE device = m_device;
   m_context = nullptr;
   m_contextBuffers = {};
-  return completed(destroy(device, &request));
+  HRESULT result = S_OK;
+  if (paging) {
+    D3DDDI_DESTROYPAGINGQUEUE release = {}; release.hPagingQueue = paging;
+    const HRESULT hr = completed(destroyPaging(device, &release));
+    if (FAILED(hr)) result = hr;
+  }
+  if (context && m_device == device) {
+    const HRESULT hr = completed(destroy(device, &request));
+    if (FAILED(hr)) result = hr;
+  }
+  return result;
 }
 
 HRESULT RuntimeMemory::setDisplayModeImpl(RuntimeAllocation& allocation,
@@ -972,7 +1382,12 @@ HRESULT RuntimeMemory::setDisplayModeImpl(RuntimeAllocation& allocation,
 }
 
 HRESULT RuntimeMemory::closeDeviceAllocationsImpl() {
-  if (m_terminal) return S_OK;
+  RuntimeIdentity initial;
+  if (m_identity) {
+    std::memcpy(initial.luid.data(), &m_identity->luid, sizeof(LUID));
+    initial.generation = m_identity->generation; initial.capabilities = m_identity->capabilities;
+  }
+  if (m_terminal) return NativeSurfaceLease::drainRetired(&initial);
   // Typed9 preserves ownership after a failed DeallocateCb so its synchronous
   // DestroyResource can retry. This terminal modern path must not change it.
   if (m_callbacks.pfnPresentCb) return DXGI_ERROR_UNSUPPORTED;
@@ -988,6 +1403,8 @@ HRESULT RuntimeMemory::closeDeviceAllocationsImpl() {
     auto retired = m_orphans; m_orphans = retired->m_orphanNext;
     delete retired; // Terminal release already detached its callback owner.
   }
+  const HRESULT retired = NativeSurfaceLease::drainRetired(&initial);
+  if (FAILED(retired) && SUCCEEDED(result)) result = retired;
   const HRESULT context = closeImpl();
   if (FAILED(context)) result = context;
   m_device = nullptr; m_dxgi = nullptr; m_callbacks = {};

@@ -13,6 +13,12 @@ inline bool legacyShaderModelAllowed(LegacyD3DApi api, uint32_t version, bool ve
   return (version >> 16) == (vertex ? 0xfffeu : 0xffffu)
     && ((version >> 8) & 255) == 1 && (version & 255) <= (vertex ? 1u : 4u);
 }
+inline bool legacyNativeShaderModelAllowed(LegacyD3DApi api, uint32_t version, bool vertex) {
+  // The WDDM runtime converts fixed-function DX8 state to SM2.0 using the
+  // native D3DCAPS9 contract. Public DX8 shader limits still apply above.
+  return legacyShaderModelAllowed(api, version, vertex)
+    || (api == LegacyD3DApi::D3D8 && version == (vertex ? 0xfffe0200u : 0xffff0200u));
+}
 inline uint32_t legacyFloatConstantLimit(LegacyD3DApi api, bool vertex, uint32_t nativeLimit) {
   if (api == LegacyD3DApi::D3D9) return nativeLimit;
   const uint32_t legacyLimit = vertex ? 96u : 8u;

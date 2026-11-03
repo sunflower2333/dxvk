@@ -130,6 +130,35 @@ static void queryTransactions() {
     | D3D11_FORMAT_SUPPORT_DISPLAY | D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW
     | D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_INPUT | D3D11_FORMAT_SUPPORT_DECODER_OUTPUT) == 0);
   CHECK(nativeFormatCaps(UINT(-1)) == 31);
+
+  // The backend can report capabilities for the backing image. An aspect
+  // SRV must never inherit RT/blend/MSAA-render capability from that image.
+  for (DXGI_FORMAT format : {DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS,
+       DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_X32_TYPELESS_G8X24_UINT,
+       DXGI_FORMAT_X24_TYPELESS_G8_UINT}) {
+    const bool stencil = format == DXGI_FORMAT_X32_TYPELESS_G8X24_UINT
+                      || format == DXGI_FORMAT_X24_TYPELESS_G8_UINT;
+    output = {}; calls = 0;
+    CHECK(queryNativeFormatCaps(format, &output.value,
+      [&](DXGI_FORMAT queried, UINT* support) {
+        ++calls; CHECK(queried == format); *support = UINT(-1); return S_OK;
+      }) == S_OK);
+    CHECK(calls == 1 && output.value == (stencil ? 0x10u : 0x11u)); output.check();
+    for (UINT count : {2u, 3u, 4u, 8u, 16u, 32u}) {
+      output = {}; calls = 0;
+      CHECK(queryNativeMultisampleLevels(format, count, &output.value,
+        [&](DXGI_FORMAT, UINT, UINT*) { ++calls; return E_FAIL; }) == S_OK);
+      CHECK(calls == 0 && output.value == 0); output.check();
+    }
+    output = {}; calls = 0;
+    CHECK(queryNativeMultisampleLevels(format, 1, &output.value,
+      [&](DXGI_FORMAT, UINT, UINT* levels) { ++calls; *levels = 0; return S_OK; }) == S_OK);
+    CHECK(calls == 1 && output.value == 1); output.check();
+  }
+  output = {}; calls = 0;
+  CHECK(queryNativeMultisampleLevels(DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM, 4,
+    &output.value, [&](DXGI_FORMAT, UINT, UINT*) { ++calls; return E_FAIL; }) == S_OK);
+  CHECK(calls == 0 && output.value == 0); output.check();
 }
 
 #include "umd-d3d10-device-table.h"
@@ -174,6 +203,14 @@ template<typename Table> struct Fixture {
     }
     Output output; table.pfnCheckFormatSupport(device, DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM, &output.value);
     expect(S_OK); CHECK(output.value == D3D10_DDI_FORMAT_SUPPORT_NOT_SUPPORTED); output.check();
+    for (DXGI_FORMAT format : {DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS,
+         DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_X32_TYPELESS_G8X24_UINT,
+         DXGI_FORMAT_X24_TYPELESS_G8_UINT}) {
+      output = {}; table.pfnCheckFormatSupport(device, format, &output.value);
+      expect(S_OK); CHECK((output.value & 0x0eu) == 0); output.check();
+      output = {}; table.pfnCheckMultisampleQualityLevels(device, format, 4, &output.value);
+      expect(S_OK); CHECK(output.value == 0); output.check();
+    }
     core.pfnSetErrorCb = replacementError; const auto before = replacementCallbacks;
     table.pfnCheckFormatSupport(device, DXGI_FORMAT_R8G8B8A8_UNORM, nullptr); expect(E_INVALIDARG);
     table.pfnCheckMultisampleQualityLevels(device, DXGI_FORMAT_R8G8B8A8_UNORM, 1, nullptr); expect(E_INVALIDARG);

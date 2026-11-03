@@ -1,0 +1,77 @@
+diff --git a/ir/passes/ir_pass_lower_io.cpp b/ir/passes/ir_pass_lower_io.cpp
+index 099b896..dca35be 100644
+--- a/ir/passes/ir_pass_lower_io.cpp
++++ b/ir/passes/ir_pass_lower_io.cpp
+@@ -1364,13 +1364,24 @@ void LowerIoPass::rewriteBuiltInInputToZero(Builder::iterator op, uint32_t first
+ 
+ 
+ bool LowerIoPass::emitXfbForOutput(size_t entryCount, const IoXfbInfo* entries, Builder::iterator output, XfbComponentMap& map) {
+-  uint32_t outputLocation = 0u;
+-  uint32_t outputComponent = 0u;
++  /* One semantic may be captured by multiple entries, for example x and z
++   * packed consecutively, or the same component in separate output buffers. */
++  while (auto entry = findXfbEntry(entryCount, entries, output)) {
++    if (!emitXfbForEntry(entry, output, map))
++      return false;
+ 
+-  auto entry = findXfbEntry(entryCount, entries, output);
++    auto consumed = size_t(entry - entries) + 1u;
++    entries += consumed;
++    entryCount -= consumed;
++  }
+ 
+-  if (!entry)
+-    return true;
++  return true;
++}
++
++
++bool LowerIoPass::emitXfbForEntry(const IoXfbInfo* entry, Builder::iterator output, XfbComponentMap& map) {
++  uint32_t outputLocation = 0u;
++  uint32_t outputComponent = 0u;
+ 
+   auto ioVariable = getSemanticInfo(entry->semanticName.c_str(),
+     entry->semanticIndex, IoSemanticType::eOutput, entry->stream);
+@@ -1384,6 +1395,9 @@ bool LowerIoPass::emitXfbForOutput(size_t entryCount, const IoXfbInfo* entries,
+   auto xfbOffset = entry->offset;
+   auto componentMask = entry->componentMask << ioVariable->getFirstComponentIndex();
+   componentMask &= ioVariable->getComponentMask();
++  xfbOffset += sizeof(uint32_t) * util::popcnt(componentMask
++    & ((1u << outputInfo.getFirstComponentIndex()) - 1u));
++  componentMask &= outputInfo.getComponentMask();
+ 
+   auto [a, b] = m_builder.getUses(output->getDef());
+ 
+diff --git a/ir/passes/ir_pass_lower_io.h b/ir/passes/ir_pass_lower_io.h
+index 24b4c18..16982fd 100644
+--- a/ir/passes/ir_pass_lower_io.h
++++ b/ir/passes/ir_pass_lower_io.h
+@@ -389,6 +389,8 @@ private:
+ 
+   bool emitXfbForOutput(size_t entryCount, const IoXfbInfo* entries, Builder::iterator op, XfbComponentMap& map);
+ 
++  bool emitXfbForEntry(const IoXfbInfo* entry, Builder::iterator op, XfbComponentMap& map);
++
+   const IoXfbInfo* findXfbEntry(size_t entryCount, const IoXfbInfo* entries, Builder::iterator op);
+ 
+   std::pair<uint32_t, uint32_t> allocXfbOutput(XfbComponentMap& map, uint32_t buffer);
+diff --git a/spirv/spirv_builder.cpp b/spirv/spirv_builder.cpp
+index a836099..191b39f 100644
+--- a/spirv/spirv_builder.cpp
++++ b/spirv/spirv_builder.cpp
+@@ -20,6 +20,15 @@ SpirvBuilder::~SpirvBuilder() {
+ 
+ 
+ void SpirvBuilder::buildSpirvBinary() {
++  /* I/O declarations may precede the GS execution-mode declarations.
++   * Resolve the stream mask before emitting output variables, otherwise
++   * their Stream decorations are omitted while EmitStreamVertex survives. */
++  auto [declBegin, declEnd] = m_builder.getDeclarations();
++  for (auto iter = declBegin; iter != declEnd; ++iter) {
++    if (iter->getOpCode() == ir::OpCode::eSetGsOutputPrimitive)
++      m_geometry.streamMask = uint32_t(iter->getOperand(2u));
++  }
++
+   if (m_options.includeDebugNames)
+     processDebugNames();
+ 

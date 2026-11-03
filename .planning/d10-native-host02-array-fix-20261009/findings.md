@@ -1,0 +1,5 @@
+# Findings
+
+ROOT observed host01 stage extraction success, then ledger Count !=20 under actual ARM64 PS5.1. Parse/build unexecuted. Source archive40358/91d0ac541a881f651cdd6018f0c618ca9cabd8edcce39e05c845c2e4b4c43699 and ledger3348/04c260078a6c74582009a7b38c1c620fc25145be0b9bdc344968817f8c72e641 must remain exact.
+
+Array audit: only ReadJson top-level array wrapper is original ledger read. Other controller ReadJson reads authorization/phase/tool/parse/observer scalar JSON objects; producer JSON reads are direct assignments and explicit property-array/object[] casts. ProducerReceipts returns generated FileInfo rows, not a forwarded ConvertFrom-Json top-level array. Fresh02 uses direct ConvertFrom-Json InputObject assignment then foreach/object[] enumeration, exact20 and named scalar row rejection. Added native1/2-row shape controls and metadata after retained extraction, with no additional child. Immutable archive bytes copied to fresh upload alias02; source packet/ledger/producer files unchanged.

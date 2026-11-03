@@ -29,9 +29,12 @@ public:
 };
 
 template<size_t N> static void convert(const char* label, const std::array<ShaderWord,N>& code,
-                                       bool vertex, bool sampled) {
+                                       bool vertex, bool sampled, bool native = false) {
   using namespace dxbc_spv;
-  CHECK(dxvk::umd::legacyShaderModelAllowed(dxvk::umd::LegacyD3DApi::D3D8, code[0], vertex));
+  CHECK(native
+    ? dxvk::umd::legacyNativeShaderModelAllowed(dxvk::umd::LegacyD3DApi::D3D8, code[0], vertex)
+    : dxvk::umd::legacyShaderModelAllowed(dxvk::umd::LegacyD3DApi::D3D8, code[0], vertex));
+  if (native) CHECK(!dxvk::umd::legacyShaderModelAllowed(dxvk::umd::LegacyD3DApi::D3D8, code[0], vertex));
 #ifdef _WIN32
   CHECK(dxvk::validateD3D9ShaderCode(code.data(), sizeof(code), vertex));
 #endif
@@ -74,6 +77,13 @@ int main() {
     0xffff0101,0x42,0xb00f0000,1,0x800f0000,0xb0e40000,0x0000ffff}, false, true);
   convert("ps_1_4_texld", std::array<ShaderWord,5>{
     0xffff0104,0x42,0x800f0000,0xb0e40000,0x0000ffff}, false, true);
+  // Exact 80-byte SYSTEM D3D8 fixed-function pixel shader from stage42.
+  // Keep its comment, saturation/precision modifiers and temporary registers.
+  convert("system_d3d8_generated_ps_2_0", std::array<ShaderWord,20>{
+    0xffff0200,0x0002fffe,0x54584554,0x00464624,
+    0x0200001f,0x80000000,0x900f0000,0x02000001,0x80370005,0x90e40000,
+    0x02000001,0x80380005,0x90e40000,0x02000001,0x802f0001,0x80e40005,
+    0x02000001,0x802f0800,0x80e40001,0x0000ffff}, false, false, true);
   for (const uint32_t invalid : {0xfffe0102u,0xffff0105u,0xfffd0101u,0xffffffffu}) {
     const std::array<ShaderWord,2> code{invalid,0x0000ffff};
     // Converter assumes its caller has validated header/bytecode. The typed

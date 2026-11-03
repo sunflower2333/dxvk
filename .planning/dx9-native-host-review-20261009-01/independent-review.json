@@ -1,0 +1,84 @@
+{
+  "schema": "independent-d3d9-native-cpu-host-review-v1",
+  "reviewer": "/root/ordinary_runtime_gate_audit/null_ps_contract_audit",
+  "review": "scoped-pass",
+  "blockers": [],
+  "scope": "ROOT-only sequential CPU build from unchanged staged packet; no actual native parse/build/target or process closure claims",
+  "pins": [
+    {
+      "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-dx9-ordinary-system-20261008/artifacts/d3d9-system-native-host-01/prepared-root-d3d9-system-host-01.json",
+      "bytes": 13623,
+      "sha256": "7ec2573ecf1c79ac5023fabbf46014d007d9abc4b8acf0dd9e5b6f738c6659e6"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-dx9-ordinary-system-20261008/artifacts/d3d9-system-native-host-01/run-root-d3d9-system-build-01.py",
+      "bytes": 11801,
+      "sha256": "78b033e979a4e273ebfcbff0ad086836f03dc30881829b851d2188a77d507b87"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-dx9-ordinary-system-20261008/artifacts/d3d9-system-native-host-01/invoke-owned-d3d9-system-build-01.ps1",
+      "bytes": 15461,
+      "sha256": "749b6639dc12d5a77b1111a1b22a6982403b8479a693191d1ee8ca7e6406b5a1"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-dx9-ordinary-system-20261008/artifacts/d3d9-system-native-host-01/authorization-template.json",
+      "bytes": 1127,
+      "sha256": "3ae292b8f732a2f9e879cb1ec518b04f7fc748c87d8c8a0c063964ffd61ddac0"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-dx9-ordinary-system-20261008/artifacts/d3d9-system-native-host-01/upload-inputs/d3d9-system-source-739de05-cpu01.tar.gz",
+      "bytes": 28000,
+      "sha256": "e43db89c8a4faacb5b09e5fe334377e20036bcf346b38a439f99718604d28625"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-dx9-ordinary-system-20261008/artifacts/d3d9-system-native-host-01/upload-inputs/d3d9-system-members-739de05-cpu01.json",
+      "bytes": 1793,
+      "sha256": "0f80b496b51f1889199fd35bf80021da6227f0fa095cbd9ef052cb118f444e6d"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-dx9-ordinary-system-20261008/artifacts/d3d9-system-native-host-01/upload-inputs/d3d9-system-handoff-739de05-cpu01.json",
+      "bytes": 4723,
+      "sha256": "d827be0c0edc6d7dc38b7e78213934d6658c3604cdb2b5c6d62ed8e9446eb26b"
+    },
+    {
+      "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-dx9-ordinary-system-20261008/artifacts/d3d9-system-native-host-01/upload-inputs/d3d9-system-owned-runner-739de05-cpu01.cs",
+      "bytes": 4697,
+      "sha256": "d8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad"
+    }
+  ],
+  "local_read_only_checks": {
+    "descriptor_matches_requested_pin": true,
+    "prepared_declared_input_pins_matched": 23,
+    "regular_archive_members_matched_ledger": 11
+  },
+  "findings": [
+    "Host verifies exact packet/helper pins, false-or-missing authorization, latest release descriptor and exclusive ROOT CPU-only scope before transport import/actions. Ownership record is exclusive create before upload; original transport refuses receipt/stream overwrites.",
+    "Native controller requires actual System32 ARM64 PS5.1; exact controller, authorization, runner, descriptor/archive and member ledger; fresh roots; stage verifies every11 member bytes/hash and rejects extras/reparse points. Parser executes native AST parsing only and validates frozen producer hash; controller/parser AST captured.",
+    "Producer launches10 owned CPU tool children in explicit ARM64 then x64 order (discovery, compile, link, headers, imports). It checks actual COFF/PE machines and forbidden imports, never executes produced EXEs or loads core/runtime factories. Actual selected source/tool/header/library continuity is captured before/after; discovery itself is explicitly not a pre-snapshot compile proof.",
+    "Retained C# runner d8cf owns original process handle through exit-code and raw-pipe drain; timeout kills original process, bounded waits remain, failed receipts are preserved. Parent720000ms and host840s bound ten60000ms CPU tool steps; no dependent build on failed stage/parse.",
+    "Collection handles real parse/build failure prefixes. Its phase original inside archive intentionally describes pre-tar state; tar result/summary/raw streams are separately transferred. Archive join verifies remote hash and rejects unsafe/duplicate/nonregular member entries.",
+    "Final observation occurs as retained native child after collection/transfer. It verifies recorded prior children closed/drained and samples all recorded PIDs for absence, conservatively rejects reused PIDs; its own closure is proven by outer retained receipt. Full build expects14 prior children then observer; shorter prefixes remain actual-prefix scoped.",
+    "Release requires ROOT actual-original review ownership_finalized, archive join, successful native observe, exact host transport raw pins and absent host PIDs; timed-out transports cannot release. No runtime/hardware/registration admission or complete process-tree claim follows."
+  ],
+  "bounded_operational_limits": [
+    {
+      "location": "run-root-d3d9-system-build-01.py:116 and invoke-owned-d3d9-system-build-01.ps1:69",
+      "limit": "Only stage/parse prerequisites are programmatically enforced; collect does not terminate further producer phases. ROOT must preserve declared sequential recipe and launch no later parse/build after collection/observation."
+    },
+    {
+      "location": "invoke-owned-d3d9-system-build-01.ps1:75 and frozen source/scripts/build-native-d3d9-system-probes.ps1 source manifest input loop",
+      "limit": "Exact staged11-member ledger is checked at stage, not repeated at build entry. Producer validates staged source manifest and records actual selected pins; ROOT must leave Packet unchanged and compare actual source pins with stage ledger before accepting build provenance."
+    },
+    {
+      "location": "invoke-owned-d3d9-system-build-01.ps1:38",
+      "limit": "Observation attests recorded child receipts, not every process in a complete tree. Actual child completeness/count and separately transferred observer/collector sidecars remain ROOT original review work."
+    }
+  ],
+  "comparison": "Reviewed existing native modern D10 ARM64X controller/host sequencing and unchanged transport5975/retained runnerd8cf; D9 preserves failed-prefix collection and adds explicit honest build-only/recorded-child scope.",
+  "actual_target_calls": 0,
+  "test_or_compiler_reruns": 0,
+  "native_AST_or_build_run_by_reviewer": false,
+  "source_or_packet_edits": false,
+  "hardware_admission": false,
+  "ordinary_runtime_admission": false
+}

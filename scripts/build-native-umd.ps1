@@ -1,11 +1,16 @@
-# LibraryName and VulkanLoader are for driver-package builds: one flat
+# LibraryName, VulkanLoader and VulkanDriver are for driver-package builds: one flat
 # DriverStore directory holds a UMD per architecture, and each resolves its
 # own private Vulkan loader beside itself. The defaults keep the development
 # build unchanged.
 param([string]$OutputDirectory = 'artifacts/umd',
       [ValidatePattern('^[A-Za-z0-9_-]+$')][string]$LibraryName = 'viogpudxvk',
-      [ValidatePattern('^(|[A-Za-z0-9_-]+\.dll)$')][string]$VulkanLoader = '')
+      [ValidatePattern('^(|[A-Za-z0-9_-]+\.dll)$')][string]$VulkanLoader = '',
+      [ValidatePattern('^(|[A-Za-z0-9_-]+\.dll)$')][string]$VulkanDriver = '')
 $ErrorActionPreference = 'Stop'
+if ($VulkanDriver -and (!$VulkanLoader -or $VulkanDriver -ieq $VulkanLoader -or
+    $VulkanDriver -ieq "$LibraryName.dll")) {
+    throw 'A private ICD requires a private loader and distinct sibling DLL names'
+}
 $sdkVersion = ($env:WindowsSDKVersion -replace '\\+$', '')
 if (-not $sdkVersion) { throw 'Run in the selected MSVC developer environment' }
 $kit = Join-Path ${env:ProgramFiles(x86)} "Windows Kits/10/Include/$sdkVersion"
@@ -66,9 +71,9 @@ cpu_family = '$cpu'
 cpu = '$arch'
 endian = 'little'
 "@ | Set-Content native-umd-cross.ini
-meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Denable_umd=true -Denable_d3d8=false -Denable_d3d9=false -Denable_d3d10=false "-Dumd_library_name=$LibraryName" "-Dumd_vulkan_loader=$VulkanLoader"
+meson setup build-umd --cross-file native-umd-cross.ini --buildtype release -Denable_umd=true -Denable_d3d8=false -Denable_d3d9=false -Denable_d3d10=false "-Dumd_library_name=$LibraryName" "-Dumd_vulkan_loader=$VulkanLoader" "-Dumd_vulkan_driver=$VulkanDriver"
 if ($LASTEXITCODE) { throw 'Meson configure failed' }
-ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-d3d9-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe src/umd/dxvk-umd-shader-test.exe src/umd/dxvk-umd-view-test.exe src/umd/dxvk-umd-shared-policy-test.exe
+ninja -C build-umd src/umd/dxvk-umd-identity-query-test.exe src/umd/dxvk-umd-kernel-identity-test.exe src/umd/dxvk-umd-adapter-test.exe src/umd/dxvk-umd-d3d9-adapter-test.exe src/umd/dxvk-umd-query-test.exe src/umd/dxvk-umd-allocation-test.exe src/umd/dxvk-umd-shader-test.exe src/umd/dxvk-umd-view-test.exe src/umd/dxvk-umd-shared-policy-test.exe
 if ($LASTEXITCODE) { throw 'Runtime adapter CPU test build failed' }
 ninja -C build-umd src/umd/dxvk-umd-d3d9-public-adapter-test.exe
 if ($LASTEXITCODE) { throw 'Native legacy runtime-entry test build failed' }
@@ -199,6 +204,7 @@ if ($arch -ne 'arm64') {
     & build-umd/src/umd/dxvk-umd-identity-query-test.exe | Tee-Object (Join-Path $OutputDirectory 'runtime-query-test.txt')
     if ($LASTEXITCODE) { throw 'Runtime identity callback consumer test failed' }
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-adapter-test.exe adapter-test
+    Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-kernel-identity-test.exe kernel-identity-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-adapter-test.exe d3d9-adapter-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-public-adapter-test.exe d3d9-public-adapter-test
     Invoke-BoundedFixture build-umd/src/umd/dxvk-umd-d3d9-device-test.exe d3d9-device-test
@@ -519,6 +525,7 @@ $buildOptionsPath = 'build-umd/meson-info/intro-buildoptions.json'
 $buildOptions = [IO.File]::ReadAllText((Join-Path $PWD $buildOptionsPath)) | ConvertFrom-Json
 foreach ($option in @([ordered]@{name='umd_library_name';value=$LibraryName},
     [ordered]@{name='umd_vulkan_loader';value=$VulkanLoader},
+    [ordered]@{name='umd_vulkan_driver';value=$VulkanDriver},
     [ordered]@{name='enable_umd';value=$true})) {
     $actual = @($buildOptions | Where-Object name -CEQ $option.name)
     if ($actual.Count -ne 1 -or $actual[0].value -cne $option.value) { throw "Meson option differs: $($option.name)" }
@@ -527,6 +534,8 @@ $loaderHeader = 'build-umd/src/vulkan/vulkan_loader_config.h'
 $headerText = [IO.File]::ReadAllText((Join-Path $PWD $loaderHeader))
 $define = '(?m)^\s*#define\s+DXVK_PRIVATE_VULKAN_LOADER\s+"' + [regex]::Escape($VulkanLoader) + '"\s*$'
 if ($headerText -cnotmatch $define) { throw 'Generated Vulkan loader header differs from requested configuration' }
+$driverDefine = '(?m)^\s*#define\s+DXVK_PRIVATE_VULKAN_DRIVER\s+"' + [regex]::Escape($VulkanDriver) + '"\s*$'
+if ($headerText -cnotmatch $driverDefine) { throw 'Generated Vulkan driver header differs from requested configuration' }
 $configurationAfter = @($configurationBefore | ForEach-Object {
     $actualHash = (Get-FileHash -LiteralPath $_.path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualHash -cne $_.sha256 -or (Get-Item -LiteralPath $_.path).Length -ne $_.bytes) {
@@ -559,10 +568,13 @@ if ((Get-FileHash -LiteralPath $symbols -Algorithm SHA256).Hash -cne
 }
 $widePrivateName = $VulkanLoader -and [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($builtDll)).Contains($VulkanLoader)
 if ($VulkanLoader -and !$widePrivateName) { throw 'Original DLL does not contain its configured private loader name' }
+$wideDriverName = $VulkanDriver -and [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($builtDll)).Contains($VulkanDriver)
+if ($VulkanDriver -and !$wideDriverName) { throw 'Original DLL does not contain its configured private driver name' }
 [ordered]@{schema='native-umd-build-configuration-v1';source_commit=$buildSourceCommit;arch=$arch;
-    library_name="$LibraryName.dll";vulkan_loader=$VulkanLoader;
+    library_name="$LibraryName.dll";vulkan_loader=$VulkanLoader;vulkan_driver=$VulkanDriver;
     loader_policy=$(if ($VulkanLoader) { 'module-local-private-no-fallback' } else { 'public-search' });
     private_name_present_in_original_dll=[bool]$widePrivateName;configuration_files=$configurationFiles;
+    private_driver_name_present_in_original_dll=[bool]$wideDriverName;
     fixture_runner=$runnerReceipt;
     configuration_source_before=$configurationBefore;configuration_source_after=$configurationAfter;
     all_configuration_sources_match_git=(@($configurationBefore | Where-Object { !$_.matches_git }).Count -eq 0);

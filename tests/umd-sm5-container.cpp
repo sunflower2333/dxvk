@@ -392,9 +392,10 @@ int main() {
   for (auto i = slots.first; i != slots.second; ++i)
     CHECK(i->count == 1 && i->entries.size() == 1 && i->entries[0].typeId == 0 && i->entries[0].tableId == 0xabc);
   uint32_t offset = UINT32_MAX;
-  CHECK(shader11ClassPointer(13,4080,127,15,offset) && offset == 255);
+  CHECK(shader11ClassPointer(13,4095,127,15,offset) && offset == 4095);
+  CHECK(shader11ClassPointer(0,1,0,0,offset) && offset == 1);
+  CHECK(shader11ClassPointer(0,16,0,0,offset) && offset == 16);
   CHECK(!shader11ClassPointer(14,0,0,0,offset));
-  CHECK(!shader11ClassPointer(0,1,0,0,offset));
   CHECK(!shader11ClassPointer(0,4096,0,0,offset));
   CHECK(!shader11ClassPointer(0,0,128,0,offset));
   CHECK(!shader11ClassPointer(0,0,0,16,offset));

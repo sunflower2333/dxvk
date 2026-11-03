@@ -3,10 +3,15 @@
 #include "../src/umd/umd_d3d11_desc.h"
 #include "../src/umd/umd_result.h"
 #include "../src/umd/umd_shader11.h"
+#include "umd-system-hardware-fixture.h"
 #include <dxbc/dxbc_container.h>
+#include <dxbc/dxbc_converter.h>
 #include <dxbc/dxbc_interface.h>
 #include <dxbc/dxbc_parser.h>
 #include <dxbc/dxbc_signature.h>
+#include <ir/passes/ir_pass_lower_io.h>
+#include <ir/ir_legalize.h>
+#include <spirv/spirv_builder.h>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
 #include <array>
@@ -67,16 +72,16 @@ static void APIENTRY alternateError(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
   ++alternateErrors; error(runtime, hr);
 }
 
-// This source-linked fixture substitutes Microsoft's WARP backend only. The
-// production UMD retains its embedded exact-LUID DXVK/Turnip factory.
+// The default source-linked fixture substitutes Microsoft's WARP backend.
+// Explicit hardware mode uses SYSTEM D3D11 on the verified installed adapter;
+// the outer callback fixture remains controlled in either mode.
 HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
     ID3D11Device** device, ID3D11DeviceContext** context, const RuntimeBackend* runtime) noexcept {
   CHECK(!std::memcmp(&luid, &expectedLuid, sizeof(luid)) && !runtime);
   ++backendCalls; *device = nullptr; *context = nullptr;
   if (backendResult != S_OK) return backendResult;
   level = dxvk::umd::implementationFeatureLevel(level);
-  HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
-    &level, 1, D3D11_SDK_VERSION, device, nullptr, context);
+  HRESULT hr = system_fixture::create(level, device, context);
   if (hr == S_OK) createdContext = *context;
   return hr;
 }
@@ -109,6 +114,7 @@ struct Fixture {
       && !output.table.pfnCreateCommandList && !output.table.pfnRecycleCreateCommandList);
   }
   ~Fixture() {
+    if (system_fixture::hardware) system_fixture::checkModules();
     context.Reset(); output.table.pfnDestroyDevice(device); storage.check();
     CHECK(output.canary == Storage::canary);
   }
@@ -161,7 +167,13 @@ struct Buffer {
     args.BindFlags = bind; args.MiscFlags = misc; args.ByteStride = stride;
     args.MapFlags = staging ? D3D10_DDI_CPU_ACCESS_READ : 0;
     args.MipLevels = args.ArraySize = args.SampleDesc.Count = 1;
-    f.output.table.pfnCreateResource(f.device, &args, handle, {}); ok(); storage.check();
+    f.output.table.pfnCreateResource(f.device, &args, handle, {});
+    if (lastError != S_OK) {
+      ComPtr<ID3D11Device> backend; f.context->GetDevice(&backend);
+      std::fprintf(stderr,"SM5_BUFFER_FAILURE bytes=%u bind=%x misc=%x stride=%u staging=%u removed=%08x\n",
+        bytes,bind,misc,stride,UINT(staging),UINT(backend->GetDeviceRemovedReason()));
+    }
+    ok(); storage.check();
   }
   ~Buffer() { fixture.output.table.pfnDestroyResource(fixture.device, handle); storage.check(); }
   std::vector<uint32_t> read(UINT count) {
@@ -938,7 +950,9 @@ o.v=uint4(0xffc04321u,0xffffffffu,0x11223344u,id+100u);return o;})";
   GraphicsShader vertexA(f,ShaderStage::Vertex,sourceA), vertexB(f,ShaderStage::Vertex,sourceB);
   dxbc_spv::dxbc::Container container(vertexA.original->GetBufferPointer(),vertexA.original->GetBufferSize()); CHECK(container);
   auto outputs = nativeSignature(container.getOutputSignatureChunk());
-  D3D10DDIARG_STAGE_IO_SIGNATURES signature{nullptr,0,outputs.data(),UINT(outputs.size())};
+  // SYSTEM passes the preceding stage's output registers as SO inputs.
+  // A null GS with no rasterized stream has no downstream output signature.
+  D3D10DDIARG_STAGE_IO_SIGNATURES signature{outputs.data(),UINT(outputs.size()),nullptr,0};
   std::array<D3D11DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY,2> entries = {{
     {0,0,semanticRegister(vertexA,false,"SV_Position"),15},
     {0,0,semanticRegister(vertexA,false,"DATA"),15}}};
@@ -958,6 +972,10 @@ o.v=uint4(0xffc04321u,0xffffffffu,0x11223344u,id+100u);return o;})";
     f.context->GSGetShader(&after,nullptr,nullptr); CHECK(after.Get()==before.Get());
   };
   reject(args,nullptr);
+  auto invalidSignature=signature;
+  invalidSignature.pInputSignature=nullptr; reject(args,&invalidSignature);
+  invalidSignature=signature; invalidSignature.NumInputSignatureEntries=33; reject(args,&invalidSignature);
+  invalidSignature={nullptr,0,outputs.data(),UINT(outputs.size())}; reject(args,&invalidSignature);
   auto invalid=args; invalid.NumEntries=513; reject(invalid,&signature);
   invalid=args; invalid.pOutputStreamDecl=nullptr; reject(invalid,&signature);
   invalid=args; invalid.NumStrides=5; reject(invalid,&signature);
@@ -1009,6 +1027,62 @@ o.v=uint4(0xffc04321u,0xffffffffu,0x11223344u,id+100u);return o;})";
   table.pfnDestroyShader(f.device,passthrough); ok(); storage.check();
   std::puts("SM5 null-GS stream output PASS draws=3 words=72 raw_uint=1 public_control=1 missing_output_rejected=1");
 }
+static void checkGeometryStreamIr(const char* label, dxbc_spv::dxbc::Container container,
+    const std::array<dxbc_spv::ir::IoXfbInfo,4>& streams, UINT expectedMask=15, UINT expectedOutputs=8) {
+  using namespace dxbc_spv;
+  dxbc::Converter::Options options{};
+  options.name = label;
+  dxbc::Converter converter(container,options);
+  ir::Builder builder;
+  CHECK(converter.convertShader(builder));
+  auto streamMask = [&] {
+    UINT mask = 0;
+    for (const auto& op : builder)
+      if (op.getOpCode() == ir::OpCode::eEmitVertex) mask |= 1u << uint32_t(op.getOperand(0));
+    return mask;
+  };
+  const UINT before = streamMask();
+  ir::LowerIoPass pass(builder);
+  CHECK(pass.resolveXfbOutputs(streams.size(),streams.data(),-1));
+  UINT xfb = 0, outputMask = 0;
+  for (const auto& op : builder) {
+    if (op.getOpCode() != ir::OpCode::eDclXfb) continue;
+    ++xfb;
+    const auto& output = builder.getOpForOperand(op,0);
+    CHECK(output.getOpCode() == ir::OpCode::eDclOutput);
+    outputMask |= 1u << uint32_t(output.getOperand(output.getFirstLiteralOperandIndex()+2));
+  }
+  const UINT after = streamMask();
+  std::fprintf(stderr,"SM5_SO_IR %s before=%x after=%x outputs=%x xfb=%u\n",label,before,after,outputMask,xfb);
+  CHECK(before == expectedMask && after == expectedMask && outputMask == expectedMask && xfb == expectedOutputs);
+  ir::legalizeIr(builder,ir::CompileOptions{});
+  spirv::BasicResourceMapping mapping;
+  spirv::SpirvBuilder spvBuilder(builder,mapping,spirv::SpirvBuilder::Options{});
+  spvBuilder.buildSpirvBinary();
+  const auto binary = spvBuilder.getSpirvBinary();
+  std::vector<UINT> outputStreams(binary[3],0), outputBuffers(binary[3],UINT(-1));
+  for (size_t i=5;i<binary.size();) {
+    const UINT length=binary[i]>>16, opcode=binary[i]&0xffff;
+    CHECK(length && length<=binary.size()-i);
+    if (opcode == spv::OpDecorate && length == 4) {
+      CHECK(binary[i+1]<outputStreams.size());
+      if (binary[i+2] == spv::DecorationStream) outputStreams[binary[i+1]]=binary[i+3];
+      if (binary[i+2] == spv::DecorationXfbBuffer) outputBuffers[binary[i+1]]=binary[i+3];
+    }
+    i+=length;
+  }
+  UINT spvMask=0, spvOutputs=0;
+  for (size_t id=0;id<outputBuffers.size();++id) if (outputBuffers[id]!=UINT(-1)) {
+    std::fprintf(stderr,"SM5_SO_SPV %s id=%zu stream=%u buffer=%u\n",label,id,outputStreams[id],outputBuffers[id]);
+    bool matched=false;
+    for (const auto& entry:streams)
+      matched |= outputStreams[id]==entry.stream && outputBuffers[id]==entry.buffer;
+    CHECK(matched);
+    spvMask|=1u<<outputStreams[id];++spvOutputs;
+  }
+  CHECK(spvMask==expectedMask && spvOutputs==expectedOutputs);
+}
+
 static void geometryStreams(Fixture& f) {
   using dxvk::umd::ShaderStage;
   GraphicsShader vertex(f,ShaderStage::Vertex,"struct V{float4 p:SV_Position;uint id:DATA0;};V main(uint id:SV_VertexID){V v;v.p=float4(0,0,0,1);v.id=id;return v;}");
@@ -1032,6 +1106,19 @@ for(uint l=0;l<4;++l){o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
   }
   entries[4] = {0,0,D3D10_SO_DDI_REGISTER_INDEX_DENOTING_GAP,1};
   const UINT strides[] = {32,16,24,16};
+  std::array<dxbc_spv::ir::IoXfbInfo,4> irStreams{};
+  for (UINT stream=0;stream<4;++stream)
+    irStreams[stream] = {"DATA",0,3,uint8_t(stream),uint8_t(stream),0,uint16_t(strides[stream])};
+  checkGeometryStreamIr("original",dxbc_spv::dxbc::Container(
+    originalGeometry->GetBufferPointer(),originalGeometry->GetBufferSize()),irStreams);
+  std::vector<unsigned char> reconstructed;
+  CHECK(dxvk::umd::buildShader11Container(decoded,reconstructed));
+  for (UINT stream=0;stream<4;++stream) {
+    irStreams[stream].semanticName = dxvk::umd::varyingRegisterSemantic;
+    irStreams[stream].semanticIndex = uint8_t(entries[stream].RegisterIndex);
+  }
+  checkGeometryStreamIr("reconstructed",dxbc_spv::dxbc::Container(
+    reconstructed.data(),reconstructed.size()),irStreams);
   D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT args{}; args.pOutputStreamDecl = entries.data(); args.NumEntries = UINT(entries.size());
   args.BufferStridesInBytes = strides; args.NumStrides = 4; args.RasterizedStream = D3D11_SO_NO_RASTERIZED_STREAM;
   GraphicsShader shader(f,ShaderStage::Geometry,geometry,&args); vertex.bind(); shader.bind();
@@ -1083,6 +1170,18 @@ for(uint l=0;l<4;++l){o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
   for (auto query : queries) query->end();
   for (UINT stream = 0; stream < 4; ++stream) {
     const auto statistics = queries[stream]->result<D3D10_DDI_QUERY_DATA_SO_STATISTICS>();
+    std::fprintf(stderr,"SM5_SO_STAT stream=%u written=%llu needed=%llu expected=%u\n",stream,
+      static_cast<unsigned long long>(statistics.NumPrimitivesWritten),
+      static_cast<unsigned long long>(statistics.PrimitivesStorageNeeded),3*(stream+1));
+    if (statistics.NumPrimitivesWritten != 3*(stream+1)
+        || statistics.PrimitivesStorageNeeded != statistics.NumPrimitivesWritten) {
+      const std::array<std::vector<UINT>,4> captured={stream0.read(64),stream1.read(64),stream2.read(64),stream3.read(64)};
+      for (UINT index=0;index<4;++index) {
+        std::fprintf(stderr,"SM5_SO_CAPTURE stream=%u",index);
+        for (UINT word=0;word<32;++word) std::fprintf(stderr," %08x",captured[index][word]);
+        std::fputc('\n',stderr);
+      }
+    }
     CHECK(statistics.NumPrimitivesWritten == 3*(stream+1) && statistics.PrimitivesStorageNeeded == statistics.NumPrimitivesWritten);
     CHECK(queries[4+stream]->result<BOOL>() == FALSE);
   }
@@ -1144,10 +1243,36 @@ for(uint l=0;l<4;++l){o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
   f.output.table.pfnSoSetTargets(f.device,0,4,nullptr,nullptr); ok();
   // The same declarations may select a real rasterized stream.
   GraphicsState state(f); ColorTarget target(f,DXGI_FORMAT_R8G8B8A8_UNORM); target.bind();
-  args.RasterizedStream = 0; GraphicsShader rasterized(f,ShaderStage::Geometry,geometry,&args);
-  GraphicsShader pixel(f,ShaderStage::Pixel,"float4 main():SV_Target0{return float4(0,1,0,1);}"); rasterized.bind(); pixel.bind();
-  f.output.table.pfnDraw(f.device,1,0); ok();
-  CHECK(target.texture.pixel(7,7)[0] == 0xff00ff00 || target.texture.pixel(8,8)[0] == 0xff00ff00);
+  const char* rasterGeometry = R"(
+struct V{float4 p:SV_Position;uint id:DATA0;};struct O{float4 p:SV_Position;uint2 value:DATA0;};
+[maxvertexcount(10)]void main(point V v[1],inout PointStream<O> s0,inout PointStream<O> s1,inout PointStream<O> s2,inout PointStream<O> s3){
+O o;o.p=float4(-0.75,0,0,1);o.value=uint2(v[0].id,900);s0.Append(o);
+for(uint j=0;j<2;++j){o.p.x=-0.75+0.5*j;o.value=uint2(v[0].id+100,901+j);s1.Append(o);}
+for(uint k=0;k<3;++k){o.p.x=-0.75+0.5*k;o.value=uint2(v[0].id+200,902+k);s2.Append(o);}
+for(uint l=0;l<4;++l){o.p.x=-0.75+0.5*l;o.value=uint2(v[0].id+300,903+l);s3.Append(o);}})";
+  // Reusing bytecode with distinct SO metadata must preserve each selected
+  // stream's varying values and every emitted point at distinct positions.
+  for (UINT stream=0;stream<4;++stream) {
+    target.bind(); args.RasterizedStream=stream;
+    GraphicsShader rasterized(f,ShaderStage::Geometry,rasterGeometry,&args);
+    const auto pixelSource=std::string("struct V{float4 p:SV_Position;nointerpolation uint2 value:DATA0;};float4 main(V v):SV_Target0{return v.p.w>0&&v.value.x==")
+      +std::to_string(100*stream)+"u?float4(0,1,0,1):float4(1,0,0,1);}";
+    GraphicsShader pixel(f,ShaderStage::Pixel,pixelSource.c_str()); rasterized.bind(); pixel.bind();
+    NativeQuery rasterStats(f,D3D11DDI_QUERY_PIPELINESTATS); rasterStats.begin();
+    f.output.table.pfnDraw(f.device,1,0); ok();
+    rasterStats.end(); const auto rasterCounters=rasterStats.result<D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS>();
+    UINT mask=0;
+    for (UINT point=0;point<4;++point) {
+      bool green=false;
+      for (UINT y=7;y<=8;++y) for (UINT x=1+4*point;x<=2+4*point;++x)
+        green |= target.texture.pixel(x,y)[0] == 0xff00ff00;
+      if (green) mask|=1u<<point;
+    }
+    std::fprintf(stderr,"SM5_SO_RASTER stream=%u clip=%llu ps=%llu point_mask=%x\n",stream,
+      static_cast<unsigned long long>(rasterCounters.CPrimitives),
+      static_cast<unsigned long long>(rasterCounters.PSInvocations),mask);
+    CHECK(mask == (1u<<(stream+1))-1u);
+  }
   // Signed x/z masks split into separate public entries while gaps remain
   // after both values. Interleave both streams at the native boundary.
   const char* signedGeometry = R"(
@@ -1155,7 +1280,8 @@ struct V{float4 p:SV_Position;uint id:DATA0;};struct O{float4 p:SV_Position;int4
 [maxvertexcount(2)]void main(point V v[1],inout PointStream<O> a,inout PointStream<O> b){
 O o;o.p=v[0].p;o.value=int4(-1234-int(v[0].id),222,-17-int(v[0].id),444);a.Append(o);
 o.value-=100;b.Append(o);})";
-  auto signedTokens = compile(signedGeometry,"gs_5_0"); dxvk::umd::ShaderCode11 signedDecoded;
+  ComPtr<ID3DBlob> signedOriginal;
+  auto signedTokens = compile(signedGeometry,"gs_5_0",&signedOriginal); dxvk::umd::ShaderCode11 signedDecoded;
   CHECK(dxvk::umd::decodeShader11(ShaderStage::Geometry,signedTokens.data(),signedTokens.size(),signedDecoded));
   std::array<UINT,2> signedRegisters{};
   for (UINT stream = 0; stream < 2; ++stream) {
@@ -1169,6 +1295,11 @@ o.value-=100;b.Append(o);})";
     {0,0,signedRegisters[0],5},{1,2,D3D10_SO_DDI_REGISTER_INDEX_DENOTING_GAP,1},
     {0,0,D3D10_SO_DDI_REGISTER_INDEX_DENOTING_GAP,1}};
   const UINT signedStrides[] = {16,0,20};
+  const std::array<dxbc_spv::ir::IoXfbInfo,4> splitEntries = {{
+    {"DATA",0,1,0,0,0,16},{"DATA",0,4,0,0,4,16},
+    {"DATA",0,1,1,2,0,20},{"DATA",0,4,1,2,4,20}}};
+  checkGeometryStreamIr("split-original",dxbc_spv::dxbc::Container(
+    signedOriginal->GetBufferPointer(),signedOriginal->GetBufferSize()),splitEntries,3,4);
   args.pOutputStreamDecl = signedEntries; args.NumEntries = UINT(std::size(signedEntries));
   args.BufferStridesInBytes = signedStrides; args.NumStrides = 3; args.RasterizedStream = D3D11_SO_NO_RASTERIZED_STREAM;
   GraphicsShader signedShader(f,ShaderStage::Geometry,signedGeometry,&args);
@@ -1193,6 +1324,7 @@ o.value-=100;b.Append(o);})";
   CHECK(signedResults == signedExpected);
   CHECK(signedResults[0].back() == poison[0] && signedResults[1].back() == poison[0]);
   f.output.table.pfnSoSetTargets(f.device,0,4,nullptr,nullptr); ok();
+  std::puts("SM5 geometry streams PASS signed_split=1");
 }
 static void rejectedHullPhaseInputs(Fixture& f, GraphicsShader& shader, const char* source) {
   auto tokens = compile(source,"hs_5_0");
@@ -1247,6 +1379,7 @@ static void rejectedHullPhaseInputs(Fixture& f, GraphicsShader& shader, const ch
   CHECK(rejected == 18);
 }
 static void tessellation(Fixture& f) {
+  std::puts("SM5 tessellation START");
   using dxvk::umd::ShaderStage;
   const char* common = "struct V{float4 p:POSITION;};struct P{float e[3]:SV_TessFactor;float i:SV_InsideTessFactor;};";
   const std::string hull = std::string(common) + R"(
@@ -1268,11 +1401,12 @@ return c[0].p*uv.x+c[1].p*uv.y+c[2].p*uv.z;})";
   const auto data = query.result<D3D11_DDI_QUERY_DATA_PIPELINE_STATISTICS>();
   CHECK(data.HSInvocations && data.DSInvocations >= 3 && data.PSInvocations);
   CHECK(target.texture.pixel()[0] == 0xffffff00);
+  std::puts("SM5 tessellation raster PASS");
   {
     auto& table=f.output.table;
     dxbc_spv::dxbc::Container container(ds.original->GetBufferPointer(),ds.original->GetBufferSize()); CHECK(container);
     auto outputs=nativeSignature(container.getOutputSignatureChunk());
-    D3D10DDIARG_STAGE_IO_SIGNATURES signature{nullptr,0,outputs.data(),UINT(outputs.size())};
+    D3D10DDIARG_STAGE_IO_SIGNATURES signature{outputs.data(),UINT(outputs.size()),nullptr,0};
     const D3D11DDIARG_STREAM_OUTPUT_DECLARATION_ENTRY entry{0,0,semanticRegister(ds,false,"SV_Position"),15};
     const UINT stride=16,start=0;
     D3D11DDIARG_CREATEGEOMETRYSHADERWITHSTREAMOUTPUT args{};
@@ -1281,11 +1415,13 @@ return c[0].p*uv.x+c[1].p*uv.y+c[2].p*uv.z;})";
     Storage storage(table.pfnCalcPrivateShaderSize(f.device,nullptr,nullptr));
     D3D10DDI_HSHADER passthrough{storage.data()};
     table.pfnCreateGeometryShaderWithStreamOutput(f.device,&args,passthrough,{},&signature); ok(); storage.check();
+    std::puts("SM5 tessellation SO shader created");
     std::array<UINT,1024> poison; poison.fill(0xa5a55a5a);
     Buffer captured(f,4096,D3D10_DDI_BIND_STREAM_OUTPUT,0,0,poison.data());
     table.pfnPsSetShader(f.device,{}); table.pfnGsSetShader(f.device,passthrough);
     table.pfnSoSetTargets(f.device,1,3,&captured.handle,&start); ok();
     table.pfnDraw(f.device,3,0); ok();
+    std::puts("SM5 tessellation SO draw submitted");
     const auto expected=captured.read(1024);
     CHECK(expected[3]==0x3f800000u && expected.back()==poison.back());
     // The domain shader supplies the actual prior-stage program. Compare all
@@ -1314,6 +1450,7 @@ return c[0].p*uv.x+c[1].p*uv.y+c[2].p*uv.z;})";
   f.output.table.pfnHsSetShader(f.device,{}); f.output.table.pfnIaSetTopology(f.device,D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST); ok();
 }
 static void classInterfaces(Fixture& f) {
+  std::puts("SM5 class interfaces START");
   using dxvk::umd::ShaderStage;
   const char* source = R"(
 interface IOp{uint eval(uint x);};class Add:IOp{uint bias;uint eval(uint x){return x+bias;}};
@@ -1338,13 +1475,14 @@ IOp operation; RWStructuredBuffer<uint> dst:register(u0);
   Buffer destination(f,16,D3D11_DDI_BIND_UNORDERED_ACCESS,D3D11_DDI_RESOURCE_MISC_BUFFER_STRUCTURED,4); Uav view(f,destination,4,DXGI_FORMAT_UNKNOWN);
   auto& table = f.output.table;
   table.pfnCsSetConstantBuffers(f.device,0,1,&cb.handle); table.pfnCsSetUnorderedAccessViews(f.device,0,1,&view.handle,nullptr);
-  D3D11DDIARG_POINTERDATA pointer{}; pointer.uCBID = 0; pointer.uCBOffset = 16;
+  // SYSTEM forwards CreateClassInstance's vector offset unchanged in the DDI.
+  D3D11DDIARG_POINTERDATA pointer{}; pointer.uCBID = 0; pointer.uCBOffset = 1;
   table.pfnCsSetShaderWithIfaces(f.device,shader.handle,1,&addTable,&pointer); ok();
   ComPtr<ID3D11ComputeShader> observed; ComPtr<ID3D11ClassInstance> instance; UINT count = 1;
   f.context->CSGetShader(&observed,&instance,&count); CHECK(observed && instance && count == 1);
   D3D11_CLASS_INSTANCE_DESC desc{}; instance->GetDesc(&desc); CHECK(desc.ConstantBuffer == 0 && desc.BaseConstantBufferOffset == 1);
   table.pfnDispatch(f.device,4,1,1); ok(); CHECK((destination.read(4) == std::vector<UINT>{13,14,15,16}));
-  pointer.uCBOffset = 32; table.pfnCsSetShaderWithIfaces(f.device,shader.handle,1,&multiplyTable,&pointer); ok();
+  pointer.uCBOffset = 2; table.pfnCsSetShaderWithIfaces(f.device,shader.handle,1,&multiplyTable,&pointer); ok();
   table.pfnDispatch(f.device,4,1,1); ok(); CHECK((destination.read(4) == std::vector<UINT>{14,21,28,35}));
   // Failure on an unbound shader retires only that handle; a successful old
   // class binding must still execute with its own live instances.
@@ -1360,7 +1498,9 @@ IOp operation; RWStructuredBuffer<uint> dst:register(u0);
   const D3D11DDI_HUNORDEREDACCESSVIEW empty{}; table.pfnCsSetUnorderedAccessViews(f.device,0,1,&empty,nullptr); ok();
 }
 
-int main() {
+int main(int argc, char** argv) {
+  std::setvbuf(stdout,nullptr,_IONBF,0);
+  system_fixture::configure(argc, argv);
   callerThread = GetCurrentThreadId();
   independentBlend10_1();
   {
@@ -1375,7 +1515,10 @@ int main() {
     Storage invalidShader(table.pfnCalcPrivateTessellationShaderSize(f.device, nullptr, nullptr));
     table.pfnCreateHullShader(f.device, nullptr, {invalidShader.data()}, {}, nullptr); failure(E_INVALIDARG); CHECK(invalidShader.empty()); invalidShader.check();
     table.pfnRelocateDeviceFuncs(f.device, &table); ok();
-    inputLayoutCapacity(table, f.device, f.context.Get(), D3D11_VS_INPUT_REGISTER_COUNT);
+    // FL11 input layouts have 32 elements/slots/registers. MinGW publishes
+    // the IA limit but does not provide the SDK's VS input-register macro.
+    static_assert(D3D11_IA_VERTEX_INPUT_STRUCTURE_ELEMENT_COUNT == 32);
+    inputLayoutCapacity(table, f.device, f.context.Get(), D3D11_IA_VERTEX_INPUT_STRUCTURE_ELEMENT_COUNT);
     textureMinLod(f);
     computeSystemInputs(f);
     computeAndCounters(f);
@@ -1403,6 +1546,10 @@ int main() {
   CHECK(VioGpuDxvkCreateDdiTestDevice11(&expectedLuid, device, {&callbacks}, &callbacks, &output.table, D3D_FEATURE_LEVEL_11_0) == E_FAIL);
   CHECK(!std::memcmp(&snapshot, &output, sizeof(output))); failed.check(); backendResult = S_OK;
   CHECK(VioGpuDxvkCreateDdiTestDevice11(&expectedLuid, device, {&callbacks}, &callbacks, &output.table, D3D_FEATURE_LEVEL_11_0) == S_OK);
+  // Private loader/ICD modules may unload when the final device is released.
+  // Validate their identity while the tested backend still owns them.
+  if (system_fixture::hardware) system_fixture::checkModules();
   createdContext.Reset(); output.table.pfnDestroyDevice(device); failed.check();
-  std::printf("typed D3D10.1/D3D11 fixture PASS checks=%u callbacks=%u SM5 graphics/queries/packed IA/streams/tessellation/classes WARP controls; native Turnip/runtime acceptance remains gated\n", checks, errors);
+  std::printf("typed D3D10.1/D3D11 fixture PASS checks=%u callbacks=%u SM5 graphics/queries/packed IA/streams/tessellation/classes backend=%s; controlled outer DDIs, full native admission remains gated\n",
+    checks, errors, system_fixture::hardware ? "SYSTEM-hardware" : "WARP");
 }

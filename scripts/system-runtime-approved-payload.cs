@@ -20,6 +20,7 @@ public sealed class DxvkApprovedSelection01 {
 }
 public sealed class DxvkApprovedPayload01 {
     public string SourceCommit, CiRun, Architecture, PrivateLoader, IcdLibrary;
+    public string BuildKind, BuildId;
     public DxvkApprovedFile01[] Files, ModuleFiles;
 }
 
@@ -187,7 +188,93 @@ public static class DxvkApprovedPayloadPolicy01 {
             Require(name != "winevulkan.dll" && name != "vulkan-1.dll" && name != "d3d10warp.dll" && name != "d3d11warp.dll" && name != "warp.dll","Current private CI payload cannot approve public fallback/software dependencies");
             Require(names.Add(name),"Ambiguous approved module basename");
         }
-        return new DxvkApprovedPayload01 { SourceCommit=source,CiRun=run,Architecture=arch,PrivateLoader=loader.Path,IcdLibrary=library.Path,Files=files.ToArray(),ModuleFiles=modules.ToArray() };
+        return new DxvkApprovedPayload01 { SourceCommit=source,CiRun=run,Architecture=arch,PrivateLoader=loader.Path,IcdLibrary=library.Path,Files=files.ToArray(),ModuleFiles=modules.ToArray(),BuildKind="ci",BuildId=run };
+    }
+    // Local integration builds carry their actual working-tree manifest and
+    // completed build record. They do not borrow a published CI source/run.
+    public static DxvkApprovedPayload01 ValidateLocalDocuments(string tupleJson,string buildJson,
+            string sourcesJson,string header,string optionsJson,string machinesJson,string icdJson,
+            DxvkApprovedSelection01 selection) {
+        Require(selection != null && (selection.Api == "10" || selection.Api == "11")
+            && selection.Architecture == "arm64","Local integration supports native ARM64 D10/D11 only");
+        var tuple=Parse(tupleJson);
+        Keys(tuple,"schema","source_commit","arch","build_record","source_manifest","core",
+            "configuration_files","private_loader","icd_json","icd_metadata","icd_library","dependencies");
+        Require(Str(Get(tuple,"schema")) == "system-runtime-local-build-payload-v1","Exact local payload schema required");
+        string source=Str(Get(tuple,"source_commit")), arch=Str(Get(tuple,"arch"));
+        Require(Regex.IsMatch(source,"^[0-9a-f]{40}$") && arch == selection.Architecture,"Local base source/architecture differs");
+        var buildPin=Pin(Get(tuple,"build_record")); var sourcePin=Pin(Get(tuple,"source_manifest"));
+        var core=Pin(Get(tuple,"core")); Selected(core,selection.Core,selection.CoreSha256);
+        var build=Parse(buildJson); var sources=Parse(sourcesJson);
+        Require(Str(Get(build,"schema")) == "local-umd-build-v1"
+            && Str(Get(build,"base_commit")) == source && Str(Get(build,"arch")) == arch
+            && Int(Get(build,"exit_code")) == 0 && Int(Get(build,"machine")) == 0xaa64,
+            "Completed architecture-matched local build required");
+        True(build,"working_tree_changes"); True(build,"native_source_unchanged");
+        Require(Sha(Get(build,"source_manifest_sha256")) == sourcePin.Sha256
+            && Str(Get(sources,"schema")) == "local-umd-source-v1"
+            && Str(Get(sources,"base_commit")) == source && Arr(Get(sources,"inputs")).Length > 0,
+            "Local build source manifest differs");
+        Require(Str(Get(build,"library_name")) == "viogpudxvk.dll" && Leaf(core.Path) == "viogpudxvk.dll"
+            && Str(Get(build,"loader_policy")) == "module-local-private-no-fallback",
+            "Exact local core and private loader policy required");
+        SamePin(core,Get(build,"dll"));
+        string driverName=build.ContainsKey("vulkan_driver") ? Str(Get(build,"vulkan_driver")) : "";
+        bool direct=driverName != "";
+        Require(!direct || driverName == "viogpu_dxvk_vk_arm64.dll","Local direct driver name differs");
+        string loaderName=direct ? "viogpu_dxvk_loader_arm64.dll" : "viogpu_gl_loader_arm64.dll";
+        Require(Str(Get(build,"vulkan_loader")) == loaderName,"Local compiled loader differs");
+        var loader=Pin(Get(tuple,"private_loader")); Selected(loader,selection.PrivateLoader,selection.PrivateLoaderSha256);
+        Require(SamePath(loader.Path,Parent(core.Path)+"\\"+loaderName) && loader.Sha256 == selection.VulkanLoaderSha256,
+            "Local private loader must be the exact sibling");
+        var files=new List<DxvkApprovedFile01> {buildPin,sourcePin,core,loader};
+        object[] rows=Arr(Get(tuple,"configuration_files"));
+        Require(rows.Length == ConfigMembers.Length && Arr(Get(build,"configuration_files")).Length == ConfigMembers.Length,
+            "Local generated configuration closure required");
+        foreach (string member in ConfigMembers) {
+            var row=Indexed(rows,"member",member); Keys(row,"member","file"); var file=Pin(Get(row,"file"));
+            SamePin(file,Indexed(Get(build,"configuration_files"),"member",member)); files.Add(file);
+        }
+        MatchCollection definitions=Regex.Matches(header,@"(?m)^\s*#\s*define\s+DXVK_PRIVATE_VULKAN_LOADER\b[^\r\n]*");
+        Require(definitions.Count == 1 && definitions[0].Value.Trim() == "#define DXVK_PRIVATE_VULKAN_LOADER \""+loaderName+"\"",
+            "Local generated private loader header differs");
+        var driverDefinitions=Regex.Matches(header,@"(?m)^\s*#\s*define\s+DXVK_PRIVATE_VULKAN_DRIVER\b[^\r\n]*");
+        Require((!direct && driverDefinitions.Count == 0) || (driverDefinitions.Count == 1
+            && driverDefinitions[0].Value.Trim() == "#define DXVK_PRIVATE_VULKAN_DRIVER \""+driverName+"\""),
+            "Local generated direct driver header differs");
+        var parser=new JavaScriptSerializer(); parser.MaxJsonLength=16*1024*1024;
+        object[] options=Arr(parser.DeserializeObject(optionsJson));
+        Option(options,"umd_vulkan_loader",loaderName); Option(options,"umd_library_name","viogpudxvk"); Option(options,"enable_umd",true);
+        if (direct) Option(options,"umd_vulkan_driver",driverName);
+        Require(Str(Get(Obj(Get(Parse(machinesJson),"host")),"cpu_family")) == "aarch64","Local generated machine differs");
+        var icdFile=Pin(Get(tuple,"icd_json")); Selected(icdFile,selection.IcdJson,selection.IcdJsonSha256);
+        var icd=Parse(icdJson); Require(Equal(icd,Get(tuple,"icd_metadata")),"Local ICD metadata differs");
+        Keys(icd,"file_format_version","ICD");
+        Require(Str(Get(icd,"file_format_version")) == "1.0.1","Local ICD schema differs");
+        var metadata=Obj(Get(icd,"ICD")); Keys(metadata,"api_version","library_arch","library_path");
+        Require(Str(Get(metadata,"library_arch")) == "64"
+            && Regex.IsMatch(Str(Get(metadata,"api_version")),"^[0-9]+\\.[0-9]+\\.[0-9]+$"),"Local ICD architecture/version differs");
+        string libraryPath=Str(Get(metadata,"library_path"));
+        Require(Regex.IsMatch(libraryPath,@"^\.\\[A-Za-z0-9_.-]+\.dll$"),"Local ICD must name one sibling DLL");
+        var library=Pin(Get(tuple,"icd_library"));
+        Require(SamePath(library.Path,Parent(icdFile.Path)+"\\"+libraryPath.Substring(2))
+            && library.Sha256 == selection.IcdLibrarySha256,"Local ICD path/hash differs");
+        Require(!direct || SamePath(library.Path,Parent(core.Path)+"\\"+driverName),
+            "Local directly loaded ICD must be the configured sibling");
+        files.Add(icdFile); files.Add(library);
+        var modules=new List<DxvkApprovedFile01> {core,loader,library};
+        object[] dependencies=Arr(Get(tuple,"dependencies")); Require(dependencies.Length <= 32,"Bounded local dependency closure required");
+        foreach (object item in dependencies) { var file=Pin(item); files.Add(file); modules.Add(file); }
+        var paths=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files) Require(paths.Add(file.Path),"Duplicate local payload path");
+        var names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in modules) {
+            string name=Leaf(file.Path).ToLowerInvariant();
+            Require(name != "winevulkan.dll" && name != "vulkan-1.dll" && name != "warp.dll"
+                && name != "d3d10warp.dll" && name != "d3d11warp.dll" && names.Add(name),"Unexpected local module dependency");
+        }
+        return new DxvkApprovedPayload01 { SourceCommit=source,CiRun="",Architecture=arch,PrivateLoader=loader.Path,
+            IcdLibrary=library.Path,Files=files.ToArray(),ModuleFiles=modules.ToArray(),BuildKind="local",BuildId=buildPin.Sha256 };
     }
     public static string FileSha(string path) {
         using (var hash=SHA256.Create()) using (var file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read))
@@ -206,6 +293,24 @@ public static class DxvkApprovedPayloadPolicy01 {
     public static DxvkApprovedPayload01 ValidateFiles(string tuplePath,string tupleSha,DxvkApprovedSelection01 selection) {
         Absolute(tuplePath); Require(FileSha(tuplePath) == tupleSha && Regex.IsMatch(tupleSha ?? "","^[0-9a-f]{64}$"),"ROOT-approved tuple file hash required");
         string tupleJson=File.ReadAllText(tuplePath,new UTF8Encoding(false,true)); var tuple=Parse(tupleJson);
+        if (Str(Get(tuple,"schema")) == "system-runtime-local-build-payload-v1") {
+            var local=ValidateLocalDocuments(tupleJson,Text(Pin(Get(tuple,"build_record"))),Text(Pin(Get(tuple,"source_manifest"))),
+                Text(Pin(Get(Indexed(Get(tuple,"configuration_files"),"member",ConfigMembers[0]),"file"))),
+                Text(Pin(Get(Indexed(Get(tuple,"configuration_files"),"member",ConfigMembers[1]),"file"))),
+                Text(Pin(Get(Indexed(Get(tuple,"configuration_files"),"member",ConfigMembers[2]),"file"))),
+                Text(Pin(Get(tuple,"icd_json"))),selection);
+            foreach (var file in local.Files) RequireFile(file);
+            byte[] coreBytes=File.ReadAllBytes(selection.Core);
+            Require(coreBytes.Length >= 64 && coreBytes[0] == 0x4d && coreBytes[1] == 0x5a,"Local core DOS header required");
+            uint offset=BitConverter.ToUInt32(coreBytes,60);
+            Require(offset >= 64 && offset <= coreBytes.Length-24 && BitConverter.ToUInt32(coreBytes,(int)offset) == 0x4550
+                && BitConverter.ToUInt16(coreBytes,(int)offset+4) == 0xaa64
+                && (BitConverter.ToUInt16(coreBytes,(int)offset+22)&0x2000) != 0,"Local ARM64 DLL required");
+            Require(Encoding.ASCII.GetString(coreBytes).Contains(Leaf(local.PrivateLoader)),"Compiled local private loader name absent");
+            if (Leaf(local.PrivateLoader) == "viogpu_dxvk_loader_arm64.dll")
+                Require(Encoding.Unicode.GetString(coreBytes).Contains("viogpu_dxvk_vk_arm64.dll"),"Compiled local direct driver name absent");
+            Require(FileSha(tuplePath) == tupleSha,"Local tuple changed during validation"); return local;
+        }
         string result=Text(Pin(Get(tuple,"ci_result"))), config=Text(Pin(Get(tuple,"build_configuration"))), icd=Text(Pin(Get(tuple,"icd_json")));
         string header=Text(Pin(Get(Indexed(Get(tuple,"configuration_files"),"member",ConfigMembers[0]),"file")));
         string options=Text(Pin(Get(Indexed(Get(tuple,"configuration_files"),"member",ConfigMembers[1]),"file")));

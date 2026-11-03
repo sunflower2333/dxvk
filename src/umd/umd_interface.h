@@ -28,11 +28,12 @@ inline bool supportedNativeInterface(UINT interfaceVersion, UINT version, UINT f
     default: return false;
   }
   if ((version >> 16) < build) return false;
-  if (nativeInterface(interfaceVersion) != NativeInterface::D3D11) return flags == 0;
-  // SINGLETHREADED describes the caller; it does not require free-threaded
-  // device access. DISABLE_EXTRA_THREAD_CREATION cannot be honored by the
-  // embedded renderer and therefore remains rejected.
-  const UINT allowed = D3D11DDI_CREATEDEVICE_FLAG_SINGLETHREADED
+  if (nativeInterface(interfaceVersion) != NativeInterface::D3D11)
+    return !(flags & ~D3D10DDI_CREATEDEVICE_FLAG_DISABLE_EXTRA_THREAD_CREATION);
+  // SINGLETHREADED describes the caller. DISABLE_EXTRA_THREAD_CREATION selects
+  // the device's inline runtime service, recording, compilation and submission.
+  const UINT allowed = D3D10DDI_CREATEDEVICE_FLAG_DISABLE_EXTRA_THREAD_CREATION
+    | D3D11DDI_CREATEDEVICE_FLAG_SINGLETHREADED
     | D3D11DDI_CREATEDEVICE_FLAG_3DPIPELINESUPPORT_MASK;
   if (flags & ~allowed) return false;
   switch (D3D11DDI_EXTRACT_3DPIPELINELEVEL_FROM_FLAGS(flags)) {

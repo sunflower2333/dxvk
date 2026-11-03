@@ -35,7 +35,7 @@ $shader = @(
     'subprojects/dxbc-spirv/util/util_log.cpp',
     'subprojects/dxbc-spirv/util/util_md5.cpp'
 ) | ForEach-Object { Join-Path $root $_ }
-$ddi = @('src/umd/umd_ddi.cpp','src/umd/umd_runtime_query.cpp',
+$ddi = @('src/umd/umd_ddi.cpp','src/umd/umd_primary_access.cpp','src/umd/umd_runtime_query.cpp',
          'src/umd/umd_allocation.cpp','src/umd/umd_runtime_gpu.cpp') | ForEach-Object { Join-Path $root $_ }
 Push-Location $out
 try {

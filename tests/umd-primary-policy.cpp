@@ -78,6 +78,23 @@ int main() {
   optional.numerator = optional.denominator = 0; PrimaryPlan plan;
   CHECK(primaryPlan(optional, plan) == PrimaryStatus::Valid);
   CHECK(!plan.scanout && plan.driverFlags == 1 && plan.pitch == 65536 && plan.bytes == 1073741824);
+  // Optional does not mean incapable of scanout. Only a native-capable
+  // allocation with a complete supported mode may clear NO_SCANOUT.
+  for (uint32_t format : {28u, 29u, 87u, 88u, 91u, 93u}) {
+    auto input = shape(3040, 1904, format); input.flags = 1;
+    PrimaryPlan native;
+    CHECK(primaryPlan(input, native, true) == PrimaryStatus::Valid);
+    const bool capable = format == 28 || format == 87 || format == 91;
+    CHECK(native.scanout == capable && native.driverFlags == unsigned(!capable));
+    for (unsigned zero : {0u, 1u}) {
+      auto incomplete = input;
+      (zero ? incomplete.denominator : incomplete.numerator) = 0;
+      CHECK(primaryPlan(incomplete, native, true) == PrimaryStatus::Valid);
+      CHECK(!native.scanout && native.driverFlags == 1);
+    }
+    CHECK(primaryPlan(input, native) == PrimaryStatus::Valid);
+    CHECK(!native.scanout && native.driverFlags == 1);
+  }
   PrimaryCopy copy; copy.width = 19; copy.height = 7;
   std::array<uint32_t, 16> words{}; std::memcpy(words.data(), &copy, sizeof(copy));
   CHECK((words == std::array<uint32_t, 16>{0x504d5644, 0, 64, 0, 2, 0, 19, 7, 0, 0, 0, 0, 0, 0, 0, 0}));

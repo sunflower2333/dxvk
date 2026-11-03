@@ -1,0 +1,10 @@
+{
+  "schema": "d3d9-native-cpu-host-review-superseded-v1",
+  "historical_review_sha256": "da81f8cf07c5e1f4c242fe7915a5260572a26280dca09ba7b112338844085042",
+  "historical_review_file": "independent-review.json",
+  "superseded_for_native_execution": true,
+  "reason": "ROOT actual ARM64 PowerShell5.1 D10 host01 stage succeeded extracting immutable20-row packet then failed Count20 for `$members=@(ReadJson $Ledger)`; same top-level JSON array command wrapping is present in D9 host01 line75 expecting11. Prior local static/source review did not execute PS5.1 and is historical/source-review only. D9 has no actual native stage/build result claimed by this note.",
+  "next_requirement": "Use fresh host02 explicit parsed-array assignment/object[] flatten with row/name/count validation and actual native stage shape preflight; preserve immutable ledgers and host01 originals.",
+  "reviewer_target_calls": 0,
+  "peer_checks_rerun": false
+}

@@ -96,6 +96,8 @@ struct Runtime {
   }
 };
 static Runtime first, second;
+static HRESULT kernelOpenResult = S_OK;
+static bool nullKernelSource;
 static unsigned wrongCalls;
 static D3DDDIARG_GETCAPS* changingCaps = nullptr;
 static D3DDDIARG_OPENADAPTER* changingOpen = nullptr;
@@ -108,6 +110,23 @@ static std::condition_variable callbackChanged;
 static bool callbackEntered, callbackReleased;
 
 static HRESULT APIENTRY query(HANDLE, const D3DDDICB_QUERYADAPTERINFO*);
+HRESULT dxvk::umd::openKernelIdentity(const RuntimeIdentity& initial,
+    std::shared_ptr<const AdapterIdentitySource>& source) {
+  Runtime* runtime = nullptr;
+  for (auto candidate : {&first, &second})
+    if (!std::memcmp(initial.luid.data(), candidate->reply.data() + 144, sizeof(LUID))) runtime = candidate;
+  CHECK(runtime);
+  struct Identity final : AdapterIdentitySource {
+    Runtime* runtime;
+    explicit Identity(Runtime* value) : runtime(value) { }
+    HRESULT query(RuntimeIdentity& result, RuntimeQueryStage stage) const override {
+      return queryRuntimeIdentity(runtime, ::query, result, stage);
+    }
+  };
+  source.reset();
+  if (kernelOpenResult == S_OK && !nullKernelSource) source = std::make_shared<Identity>(runtime);
+  return kernelOpenResult;
+}
 static HRESULT APIENTRY wrongQuery(HANDLE, const D3DDDICB_QUERYADAPTERINFO*) {
   wrongCalls++;
   return E_FAIL;
@@ -266,7 +285,29 @@ static void legacyAdapterContracts() {
   CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK && snapshot(get) == capsRequest);
   CHECK(caps.value[0] == D3DDEVTYPE_HAL && caps.value[49] == D3DVS_VERSION(1,1));
   CHECK(caps.value[50] == 96 && caps.value[51] == D3DPS_VERSION(1,4) && !wrongCalls);
+  // D3D8 checks this legacy-only flag before accepting windowed devices.
+  CHECK(caps.value[3] & 0x00080000u); // D3DCAPS2_CANRENDERWINDOWED
   CHECK(!caps.value[17] && !caps.value[18] && !caps.value[24]); caps.intact();
+  // SYSTEM D3D8 also requests the full D3DCAPS9 layout while initializing
+  // its hardware device. This internal query must not change the API8 owner
+  // or its separately projected public shader/capability limits.
+  const auto public8 = caps.value;
+  Guarded<D3DCAPS9> internal9;
+  D3DDDIARG_GETCAPS internal = {D3DDDICAPS_GETD3D9CAPS, nullptr, &internal9.value, sizeof(D3DCAPS9)};
+  const auto internalRequest = snapshot(internal);
+  CHECK(first.functions.pfnGetCaps(first.driver, &internal) == S_OK);
+  CHECK(snapshot(internal) == internalRequest && !wrongCalls);
+  CHECK(internal9.value.DeviceType == D3DDEVTYPE_HAL && internal9.value.NumSimultaneousRTs == 1);
+  CHECK(internal9.value.VertexShaderVersion == D3DVS_VERSION(2,0)
+    && internal9.value.PixelShaderVersion == D3DPS_VERSION(2,0));
+  CHECK(!(internal9.value.Caps2 & 0x00080000u)); internal9.intact();
+  for (const UINT size : {0u, UINT(sizeof(caps.value)), UINT(sizeof(D3DCAPS9)-1), UINT(sizeof(D3DCAPS9)+1)}) {
+    internal.DataSize = size;
+    const auto output = snapshot(internal9); const auto request = snapshot(internal); const auto calls = first.calls;
+    CHECK(first.functions.pfnGetCaps(first.driver, &internal) == E_INVALIDARG);
+    CHECK(snapshot(internal9) == output && snapshot(internal) == request && first.calls == calls);
+  }
+  CHECK(first.functions.pfnGetCaps(first.driver, &get) == S_OK && caps.value == public8);
   get.pData = nullptr; const auto nullCalls = first.calls;
   CHECK(first.functions.pfnGetCaps(first.driver,&get) == E_INVALIDARG && first.calls == nullCalls);
   get.pData = caps.value.data();
@@ -276,7 +317,7 @@ static void legacyAdapterContracts() {
     CHECK(first.functions.pfnGetCaps(first.driver, &get) == E_INVALIDARG);
     CHECK(snapshot(caps) == output && snapshot(get) == request && first.calls == calls);
   }
-  for (const auto type : {D3DDDICAPS_GETD3D9CAPS, D3DDDICAPS_GETD3D7CAPS, D3DDDICAPS_TYPE(999)}) {
+  for (const auto type : {D3DDDICAPS_GETD3D7CAPS, D3DDDICAPS_TYPE(999)}) {
     get = {type,nullptr,caps.value.data(),sizeof(caps.value)}; const auto output = snapshot(caps); const auto calls = first.calls;
     CHECK(first.functions.pfnGetCaps(first.driver, &get) == D3DERR_NOTAVAILABLE);
     CHECK(snapshot(caps) == output && first.calls == calls);
@@ -378,6 +419,13 @@ int main() {
   D3DDDI_ADAPTERCALLBACKS callbacks = {};
   callbacks.pfnQueryAdapterInfoCb = query;
   const auto valid = request(first, table.value, callbacks);
+  for (const HRESULT failure : {E_FAIL, E_OUTOFMEMORY, DXGI_ERROR_DEVICE_REMOVED, S_FALSE}) {
+    kernelOpenResult = failure;
+    unchangedOpen(valid, failure == S_FALSE ? E_FAIL
+      : failure == DXGI_ERROR_DEVICE_REMOVED ? D3DERR_DEVICELOST : failure);
+  }
+  kernelOpenResult = S_OK; nullKernelSource = true; unchangedOpen(valid, E_FAIL);
+  nullKernelSource = false; first.calls = 0;
   for (const UINT interfaceVersion : {0u, 7u, 10u, 11u, 12u, 0x000a0000u, 0xffffffffu}) {
     auto args = valid; args.Interface = interfaceVersion;
     unchangedOpen(args, D3DERR_NOTAVAILABLE);
@@ -437,6 +485,7 @@ int main() {
   CHECK(caps.value.NumSimultaneousRTs == 1 && caps.value.MaxTextureWidth >= 2048);
   CHECK(!(caps.value.TextureCaps & (D3DPTEXTURECAPS_CUBEMAP | D3DPTEXTURECAPS_VOLUMEMAP)));
   CHECK(caps.value.Caps2 & D3DCAPS2_DYNAMICTEXTURES);
+  CHECK(!(caps.value.Caps2 & 0x00080000u)); // Reserved in the D3D9 public profile.
   CHECK(caps.value.PrimitiveMiscCaps & dxvk::umd::d3d9DdiFogInFvf);
   CHECK(!(caps.value.Caps2 & (D3DCAPS2_CANAUTOGENMIPMAP | D3DCAPS2_CANSHARERESOURCE)));
   CHECK(!caps.value.CubeTextureFilterCaps && !caps.value.VolumeTextureFilterCaps
@@ -492,8 +541,9 @@ int main() {
     const auto& format = formatData.value[i];
     CHECK(format.Format == supportedFormats[i]);
     CHECK(!format.FlipMsTypes && !format.BltMsTypes && !format.PrivateFormatBitCount);
-    CHECK(!(format.Operations & (FORMATOP_CUBETEXTURE | FORMATOP_VOLUMETEXTURE | FORMATOP_OFFSCREENPLAIN
+    CHECK(!(format.Operations & (FORMATOP_CUBETEXTURE | FORMATOP_VOLUMETEXTURE
       | FORMATOP_AUTOGENMIPMAP | FORMATOP_VERTEXTEXTURE | FORMATOP_OVERLAY | FORMATOP_CONVERT_TO_ARGB)));
+    CHECK(bool(format.Operations & FORMATOP_OFFSCREENPLAIN) == (i < 2));
     if (i < 2) CHECK(format.Operations & FORMATOP_TEXTURE);
     else CHECK(format.Operations & FORMATOP_ZSTENCIL_WITH_ARBITRARY_COLOR_DEPTH);
     CHECK(bool(format.Operations & FORMATOP_DISPLAYMODE) == (i == 0));

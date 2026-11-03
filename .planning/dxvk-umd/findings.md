@@ -1,40 +1,72 @@
 # Findings
 
-## Live checkpoint: query105 native accepted and diagnostics merged for next CI
+## Live checkpoint: e26 published; D10.1 hardware02 execution in progress
 
-MAIN225a02a includes querytrace1da441e (source2897) and separate diagnostic
-probe wrapper (sourcedb70). Production source exactfive pins join local x64/x86
-strict Microsoft syntax and real ARM64 EWDK threeCOFF/oneCPUPE. ROOT native
-upload31773/build31956/collect32181/transfer32348 allclosed0; source12/tool76
-rows75unique stable. Once extraction32869 admits63members/53regular files;
-sole finite reader32939/0 accepts actual105checks,7children+producer+collector
-closed. Proof5618/SHA248d21e0; CPU/activityrelease6411/SHA1436cc5d accepted.
-No fixture/compiler/extraction/reader replay; hardware and ordinary gatesfalse.
+MAIN e26d0acd2428515dd941612a67149216c048f01e was pushed once by
+ROOT33976/0 (3.2722s, reaped, raw files closed). Exactly one push run
+37864874792/attempt1 is building; identity and shader-cpu passed. New genuine
+ARM64/I386 backend originals are being collected separately when each producer
+succeeds. Published diagnostics include query trace1da441e, separate child wrapper
+225a02a and bounded D9 Render metadata59917b5. No actual hardware fix is proved.
 
-Prefix D10.1 observer30886/0 passes current raw6/all3Mesa/signedKMD/original
-USERdesktop/healthydevnode/freshvalid160+immediateexact;5recordedlifetimes absent,
-23inputpins,3ROOTphases/10transportsclosed. Actualrelease8401/SHA270172c9 and
-finalobserver345692/SHAc60616ef accepted. No task/job IDs were created, so no
-manufactured task/job absence or full-tree claim. ApplyproducerPID unknown.
-CorrectedD10.1 preparation05 uses owner progress7def plus bootstraprawd8cf;
-independentsourcepeer passes, freshactual02 pending. Failed01 remainsimmutable.
+SourceId02 failed before task Start because Windows normalized the requested
+DROIDVM\USER principal to USER. Actual readonly task metadata resolves USER to
+the exact original SID, with Interactive3/Limited0 and exact native action.
+ROOT cleanup38241/0 removes the one inactive task and observes absence; no
+worker/query/factory started. Scoped release10938/SHA56705a06 is accepted.
+Two malformed cleanup command attempts failed before native PowerShell entered;
+those originals are retained. SourceId03 fixes only principal SID resolution
+and durable per-operand task failure evidence. Final source-only handoff10958/
+SHA19779206 is ready; no actual03 result or SourceId is available yet.
 
-SourceId02 source/core/transport peers PASS. ROOT now queries original USER
-session1/Limited with one exactly owned task and retainedworker/query handles,
-two primarymonitor/current160 joins and partialKMTfailure telemetry. It binds
-actualquery105activity1436 explicitly, no SourceId0fallback. Actualresultpending.
+D10.1 materialization39108/0 joins the corrected progress7def Api10 owner
+runner, distinct rawd8cf bootstrap, genuine96d ARM64 core, native5b CPUe260 and
+lifecyclea0 CPU94b. ROOT verifies21source/17payload/39archive/5configuration
+pins. Actual StageReadOnly44143/0 passes in21.2648s with raw6 exact, all3Mesa,
+signedKMD, valid current160, LUID003631a2/gen2/caps0 and exact22 owner operands.
+Extraction6308 and readonly5264 retained children closed0; all3 transports0.
+Fresh Apply02 completed with the concrete failure below; bounds remained
+1500s outer/900s SSH/660s native owner.
+The source-only full postApply observer02 is ready; no actual rendering,
+recovery, ordinary successreader or default replacement is admitted yet.
 
-Diagnostic wrapper ordinaryprobe source remains identical14ca and9CLIargs
-unchanged; it enables querytrace only in its owned child and labels admission0.
-Localstrictx64/x86 wrapper syntax passes; native wrapperPE is pending separately.
-It is not wired into ordinary CI admission and intentionally produces stderr;
-never run the ordinary successreader or relax stderr guards for this binary.
-A genuine newCIcore containing query and D9Render metadata is still required.
+### Actual D10.1hardware02 failure and finite recovery observation
 
-One consolidated batchpush is next; existing published5ce CI37858808112 is
-COMPLETE SUCCESS. Only build-native-umd handles push; other workflows manual.
-Default Mesa and all real ordinarySYSTEM DX8-11/defaultreplacement gates remain
-unproved. Goal active.
+ROOT Apply46669/1 closes135.5858s without timeout; all4 transports close,
+collections[]. Same owner2956/start00:40:46.2964461Z exits1/drained86.7578s,
+stderr0. Actual probe1064/start00:40:53.1959131Z held pending1, stdout404/
+stderr72 fails `factory-loaded-exact-frontend`80004005. Frozen5b source calls
+SYSTEM D3D10CreateDevice1 and validatesS_OK/FL10_1/ID3D10Device before that
+check: factory succeeded on installed Mesa, not the selected DXVK frontend.
+SYSTEMd3d11/d3d10_1core, installedMesa front/core and privateTurnipICD/z-1 were
+observed; DXVK frontend/core/private loader absent. No candidate pixel/Present
+proof or ordinary reader. Initial ROOT commentary misclassified the failure
+as beforefactory; source review corrected it and user was informed.
+
+Controller and watchdog reportrestoredfalse due Process.Kill Accessdenied.
+Actual restored.json independently proves six raw registry values replayed
+exactly, but cached effective slot1 still points to candidate. Binder51162/0
+and observer51580/1 close. Observer records10 original lifetimes no longer
+running (one reusedPID has distinctStartTime), namedjobabsent/active0,
+raw6exact/signedKMD/USERdesktop/healthydevnode/freshvalid160. Both exactowned
+tasks areReady; all3Mesa check fails only cached slot1. No recovery release is
+admitted yet. Root will validate and backup the two actual idle tasks, remove
+onlythose tasks and perform one exact-instance native pnputil restart before a
+fresh observation. Source work separately diagnoses recovery's termination race
+and current Windows D10.1 routing through D3D11. No VM/image/RAM mutation or
+secondVM is planned; registered6656MiB configuration preserved.
+
+Separate db70 diagnostic wrapper ARM64 native compile/link/import packet is
+source-reviewed and frozen8315/SHA547aeaf4, with6source/58selected inputs,
+4native children and37regular/44archive members including namedILK. ROOT will
+bind the newest closed target activity after D10.1 recovery before the once-only
+build. New wrapperPE and genuine e26 core remain required for D11 query trace.
+
+Query105 native CPU/activity acceptance1436 and D10.1hardware01 prefix recovery
+270/finalobserverc606 remain accepted historical references. The next target
+caller must use hardware02's actual recovery release after it closes. Default
+Mesa remains active; ordinary SYSTEM DX8-11 and permanent replacement are
+unproved. Goal remains active.
 
 
 ## Live checkpoint: D10.1 hardware01 stopped at strict Runner pin before binding
@@ -4630,3 +4662,993 @@ validatedinternally andimmediatereadbackexact, all guards intact.
 Actual6656MiB/config6e9063f5preserved acrossclean shutdown/existingVMstart.
 MergednativeCPUissue03 upload4059454/0, actualrun inprogress. Scopeexpected
 AST5/7/WoWAST4/pure182/memory390/argv9/diagnostics8/routing70/census5.
+
+## Current user-directed integration: 2026-10-13
+
+User: continue integrating DXVK UMD, DX8-DX11, and replace the current Mesa
+DX frontend as soon as the real system paths work. This is authorization for
+implementation, reversible deployment and default frontend replacement with
+retained rollback; historical statements of missing authorization are stale.
+No commits/push were requested. Preserve all dirty changes and prior evidence.
+Android management uses adb shell, Windows USER@192.168.60.237:8122.
+Sole current crosvm25432, UUIDa5b6863f-6bbf-4af4-97f3-2a4653f6edb7,
+actual6656MiB/configc7b64e467c01304f09c0563bc84ee3b88762fd6adb656957f0a1ddaf5dd0bfe1.
+CurrentKMD58628/oem18 signedSYS47234db1; originalVM/image/UMDs preserved,
+fresh service/devnode binding passed; current desktop DWM4924/Explorer3840.
+Prior historical VM/KMD/LUID/identity and task state must be verified live.
+No secondVM, image/partition edits, remote file pulls, or private-key export.
+
+## Next Step
+
+Trace the current MAINe26 native adapter/runtime negotiation and SYSTEMD10.1
+routing through DDI11; correct actual routing/creation behavior with focused
+source tests and genuine native build, then use retained rollback on this same
+VM for ordinary DX8/9/10/11 device, draw/readback/Present and desktop validation.
+Default frontend remains Mesa until a concrete candidate demonstrates the
+necessary system path.165Hz/zero-copy/mouse/Vulkan acceptance remains open.
+
+
+### 2026-10-13 user priority: integrate DXVK UMD DX8-DX11 and replace Mesa DX
+
+User explicitly requests continued integration and earliest supported default
+replacement. Existing165Hz/zero-copy/Vulkan acceptance remains open and recorded.
+58628 clean20s test failed continuousREADY, rAF161.25/p9912.56ms,
+CrtcVsync163.33/applied157.31/s, no flip/present rejection. SurfaceFlinger
+panel6060606ns, clientComposition2810/2811; layerFPS159.444 from596 retained
+frames is partial layer-window evidence, not full20s output throughput. Raw
+Android UTC is about19s ahead, so direct printed UTC overlap is misleading.
+Owned Browser.close sent to exact recorded ID; WebSocket raised an error on
+shutdown. Subsequent guest Cleanup independently verified9223 no listener,
+removed exact owned scheduled action; profile retained. Local exact argv
+identified and terminated sole owned tunnel1433237, originalsessionclosed0.
+Do not call initial WebSocket error proof of failed cleanup. A guessed nonexistent
+native-umd-system-runtime.md read failed; actual docs discovered byrg are used.
+
+## 2026-10-13 SYSTEM D11 attempt02 and continuity fix in progress
+
+The e26 CI core, newly MSVC-built ARM64 front/probe, and KMD58628 were used
+in an actual ordinary SYSTEM D3D11 factory attempt. Negotiation selected
+D3D11_0_7 (0xb000b), version0x20009, SINGLETHREADED/FL10_0. OpenAdapter,
+pipeline caps and both GetSupportedVersions calls returned S_OK. Subsequent
+QueryAdapterInfoCb calls returned E_FAIL at threading/shader/size/create.
+CreateDevice was reached but failed before backend creation; no pixels.
+Controller restored exact raw/effective originals and healthy desktop.
+Native raw registry paths were first aligned to the current package after
+identical DLL hashes were verified; two obsolete idle Oct9 tasks were backed
+up and removed. All original attempt outputs are retained under workspace
+artifacts/dxvk-system-integration-20261013.
+
+Current implementation keeps the genuine OpenAdapter query and opens a
+separate D3DKMT adapter by that exact returned LUID. A shared owned identity
+source verifies the initial generation/caps and serves live continuity checks
+for adapter, RuntimeGpu, and RuntimeMemory. No cached-success or identity
+guard bypass. Legacy D3D8/9 callback path is unchanged. New kernel identity
+fixture and adapted adapter fixture compile/link on ARM64/x64/x86 with the
+retained LLVM-MinGW toolchain (cross-03); actual execution/full DLL pending.
+Windows SSH became intermittent after11:20; adb confirms the same sole PID25432,
+6656MiB, original image. Host IO/memory pressure currently near zero. ADB
+forward local40241->Android8122 is task-owned and must be removed when finished.
+No new core has been installed. Original Mesa remains restored.
+
+### Fresh complete ARM64 build and actual CPU execution
+
+LLVM-MinGW20261006 builds both kernel/adapter fixtures for ARM64,x64,I386.
+Actual ARM64 guest execution returns kernel1666 and adapter210849 checks, exit0.
+MSVC14.50.35717/SDK28000 native compile/link and execution of both fixtures also
+pass with the same counts. New source includes winternl explicitly after this
+MSVC run; the original build prelude already included it.
+The full ARM64 core and five selected fixtures now compile/link from this dirty
+checkout; final source snapshot contains954 unchanged native input files.
+The one portability fix replaces a static assertion's missing MinGW D3D11 VS
+macro with the SDK-equivalent IA input element count; runtime capacity unchanged.
+The exact missing dxbc-spirv SPIRV-Headers submodule c8ad050f was initialized.
+Build log07 passes293 steps; prior missing-header/macro/link failures retained.
+Local validation metadata now uses a separate local schema, actual source/build
+pins and empty CI run. Existing CI handling plus local negatives pass113 checks
+on Mono; actual native .NET and five guest fixtures are next before binding.
+Local core SHA256 372b086754eb36e3998da6d0cbf8dd66cb9831990c3ce668280a26fc4ac9a881; bytes=10117120.
+Local stage archive SHA256 4635fff07ff5cda521bcad1f44cf04712806f7f151494c5d2b259a360f0df560.
+ADB forwarding40241 now works with a task-local key file matched against existing trusted host keys.
+Guest LUID0038f40b/gen2, DWM5224/Explorer3840, all3Mesa, tasks0, freeC~627MB verified.
+
+## 2026-10-13 local ARM64 core stage and actual D11 attempt01
+
+Full ARM64 core372b0867 built successfully; stage02 archive4635fff0 uploaded
+through task-owned ADB40241 -> guest8122. Actual guest5fixtures passed:
+kernel1666/adapter210849/runtime1102/allocation5164/native lifetime10963.
+Native .NET113payload controls and actual local build tuple validation passed.
+The local build is explicitly source-dirty e26 base, not published CI.
+Actual SYSTEM D11LocalKmt01 factory returned S_OK/FL10_0, but DXVK trace only
+OpenAdapter/pipelinecaps/supportedversions/Close; no typed CreateDevice or
+private loader/ICD. Failure runtime-created-typed11-fl10_0; not DXVK success.
+Controller/watchdog prove raw/effective Mesa restored and no owned probe/job
+processes; DWM5224/Explorer3840 healthy at restoration. Subsequent fresh
+CurrentIdentity failed twice with Closed current paired identity required;
+PnP stillOK and later DWM7728. Investigating actual current state before
+another candidate run. Same crosvm25432; no VM/image/memory mutation.
+Evidence root artifacts/dxvk-system-integration-20261013/local-d11-01.*
+
+## 2026-10-13 local D11 routing and combined modern registration
+
+LocalKmt01's post-restore paired query returned STATUS_DEVICE_NOT_READY
+0xc00000a3; PnP still OK. Published KMD timeouts map to
+CtrlQueue::SubmitNativeControl+164 and Create2DResourceBacking+2168 in the
+exact retained58628 symbol map. One exact-device restart passed four fresh
+paired identity/effective Mesa observations at5s intervals; no VM restart.
+LocalKmt02 then reproduced SYSTEMD3D11 S_OK/FL10_0 with Mesa front/core and
+public Vulkan loader held, while DXVK only enumerated (Open/caps/versions/Close).
+Both modern versions are offered, but DXVK CreateDevice is absent. Controller
+again restored all6raw and effective Mesa, desktop healthy, watchdog0.
+Inference: slot1 still offers Mesa as a downlevel D3D11 route. Current harness
+adds explicit API11+lifecycle-only BindModernSlots for native1&2, retainsD9/WoW,
+schema4 durable intent and exact rollback. Local153byte/guard checks passed.
+Archive5156633d contains6pinned source/test files. Native guest lifecycle
+negative controls and actual combined test remain pending.
+Guest SSH became intermittent after12:19UTC. ADB still observes solecrosvm25432;
+no image/config/VM changes. At12:30 a command reached Windows but had a quoting
+error; the next connection closed. Keyboard diagnostic initially failed before
+any input because helper's historical appUID10328 is stale; current appUID10332
+is confirmed from directory/process ownership. Scoped helper overrides only
+its imported client, then delivers read-only cmd /k ipconfig with exact VM PID
+and configuration SHA guards. Do not treat delivery acknowledgement as execution.
+All evidence remains in artifacts/dxvk-system-integration-20261013.
+
+Existing guest shutdown request remained unconfirmed after131s. Exact daemon
+stop guarded PID25432/configc7b64e4 completed, then registered held start
+completed with solePID13234/config_unchangedtrue. Image/RAM unchanged. Logs
+preserved on Android under /data/local/tmp/dxvk-recovery-20261013-01 before
+restart. Initial helper upload failed because root-created staging directory
+was not shell-writable; scoped chown2000 then all4hashes matched, upload0.
+Fresh Windows SSH now executes PowerShell; first current-state read reached
+paired identity/name queries but desktop was still starting (Explorer absent).
+A separate-process prestate query in combined launcher avoids mixing old and
+new DxvkBindingNative01 assemblies. No modern binding or stage pass yet.
+
+Modern binding stage passed on real Windows ARM64 PowerShell5.1: slot153,
+normal lifecycle16cases/130checks, combined lifecycle15cases/125checks,
+routing27cases. All owned children0/drained, source pins unchanged, no GPU or
+registry mutations. Archive5156633d, manifest151f2fa3, controllera8eb6bde.
+Current boot SSH works and memory query shows~5GBphysicalfree,8GBpagefile;
+noevent2004inqueriedlast2h (guestclockinitiallyjumped7h, so this absence is not
+proof the prior boot had no memory fault). Explorer absent/LogonUI present;
+canonical native Activity reopened but OCRcurrentlyempty. One Enter delivered
+with PID13234/config guard. Host logs show repeated Mesa context creation and
+destruction, so inspect actual guest application/system failures before testing.
+
+### Blocking baseline failure confirmed, not DXVK combined-test failure
+
+Corrected read-only reboot observer reports existing AutoAdminLogon1/USER and
+no logged-on session. Original observer threw on query.exe stderr before JSON;
+new observer redirects that read-only native query's stderr and preserves all
+other fields. Actual Application1000: LogonUI faulted in installed Mesa
+viogpud3d.dll+0x10e234, c0000005 at12:45:21UTC. System1001 reports0x116,
+TDRcontextffffb20d6fb14010, driveraddressfffff802b3968f20. Windows rebooted
+again automatically; crosvmPID19598 (same registeredVM), so13234 is stale.
+KMD58628 and all3native Mesa paths stillregistered, readinessfail256,
+NativeShareFailStage8/opcode6/size25346048/statusc00000a3. FreeC655MB.
+Host is re-signalling completed controlqueue interrupts again. No combined
+binding/controller mutation has run. Preparing offline cdb on guest with exact
+58628 PDB5dc12c2e; source and driver state investigation required for test bed.
+No further repeated reboot planned. Credentials/settings are untouched.
+
+### Exact 58628 crash dump state, 13:01UTC
+
+Guest offline cdb03 exits0/drained with unchanged702637987B MEMORY.DMP and
+exact PDB5dc12c2e. Dump uptime3:45, bugcheck116. ISR dispatchenabled1 and
+hardware resetstateActive0 at crash; do not infer interrupt-disable as cause.
+Native generation17/resetgeneration18; submissionfaultcallerRVA109884.
+Poison snapshot from02 records Unknown WAIT resource41/sequence2; paging
+failurestage5/c00000a3 at completed0x70000. Both may be secondary reset effects.
+CDB dt typedefVIOGPU_WDDM_NATIVE_SHARE_ENTRY absent and field-only recursive dt
+did not expand CtrlQueue. Next readonly04 uses concrete CtrlQueue type/address
+and first native failure fields. Modern combined candidate remains unexecuted.
+
+### Exact first-fault fields from offline cdb04
+
+Concrete CtrlQueue inspection succeeds. First timeout is wire0xd216
+(PAGE_NATIVE_AHB), STATUS_TIMEOUT0x102, epoch1,48commandbytes, callerRVA3ba10,
+interrupttime0x78599419. No queue-admission or QueueBuffer failure published;
+lock-order/resource-IDrefusals0. Native context firstfailSite35/RVA93808,6counts;
+submissionfaultcaller1ad3c resolves QueueAdmittedNativeSubmission+5c4.
+Hardware may have recovered multiple generations before the dump. Current
+crosvm23215 follows guest reboot; host tail ends12:54:56 with no ERROR.
+Local MAP glob search failed (no retained local MAP); exact PDB guestread remains
+available. MMIO pages absent from kernel dump are expected, no MMIO proof.
+
+### Existing desktop recovered; combined modern test initiated
+
+Read-only current03at13:03:46 confirms same registered VM boot12:50:14,
+Explorer5172/DWM2136, USER console1active, native3Mesa, freeC573MB. Persistent
+registrydiagnostics may be from prior faults; current paired identity is required.
+A standalone prestate query used wrong Public-level helper path and never ran;
+correct helper is inside DxvkSystemIntegration-20261013-02. Prepared combined
+launcher already uses correct path in a bounded owned child. Launcher01started
+with candidate372b0867, validated modern sources, exact KMD58628 and fullrollback.
+NativeFailSite35 in dump maps ResetDeviceEntry, not a queue-specific rejection.
+Host same-dump window shows PAGEres10 fill#8 completed12:49:14.429 (41us),
+thencontrolqueue re-signals12:49:19; this corroborates unconsumed completions
+but does not identify the original TDR trigger. No KMD source edit made.
+
+### Combined modern slots01 reached real DXVK CreateDevice
+
+Actual controller01 exits1. PrestateLUID00006bfc/gen2/caps0 and exact58628,
+forwardLUID001b4177; bothmodernslotsselected. Negotiation records two DXVK
+adapters, threading/shadercaps successful, typedWin7 interface0xb000b/version
+0x20009/flags0x10, privateDeviceSize8 and actualCreateDevice returned887a0005
+DXGI_ERROR_DEVICE_REMOVED. This advances past prior Mesa fallback. No pixels
+or hardware success. Private Vulkanloaderstillabsent. Fullcontroller JSON
+proves sixraw/effectiveoriginalMesa restored, LUID0020a04b, desktophealthy,
+KMD/devnodeunchanged, watchdog0/restoredtrue.
+The PSsummaryreader remained pending (>180s) with nooutput; nativeSSHwhoami
+closes0 and directcmdtype reads controller269744B/negotiation3480B successfully.
+Use direct bounded reads; investigate ownedsummary process without VMrestart.
+
+### Backend reached private Vulkan enumeration
+
+Direct read of actual DXVK log proves private loader from stage02 was used,
+DXVK3.0.2 enumerated Adreno830 Turnip26.2.99 with matchingLUID001b4177.
+Its absence at heldfailure is teardown evidence, not proof backendneverentered.
+Adding bounded opt-in KMTquery trace and existing runtime-GPU diagnostics to
+the adapter-query diagnostic process distinguishes identitychange/contexterror.
+The new fixture checks querycontinuity, negativeNTSTATUS, errorstatepreservation
+and64recordlimit. Production admission and callback results unchanged.
+Repeated local guessed-file/glob reads failed without edits; use discovered
+filenames. PSsummary stillunclosed; native tasklisttransporttimedout, noVMrestart.
+
+### Bounded KMT/context trace core compiled and packaged
+
+ARM64incrementalbuild08passes11steps; newcore25cc9a8d/10117120B, archive
+a9e205cd/8391195B,955native/testinputpinsunchanged. ActualguestCPUvalidation
+pending. The retained source Version generator reports noannotatedGit tags
+but succeeds using fallback; no failed compile/link.
+PSsummary finallyexits1: ConvertTo-Json cannotconvertvaluetoSystem.String,
+not a lost VM/SSH channel. Its transport is closed; directfilelogs usedinstead.
+Guestobservations already prove actualBackendprivateVulkanenumeration; scope
+nowtransportcontext/identityduringCreateDevice. No productionadmission change.
+
+Tracecore25cc9a8d stage03 actualWindowsARM64CPUfixturepasses at13:20:56:
+kernel13324 (includingbound/errorpreservation), adapter210849, GPU1102,
+allocation5164, nativelifetime10963; nativepayload113. All5ownedchildren
+closed0/drained; localbuildID4bc6aca1, noGPUproof/noRegistrymutation.
+ModernTrace01 launched againstfreshstage03 withpinnedmoderncontroller and
+exactretainedrollback; original modern01 evidence untouched.
+
+### ModernTrace01 passes context/backend, runtime now887a0020
+
+Actual probe1392/0.489s/exit1/drained; controller/watchdograw6/effectiveMesa
+restored, restoredLUID00343ebd, desktop/KMD/devnodehealthy, watchdog0.
+KMT43queriesallS_OK/currentLUID0030d6b1/gen2; stage8CreateDeviceAfterBackend
+S_OK. Nativecontextready3/queue19, successfulcontextdestroy atcleanup. Backend
+log shows Vulkanlogicaldevicefeatures initialized. SYSTEMD3D11factoryfails
+887a0020(DRIVER_INTERNAL_ERROR), advancing beyond prior887a0005. No pixels.
+Do not credit diagnosticlogging as afunctionalfix; investigate actual postcreate
+DDI/runtimeinitialization. KernelContextInfoResetGeneration matches the wire,
+so the context-versus-resetgeneration hypothesis is not supported.
+
+### EntryTrace02/03: lifecycle timeout then observed KMD generation change
+
+EntryTrace02 forward pnputil3132 exits-1 after20.0127s timeout/closed/drained;
+no probe started. Exact6raw/effectiveMesa restored, reverse1556 exits0/.086s;
+original USER desktop healthy, KMD/devnode unchanged, watchdog0. No hardware
+proof. Host then rebuilds displayAHBs successfully.
+EntryTrace03 reaches actual DXVK CreateDevice. Precreate stage7 identitygen2,
+next runtimecontext continuity readsgen7 on sameLUID011649d4. Contextcallback
+not yet invoked; UMD correctly returns887a0005. Probe2180 exits1/31.768s/drained.
+Controller exact6/effectiveMesa restoredLUID011cf5d8, desktophealthy/KMDsame.
+Thus this attempt is an actual kernel reset during backend initialization,
+not a failure caused by postCreateDDIentry logging. The earlier ModernTrace01
+postCreate887a0020 remains separate. EntryTrace04 now attempts diagnosis after
+recovery has settled; no admission relaxed and no KMD source/install edits.
+
+## 2026-10-15 14:31 UTC: confirmed DWM thread-mode admission failure; core20
+
+- Exact stage19 RPM frontend trace: DWM creates FL10.1 flags0x2 S_OK, then
+  repeatedly requests flags0x13, privateSize0/Create887a0004; Explorer flags0x3
+  fails the same way. All device DDI/GPU/allocation error rings remain0.
+- 0x1 is DISABLE_EXTRA_THREAD_CREATION;0x10 SINGLETHREADED;0x2 FL10.1.
+  Existing interface/validation admission explicitly rejected0x1 because the
+  embedded renderer could not honor it. Microsoft D3D10DDIARG_CREATEDEVICE
+  documents serial driver processing for this flag. This is a separate concrete
+  blocker exposed after the shared allocation fix, not proof of Present failure.
+- Implementing device-scoped inline runtime dispatch, CS recording, descriptor
+  copies, pipeline compilation, submission/completion, and no async shader cache.
+  Async devices retain existing execution. Submission uses the real timeline
+  wait and normal resource notification; no fence result is fabricated.
+- First core/adapter/runtime-GPU/runtime-backend ARM64 build passes. Added
+  caller-thread/retirement/reentrant/exception controls and both-mode production
+  DDI amortized processing; final rebuild/staging and hardware checks pending.
+- Evidence: error-rings19-20261015-02.stdout.txt; docs URL:
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3d10umddi/ns-d3d10umddi-d3d10ddiarg_createdevice
+
+## 2026-10-15 14:45 UTC: stage20 DWM passes inline creation, rejects displayable primary
+
+- Sole VM restarted as crosvm28101, unchanged6656MiB/config6e9063f5.
+  DWM2128 remains session1; Explorer absent. Modern slots remain20/core942acca3.
+- First failure captured by exact CDB20/01: CreateResource11 E_INVALIDARG,
+  stage11/tick149343, 3040x1904 BGRA87, default2D/one mip,array,sample,
+  Bind0xa8/Misc0x20000, pPrimaryDesc present. This is DISPLAYABLE_SURFACE.
+  Later wait-paging/submit-paging800705b4 at154343 occurs during device teardown.
+- Early KMD reset/timeouts0 did not establish desktop success. Later KMD20/02
+  has lifecycleTimeout20/gaveUp2/holderRva0x2e5c; current hardware/reset/paging
+  reset remain0. No stage20 actual GPU probe has run.
+- Probe05 negative9 controls pass; core20 CPU11/metadata122 remain bounded
+  CPU evidence. Next: implement displayable-surface allocation semantics, then
+  stage21 and actual same-VM DWM/no-env tests without Mesa rollback.
+- Microsoft SubmitCommand documents DISPLAYABLE for FlipEx/primary surfaces
+  and WrittenPrimaries for GPU-VA submissions that write them. Existing UMD
+  presentation uses separate kernel backing; trace synchronization before
+  admitting this flag. Source: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/ns-d3dumddi-_d3dddicb_submitcommand
+- Evidence: dwm20-live-20261015-01.stdout.txt, kmd20-paging-state-20261015-02.stdout.txt,
+  host20-window-20261015-01.json, probe05-negative-20261015-01.stdout.txt.
+
+## 2026-10-15 14:59 UTC: displayable primary core9697a219 validated as stage22
+
+- DISPLAYABLE_SURFACE now requires supported presentable2D/default/noCPU/one
+  mip,array,sample shape, and routes through existing KMD-backed publication.
+  RenderCb carries the destination allocation with WriteOperation; private
+  Vulkan cache writes do not bypass the display backing synchronization.
+  Protected/tiled/remote/autoMip/UAV and malformed displayable shapes rejected.
+- Exact DWM3040x1904/BGRA/Bind0xa8 descriptor controls pass, including FlipEx
+  without pPrimaryDesc. Six typed DDI profiles validate primary and optional
+  copy publication with actual pixels and existing ownership/error controls.
+- Stage22 core9697a219862bf42b963523dbb61c1c4a00d8529764abba9862ec07262aa9a01d,
+  archivec69c42e9/11046715B,966 pinned unchanged inputs. CPU11/metadata122
+  pass14:56:17.542Z, primary914600/view564 checks; buildidf51e12a225214677141223d50378f3a26c395a7038e1831c2dfd84e432471560.
+- Generic bind22/01 stopped before registry mutation because Explorer absent.
+  Binding-only recovery22/02 verifies exact old DWM2128/session1/loaded20 hash,
+  current modern20 registration, signed KMD58629, preserved original binding,
+  and controller lease. It launches no interactive GPU test or PnP restart.
+  Recovery bind currently running; no actual22 GPU result yet.
+
+## 2026-10-15 15:13 UTC: stage22 first live failure is Flush paging wait
+
+- Sole boot14229/DWM2072. Exact CDB5112 closes0/1.532s/drained. Flags0x2 and
+  first0x13 devices createS_OK; a subsequent0x13 Create was in progress.
+  First DDI failure is Flush887a0005 at tick0x16d1c (93468), not a resource
+  descriptor rejection. RuntimeGPU firstwait-paging/submit-paging800705b4 same
+  tick, ctx5/queue27/gen2. Allocation rejection ring0. Explorer still absent.
+- This does not establish that the previously failing primary was reached:
+  the current failure precedes its prior150s timing. KMD22/01 reset0,paging0,
+  firstSyncTimeout0, lifecycleTimeout5/gaveUp0/held20020ms/lastHolder0x378c.
+- Exact signed58629 MAP resolves0x378c to DestroyNativeContext+0xe4,0x2e5c
+  to CreateNativeContext+0xc4. Last-holder/captured-last-destroy-stage fields
+  are not sufficient proof of a currently leaked mutex. No KMD patch yet.
+- CPU WaitFromCPU+async event is a supported paging synchronization contract
+  per Microsoft Device paging queues. Runtime currently stores queue/sync and
+  target fence but ignores the callback's read-only FenceValueCPUVirtualAddress;
+  capture this value before deciding whether completion or notification stalls.
+- Bounded35s ETW capture22 launched; outer SSH120s expired during collection/
+  decoding with no final result. Inspecting retained start/stop receipts and
+  remote worker state before any further trace. No new hardware probe.
+- Canonical build-entry initial parse caught newline before -or; corrected
+  operator continuation and exact-source Windows parser now PASS. Full native
+  MSVC build via this canonical entry has not run.
+
+## 2026-10-15 15:21 UTC: stage22 reset/fallback confirmed; paging diagnostic23 built
+
+- ETW start2448/stop2412 each exit0/drained, session stopped15:12:05; decode
+  completed later with80013 events/5934 selected/58 originalDWM events. The
+  expired SSH120s did not leave an active trace; no trace worker remains.
+- By15:16:59 originalDWM2072 had exited; DWM4164/Explorer3016 now load22
+  but all OpenAdapter calls returnE_FAIL. KMDHardwareResetState1,pagingReset2,
+  firstSyncTimeoutvalid1, lifecycleTimeout25/gaveUp2. This is fallback desktop
+  availability, not UMD hardware success. No independent GPU probe launched.
+- Retained ETW includes494 at15:11:40 with C00000BB and original DWM paging
+  queue packets. It postdates first paging failure, so does not identify its
+  cause. Host22 window has no AHB/paging lines,89control records; control IRQ
+  re-signals start15:13:56, after initial UMD failure.
+- Core23/39ed34e5 (10371072B), archived85aae00 (11047418B),966 stableinputs,
+  adds failure-only readback of runtime paging fence target/CPU-mapped value,
+  queue/sync and actual eventwait status. No fence alteration or timeout change.
+  RuntimeGPU tracev2 records104B/header0xd10; RVAs remain7731b8,DDI772000,
+  allocation772e28. Build passed; staging CPU tests next.
+
+## 2026-10-17 06:02 UTC: stage23 binding confirmed; live transport recovered
+
+- Prior turn made progress: core23 CPU11/metadata122 passed and bind23/01
+  completed successfully at2026-10-15. Lost shell handle34490 is terminal;
+  retained stdout reports passed/binding_left_installed true, stderr empty.
+- Fresh adb server initially had no devices; explicit reconnect succeeded.
+  Android8022 and Windows via adb40241->8122 are reachable. Same sole crosvm14229,
+  DWM4164/Explorer3016, actual6656MiB/config6e9063f5 are unchanged.
+- Fresh KMD read confirms reset1/pagingReset2/lifecycleTimeout25; no healthy
+  desktop or stage23 hardware result. Clean shutdown with current stage23
+  registration/hash/CPU-result guards is next, then same-VM boot and first
+  paging-failure trace. No Mesa rollback or independent GPU probe.
+- Evidence: bind23-20261015-01.stdout.txt, stage23-20261015.stdout.txt,
+  kmd23-preboot-20261017-01.stdout.txt.
+
+## 2026-10-17 06:04 UTC: stage23 same-VM boot and first live collection
+
+- Current native slots1/2 verified stage23; clean guest shutdown request
+  completed0. Readonly adb confirmed stopped/no crosvm, then daemon start
+  confirmed solePID9804/config unchanged. No forced termination needed.
+- Windows SSH resumed; early DWM2128 loads exact stage23. First0x2/0x13
+  CreateDevice calls returnS_OK. Initial two RPM samples have no DDI/GPU or
+  allocation errors. Explorer absent; this is not desktop success.
+- KMD early read hardwareReset0/pagingReset0, lifecycleTimeout3/gaveUp0.
+  Current failure sample must distinguish stale registry values from live
+  reset-gated state. Bounded100s DxgKrnl ETW capture active.
+- Microsoft Device paging queues confirms CPU and GPU waits are supported;
+  event delivery versus actual monitored-fence completion remains unresolved.
+  Source https://learn.microsoft.com/en-us/windows-hardware/drivers/display/device-paging-queues .
+
+## 2026-10-17 06:08 UTC: stage23 first failure reaches primary allocation
+
+- Correction to preceding checkpoint: initial RPM01 was empty; RPM02 later
+  records CreateResource11 E_FAIL at stage300/tick70690, BGRA3040x1904,
+  bind0xa8/miscDISPLAYABLE0x20000/pPrimaryDesc1. GPU/allocation rejection rings0.
+  Thus descriptor and renderer creation succeeded; primary backing is first
+  observed failure, not paging wait. CDB23/01 closes0/drained; compositor is
+  subsequently in Escape through Vulkan fence/device teardown.
+- ETW100s stopped normally06:05:07,37486592B. Decoder01 failed on empty XML
+  Data #text; decoder02 uses InnerText. It returns5000 records (truncated by
+  explicit cap, mostly105/106); primary-sized23154688B allocations were made
+  at13:03:37.597 then deallocated13:03:58.721. This supports investigating
+  post-callback rejection; does not expose actual user hKMResource.
+- allocatePrimaryImpl still requires nonzero hKMResource, unlike corrected
+  ordinary/shared allocation. Source audit finds creator uses hAllocation and
+  staging handle for copy/residency/display, hRTResource for release; no read
+  of kernelResource in this path. Hypothesis: zero optional creator resource
+  handle causes E_FAIL. New real RuntimeMemory pixel/lifetime fixture reaches
+  failed expectedS_OK allocation against unchanged production code (red test
+  PID4436,exitC0000409,0.549s/drained). Explicit mode diagnostic follow-up next.
+- Microsoft Allocate distinguishes runtime resource association and returned
+  kernel resource; no synthetic handle will be introduced. Source:
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dumddi/ns-d3dumddi-_d3dddicb_allocate .
+
+## 2026-10-17 06:11 UTC: primary creator fix24 passes native verification
+
+- Explicit red02 PID776 exitsC0000409/0.313s/drained with
+  withKernelResource=0 hr80004005 against unchanged production allocation.
+- Removed only creator primary-pair hKMResource nonzero requirement; still
+  validates exact callback status, resource/count/pointer, distinct nonzero
+  primary/staging allocation handles and current adapter identity. OpenResource
+  requirements remain. Primary failures and missing sharing handles now have
+  bounded allocation reply records, including staging handle in former reserved
+  word; no fence/timeouts changed.
+- Added zero-hKM primary upload/download pixels, display publication, move and
+  lifetime coverage; typed DISPLAYABLE D10/D10.1/D11 profiles also use missing
+  sharing handle. CPU11/metadata122 pass06:10:34; primary917242 checks.
+- Stage24 coredb9db5b9/10371072B, archivec854034d/11047428B,966stableinputs,
+  buildid6b42e653f160f63d0aa2d04fccee9f084ec0147d788e86f9dd5513eed3c37f3b.
+  Diagnostic RVAs unchanged (DDI772000,allocation772e28,GPU7731b8).
+- Fresh DWM2128 still stage23/noExplorer/reset0/lifecycleTimeout22/gaveUp1.
+  Guarded binding24 in progress; actual cause and hardware success still need
+  new-boot validation. No Mesa rollback.
+- One optional local MAP glob lookup failed (no matching files); llvm-nm from
+  actual candidate supplies symbols. Existing unused primaryRendererContext
+  warning remains in fixture compilation.
+
+## 2026-10-17 06:14 UTC: stage24 bound; old DWM shutdown retirement pending
+
+- Bind24/01 completed0/passed, unselected registrations preserved. Guarded
+  normal Windows shutdown requested06:11:44; latest1074 record221597 confirms
+  exact stage24 maintenance request. DWM2128/noExplorer still prevented exit.
+- Exact event/PID/session/oldcore23 hash verified; Kill of hung DWM requested
+ 06:12:58. WaitForExit15s=false, so do not infer DWM/VM stopped. Fresh adb
+  still confirms sole9804/running/config unchanged. No forced daemon stop.
+- Actual stage24 first-boot test awaits this retirement; retain active goal.
+
+## 2026-10-17 06:22 UTC: stage24 first boot reaches Flush paging timeout
+
+- Original guest shutdown completed06:15:04 (host log); same registered VM
+  restarted as sole crosvm17985/config6e9063f5/6656MiB. DWM1752 loaded exact
+  stage24/coredb9db5b9. No Mesa rollback or second VM.
+- Stage24 first failure is Flush887a0005 at uptime114000ms/TID2788. GPU ring
+  wait-paging800705b4, callbackS_OK, waitStatus258, target7006 vs valid CPU
+  observed7003 at1d5adee0040, queue40002380/sync40002340, context5/queue27.
+  DDI allocation failure/primary reply ring remains0: no real primary-nullKM
+  admission claimed. Both device-create flags0x2 and0x13 completedS_OK.
+- CDB24/01 PID1916 exits0/drained0.963s; compositor now in
+  NtGdiDdDDIDestroyDevice, not an active healthy desktop. KMD reset0/paging0,
+  lifecycleTimeout8/gaveUp1/lastHolderCreate0x2e5c. Initial snapshot timeout0.
+- ETW24 owned100s capture stopped06:18:20,23265280B. Focused decoder completes
+  214events/untruncated06:19:40, but SSH loses transport before event payload;
+  retrieve retained text without rerunning capture. Android confirms same
+  crosvm; phone loopback8122 and guest IPv6:22 return Windows SSH banners.
+- Continue diagnosis of actual paging retirement/context lifecycle. Avoid
+  treating changed first-failure order as proof of primary fix or DWM success.
+
+## 2026-10-17 06:32 UTC: asynchronous paging dependency implementation25
+
+- Retained stage24 ETW text retrieved successfully:214events, no truncation.
+  Wait7006 begins13:18:01.166274Z and is signaled13:18:12.043470Z,10.877s
+  later. UMD's5s wait expires first. Three later page-ins were pending while
+  CPU fence stayed7003; this is delayed completion, not proof of a lost fence.
+- Microsoft device-paging-queues and WaitForSynchronizationObjectFromGpuCb
+  document queuing a GPU wait before the dependent context commands. Source
+  KMD Render supports deferred residency; dispatch checks actual host binding.
+- Added real RuntimeGpu dependency controls. Unchanged production red01
+  PID6304/0.0545s/exit1 reproduces missingGPUwait atcheck651,line717. New
+  per-device callback copy + same-context GPU wait passes nativegreen01
+  PID5696/0.200s/exit0:2087checks. Tests cover pending fence remaining incomplete
+  onCPU, exact callback errors, no duplicate waits, new allocation dependency,
+  GPU-only callbacks, legacyCPUfallback and callback-induced owner retirement.
+  Candidate25 packaging/build underway, not yet bound.
+- Selective live kernel stacks captured successfully113774592B in guest only.
+  First capture attempt failed before action on assumedSYSpath;02 uses service
+  ImagePath+exactKMDhash. CDB01/02 timed out55/180s but children drained;03
+  cached-symbol targeted lookup passed0.627s. ExactprivatePDB loaded. VidMm
+  workerTID920 waits in UnmapApertureAllocation -> AcquireNativeContextSnapshot
+  -> WaitNativeContextLifecycle. Selective dump omits mutex object page, so
+  owner not yet identified; inspect knownDWM/LogonUIprocesses next.
+
+## 2026-10-17T06:38:31.792559+00:00 stage25 validated and persistently bound
+
+Stage25 core ed48d608d07b4b68eef167b8958391052844fd675efae64215fedd05028d79c9; archive5feb5788; build9257795a. NativeCPU11/metadata122 passed06:33:12. Binding25/01 refused changed DWM identity before mutation; shutdown25/01 refused absent25 binding before action. Fresh read: Explorer3512 appeared, DWM1752 has exited and DWM rapidly respawns. Ring24/03 confirms real primary callbackS_OK and identityS_OK with hKMResource0 and valid hAllocation/stagingAllocation (3040x1904 BGRA), while DWM has zero DDI/GPU ring failures at that sample. This is allocation acceptance only, not healthy DWM. Bind25/02 passed after validating current session1 DWM1444/core24 and Explorer3512; modern25 remains selected, no PnP restart/Mesa rollback. Selective dump analysis04 confirms both LogonUI and DWM wait in VidMm TerminateAllocation; lifecycle owner absent from those two process stacks, Explorer capture queued for analysis.
+
+## 2026-10-17 06:50 UTC: stage25 boot fails in KMD context creation
+
+Stage25 actual native CPU11/metadata122 passed; core ed48d608d07b4b68eef167b8958391052844fd675efae64215fedd05028d79c9 remains bound in modern native slots. Clean shutdown and daemon start of the same registered VM completed; crosvm2239, unchanged6656MiB/config6e9063f5. First DWM1812 loaded exact25; FL10.1 flags2 create succeeded, flags13 creation stalled. Subsequent DWM6832/Explorer4708 are fallback, not hardware success. ETW25 original1989 events shows DdiCreateContext C00000A3; no captured DWM MakeResident339/pagingwait297, so GPU wait25 has no hardware admission yet.
+
+First KMD reset request RVA0x219fc resolves in the installed58629 private PDB to VioGpuWddmDestroyContext+0x68c at interruptTime830740136. The first synchronous control timeout is later1089286902; late host CTRL-QUEUE-RESIGNAL cannot establish the initial cause. Context create5 got VA_SIZE response then submitqueue create failed; lifecycle wait hit30003ms. Need resolve the exact destroy-reset branch before changing queue handling.
+
+Stage24 retained selective kernel dump analysis06/07 identifies SystemSettings4532/TID4912 holding global context lifecycle synchronization while blocked in CtrlQueue::SubmitNativeSynchronousLocked -> SubmitNativeControl -> CreateNativeSubmitQueueLocked -> CreateNativeContext. VidMm920 and TabTip1812 wait behind it. Registry-write latency is not the observed blocked stack. All debugger children closed normally; no remote binary pulled.
+
+The installed KMD's matching source is reference/codes/viogpu-native-share-order-20261013 at c1b9ea69 plus the preserved dirty58629 patch (artifacts/dxvk-queue-space-native-build-20261013/source-receipt.json). Main gunyah-guest-drivers-windows queue implementation differs and must not substitute for this provenance. No KMD source edits yet in this continuation. No Mesa rebind, extra VM, or commits.
+
+## 2026-10-17T06:59:08.606673+00:00: exact create-context false success reproduced and corrected
+
+Installed58629 CDB analysis08 closes0/0.447s and locates first reset0x219fc specifically after DeferNativeContextDestroy failure. Source tracing finds WaitNativeContextLifecycle exhausted30s returns positive STATUS_TIMEOUT0x102; CreateNativeContext propagates it unchanged; WddmCreateContext uses NT_SUCCESS and publishes the still-Allocated context. Destroy diagnostic slot00 on boot25 shows ContextState0/nohostowner, matching this path. This explains the reset cascade; the underlying long lifecycle hold remains a separate latency question.
+
+New production-function fixture initially reproduces19 failures/74checks against58629. Fixed constructor admits only STATUS_SUCCESS, returns documented STATUS_NO_MEMORY on failed resource construction with balanced reservation, and lifecycle helper returns negative STATUS_IO_TIMEOUT. Current fixture74 checks passes; three actual mutation controls reject zombie publication, positive timeout propagation, and invalid DDI failure status. Sync1220 and interrupt34scenario tests pass; full-miniport check-contract passes after updating stale reserved package version58628 to candidate58630. Primary technical references: Microsoft KeWaitForSingleObject and DXGKDDI_CREATECONTEXT contracts (linked in new fixture README).
+
+Candidate58630 exactpatch56133d338249aaa4b1c0a6ae5aa5e30684b815a4d06df2f95a1ec2ba62abbe19, archive88ea4ff9c838935b6298739335f5a6a7965b57434302d9c0c312e9f6c50f8953,118 buildinputs frozen in artifacts/dxvk-context-create-native-build-20261017-02. Initial build stopped before creating buildroot because prior reboot unmounted D: EWDK ISO. Restoring same pinned ISO read-only, then native build; no compile/runtime claim yet. SoleVM2239 retains25binding; current fallbackDWM6832/Explorer4708/reset1/freeC1.496GB. Packaging will embed the same25 modern-native names in INF so KMD upgrade does not restore Mesa. No commits/push.
+
+## 2026-10-17T07:05:25.295982+00:00: native58630 built, signed and installed;25 binding retained
+
+Native EWDK build second invocation passed11 closed stages in9.653s; the first stopped before source-root creation because D: was absent. Same original ISO read-only mount restored D:. Verifier rechecked118 source files,86 compiler files and all native outputs. Unsigned SYS31ea4aac2cb8f0891b7bb61adfe8b3ab37517e109ef3cd000ba1795025ae9caf. Signed SYS854e768c37fde911f6e78553e2fab923214bd89ff4b88389aa60c95f44bffb0a/414624B, catalogdeb789fc, INF3b068a94. All54 packaging children exit0 and50catalog members verified. Package receipt30c6f9d74ff8a1f681f5a8ab38485095a01086e90acd3779434bc8f161ee5ae2.
+
+Actual pnputil install completed07:04:42, exit0; new active package100.6.101.58630/oem0.inf, DriverStoreviogpuwddm.inf_arm64_d3bdf3f16de2bbeb. Both existing matching display devnodes08/28 updated. Modern native registry slots remained stage25 throughout via signed INF entries. Old58629 package preserved; no Mesa rollback. VM2239 remains original6656MiB/config6e9063f5. Current DWM6832/Explorer4708 still fallback/reset1; clean same-VM shutdown/start required before fresh58630 runtime claims. Temporarily one SSH banner timeout during install recovered; no second VM or image changes.
+
+## 2026-10-17 07:26 UTC: clean58630 boot and completion-paced refresh candidate58631
+
+Guest shutdown completed normally; daemon restarted the sole registered VM as crosvm22495, unchanged6656MiB/config6e9063f5. Exact58630 SYS854e768c and persistent stage25 remain selected. DWM2112 survives boot and Explorer2572 appears, but hardware desktop acceptance remains open. At07:18:51 reset state/first-reset-valid/first-terminal-sync-timeout-valid are0, despite58 lifecycle timeout records/4 gave-up records/last-held40004ms. The false-success reset repair is consistent with this run; the long control latency remains.
+
+New selective kernel stacks (116174848B, retained guest-only) show VidMm924 in CreateNativeGuestAllocation -> SubmitNativeSynchronousLocked while DWM2924 waits in VidMm LockCommon. Both targeted CDB analyses close normally. Host debuggerd actual control worker is Binder:crosvm22585, not auxiliary v_gpu22599: exact virgl9030b259/BuildID57c85e51 symbolization maps the stack to vrend_read_from_iovec -> read_transfer_data -> transfer_write_iov. Registry reports18404 periodic refreshes but only2 explicit2D Presents. Host context/blob operations are spaced11-14seconds. ETW capture stopped via owned-session recovery after original stop-child timeout; retained focused decode112events shows MakeResident STATUS_PENDING/fence7001. Original stop PID1460 closure still needs checking.
+
+New production-function scanout-refresh fixture reproduces11 failures/714checks with async full-screen refresh submissions. Candidate uses existing synchronous transfer/flush completions, allowing DPC refresh requests to coalesce while host is busy. Fixed fixture711checks plus two executable async-reversion controls pass; vblank timer still16500events/100seconds,64cancelraces/2000stalls. Full-miniport check-contract passes. This changes periodic queue backpressure, not the165Hz target or explicitPresent path. Frozen118inputs, archive2abe0d968aeb2f3cbca552dacfecaec99358a14702c644805d32ecdd9ab7f6fc, patch3f186a680c2ae028554d4038a268ed2401b219332bb7316640ec15f0d7b5317c. Native build/package/install/runtime are pending. No Mesa rebind, commits, remote binary pull or second VM.
+
+## 2026-10-17T07:29:38.026657+00:00:58631 native package verified, installation running
+
+Initial native attempt stopped after extraction before compile because the reused readiness helper pinned58629. Fresh root VioGpuEwdkBounded-dxvk-scanout-refresh-20261017-02 uses actual installed58630 receipt schema/SYS854e and passes11 closed EWDK stages in14.130s,118source/86compiler files reverified. UnsignedSYS91feb9bf997f2d5825d30c70219992ff15d588655b0cf1401f2208f46b2ef03b. Signing/catalog54stages and50members pass; signedSYS33e3e85e7a443028368b23ab34dba85ea2667b5f3011b4d8721198bcacc2d61f, INF2038c51b, CAT9c53923b, package-receipte14e5ab93f5b65dcfed0c580400bf9f8804c7a805fc441e5498d3f67b6ff5fbe. Stage25 modern-native names retained in INF; predecessor58630 and baseline58624 bytes reverified. Installation has started once with bounded pnputil, result pending. Old ETW stop-child1460 is now absent (Get-Process returned no process/exit1); capture session had already been verified absent.
+
+## 2026-10-17T07:32:08.799523+00:00:58631 installed; normal shutdown complete
+
+Pnputil5932 started07:29:10.879, finished07:31:18.775, elapsed127.888s/exit0/closed/drained. Both existing08/28devnodes now58631/oem10; DriverStoreviogpuwddm.inf_arm64_0465a476d3398f9f, signedSYS33e3e85e. Stage25 modern slots retained. Guest shutdown/s requested07:31:37.809 after exact installation/SYS/UMD guards; reset0, prior DWM restarting, so no healthy desktop claim. Android daemon nowreportsstopped/zero crosvm with unchangedconfig6e9063f5. Guarded start requested for the same registered VM only.
+
+## 2026-10-17T07:37:10.821172+00:00:58631 removes observed control backlog; DWM initialization failure now immediate
+
+SameVM cleanbootcrosvm2251/configunchanged. FirstSSHbanner attempt was early and timedout; second succeeded. Host context/controlblob/map transitions now0.1-1ms rather than prior11-14s; 14:33:18guest read reset0/firstresetvalid0/lifecycleTimeout0/GaveUp0/firstSyncTimeoutValid0/longestWaitSlices1/periodicRefresh64. This supports completion pacing resolving the observed control backlog. Explorer6760 loads exactstage25; DWM repeatedly creates flags2/13 devicesS_OK and3040x1904 primary allocationsS_OK, then fails fast0x8898008d. DWM containsWARP module, so no hardware acceptance. PassiveCDB5520/9656 closed0/1.288s and catches RaiseFailFastException in compositor; DDI/GPU errorrings0, primary trace7recordsS_OK. Explorer map WASSTILLDRAWING887b0001 is recorded separately and does not establish DWM cause.
+
+20s owned58631ETW capture closes normally52756480B. First decoder capped5000events and is explicitly truncated: numerous MakeResident/paging progression, driver invalid NTSTATUS c00000bb/c0000001/c01e0102 and pendingDMA eviction diagnostics. Need isolate actual DXGI direct HRESULT return; these wrappers were outside the existing DDI error ring. Local exactstage25 PEhash verified and actual ARM64 RET instructions mapped for8DXGI entries; bounded live return trace prepared with CDB-pd/q d detach semantics. No driver/UMD binding changes.
+
+## 2026-10-17 07:46 UTC: exact DXGI return trace and secondary process-exit fault
+
+58631/stage25 remain installed. CDB7972 attached DWM7580 and observed three SetDisplayMode calls: each returned S_OK, while D3D11 emitted Removing Device inside the call. No Present was reached. Trace child closed/drained in0.962s but exited-2147024787 at second-chance8898008d; this is useful failure evidence, not a clean debugger/test pass. Follow-up device-removal trace CDB4568 reached initial break then no breakpoints in20s; owned debugger timed out and closed, -pd preserved target. DWM7580 remained alive afterward; passive current stacks pending before calling it healthy. New unused RaiseException trace command corrected ARM64 x0 to exception code, not record pointer.
+
+Event logs additionally show repeated TabTip c0000005 at exact stage25 RVA9d80. Local COFF/disassembly resolves Device::close -> layoutStorage unordered_map erase; source global teardown ordering is a hypothesis requiring runtime stack proof, not yet an implementation fix. Brief SSH banner timeouts investigated through adb shell: sole crosvm2251, configured6656MiB/8CPU, configSHA6e9063f5 unchanged; Android and guestIPv6/8122 SSH banners live, scp subsequently closed0. No VM restart or binding rollback. Correction to ETW summary above: invalid VidMm status is c01e0102, not c01e0002.
+
+
+2026-10-17 08:03 UTC — stage26 residency completion repair
+
+The one existing VM remains crosvm2251, configured6656MiB/8CPU, same config
+6e9063f5/image; signed58631/oem10 and stage25 persistent. Debugger recovery
+released the exact suspended fatal DWM7580 with bounded normal CDB detach;
+7580 exited and Winlogon restarted DWM. No VM kill, new VM or Mesa restoration.
+Live trace06 DWM9204/CDB8116 closed0 in0.851s captures two successful Evict
+syscalls from SetDisplayMode -> publishPresentData -> RuntimeMemory::upload
+-> copyPrimary -> submitResident, then D3D11 DRIVER_INTERNAL_ERROR887a0020.
+Prior ETW reports pending DMA reference during eviction; KMD reset remains0.
+Artifact: artifacts/dxvk-scanout-refresh-native-build-20261017-01/device-removal06.stdout.txt
+and evict-resolved06.json (exact frozenstage25 PE). This proves early Evict,
+not yet the complete DWM root cause. Trace03 independently observed887a0006.
+
+New delayed-DMA fixture against unchanged production reproduces exactly
+!dmaPending.load atcheck5271/line114: native8428/exit1/0.046s, closed/drained.
+Production now copies SignalSynchronizationObject2Cb for explicit residency,
+creates an event before submission and queues EnqueueCpuEvent on the same GDI
+context without SignalAtSubmission. Evict occurs only after bounded completion.
+Signal failure/nonexact status/timeout retains pending residency, marks device
+removed and leaves release to allocation cleanup. Nested terminal ownership
+prevents late callbacks. Failed submission still balances references.
+Native green1688/exit0/5.195s passes6976 callback checks including delayed DMA,
+signal failure/S_FALSE/missing callback/timeout/terminal reentry/live revocation.
+No GPU proof claimed for fixture. Stage26 exact966source final50step build0;
+core526691027e23d7a3a8b062c1f503d610751ce5d7ce03ad7469a65753cd1e58ff;
+archive2cd57616d8726df128dbd5cd04af0ef4c364a93eea411dc28c410a60537fcccd.
+Stage26 native suite/deployment and real DWM/API acceptance pending.
+
+
+2026-10-17 08:12 UTC — persistent26 desktop and corrected probe contract
+
+Stage26 native CPU11/metadata122 passed08:04:00 (allocation6976,
+primary917242, runtimeGPU2087). Binding modern26 readbackpassed08:04:25,
+original legacy/WoW and retained Mesa snapshot preserved; no Mesa restoration.
+Clean guest shutdown08:05:16 completed. Direct invocation of nonexecutable
+start wrapper failed126 before action; /system/bin/sh wrapper then correctly
+started sole registered VM27197, unchanged config6e9063f5/6656MiB/image.
+Windows has a transient +7h boot clock until time synchronization; use process
+identity and monotonic durations for acceptance. Fresh desktop DWM2168 and
+Explorer6684 load exact26/privateDXVK+ICD, no WARP module in08:07sample,
+reset0. DWM readonly rings showddi0/gpu0, successfulprimary bothhandles.
+Explorer records only887B0001 Map WASSTILLDRAWING, gpu0. No desktop acceptance
+from mere module presence; real dynamic rendering remains to verify.
+
+Actual no-env inline11/01 PID4056 closedexit1/0.634s aftersuccessful factory
+FL10_0, before pixels: probe incorrectly required DDI10_0 although actual
+runtime selected advertisedDDI10_1 flags0x13. Raw negotiation retained.
+Actual no-env inline10.1/01 PID2536 closedexit1/1.053s after bothMap and
+PresentS_OK/no removal/exactprivate modules, then failed thread-description
+oracle on successfulHRESULT0x10000000. No full pass claimed for either run.
+Probe06 separates exact public feature-level checks from same-adapter
+advertised internalDDI profile, restricts to implemented10_0/10_1 and rejects
+insufficient/unadvertised/missing/unsupported profiles. GetThreadDescription
+uses documented SUCCEEDED and stillcounts actual dxvk-* workers. Added a
+real named-thread detection/restoration control. Pixel/Present/ownership/
+private-module/noWARP checks unchanged. Official Microsoft docs:
+https://learn.microsoft.com/en-us/windows-hardware/drivers/display/supporting-threading--command-lists--and-3-d-pipeline
+https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getthreaddescription
+Probe06 aae2ef6f6dec586d33b0aeff3b70b8232e6c15edd0fd8169caaf86f4da8987a7
+built from recorded current5source inputs; its CPU controls and new actual
+hardware runs pending. Production stage26/core52669102 remains unchanged.
+
+
+2026-10-17 08:17 UTC — current stage26 ordinary discovery hardware passes
+
+[
+  {
+    "api": 11,
+    "attempt": "02",
+    "threading": "inline",
+    "feature_level": "0xa000",
+    "pid": 9740,
+    "start": "2026-10-17T08:13:07.2283186Z",
+    "seconds": 1.2213916,
+    "pixels": 512,
+    "presents": 2,
+    "workers": 0,
+    "file": "present11-02.stdout.txt"
+  },
+  {
+    "api": 101,
+    "attempt": "02",
+    "threading": "inline",
+    "feature_level": "0xa100",
+    "pid": 3000,
+    "start": "2026-10-17T08:13:57.2933794Z",
+    "seconds": 1.2062026,
+    "pixels": 512,
+    "presents": 2,
+    "workers": 0,
+    "file": "present101-02.stdout.txt"
+  },
+  {
+    "api": 10,
+    "attempt": "02",
+    "threading": "default",
+    "feature_level": "0xa000",
+    "pid": 9952,
+    "start": "2026-10-17T08:14:10.2333310Z",
+    "seconds": 1.4567192,
+    "pixels": 512,
+    "presents": 2,
+    "workers": 12,
+    "file": "present10-02.stdout.txt"
+  },
+  {
+    "api": 11,
+    "attempt": "03",
+    "threading": "default",
+    "feature_level": "0xa000",
+    "pid": 4228,
+    "start": "2026-10-17T08:14:22.8952910Z",
+    "seconds": 1.4032130999999999,
+    "pixels": 512,
+    "presents": 2,
+    "workers": 12,
+    "file": "present11-03.stdout.txt"
+  }
+]
+All four actual limitedinteractive owned probes closed/drained0, exact26core/private
+loader/ICD, noWARP, no environment ICD override, Map/removal/Present exactS_OK,
+ownwindow destroyed. Flags9 inline workers0; flags1 default workers12.
+Probe06 native control9252 passed23, including actual threadname recognition.
+DWM2168/Explorer6684 stayed unchanged through tests.20s ETW28,114,944B
+closed; all494 diagnostics query finds0, no truncation. Filtered DWM records
+180 clockcalibration events only; no command/Present proof from this idle
+interval. Passive currentDWM stack next, dynamic desktop proof stillpending.
+Legacy front100f0ea nativeARM64X sourcecpp36476e4c anddef71123469 exactly
+match current tree. Existing front uses arm64/ andx64/ core paths; unified
+packaging must share same nativecore path with modern UMD to avoid cached-DLL
+path conflict in mixed9/11 processes. DX9/DX8 hardware remains pending.
+
+## 2026-10-17T08:28Z - persistent stage26 DWM teardown hang (not accepted)
+
+Four modern hardware passes remain valid only as owned pixel/Present probes.
+Passive DWM2168/TID2936 stack01/02/03/04 all show Device::close -> embedded
+D3D11ImmediateContext destructor -> ExecuteFlush -> inline submit ->
+vkWaitSemaphores. Private Turnip sync object state is fence4, gen2, context4,
+queue26, matching RuntimeGpu live1/closing0/removed0 and ICD submitted4.
+No backend release ordering fix is justified yet: gpu->close has not run.
+Amortized-processing deadlock is only a hypothesis, not a proven cause.
+KMD58631 global fences progress392, reset0/no render rejects/no lifecycle
+timeouts; these are not per-context fence completion proof. DWM no Present
+events and teardown stack mean desktop acceptance remains failed.
+Exact raw evidence: artifacts/dxvk-residency-completion-20261017-01/
+dwm-live01-resolved.json, dwm-live01..04.stdout.txt, kmd-state02.stdout.txt.
+CDB01..04 each passive normal exit0/closed pipes; no active debugger changes.
+Next resolve system-runtime stack using Microsoft symbols and inspect exact
+completion, then reproduce/fix. No Mesa rebinding, commits, second VM or
+image/configuration edits. Plan pin PWF_PLAN_ROOT=dxvk-umd-ci PLAN_ID=dxvk-umd.
+
+## 2026-10-17T08:36Z - stage27 proves explicit-destination Present rejection
+
+Stage27 core58605233 diagnostics only: 966 stable source inputs, native11 CPU
+fixtures and122 metadata controls passed; persisted modern binding and clean
+sole-VM restart via adb/daemon, current crosvm13286, config6e9063f5 unchanged.
+Fresh DWM1020/TID2788: two SetDisplayMode S_OK then Present flags1 with valid
+source and explicit primary destination, both subresources0, returns80070057.
+All7 residency transactions finishstage8/result0; no preceding DDI/GPU failure.
+Evidence rings27-01.stdout.txt under artifacts/dxvk-residency-completion-20261017-01.
+Earlier passive CDB26/08 reads runtime removal887a0020; CDB26/07 shows RenderCB
+skips KMT submission but returnsS_OK once the device is already removed. This
+explains the unsubmitted fence4 wait during backend destructor. No private
+runtime offset will be used in production; amortized-callback hypothesis retired.
+Implement real destination translation, source/destination lifetime guards and
+balanced WDDM2 residency through completion. Add failing CPU regression first.
+x64 current core build completed310/310 exit0; no x64 runtime admission yet.
+No Mesa restore, new VM, image/config mutation, commit or push.
+
+## 2026-10-17T08:55Z - persistent DWM and actual visible modern passes
+
+Stage28 on soleVM20762 boots DWM2052/Explorer6768. First64 DXGIrecords
+include repeated explicit-primary PresentS_OK; DWMddi0/GPU0 and all64
+residency completionsS_OK. ETW20s holds3678 DWM events (not truncated),
+real render/patch/submit plus39 present-related cycles;78 paging completions
+and no494 diagnostics. KMD58631 reset0. No Mesa rebinding or VM config edit.
+New probe07 adds exact16x16 topmost client, two desktop GetPixel oracles,
+raw screen files and screen result receipts (Windows visible surface proof,
+not Android display/165Hz/zero-copy performance). Native negative23passes.
+Ordinary SYSTEM discovery, exactprivatecore/loader/ICD, noWARP:
+D3D11default PID4016 08:51:28,5.123s; D3D10default PID8576 08:52:58,5.179s;
+D3D10.1inline PID1584 08:53:53,4.644s. Each512readback+512visiblepixels,
+2PresentS_OK, deviceRemoved0, heldreleased, exit0/drained; screen1attempt/frame.
+Summary artifacts/dxvk-residency-completion-20261017-01/modern-visible-hardware-passes28.json.
+DX8/9 not yet bound: old x64/x86 matched8443c71 CI artifacts purged after7days.
+GitHub dispatch refused422 Actions disabled; no settings changed. Build locally.
+x64UMD/privateLoader and x86privateLoader compile pass. x86core stops in
+Clang SEH primary-access assembly; investigating exact compiler flags.
+
+2026-10-17 modern architecture integration follow-up: current active modern31
+frontend is pure ARM64 FL10.1 validation DLL. Actual legacy37 all3arch passes
+do not prove modernx64/x86. A real ARM64X frontend producer exists as frozen
+reference in artifacts/system-runtime-validation-20261009/native-arm64x-d3d11-front-probe-7865936-build-01/source/scripts/build-system-validation-front.ps1.
+It must be adapted to hash-pinned current dirty source, not claim frozen786
+identity. Current source names x64/x86 core with suffixes; current packages
+use arch/viogpudxvk.dll. New unified front must share exact arch core path
+with legacy to avoid same-process viogpudxvk.dll basename collisions across
+old/new stages. Keep FL10.1 ceiling until missing SM5/FL11 paths implemented.
+No modern implementation edits yet. SoleVM stage39 activation6CPU passed;
+this stage adds only bounded adapter GetCaps telemetry, no new caps semantics.
+
+2026-10-17 FL11 continuation: unified44 all16 ordinary hardware cases pass, butD3D11 FL10_0 only. Stage45 explicitFL11 factoryfails887a0020 beforeCreateDevice; actualshadercaps0 invalidforadvertisedpipeline7. Microsoft D3D11DDI_SHADER_CAPS requirescompute/rawstructured4Xbit2 atFL11_0. NativeCPU RED(check597133) andstage46adapterGREEN869001 verifyfix. Stage46 SM5 probe10 addsstructuredUAVguardwords272, CSInvocations256, realHS/DS and256exacttesspixels; thesehardwaretestsremainpending. Stage46 ARM64 WARPfixture unchangedfrompassed45 timedoutunder45binding; do notlabelpassor46sourceregression. Resume proofmustdistinguish15current/6retained andpreservefailedobservation.
+
+2026-10-17T12:32Z: Stage46 fixes mandatory shader capability bit2 for FL11_0. Actual SYSTEM factory, compute, tessellation and two visible Present calls now pass on ARM64/x64/x86; all16 other API cases pass on the same persistent package. Full production capability masks remain closed: the feature-level contract needs broader semantics, not just the nineteen bounded cases. DWM hardware work is directly observed (exact UMD rings + bounded ETW), but a loaded d3d10warp.dll remains ambiguous for exclusive composition. The new source-linked semantics fixture preserves its default WARP backend and adds explicit SYSTEM-hardware mode. This exercises actual installed hardware below the outer controlled DDIs; results must retain that distinction from the ordinary SYSTEM API/Present probes.
+
+2026-10-17T12:38Z: Semantic fixture01 built all3 architectures. Native Invalid02 and WARP Reference02 pass with owned closure. Hardware02 PID8456 exits C0000409/1.126s at geometryPassthrough Draw (fixture line982), lastError88760870/check1796/callback110. This is not a direct QueryGetData assertion; trace lazy SO shader creation/nested SYSTEM backend before correction. Stage46 package and19 ordinary hardware passes remain intact. PowerShell Get-Content metadata expansion in deep JSON was demonstrated; controller now uses IO.File.ReadAllText. Original timed-out Invalid01 harness evidence retained. Failed plan patch expected nonexistent findings heading; corrected using append without modifying historical content.
+
+2026-10-17T12:44Z correction: exactHardware03 tracing (PID2224,exitC0000409/.730s) proves inner installed createGeometryStream11 returnsE_INVALIDARG. SYSTEM then returnsDXGI_ERROR_DEVICE_REMOVED887a0005; ddiResult maps this toD3DDDIERR_DEVICEREMOVED88760870, notWASSTILLDRAWING. Earlier query-ready interpretation was incorrect and is superseded. Fixture02 diagnostic-onlytrace coversfirstSOdraw; frozeninputs/PEhashretained. Investigating actualDDI descriptor/signature by boundedownedCDB, exactcore68afb32b wrapperRVA67474 derivedCOFF. Microsoft CreateGeometryShaderWithStreamOutput DDI permitsonlyOOM/deviceremoved errors; othererrorscritical, matchingobserved removal. PublicAPI permitsVS/DSbytecode fornull-GS streamoutput. Source references: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3d10umddi/nc-d3d10umddi-pfnd3d11ddi_creategeometryshaderwithstreamoutput and https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-creategeometryshaderwithstreamoutput . No driverbehavior/bindingchange yet.
+
+2026-10-17T12:46Z: CDB04 captures exactnativeSO input: pShaderCodeNULL, entries[(0,0,0,15),(0,0,1,15)],stride32,numstrides1,rasterFFFFFFFF. Signature NumInput2 (POSITIONr0/mask15,UNDEFINEDr1/mask15), NumOutput0. Rootcauseconfirmed: createGeometryStream11 null-GS path reads outputsignature, while SYSTEM supplies upstreamregisters in inputsignature. CDB firstchance-c handler didnotrunonsecondchanceabort;60sownedbound killsdebuggerPID1008, pipesdrained/nochild; rawcapture retainedbutdiagnosticcompletionFAIL. Do notrerunjustforgreen. Newfixture03RED usesrealinputsignature; source/backendunchangeduntilREDcompleted. OfficialstageIOsignature doc statesinputrepresentsupstreamstage.
+
+2026-10-17T12:49Z: Native03 RED PID6708/exitC0000409/.505s fails atCreateGeometryStream11 withE_INVALIDARG foractualinput-onlySOsignature. Stage47 fixesnull-GS native11 path bynormalizingupstreaminputsignature toSOdecoderproducer-outputview, includesclip/cullordinalcalculation. VSandDSpassthroughfixturesnowuseactualSYSTEMsignatureform; nullinput,count33,andwrongoutput-onlyform remainnegative. All3core/adapter/D3D11fixturebuildspassed withunchangedbefore/after968core+3supplementalinputhashes; packaging/21guestcontrols thenpersistent47activationnext. D3D10oldtable nullGS inputsignature auditremainspending, notsilentlyclaimedcovered.
+
+2026-10-17T12:50Z: Stage47 all21 actualguestCPU/reference suitesPASS inclupdatednull-GS VS/DS onall3arch. Archive670b9b59/manifestf6cb96ea/core9073ada1 bindsallnative/WoW47 thennormalguestshutdown, activationexit0/19.753s. Sourceaudit discovered historical968manifest omitted2.inl files; actualninja rebuiltmodifiedinl, butclaimedfullprebuildsourcepinwasincomplete. Exactpostbuild2.inl observation retainedseparately (post-build-inl-inputs.json), no retroactiveprebuildclaim. Builderfixedtoinclude2.inl beforefuturecandidates. Package47/actualtestsvalidbutsourceprovenanceboundaryexplicit. CDB/testclosure read confirms0tasks/0ownedchildren/DWM2156+Explorer6520 stable,250MBfreebefore47.
+
+2026-10-17T12:53Z: Stage47Hardware01 PID8640/.868s nowpassesnull-GSVSstreamoutputbutfailsfour-streamstats atline1093. Diagnosticfixture04/Hardware02 PID9648/.793s provesstream0written3/needed3andcorrectrawbuffer; stream1written0/needed0expected6, streams1-3alluntouchedpoison. Thisisactualmissingmultistreamoutput, notmerelyquerycounterdisagreement. Exactcore9073ada1, LUID00000000:00006b08, allclosed/drained/nochild. Guesttimeinitial+7h retainedraw; hosttimestampscanonical. NoMesa rollback. NexttraceUMDstreamdeclaration, DXBCstreamsignature andDXVKIRpruning.
+
+2026-10-17T13:02Z: Stage47 bounded CDB03 PID5996 exits0/1.134s/drained before five-entry SO DDI executes; actual descriptor preserves streams0-3, slots0-3, strides32/16/24/16, rasterFFFFFFFF. Diagnostic-only completion. Fixture05 adds actual DXBC-to-IR and XFB lower-pass comparisons for original/reconstructed shader: allfourstream masksf,8xfboutputs, Reference04 PID6264/.164s/exit0/4416checks. Hardwarefailure remains unexplained beyond first IR lowering; next inspect actual SPIR-V and pipeline metadata. No Mesa rebind.
+
+2026-10-17T13:04Z: Actual47Hardware04 SPIR-V read is bounded remote text/hash only. Four-stream shader xfb.6c80841deec04711272f94d1dd0cfc0f hasall8Xfboutputs/buffers0-3 andEmitStreamVertex0-3, butzeroStreamdecorations. CPU06Reference05 RED PID8944/.519s/abort confirmsoutputid11defaultsstream0whilebuffer1. Rootcause SpirvBuilder usesm_geometry.streamMask whileemittingI/O beforeSetGsOutputPrimitive initializesmask. Fixpre-scansdeclarationsforstreammask; build48all3archunderway. ExactvendorHEAD213d2b859e83d91670ada15cc773e2c90c7c8b61 previouslyclean,patchinthatnestedcheckout, includedin970coreinputs. Khronos Stream decoration contract https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html . Diagnostic stillfailedsemantic(no falsePASS); allownedchildrenclosed/drained.
+
+2026-10-17T13:05Z: Stage48 SPIR-V stream pre-scan builtall3arch andall21guestCPU/referencecontrolsPASS, includingnewSPIR-Vstream-to-bufferchecks. Coree7734a66/archive6f86bf70/manifestd2bcf118, allnative/WoWslots48bound;activationexit0/17.760srequestsnormalshutdown. Firstadbstate9254stillrunning shutdowninprogress, so no daemonstartyet. LatestpredeployhealthDWM2172/Explorer6620/0tasks/0owned/187.6MBfree. CurrentNext: verify existingVM fullystopped, daemonstartsameconfig, actualall3hardwaresemantics beforebroad19APImatrix.
+
+2026-10-17T13:12Z: Stage48 actualfourstreamhardwarepasses3/6/9/12, buffers/overflow/predication/independentoriginalcontrolallpass, butrasterGSstream0drawfailsgreenpixel. Hardware01PID1176/.968s; Hardware02fixture07PID5008/.807s confirmsallfourcenterpixelszero. Hardware03fixture08 diagnosticqueriedwrongD3D10enumwithD3D11size andcorrectlyrejectedE_INVALIDARG; fixture09Hardware04 fixesenum andPID1128/.800s givesIA1/VS1/GS1/GSprimitives10/clip0/PS0. FreshboundedshaderdumpcontainsnofreshrasterGS, investigatecreation/state/caching beforefix. Allownedclosed/drained, noMesa. CDB48symbolsinitialselectoralsomatchedlambda andpreparationstopped; attemptedSCPfailedlocalfilemissing, noguesttest. Correctedexcludeslambda, exacte7734a66wrapperRVA67474; CDB01 nowpending.
+
+2026-10-17T13:13Z: CDB48nativeentry5156/.884s/exit0/drained capturesactualthird5entrydescriptorRasterizedStream0, correctunioninput2/output2. Previous2no-rasterdescriptorsFFFFFFFF; SYSTEMcorrect. Rootcauseshadercachekey: D3D11Device::ComputeShaderKey callsxfbHasher.finalize() thengetDigest(), bututilMD5finalize resetsstate; allSOmetadatahashesconstant. Samegeometrybytecode thusaliasesnone/stream0rasterconfigs andno freshrasterSPIR-V. Fixusesreturnedfinalize digest; stage49buildrunningall3arch. ExistinghardwareRED48rastersequence retained. Separate sourceconcernIRmetadata.rasterizedStreamneverassigned remains fornonzerorasterstream, notyetfixed/proved.
+
+2026-10-17T13:15Z: Stage49all3build/21guestcontrolsPASS,core6965bd7b/archive7db845aa/manifestf9e8da9d;actualactivationexit0/13.005s,allnative/WoW49bound,normalshutdownrequested. Hashmatchedlocalbackeduploadarchives44-48 cleanupremoved4oldarchives107.6MB->166.0MB;driverpayloads/images untouched. NextsameVMdaemonstarthelperpinsactualconfig6e9063f5andrequirestopped/noPIDs. Hardware49semanticnext.
+
+2026-10-17T13:20Z:49Hardware01PID7240/1.144s confirmscachefix:clip1/PS4/green7,7. Nextsignedx/zcheckfailsz. Fixture10Reference02 invalidtestPSregisterlayout rejectedbeforeIR; correctedfixture11includesusedSV_Position tokeepDATAregister1. Reference03PID7268/.415s fourrasterstreamWARPgreens thenactualDXVKIRsplit-outputRED expects4scalarsobserves2. LowerIoPass onlyemitsfirstmatchingentry; nowiteratesallentries andintersectsthecurrentoutputcomponentmask/preservesoffsetrank. No installedcorechange yet; hardware11rasterselectiontestpending.
+
+2026-10-17T13:23:36.620375+00:00: Restored pinned dxvk-umd plan. Current49Hardware02 PID8828/.879s has all4 raster greens and then split-output IR RED2vs4. No evidence warrants speculative raster metadata change yet. Stage50 build started from frozen970core+3fixture sources; no source edits during compilation. Both root and nested git diff --check pass.
+
+2026-10-17T13:27:48.389329+00:00: Stage50 all3 builds PASS; 970 core inputs plus3 fixture inputs unchanged through build. Nested vendor patch4bc3472e retained. Archiveee3a6eaac8188975b0fd87a69813f4b42517ceffbf2c6d53b09a5c09029b7d37/manifest26e40e6e990bfe827651114a3a75ce299bee873d100d8d8feef7a7b0d49c9d30,77members/65reused/21controls. Exact local-backed stage49 upload archive removed after full hash match; free79.2MB->94.9MB, installed payloads untouched. Activation nowrunning.
+
+2026-10-17T13:28:29.525609+00:00: Stage50 activation01 exit0/11.460s; all21guestCPU/reference controls PASS (native d3d11 5878checks, x64 5528, x86 5918). Split-entry IR regression now passes CPU. Allnative/WoW50bound, corecc33ef0e, KMD58631/reset0. Normalshutdown requested; sameVM daemon restart helper nowwatching shutdown. Hardware semantics isnext.
+
+2026-10-17T13:30:21.779628+00:00: Stage50 actualARM64Hardware01 PID10752/1.105s/exitC0000409/drained: all4SO streams3/6/9/12 and signedx/z nowpass, splitIR4scalars. Later failure is Buffer create atline169; Unhandled extended operand0 is emitted by deliberate rejectedHullPhaseInputs negative control and is not established cause. Initial commentary hypothesized parser failure, then corrected. Added diagnostic stage markers+failedbufferparameters+GetDeviceRemovedReason, fixture12Hardware02 running. Existing50core unchanged. Guestbootclock+7h, retainraw. SoleVM30428/configunchanged. Read commands initiallywrongcwd/missingglob returnederrors, correctedreads no source consequence.
+
+2026-10-17T13:33:03.798438+00:00: Diagnostic13/50Hardware03 PID4916/.939s/closedabort confirms fulltessellationraster andnull-GS DS1024wordpubliccontrolPASS. FirstactualinnerfailureisCsSetShaderWithIfaces E_INVALIDARG; laterBuffer16staging returnsremoved887a0005, GetDeviceRemovedReason887a0020. Bufferedstdout previouslyhidpassmarkers; fixture nowunbuffered. Exactcurrentcorecc33ef0e COFFwrapperRVA73f34 derived forcomputeclassbinding; boundedCDB01 capturesnativecount/table/pointer beforecall, diagnostic-only. WDK page describesuCBOffsetbytes; awaitactualdescriptorbeforeoffsethypothesis. Source: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3d10umddi/ns-d3d10umddi-d3d11ddiarg_pointerdata .
+
+2026-10-17T13:35:11.282331+00:00: CDB50/01PID5956/1.320s/exited0/drained capturesactualSYSTEMcomputeclasscount1,table1,packedpointer0x1 (uCBOffset1). The outerfixture16bytes had calledpublicCreateClassInstance vector1; SYSTEM passesvector1 directly. WDK POINTERDATA prose saysbytes, contradictingactualruntime and12bit4096constantindices; publicCreateClassInstance contract saysvectoroffset. Native14Reference01 reproducesE_INVALIDARG withactualpointer1 (PID4920/.765s). Fixpassesconstantindexunchanged,accepts1/16/4095 andkeepslimits14cb/128tex/16sampler. SM5container unitexpectationsupdated; pipelinebuild/packageextendedto24controlswith3archsm5containers. Addedspatiallydistinctrasterpoints toresolveobservedmultiplicitydiscrepancy; fixture15Hardware04onunchanged50pending. No speculativemetadatafix yet.
+
+2026-10-17T13:36:17.716193+00:00: Spatialraster RED15/50Hardware04 PID9508/.818s: stream0mask1PASS, stream1mask1expected3FAIL. ActualSPVxfb76f21814 hasPosition+Stream1 and4EmitStreams; IRmetadata.rasterizedStreamstaysdefault0, pipelineconsumesmetadata0. Reference02samefixturePASS6603checks, masks1/3/7/f andclip1/2/3/4, also classpointer1/2fixGREEN. FixIRmetadataassignmenttoactualselectedstream; stage51all3build with24controls underway. Previouscoincidentpointswerefalsepositiveformultiplicity; explicitlysuperseded. Noinstalled51claimyet.
+
+2026-10-17T13:38:22.804163+00:00: Stage51all3buildsPASS,butnotpackaged/installed. Sourceauditfindscacheversionstill3.0.2acrosslocalcorechanges; persistedshaderIR/SPIRV/metadata couldretainpre-fixcode. Addedcacheversion3.0.2-umd-so2 invalidation andbuild52fromactive50; retained51buildimmutable. Hardware50closure0tasks/owned, DWM2180/Explorer6640,35.8MBfree. Retiringonlyhash-matchedlocal-backeddiagnosticuploads01-14 plus50archive, keepsallrawlogs, installedpayloads, images andlocalcopies.
+
+2026-10-17T13:39:42.046039+00:00: Candidate52 all3source-pinnedbuilds and24guestCPU/referencecontrolsPASS, including3SM5container1119checks. Archive27ca095f/manifest90bba84b/nativecore4a4dd633. Activation01exit0/14.574s bindsallnative/WoW52 andnormalshutdown; sameVMstartuphelpernowrunning. Hardware52pending, nofulladmissionclaim. Temporarydiagnosticcleanup removed14hash-matchedlocalbackeduploads35MB->100MB; noinstalledpayload/image/logremoval.
+
+2026-10-17T13:42:21.112738+00:00: Installed52 Hardware01 PID7732/4.408s reachesallsemanticassertions includingclassdispatch andspatialraster1/3/7/fwithclip1/2/3/4. Finalexit2isfixturecheckModules afterdestroyinglastdevice (privateICD/loaderpermittedunload); exactmodulesalreadycheckedoneverycreateddevice. FixchecksidentityatFixturedestructionbeforebackendrelease andmovesfinalcheckbeforelastdestroy. Fixture16all3sourcepinnedbuild/upload running; all970productioninputsverifiedidenticalto52. Installed52coreunchanged; noadditionalreboot. Failedattemptretained, notcalledfullPASS. SoleVM7800/configunchanged; LUID6b2a.
+
+## 2026-10-17T13:43Z Stage52 semantic hardware acceptance
+
+Fixture16, frozen separately against the exact installed Stage52 core, passes ARM64/x64/x86 SYSTEM hardware semantics. Native PIDs1848/5628/2752 exit0 in1.330/2.539/2.631s, all pipes drained and no child remains. Checks7683/5258/4988 vary with bounded polling. Actual LUID00000000:00006b2a/vendor1AF4/device1050; exact frontend/core/loader/ICD verified while a live backend device keeps modules loaded, WARP rejected. Four streams write3/6/9/12 vertices; selected raster streams produce clip1/2/3/4, PS4/8/12/16 and spatial masks1/3/7/f. Split signed x/z output, null-GS upstream VS/DS SO, tessellation and class interfaces pass. Original52/Hardware01 final post-destroy module-audit failure retained; fixture16 only corrects check lifetime, no production binary change. Controlled outer DDI tests plus actual SYSTEM backend do not replace ordinary public API validation. Sixteen current52 API cases launched at13:45Z; three FL11/SM5 cases and DWM closure follow.
+
+## 2026-10-17T13:49Z Stage52 matrix stopped on guest disk space
+
+Five public cases pass (x86 DX8; ARM64 DX9/DX9Ex; x64 DX9/DX9Ex). x86 DX9 attempt01 stops before launching a probe: guest C: reaches0 free bytes while saving bound/controller JSON, transport1/no complete result. Preserve that attempt as infrastructure failure, not GPU pass/failure. Read-only closure confirms no GPU task/owned process and stable DWM2168/Explorer6816. Exact local-backed52 upload archive retired by hash (17,358,662B), then inventory identifies16 old uploaded core13-28 archives with exact local copies totaling174,378,020B; guarded cleanup removes only those upload archives after guest hash checks. Installed payloads, logs, VM/image/config and backups preserved. Resume x86 DX9 with fresh attempt02, then remaining cases.
+
+Review also found obsolete byte-offset prose in umd_shader11.h; corrected comments only. All970 Stage52 core inputs matched before edit. Frozen before/after header, diff and proof at stage52-postbuild-comment-01 record the sole comment-only core source difference; non-comment lines identical. Fixture16 remains the tested fixture delta. Root and nested dxbc-spirv git diff --check both pass.
+
+## 2026-10-17T13:55Z Stage52 public API passes and ETW space requirement
+
+All16 ordinary API cases and3 FL11_0/SM5 cases pass; three semantic fixtures also pass. Canonical three reports written after validating complete native envelopes, exact modulepaths/LUID, livepixels, PresentS_OK and owned process closure. Offline summarizer initially compared API10.1 with encoded101; corrected exact explicit encoding and additionally checks admitted feature level. Earlier attempt data unchanged. A historical ring plaintext read as JSON was corrected to plaintext; one unmatched zsh glob in a source search was corrected to rg -g.
+
+Fresh DWM2168 health passes; error rings DDI0/GPU0, allocation2, DXGI64/residency64. ETW01 logman3504 closes with HRESULT80070070 in0.477s: StartTrace says disk full, despite172,728,320B free; query confirms no trace session was created. Microsoft StartTrace documentation explicitly requires an additional200MB on the system drive: https://learn.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-starttracea . Trace02 adds216MiB preflight (200MiB reserve+8MiB bounded trace+8MiB margin). Seventeen exact local-backed retired DX8 upload archives total56,902,242B and can be removed without touching installed payloads/logs. Failed ETW01 and source remain retained.
+
+## 2026-10-17T14:00Z Stage52 bounded hardware acceptance complete
+
+Current VM remains persistently bound to DXVK52 in all native/WoW DX slots after a clean same-VM boot. All24 guest CPU/reference controls,16 ordinary SYSTEM DX8-DX11 cases,3 explicit FL11_0/SM5 cases and3 fixture16 SYSTEM hardware semantic cases pass. Public probes each verify512 GPU pixels plus512 Windows desktop pixels and2 PresentS_OK; exact modules/LUID/no WARP and owned exit0/drain are mandatory. Semantic tests cover null-GS VS/DS SO, multi-stream3/6/9/12 counts, spatial raster masks1/3/7/f, split signed components, tessellation and dynamic interfaces.
+
+Final DWM2168/Explorer6816 stable, gen2/reset0, no owned tasks/processes. Bounded process-lifetime rings: DDI0/GPU0,2 primary replies success,64 DXGI calls including59 PresentS_OK,64 residency completions success. Saturated call rings are early-lifetime samples, not a claim about all later calls. Separate4s ETW02 is1,900,544B below8MiB cap;726 selected records,28 queue events all PacketType0 verified from exact focused726-line payload,7 primary submissions,7 Present events, no494. Owned decoder8228 exits0 in1.456s. d3d10warp.dll also loaded, so exclusive hardware composition remains unproved. Failed ETW01 retained; trace02 succeeds after satisfying documented system-drive reserve.
+
+ADB final observation: sole crosvm7800; registered VM a5b6863f-6bbf-4af4-97f3-2a4653f6edb7 remains running, actual6656MiB/config6e9063f52fc5ed99f305ab6b49370879f0580ed0d131f107376759eeae54f7e8 and active qcow2 path unchanged. Final C: free227,168,256B. No Mesa restore, second VM, commit, push or image/partition alteration.
+
+Canonical evidence: artifacts/dxvk-system-integration-20261013/unified52-acceptance.json SHA256 20175196f9f581fbda62072b888a996b9a23f723629811b61b88a9abf6228d9f. Three linked detailed reports separate16 public API,3 FL11SM5 and3 controlled-outer/SYSTEM-backend semantic cases. Exact970 core +4 supplemental52 build sources frozen in fl11-core52-01/verified-build-sources.tar.gz, all974 entry hashes verified after reading back the archive. Fixture16 and header-comment-only changes retained separately. Root and nested dxbc-spirv whitespace checks pass. Broader program and generic production admission are not marked complete. Old-DDI D3D10 null-GS signature runtime audit, wider application conformance, exclusive DWM composition, HDR/VPU and165Hz/zero-copy/cursor<=1pp criteria remain distinct work.
+
+## 2026-10-17T14:22Z Browser hardware admission failure isolated to runtime access
+
+Owned fresh Edge155 profiles a/b both fall back to ANGLE_D3D11_WARP with compositing disabled. TestUFO visible~10fps, not acceptance. Initial a closed through exact recorded CDP endpoint, task removed; b remains owned diagnostic (same sandbox, logging only). Native Display uses BLAST fallback; scanout#998 has no buffer. Same DWM2168 core52 DDI/GPU failure rings remain0 (other rings saturated historical).
+
+Actual GPU7208/start14:18:38.6914Z restricted token has BUILTIN Users, Everyone, Restricted Code and logon SIDs. Read-only impersonated CreateFile succeeds for SYSTEM d3d11.dll, returns5/ACCESS_DENIED for all six checked DXVK52 runtime files. Package inherits Public ACL without BUILTIN Users read permission; ordinary interactive probes were allowed. This establishes runtime file access defect, not yet complete EGL failure causality. Next add file-scoped BUILTIN Users RX with recorded original DACLs and exact hashes, retest same token, then a new sandboxed browser. Microsoft restricted-tokens documentation describes both enabled/restricted SID access checks. https://learn.microsoft.com/en-us/windows/win32/secauthz/restricted-tokens
+
+Comparison upstream ANGLE SHA7865acacbf6380ce2acc54f5afd86a242cd239eb saved under reference/codes/angle-comparison-20261017. Edge reported0b3540a71fa0 is unavailable publicly (three404s; web open cache miss), so comparison is not exact-source proof. ANGLE histograms empty; edge debug log only generic EGL initialization failure. Initial local batch reader had Python raw-string trailing-backslash syntax error before remote execution; corrected using forward-slash script paths. No checkout AGENTS.md exists under dxvk-umd-ci/chat; root rules apply.
+
+## 2026-10-17T14:24Z Sandbox runtime access repaired; browser hardware admitted
+
+Applied file-only BUILTIN Users ReadAndExecute to17 manifest-pinned runtime libraries/ICD JSONs. No directory/scripts/probes ACL grant. All byte hashes retained; preimage DACLs and all NTFS hardlink aliases recorded at C:\Users\Public\DxvkRuntimeAccess-20261017-52-01\before.json. Shared hardlink aliases receive same ACL; this is recorded, not silently claimed path-isolated. Exact same GPU7208 token read red5->green0 on6DXVK files; SYSTEMd3d11 control remains0. Sources set-dxvk-runtime-read-access-20261017.ps1 plus future package/deploy chain updated to apply hash-pinned helper between stage and bind; Python syntax passes.
+
+Fresh owned diagnostic Edge c on unchanged core52 now reports actual VIOGPU1af4:1050/ANGLE D3D11 vs5ps5, gpu_compositing enabled, WebGL enabled, sandboxed=true, crashcount0. GPU6864; generic no-renderers failure is gone. Video-device retrieval and unsupported EGL-context-version diagnostics remain, not video/completeWebGL claims. Initial b closed by exact CDP endpoint and owned task removed. Next synchronized diagnostic20s timing and module identity; clean acceptance still requires no diagnostic logging and all original joint gates.
+
+## 2026-10-17T14:33Z Hardware admitted; Present path fails display acceptance
+
+Diagnostic20s sample03 under artifacts/refresh165-dxvk52-20261017: sandboxed Edge VIOGPU,428rAF/20.012s=21.39fps,p50interval42.46ms,p99=103.30ms,continuousREADYFAIL. Android panel165Hz but visibleBLAST#996 only184updates/9.117fps,CLIENT186/202; native scanout#998 no buffer. Windows sample03 rejected missing NativeCopyCalls rather than substituting zero. Separate5.051s windows-counters04: vblank830=164.34/s, all MMIO/flip/refresh deltas0, reset and DWM unchanged; copy counters unavailable in58631. Not a165Hz/zero-copy claim.
+
+Source dxvk-umd-ci/src/umd/umd_ddi.cpp publishPresentData synchronously CopyResource->staging Map->RuntimeMemory.upload for nonshared Present; shared path also CPU transfers. Need actual shared native image/import/publish/fence integration. Native KMD ABI has adapter ALLOCATE/FREE_NATIVE_SURFACE, context IMPORT/RELEASE and PUBLISH_NATIVE; existing gg-zero-copy Mesa Resource.cpp/tu_knl_wddm.cc are reference only. Older matched-runtime checkout lacks these native-share symbols; do not infer current retained ICD provenance from directory name.
+
+Owned Edge c closed via exact CDP endpoint (ack14:31:06Z), task removed14:31:46Z, profile/evidence retained. No payload or binding changes. Failed lookup of nonexistent stage-01/metadata/approved-payload.json and absent gg-ctrl-drain/external/mesa noted; use stage manifest and gg-zero-copy actual paths.
+
+## 2026-10-17T14:44Z Native surface runtime bridge in progress
+
+Current matched private Turnip exposes MWD runtime-token import but no Native AHB sharing support; ABI1 flags=1 and all-live-BO submits are insufficient. Existing gg-zero-copy Turnip image-use tracking is the reference for exact resource access; including every live imported image can block a new frame on the currently scanned-out buffer. Do not merely remove staging copies or advertise support before exact image-reference tracking.
+
+Started DXVK RuntimeGpu importNativeSurface: real88-byte IMPORT/RELEASE escape, shared backing lease, separate imported40-byte render table/version2 with actual VidMm allocation-list indices, no borrowed-handle Deallocate, no guestCPUmap, no synthetic fence completion. Additive imported-token flag remains rejected by old ICD until matched support is implemented. No production DDI caller/binding uses this unvalidated bridge yet. ARM64 red01 ran45ms/exit1 at first import check (unsupported stub), proving missing entry. green01 compile caught mistaken96-byte NativeShare assumption; corrected to authoritative88-byte KMD/Mesa ABI, rebuild02 succeeded. CPU fixture covers used versus unused imports, residency GPU dependency, fail/retry/uncertain teardown, exact reply, alias and range contracts. Build/run evidence retained under artifacts/dxvk-native-surface-20261017.
+
+Next after CPU controls: real KMT/native-AHB layout and import probe, matched ICD exact-image-reference support, then connect shared/primary resource creation and Present to native images. Existing DXVK52 remains active; 165Hz/zero-copy full acceptance not met.
+
+## 2026-10-17T15:02Z Real Native AHB lifecycle passed; image sharing still in progress
+
+RuntimeGpu CPU native controls PASS597 on ARM64, x64 and x86; full ARM64 suite PASS2717. Real KMT probe hardware01-03 failed before allocation because its link order resolved legacy KMT exports from d3d11.dll: QueryAdapterInfo returned S_OK with zero output. PE import census proved this fixture defect. Linking only GDI32 corrected it; hardware04 actual64x64 and hardware05-full3040x1904 now pass ALLOCATE->VidMm wrapper->RuntimeGpu IMPORT->RELEASE->DestroyWrapper->FREE with real exit0/drained pipes. Full-size AHB size25346048/stride13312, linear modifier0; no CPU map or GPU submission in these lifecycle probes. DWM2168/Explorer6816 and reset/timeout counters unchanged. This is allocation/lifetime proof, not pixel/Present/zero-copy acceptance. Artifact root artifacts/dxvk-native-surface-20261017.
+
+Matched ICD checkout8443c71a actually has two preexisting changes (common type_traits include, private DLL name_prefix); preserve both, correcting earlier assumption of clean status. Ported exact image descriptor/shader/renderpass/copy access tracking from gg-zero-copy3dc6c982, preserving its source unchanged. New runtime imports use separate callback references and are excluded from all-live-BO sweep. ASan/UBSan extracted production image-access controls PASS30; x64 private ICD build exit0. Native support bit still unadvertised while image layout and actual GPU pixel tests remain open. Initial test compile caught enum/non-enum conditional warning; fixed type. Initial new-probe Meson regeneration required existing glslang tool PATH, then build passed. Next verify current private Vulkan image layout against actual AHB stride; build matched ARM64 ICD and implement explicit native layout if required before real image import/render testing. No payload binding, Mesa DX regression, commit or VM configuration change.
+
+## 2026-10-17T15:19Z Native image layout, import and real GPU pixels passed
+
+Previous goal turn is progress: full-size layout and actual GPU evidence changed the next action. User pause/resume completed; active goal unchanged. ADB confirms sole crosvm7800. Hardware06 default Vulkan LINEAR pitch12288 mismatched actual AHB13312 and was rejected. Hardware07 explicit DRM modifier0 matched row13312/size25346048 but had no device-only memory type. Matched ICD now appends WDDM DEVICE_LOCAL-only memory type without changing existing indices, retaining HOST_VISIBLE import rejection. DXVK support negotiation accepts ABI1 known additive native bit3, rejects missing base/unknown bits; host red then PASS60.
+
+Hardware08-full imported/bound the real3040x1904 AHB with type2 flags1. Hardware09-pixels64 (PID848,15:17:16Z,0.146s) and hardware10-pixels-full (PID2968,15:18:37Z,0.624s) each submitted2 real KMT packets, native v2 reference access3/exact VidMm index4, actual MakeResident pending fences7001-7004 then completed paging wait, Vulkan fences success, two colors checked4096/5788160 pixels per frame with0 mismatches/guard violations. NativeAHB CPU maps0; only separate validation readback is mapped. All3 ordinary BOs,4residents,1context and native lease/wrapper/free balanced; DWM2168/Explorer6816/reset/queue/timeout state unchanged. Raw receipts/source snapshots artifacts/dxvk-native-surface-20261017/hardware08-modifier-full,hardware09-pixels64,hardware10-pixels-full. This proves import+GPU transfer pixels, not production DWM/Present/zero-copy acceptance.
+
+Matched image access ASan/UBSan PASS30, ARM64 ICD build04 and probe build11 pass. Next connect exact native backing and Vulkan image lifetime into production shared/primary resources and native publication; validate renderpass/unused-image exclusion before desktop payload binding. Keep DXVK52 frontend slots; no Mesa DX rebound, commit, VM/image/configuration change. Original165Hz/zero-copy/cursor<=1pp/Vulkan>=18050 joint gates remain unmet.
+
+### 2026-10-17 embedded native DXVK image proof
+
+Hardware11 was the expected red baseline: real embedded DXVK device created, native texture API still unsupported. Hardware12 passed 64x64 full/partial renderpass clears. Hardware13 passed 3040x1904 (5,788,160 pixels per frame), full red then inner green with all outer pixels preserved, zero mismatches. A second 64x64 AHB imported into the same VkDevice was absent from both actual 40-byte v2 submit reference tables. Real KMT submits and GPU fences completed; native memory was never CPU mapped. Texture/view release before the final readback was exercised; storage retains the import owner until its own views and command references retire. Both native leases/wrappers and ordinary BO residency/allocation ownership balanced. Logs/receipts: artifacts/dxvk-native-surface-20261017/hardware11-embedded-red, hardware12-embedded64, hardware13-embedded-full-unused.
+
+Production createNativeTexture2D now imports the exact modifier/pitch and DXVK view formats with a retained runtime/import owner. Matched backend negotiation accepts required flags 1 plus native-surface bit 2; the adapter enables the required modifier extension only for that capability. This remains an owned fixture: no production binding change, no Present and no zero-copy display/165Hz/cursor/performance acceptance. Next: validated native lease and runtime allocation creation, resource rotation and native Present.
+
+### 2026-10-17T16:08Z native allocation and zero-copy rotation
+
+Added production NativeSurfaceLease, adapter-owned native KMT escape routing, RuntimeMemory single-allocation native AHB creation/adoption and CPU-map rejection. Real hardware14 uses the production lease and passes full3040x1904 renderpass/partial pixels and balanced retirement. Kernel identity CPU14518 and lease65 checks pass. Native allocation red01 fails at the first real new API call as expected; green02 passes439 then green03 passes463 checks including open metadata rejection, cancel before/after allocation outputs, terminal device teardown and no staging allocation/CPU lock. Existing UMD allocation7338 and terminal302 checks pass; opened-primary fixture1204548 checks/36images1260pixels plus shared-present48images1680pixels pass on its controlled reference renderer (hardware_admission=0).
+
+Staged source now routes eligible non-shared BGRA/RGBA single-sample present/primary creation into native AHB plus embedded DXVK image. OpenResource validates48-byte share and80-byte allocation metadata and imports preserved native storage. Present joins CS/RenderCb then marks submitted backing without staging/map/upload; Resolve and Present Blt also recognize native backing. Native storage rotation exchanges DXVK storage/versioned views and stable native allocation owners; runtime resource cookies remain with original resources. These DDI integrations are not production-bound or ordinary-runtime proved yet. Do not claim shared texture creation converted: legacy ordinary shared surfaces still copy.
+
+Hardware15 actual rotation failed4096/4096blue pixels: Flush submitted no native blue-write reference. Source cause: prepareSharedImages only inspected non-default-layout images; a deferred clear on a new imported AHB had not entered that list. Hardware16 with the clear-queue fix passes:8GPUsubmits,7readback frames total,4096pixels each; full/partial updates, swap, preserved alias reopen and old RTV targeting the rotated backing all match. No AHB-to-AHB copy is used for rotation. Source/receipt at artifacts/dxvk-native-surface-20261017/hardware16-rotate64-clearfix. Present remains0 in the owned GPU fixture.
+
+KMD opcode11 is for ordinary exported BOs only and rejects HostSurface/AHB. Removed the tentative AHB publish escape; native Present relies on exact v2 submission reader/writer records. Build25 ARM64 core/probe/primary/open/rotation succeeds; build24 first uncovered a missing pre-existing kernel-query fixture binding in opened-primary test, now supplied by its own controlled query source. Build27 is validating final routing changes and a probe that uses production RuntimeMemory through real KMT allocation callbacks. Sole VM7800/DWM2168/Explorer6816/KMD58631 and DXVK52 bindings remain unchanged. Only28owned test binaries were NTFS-compressed with all hashes verified; free150945792->250748928 bytes, no user files removed.
+
+### 2026-10-17T16:13Z production RuntimeMemory GPU rotation passed
+
+Hardware17-runtime-full-rotate completed exit0 at16:10:12Z in1.388s. Two real3040x1904 AHBs, each25346048B/stride13312, now use production RuntimeMemory.allocateNative through actual KMT callbacks with a single wrapper allocation and no CPU staging. All seven full-frame checks passed5788160pixels each with0mismatches; eight realGPUsubmits, native access records and allocation/residency/lease cleanup balanced. Rotation, preserved reopen and preexisting RTV updates passed. Present remains0; actual primary allocation flag and ordinary Microsoft DDI Present are next.
+
+Build27 passed. Fresh controlled regression cpu-rotation03 PASS1452, cpu-primary03 PASS1065018, cpu-open-primary03 PASS1204548 plus48shared-presentimages/1680pixels. These are hardware_admission0 reference fixtures. Hardware17 kept DWM2168/Explorer6816/reset/queue/timeout state unchanged. DXVK52 remains bound; no Mesa frontend regression or VM configuration change.
+
+### 2026-10-17T16:23Z real primary allocations passed; candidate53 building
+
+Hardware18 returned UNSUPPORTED before any KMT allocation because the allocation-only fixture omitted the required SetDisplayMode callback. Added a fail-closed unused callback without changing production validation. Hardware19-primary-full then passed actual primary=1 allocations for both3040x1904/165Hz metadata AHBs, seven full5788160pixel checks, eight GPU submits and balanced retirement in1.131s (PID2024,16:18:20Z). No SetDisplayMode/Present was invoked. Current native GPU proof includes real primary and nonprimary RuntimeMemory allocations, but ordinary runtime presentation remains next.
+
+Three architecture core compilation and matched private ICD builds passed; the first x64/x86 ICD command incorrectly used the ARM64 target name and did not build, then corrected architecture targets succeeded. Source-frozen candidate53 builds now include native allocation/lease plus rotation/primary/open fixtures. Packaging will replace all three cores and their matched native-capable private ICDs, retain existing exact frontends and loaders, and grant the same file-only runtime read ACL. Existing DXVK52 remains bound. A read-only reviewer was explicitly dispatched per requesting-code-review skill before candidate activation.
+
+NTFS compression of49 owned native fixture leaves preserved all hashes and increased free space149327872->205398016B. No user/VM image/configuration change.
+
+### 2026-10-17T16:31Z review defects reproduced; candidate53 held locally
+
+Candidate53 built all three architectures and matched ICDs, package64941c044ba0bb5dfc2953627a0164d5747502246a8c83475765beab79b88a27 / manifest95977c015b2b7558278bd8df2a14e69f04c16889377cbb0d00bfbf45b3387066. It has39controlled CPU cases but is NOT uploaded, validated as a package, bound or restarted. Review found native destination Present still attempted CPU download after a successful callback, and final AHB FREE failure lost retryable identity. Controlled source-linked typed Present red01 reproduced actual887a0004 after1successful Present callback; native-free-red01 reproduced release returning success despite failed FREE. Fixes in progress; build32 pending.
+
+Present now prepares the native destination layout/submission before the opaque callback and bypasses CPU refresh afterwards. Added preallocated native retirement records retaining exact kernel surface identity and separately owned KMT adapter; failed final FREE propagates and queues for retry before further creation or terminal cleanup. Need regressions for persistent/reentrant cleanup and actual GPU untouched-destination/deferred-clear handoff. Reviewer also found repeated DDI OpenResource of the same native key is rejected by RuntimeGpu owner equality; preserved same-token alias proof does not cover it. This remains an explicit blocker for general native OpenResource readiness and must be addressed. DXVK52/soleVM7800 remain unchanged.
+
+### 2026-10-17T16:43Z retirement controls and full-size handoff passed
+
+Hardware21-handoff-primary-full passed13GPUsubmits,2handoff+2base+5rotation frame checks, each5788160pixels/0mismatches. Production RuntimeMemory primary AHBs and deferred-clear/untouched layout handoff exercised; Present0, no display acceptance. Typed Present green02 PASS95, allocation regression7338 and terminal302; native-free green02 PASS538. Review queue enqueue-during-drain RED reproduced new acquisition while a matching failure remained pending. Final locked queue scan now returns WAS_STILL_DRAWING; green01 PASS624 with27creates/frees, plus lease82 covering retained source, adapter/generation filtering and malformed-successful-FREE no-double-free. Existing DXVK52 and soleVM unchanged; candidate53 remains local known-defect baseline.
+
+Next implement repeated native open ownership using one canonical runtime token/IOVA per native key and per-open handle/owner/residency registration, exact revoke on failure/destruction, callback reentry validation, and active-handle selection at submission. Matched ICD already reuses a BO by token; its cached-handle duplicate check must not treat a retired first handle as current. Official D3D10 DestroyResource requires all views destroyed but prior GPU/CS work still requires drain. General native OpenResource and ordinary Present remain unvalidated; fresh candidate54 follows these controls.
+
+
+### 2026-10-17T17:07Z native lifetime controls passed; candidate54 building
+
+Hardware22-reopen-primary-full (PID3700,16:53:31Z) passed13GPUsubmits and9full3040x1904 frames with5788160pixels each/zero mismatches after revoking the first registration. This is one real KMT handle with independent owners, Present0, not cross-process/independent-open-handle hardware proof. Canonical token/IOVA is now shared per native key; per-open active handle/residency records and exact revoke preserve surviving owners. Matched ICD reuses token identity rather than the cached first handle; packaged-icds02 verifies source unchanged and all3architectures.
+
+Source-linked controls reproduced retain-after-identity-revoke (retain-red01), Creating cancellation during context creation (creating-cancel-red01), duplicate Evict after owner transfer (evict-red01), and MakeResident retry/queue creation after revoke (revoke-paging-red01). Fixed context cancellation guards, pendingNative registration before adopt/allocate, post-callback handle selection and detached eviction residency. Full runtime regression initially exposed dropped accepted E_PENDING fence on cancellation; preserved this queue dependency without reusing the revoked handle. cpu-native-lifetime-green02 PASS3761, actualexit0/PID8056/17:07:15Z; typed DDI lifetime-green01 PASS271 cumulative, including95Present checks and6Open scenarios, imports5/releases5. These are CPU/WARP controlled contracts, not hardware admission.
+
+Build49 passed. Fresh source-frozen candidate54 now compiling arm64/x64/x86 against previous52 with native Present/runtime GPU/allocation/lease/rotation/primary/open-primary fixtures. Candidate53 remains local known-defect baseline, never uploaded/bound. Production DXVK52, soleVM7800/KMD58631/DWM2168 and actual6656MiB unchanged. Compression04 preserved hashes of79owned fixture leaves, free134430720->155484160B. Next package54 with matched native ICDs, validate all packaged CPU cases, grant exact runtime file ACL, bind54 and perform bounded ordinary Microsoft DDI Present before any full same-VM reboot. Original165Hz/cursor<=1pp/zero-copy/Vulkan>=18050 acceptance remains open.
+
+
+### 2026-10-17T17:26Z candidate54 validated and bound; same-VM reboot requested
+
+Stage02 stopped safely at its25MB extraction margin. Exact candidate-only executable compression with compact /C /F /EXE:LZX preserved every checked SHA and increased free43089920->141369344B. Microsoft compact documentation confirms LZX is executable compression; applied only to our candidate leaves, no OS-wide compression. Resume-stage54-validation verified every existing delta member, extracted/compressed remaining leaves, linked59exact previous members and revalidated all102manifest entries. All45packaged CPU fixtures acrossARM64/x64/x86 PASS (stage03completed17:25:07Z), no hardware admission. Candidate archive stayed intact through validation, then exact validated temporary archive removed; local archive and all staged payloads retained. File-only runtime ACL applied; native+WoW legacy/modern slots bound54 at17:26:31Z, coreARM64 4ce656686629c5a2b6b65cf6025f96b00eaf757efd8f696192c5eb62af2de678.
+
+Clean shutdown preflight passed withunchanged58631SYS/reset0 and oldDWM2168/Explorer6816. Same registered VM shutdown requested, daemon-controlled restart now pending with exactconfig6e9063f5/actual6656MiB. Plan adjusted to load54inDWM before ordinary Present so compositor and test processes share the same native-surface implementation. No Mesa rollback, no secondVM. Next fresh DWM/adapter health, bounded ARM64 FL11/SM5/API Present, remainingDX8-DX11 matrix, thenpaired165Hz acceptance. Original goals remain active.
+
+
+### 2026-10-17T17:52Z candidate54 failed startup; guarded maintenance diagnosis
+
+Controlled same-registration boot1380 briefly exposed SSH, but early collector SCP timed out and no Windows collector ran. Native AHB resources6-9 were created; resource6 Fill power-of-two logs reached128 before CTRL-QUEUE-RESIGNAL. Sampling does not prove the exact final fill count. Host snapshot shows two busy vCPUs and sleeping GPU worker threads; no proven Windows stack/root cause. Daemon reports exit32 and automatic same-registration restarts6244/9157. Power-button delivered to9157, subsequent state stopped. No daemon forced-stop was executed at that stage.
+
+Maintenance changes only gpu-0=false/simplefb=true; original6656MiB/image/firmware unchanged. Exactoriginalconfiguration SHA6e9063f52fc5ed99f305ab6b49370879f0580ed0d131f107376759eeae54f7e8 is fsynced device-only at /data/local/tmp/dxvk54-original-config-20261017.json; restore using set-dxvk54-maintenance-20261017.py --restore while stopped. TemporarySHAfdb669aaa51e767c04ad4ad11dd52b02bd74dcf0141e06db7dc3edb2632caaee, solePID10774. All8vCPUs idle in Gunyah, no --gpu in commandline. SSH still offline after bounded checks; bridge oldguestIPv6 FAILED/no fresh guest neighbor. Two device-only frame OCRs show only BdsDxe Boot0002 handoff, not a proven Windows failure location. No54API/Present tests have run. Next cold on-device read-only diagnostics after normal shutdown request; do not repeat blind54boots or revert to Mesa. Evidence artifacts/dxvk-system-integration-20261013/stage54-{boot-watch02,boot02-threads01,maintenance-config01,maintenance-start01,maintenance-threads01,maintenance-frame01,maintenance-frame02}*.
+
+
+### 2026-10-17T18:17Z production-order native paging hardware proof
+
+Original registered7850/config6e9063f5/6656MiB restored;52health01 passed exact four DWM modules/core4a4dd633, DWM1032/Explorer6648, LUID00000000:00006cc8/gen2/reset0. Guest clock initially +7h corrected later; retain actual raw times. New test-only KmtRuntimePaging callbacks bridge productionRuntimeGpu to realKMT MakeResident->IMPORT->GPUwait->Render, noCPUwait orimplicitRenderresidency. Reviewer issues fixed: realinitialadapterquery, pending-native-fence wait gate, explicitqueuecleanup beforedevice close/no expiredhandle retry. ARM64build03PASS.
+
+Hardware23-small64 completed13GPUsubmits and9pixelchecks4096each/mismatches0, all6residency/eviction and4allocation pairs balanced, desktop/stateunchanged. It correctly failed strictcoverage because nativefence7002 completed beforeGPUwait; this is not a demonstrated driver failure. Hardware24-full3040x1904 PID6736 exit0/drained2.2475855s PASS; two25,346,048BprimaryAHBs, pendingimports2, realGPUwait1 withnativepending1 (observed7001<surfaceTarget7002, queuedtarget7006),13submits,9full5788160pixelchecks with0mismatches, residency6/6, allocation4/4, queue1/1, noresiduals. DWM1032/Explorer6648 andzeroreset/timeout/queuefailurestate unchanged. Present0: this does not explain54coldDWMbootfailure or proveordinaryPresent/cross-process/native165Hz. No productionbehaviorchange,54stillretained,52 remainsbound.
+
+
+### 2026-10-17T18:28Z warm DWM refresh did not refresh adapter names
+
+Guarded binding02 passed and deliberate Stop-Process1032 yielded DWM7928. All80samples over23seconds had reset/firsttimeout/queuefailure0 and exact54capture refused (no exact loaded54core). Freshhealth01 rejected RequireLifecycleNames; therefore this run is not54runtimeproof. SingleVM7850/original6e9063f5/6656MiB unchanged viaADB. New diagnostic refresh-dxvk54-adapter script defaultsread-only, checks current54registry, effective52names/LUID6cc8/gen2, exact58631hash and uniqueDWM7928 before optional one device restart. Concurrent RPM sampling does not suspend DWM. No registry update/VMrestart or automatedrollback in adapterrefresh. Next execute read-onlypreflight then scopedPnPrestart to separate warmactivation from coldboot failure.
+
+
+### 2026-10-17T18:35Z warm54 reproduces failure; same-VM loop stopped
+
+Read-onlypreflight02 provedregistry54/effectivenames52/currentDWM7928core52. PnP device restart PID2984 exited0/drained0.727s, newLUID261e48/gen2/effectivenames54; oldDWM retained52. Explicitpost-PnPDWMrestart02 yielded9584 with exact54core. Laststreamedsampleindex10/tick1032296/guest18:29:48 hadDDI0/GPU0/allocation0/residency0/DXGIcount1; RPMreader currently omitted incompleteDXGIrecord, so callkind not captured. SSHstreamlostafter~3s, repeatedhostCTRL-QUEUE-RESIGNAL. HostAHBs24-27created18:30:02-03AndroidUTC (clock~+17s); no samplednewpagingline is NOTproof no paging. After~3min original7850reset/autorestarted25404; later27973. Onepowerbutton25404returned0butcouldnotkeepVMstopped. After>60s guardeddaemonvm_stop27973 confirmedstopped18:35:21AndroidUTC/config6e9063f5unchanged; guestcleanshutdownunproved.
+
+DirectAndroidsocketbrieflyreadSSHbannerwhileforwardfailed; laterdirectADBSSHalso timedout andsameVMnewPIDobserved. Proxyfirstattemptfailedpermissionbecausehelpernotexecutable; invokingwithshfixedexecutionbutnotconnectivity. Noforwardreplacement or routechange. Adapterdiagnosticinitialreadonlyparsefailedcatchspacing; fixedbeforeanymutation. Newpending-ringreaderpreparedlocally; itsuploadfailed, so notexecuted. No productioncodechange/ordinary54APIpass. Next coldimageboundeddiagnostics (hiveSHA,watchdogdumps,retainedwarmringtail), rescueexistingworkingcopyinsoleVMandDXVK-onlyrecoverybeforefocused SYSTEM54probe/stackcapture.
+
+
+### 2026-10-17T18:44Z warm recovery guard diagnosis
+
+Sole registered rescue29793/config57951b2a verified through ADB; originalD: nonboot GUID and6656MiB unchanged. Native read of SYSTEM d18abb97 and emptyLOG1 match stopped-image reader; LOG2 native f3b61a97 differs from raw-parser16330e29. Cause not established. First rebind preflight stopped before hive load/write, leaving empty backup directory. Hidden SYSTEM.LOG1 initially required Get-Item -Force; corrected reader02 returned all hashes/free original490582016B. Retry pins these Windows-native bytes, uses a fresh evidence root -02, retains initial empty directory and all54 artifacts. No generic hash bypass.
+
+Read-only reviewer identified queued Present waiting for PendingSurfaceWriters while owning the only passive dispatcher, blocking a later writer; current ownership test artificially retires that writer in onWait. Mode-change Present does not own the dispatcher, so warm firstDXGIcall must still be captured before attributing this source defect. Also identified unchanged-current-front repetition rejecting a pending release observer despite no active writer. Both remain hypotheses pending focused controls, no production edit yet.
+
+
+### 2026-10-17T19:01Z warm03 pending rings and successful selective dump
+
+Binder03 and scoped PnP02 passed (pnputil2008 exit0/drained0.711s), effective54/LUID11a4b7/gen2 witholdDWM2376still52. Collectorpreflightpassed511733760Bfree. Execute wroteandflushedonlynextbootUMDtuples52, confirmedcurrentcached54identityunchanged, thenexplicitDWMrestart2376->1172. Exact54core4ce65668observed. Samples230/~20s: firstDXGIcallPresentkind3flags1 at18:56:59.219;7completedBltPresentsS_OK and7residencykind8S_OK. OfficialDXGI_DDI_PRESENT_FLAGS:1isBlt, notFlip andnot API-levelTEST. DDI/GPU/allocationfailurerings0. Firstreset1sample49 at18:57:02.143/tick373718 alsofirstpendingSetDisplayModekind2; nofirstsynchronoustimeout/queuefailure. Cannotattributecausefromcoincidencealone.
+
+Firstselectivelivestackdump succeededstatus0/408ms/125296640B, metadataandtriggertracefsynceddevice-only. LaterfaultcaptureuploadsuccessbutSSHcommandtimedout; completionunknown. Original13469automaticallyrestarted20352, recoveryguardworked:health04PASS exactDXVK52/DWM1996/LUID6c96/gen2/reset0/free399699968. Originalconfig6e/6656MiBunchanged,norescueorMesafrontend.
+
+Hostcorrelatedwindow: nativeAHBresources20-23/buffers1790-1793created3040x1904/25346048B. Resource20Fill65536Bsample1->128 took1.604s, eachhostfill30-166us; power-of-twologsamplingcannotstatefinalcompletedcount. CTRL-QUEUE-RESIGNALbegins18:57:19Android(~+17sclock). A fullsingleprimaryneeds387serialcommands under64Kbound. This is a concrete transportlatency lead, notyetprovenTDRuntilkernelstack/resetprovenance. Exact58631symbols/outputs verified bynewdevice-onlyofflineCDBanalyzer; analysis01running.

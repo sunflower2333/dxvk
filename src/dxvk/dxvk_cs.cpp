@@ -21,17 +21,25 @@ namespace dxvk {
     auto cmd = m_head;
     
     if (m_flags.test(DxvkCsChunkFlag::SingleUse)) {
-      m_commandOffset = 0;
-      
-      while (cmd != nullptr) {
-        auto next = cmd->next();
-        cmd->exec(ctx);
-        cmd->~DxvkCsCmd();
-        cmd = next;
-      }
-
       m_head = nullptr;
       m_next = &m_head;
+
+      try {
+        while (cmd != nullptr) {
+          auto next = cmd->next();
+          cmd->exec(ctx);
+          cmd->~DxvkCsCmd();
+          cmd = next;
+        }
+      } catch (...) {
+        // Earlier commands have already released their captured resources.
+        // Only the throwing command and its unexecuted tail remain live.
+        m_head = cmd;
+        reset();
+        throw;
+      }
+
+      m_commandOffset = 0;
     } else {
       while (cmd != nullptr) {
         cmd->exec(ctx);
@@ -98,9 +106,9 @@ namespace dxvk {
   DxvkCsThread::DxvkCsThread(
     const Rc<DxvkDevice>&   device,
     const Rc<DxvkContext>&  context)
-  : m_device(device), m_context(context),
-    m_thread([this] { threadFunc(); }) {
-    
+  : m_device(device), m_context(context) {
+    if (!device->disableExtraThreads())
+      m_thread = dxvk::thread([this] { threadFunc(); });
   }
   
   
@@ -110,11 +118,16 @@ namespace dxvk {
     }
     
     m_condOnAdd.notify_one();
-    m_thread.join();
+    if (m_thread.joinable()) m_thread.join();
   }
   
   
   uint64_t DxvkCsThread::dispatchChunk(DxvkCsChunkRef&& chunk) {
+    if (m_device->disableExtraThreads()) {
+      const uint64_t seq = ++m_queueOrdered.seqDispatch;
+      executeInline(DxvkCsQueue::Ordered, std::move(chunk), seq);
+      return seq;
+    }
     uint64_t seq;
 
     { std::unique_lock<dxvk::mutex> lock(m_mutex);
@@ -132,6 +145,12 @@ namespace dxvk {
 
 
   void DxvkCsThread::injectChunk(DxvkCsQueue queue, DxvkCsChunkRef&& chunk, bool synchronize) {
+    if (m_device->disableExtraThreads()) {
+      auto& q = getQueue(queue);
+      const uint64_t timeline = synchronize ? ++q.seqDispatch : 0;
+      executeInline(queue, std::move(chunk), timeline);
+      return;
+    }
     uint64_t timeline = 0u;
 
     { std::unique_lock<dxvk::mutex> lock(m_mutex);
@@ -160,6 +179,36 @@ namespace dxvk {
         return getCounter(queue).load() >= timeline;
       });
     }
+  }
+
+
+  void DxvkCsThread::executeInline(
+          DxvkCsQueue queue, DxvkCsChunkRef chunk, uint64_t sequence) {
+    // Own the chunk before executing anything that can reenter the frontend.
+    // Device loss leaves no usable recording context. Discard later chunks
+    // while still releasing their owners and retiring their CS sequence.
+    try {
+      if (m_device->getDeviceStatus() == VK_SUCCESS) {
+        m_context->addStatCtr(DxvkStatCounter::CsChunkCount, 1);
+        chunk->executeAll(m_context.ptr());
+      }
+    } catch (const DxvkError& e) {
+      // Submission failure is already observable through the device status.
+      // Do not let it escape a frontend destructor during runtime removal.
+      if (m_device->getDeviceStatus() == VK_SUCCESS) {
+        if (sequence)
+          getCounter(queue).store(sequence);
+        throw;
+      }
+      Logger::err(e.message());
+    } catch (...) {
+      if (sequence)
+        getCounter(queue).store(sequence);
+      throw;
+    }
+
+    if (sequence)
+      getCounter(queue).store(sequence);
   }
 
 

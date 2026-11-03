@@ -12,6 +12,12 @@
 #define MWD_STYPE_SUPPORT 0x7fff2330
 #define MWD_STYPE_DEVICE  0x7fff2331
 #define MWD_STYPE_IMPORT  0x7fff2332
+/* Additive support bit for exact Native AHB image references. Old ICDs keep
+ * flags=1 and reject the allocation flag, so import cannot silently enter
+ * their conservative all-live-BO submission path. */
+#define MWD_SUPPORT_NATIVE_SURFACE 0x2u
+#define MWD_ALLOCATION_NATIVE_SURFACE 0x10u
+#define MWD_NATIVE_SURFACE_REFERENCE UINT32_MAX
 #ifdef _WIN32
 #define MWD_CALL __stdcall
 #else
@@ -80,4 +86,3 @@ static inline int mwd_callbacks_valid(const struct mwd_callbacks *cb)
       cb->completed && cb->status;
 }
 #endif
-

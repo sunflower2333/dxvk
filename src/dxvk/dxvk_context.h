@@ -932,6 +932,12 @@ namespace dxvk {
       const DxvkImageUsageInfo&       usageInfo,
             VkImageLayout             layout);
 
+    // Preparation can allocate and emit commands. Commit is a pure CPU
+    // transaction after submission of every participant's preparation.
+    void prepareImageIdentityRotation(const Rc<DxvkImage>& image);
+    void commitImageIdentityRotation(const Rc<DxvkImage>& image,
+      const DxvkImageStorageIdentity& identity) noexcept;
+
     /**
      * \brief Ensures that an image supports the given usage
      *
@@ -1003,6 +1009,8 @@ namespace dxvk {
       const VkImageSubresourceRange&  dstSubresources,
             VkImageLayout             srcLayout,
             VkImageLayout             dstLayout);
+
+    void prepareImageForExternalWrite(const Rc<DxvkImage>& image);
     
     /**
      * \brief Updates a buffer

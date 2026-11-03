@@ -21,6 +21,7 @@ public:
     unsigned renders = 0, escapes = 0, residents = 0, evictions = 0;
     std::atomic<unsigned> wrongThreads{0}, badCookies{0};
     unsigned coreErrors = 0, malformedOutputs = 0;
+    unsigned nativeReads = 0, nativeWrites = 0;
   } counts;
 
   KmtComputeTransport() {
@@ -41,15 +42,24 @@ public:
     if (!m_adapter) return E_FAIL;
     D3DKMT_ADAPTERTYPE type = {};
     hr = adapterInfo(KMTQAITYPE_ADAPTERTYPE, &type, sizeof(type));
+    std::printf("DX11_KMT_ADAPTER_TYPE hr=%08lx flags=%08x software=%u render=%u\n",
+      (unsigned long)hr, type.Value, unsigned(type.SoftwareDevice), unsigned(type.RenderSupported));
     if (hr != S_OK) return hr;
-    if (type.SoftwareDevice || !type.RenderSupported) return DXGI_ERROR_UNSUPPORTED;
     std::array<unsigned char, dxvk::umd::RuntimeIdentityReplySize> reply{};
     hr = adapterInfo(KMTQAITYPE_UMDRIVERPRIVATE, reply.data(), UINT(reply.size()));
     if (hr != S_OK) return hr;
-    if (!dxvk::umd::readRuntimeIdentity(reply.data(), reply.size(), m_identity)
+    const bool decoded = dxvk::umd::readRuntimeIdentity(reply.data(), reply.size(), m_identity);
+    std::printf("DX11_KMT_IDENTITY decoded=%u generation=%llu capabilities=%llu luid_equal=%u\n",
+      unsigned(decoded), (unsigned long long)m_identity.generation,
+      (unsigned long long)m_identity.capabilities,
+      unsigned(!std::memcmp(m_identity.luid.data(), &luid, sizeof(luid))));
+    if (!decoded
         || std::memcmp(m_identity.luid.data(), &luid, sizeof(luid))) return DXGI_ERROR_UNSUPPORTED;
     UINT version = 0;
     hr = adapterInfo(KMTQAITYPE_DRIVERVERSION, &version, sizeof(version));
+    std::printf("DX11_KMT_VERSION hr=%08lx version=%u minimum=%u\n",
+      (unsigned long)hr, version, unsigned(KMT_DRIVERVERSION_WDDM_2_0));
+    if (type.SoftwareDevice || !type.RenderSupported) return DXGI_ERROR_UNSUPPORTED;
     if (hr != S_OK || version < KMT_DRIVERVERSION_WDDM_2_0)
       return hr != S_OK ? hr : DXGI_ERROR_UNSUPPORTED;
     D3DKMT_CREATEDEVICE created = {}; created.hAdapter = m_adapter;
@@ -89,6 +99,8 @@ public:
       counts.locks, counts.unlocks, counts.renders, counts.escapes, counts.residents, counts.evictions,
       counts.wrongThreads.load(), counts.badCookies.load(), counts.coreErrors, counts.malformedOutputs,
       m_allocations.size(), m_resident.size(), static_cast<unsigned long long>(m_pendingPaging));
+    std::printf("DX11_KMT_NATIVE_COUNTS reads=%u writes=%u remaining_borrowed=%zu\n",
+      counts.nativeReads, counts.nativeWrites, m_nativeAllocations.size());
   }
   // Callers with named negative/query controls separately prove each exact
   // error callback before supplying its count. The original zero-error gate
@@ -99,11 +111,12 @@ public:
       && counts.locks && counts.locks == counts.unlocks && counts.renders && counts.escapes >= 2
       && counts.residents && counts.residents == counts.evictions
       && !counts.wrongThreads && !counts.badCookies && counts.coreErrors == expectedCoreErrors && !counts.malformedOutputs
-      && !m_context && !m_pendingPaging && m_allocations.empty() && m_resident.empty();
+      && !m_context && !m_pendingPaging && m_allocations.empty() && m_resident.empty() && m_nativeAllocations.empty();
   }
   HRESULT close() {
     HRESULT hr = S_OK;
     auto keep = [&](HRESULT status) { if (hr == S_OK && status != S_OK) hr = status; };
+    if (!m_nativeAllocations.empty()) keep(E_FAIL);
     // A failed probe still releases its raw kernel device. These cleanup calls
     // do not turn residual UMD ownership into a successful balance oracle.
     if (m_context) {
@@ -136,7 +149,7 @@ public:
       const HRESULT released = result(D3DKMTDestroyDevice(&request)); keep(released);
       if (released == S_OK) {
         m_device = m_context = m_pagingQueue = m_pagingSync = 0;
-        m_pendingPaging = 0; m_allocations.clear(); m_resident.clear();
+        m_pendingPaging = 0; m_allocations.clear(); m_resident.clear(); m_nativeAllocations.clear();
       }
     }
     if (m_adapter && !m_device) {
@@ -148,16 +161,24 @@ public:
   }
 
 private:
+  friend class KmtNativeSurface;
+  friend class KmtRuntimePaging;
   struct Allocation { D3DKMT_HANDLE handle; bool locked; };
+  struct NativeAllocation { D3DKMT_HANDLE handle; uint64_t key, size, generation; bool used; };
   inline static std::atomic<KmtComputeTransport*> s_owner{nullptr};
   char m_adapterCookie = 0, m_deviceCookie = 0, m_contextCookie = 0, m_coreCookie = 0;
   DWORD m_thread = GetCurrentThreadId();
   D3DKMT_HANDLE m_adapter = 0, m_device = 0, m_context = 0;
   D3DKMT_HANDLE m_pagingQueue = 0, m_pagingSync = 0;
   UINT64 m_pendingPaging = 0;
+  bool m_runtimeResidency = false;
+  UINT64 m_runtimeUnqueuedPaging = 0;
   LUID m_luid = {};
   dxvk::umd::RuntimeIdentity m_identity;
   std::vector<Allocation> m_allocations;
+  // Borrowed wrapper handles are eligible for residency, never Allocate,
+  // Lock or Deallocate callbacks. KmtNativeSurface retains their ownership.
+  std::vector<NativeAllocation> m_nativeAllocations;
   std::vector<D3DKMT_HANDLE> m_resident;
   HRESULT m_error = S_OK;
 
@@ -240,6 +261,10 @@ private:
   }
   Allocation* allocation(D3DKMT_HANDLE handle) {
     for (auto& entry : m_allocations) if (entry.handle == handle) return &entry;
+    return nullptr;
+  }
+  const NativeAllocation* nativeAllocation(D3DKMT_HANDLE handle) const {
+    for (auto& entry : m_nativeAllocations) if (entry.handle == handle) return &entry;
     return nullptr;
   }
   static HRESULT APIENTRY allocate(HANDLE cookie, D3DDDICB_ALLOCATE* args) {
@@ -343,7 +368,7 @@ private:
       auto owned = allocation(handle);
       // Turnip keeps command/global BOs mapped while submitting GPU references.
       // A valid owned CPU mapping alone does not prohibit GPU residency.
-      if (!owned) return E_INVALIDARG;
+      if (!owned && !nativeAllocation(handle)) return E_INVALIDARG;
       if (std::find(m_resident.begin(), m_resident.end(), handle) != m_resident.end()) continue;
       D3DDDI_MAKERESIDENT request = {}; request.hPagingQueue = m_pagingQueue;
       request.NumAllocations = 1; request.AllocationList = &handle; request.Flags.CantTrimFurther = 1;
@@ -379,7 +404,8 @@ private:
     auto s = owner(cookie, true);
     if (!s || !args || args->hDevice != &s->m_deviceCookie || args->hContext != &s->m_contextCookie
         || !s->m_context || !args->pPrivateDriverData
-        || (args->PrivateDriverDataSize != 64 && args->PrivateDriverDataSize != 56)
+        || (args->PrivateDriverDataSize != 64 && args->PrivateDriverDataSize != 56
+            && args->PrivateDriverDataSize != 88)
         || args->Flags.Value) return E_INVALIDARG;
     D3DKMT_ESCAPE request = {}; request.hAdapter = s->m_adapter; request.hDevice = s->m_device;
     request.hContext = s->m_context; request.Type = D3DKMT_ESCAPE_DRIVERPRIVATE; request.Flags = args->Flags;
@@ -393,8 +419,49 @@ private:
     auto s = owner(cookie, false);
     if (!s || !args || !s->m_context || args->hContext != &s->m_contextCookie
         || args->Flags.Value || args->BroadcastContextCount) return E_INVALIDARG;
-    const HRESULT ready = s->resident(*args);
-    if (ready != S_OK) return ready;
+    if (!s->m_nativeAllocations.empty()) {
+      // Check the real ABI v2 imported table and its actual VidMm indices,
+      // independently of the production serializer before sending to KMD.
+      uint32_t header[16] = {};
+      if (!args->pNewCommandBuffer || args->CommandOffset || args->CommandLength < sizeof(header)
+          || args->CommandLength > args->NewCommandBufferSize || !args->pNewAllocationList
+          || args->NumAllocations > args->NewAllocationListSize) return E_INVALIDARG;
+      std::memcpy(header, args->pNewCommandBuffer, sizeof(header));
+      if (header[0] != 0x504d5644 || header[1] || header[2] != args->CommandLength
+          || header[3] || header[4] != 1 || (header[5] & ~1u)) return E_INVALIDARG;
+      const uint32_t count = header[13];
+      if ((header[5] == 0) != (count == 0) || count > 256
+          || (count && (header[14] != 2 || header[15]
+              || uint64_t(header[12]) + uint64_t(count) * 40 != header[10]))
+          || header[10] > args->CommandLength) return E_INVALIDARG;
+      for (uint32_t i = 0; i < count; ++i) {
+        uint64_t data[5] = {};
+        std::memcpy(data, static_cast<const uint8_t*>(args->pNewCommandBuffer) + header[12] + i * 40, 40);
+        const uint32_t access = uint32_t(data[4]), index = uint32_t(data[4] >> 32);
+        if (!index || index > args->NumAllocations || !access || (access & ~3u)) return E_INVALIDARG;
+        const auto& entry = args->pNewAllocationList[index - 1];
+        const auto* native = s->nativeAllocation(entry.hAllocation);
+        if (!native || !native->used || data[0] != native->key || !data[1] || data[1] % 4096
+            || data[2] != native->size || data[3] != native->generation
+            || bool(entry.WriteOperation) != bool(access & 2)) return E_INVALIDARG;
+        s->counts.nativeReads += (access & 1) != 0;
+        s->counts.nativeWrites += (access & 2) != 0;
+        std::printf("DX11_KMT_NATIVE_REFERENCE key=%llu allocation=%u index=%u access=%u bytes=%llu\n",
+          (unsigned long long)data[0], entry.hAllocation, index, access, (unsigned long long)data[2]);
+      }
+    }
+    if (s->m_runtimeResidency) {
+      // The production RuntimeGpu must enqueue every residency reference and
+      // its GPU dependency. Do not silently repair the test in RenderCb.
+      if (s->m_runtimeUnqueuedPaging || !args->pNewAllocationList
+          || args->NumAllocations > args->NewAllocationListSize) return E_FAIL;
+      for (UINT i = 0; i < args->NumAllocations; ++i)
+        if (std::find(s->m_resident.begin(), s->m_resident.end(),
+            args->pNewAllocationList[i].hAllocation) == s->m_resident.end()) return E_FAIL;
+    } else {
+      const HRESULT ready = s->resident(*args);
+      if (ready != S_OK) return ready;
+    }
     D3DKMT_RENDER request = {}; request.hContext = s->m_context;
     request.CommandOffset = args->CommandOffset; request.CommandLength = args->CommandLength;
     request.AllocationCount = args->NumAllocations; request.PatchLocationCount = args->NumPatchLocations;

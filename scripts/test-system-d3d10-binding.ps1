@@ -9,6 +9,7 @@ param(
     [ValidateSet('10_0','10_1')][string]$D10Profile='10_0',
     [ValidateSet('offscreen','present')][string]$D9Phase='offscreen',
     [ValidateSet('offscreen','present')][string]$D11Phase='offscreen',
+    [switch]$BindModernSlots,
     [string]$PrivateLoader='', [string]$PrivateLoaderSha256='',
     [string]$Probe='', [string]$ProbeSha256='', [string]$Front='', [string]$FrontSha256='',
     [string]$Core='', [string]$CoreSha256='', [string]$Runner='',
@@ -355,6 +356,8 @@ function Restore-Tuple($Value,[string]$Reason) {
             $phase=Get-Content -LiteralPath $intent -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($Value.api -ceq '8') {
                 if ($phase.schema -ne 3 -or $phase.owner_pid -ne $Value.owner_pid -or $phase.registry_subkey -cne $Value.registry_subkey -or $phase.selected_wow_slot -ne 0 -or $phase.selected_value_name -cne 'UserModeDriverNameWoW' -or $phase.selected_view -ne 0x100 -or $phase.only_wow_legacy_slot -ne $true -or $Value.binding_value_name -cne 'UserModeDriverNameWoW') { throw 'Protected API8 WoW mutation intent differs from this backup owner' }
+            } elseif ($phase.schema -eq 4) {
+                if ($Value.api -cne '11' -or !(Lifecycle-Enabled $Value) -or !$Value.bind_modern_slots -or $phase.owner_pid -ne $Value.owner_pid -or $phase.registry_subkey -cne $Value.registry_subkey -or @($phase.selected_native_slots).Count -ne 2 -or $phase.selected_native_slots[0] -ne 1 -or $phase.selected_native_slots[1] -ne 2 -or $phase.only_native_modern_slots -ne $true) { throw 'Protected combined D10/D11 mutation differs from this backup owner' }
             } elseif ($phase.schema -ne 2 -or $phase.owner_pid -ne $Value.owner_pid -or $phase.registry_subkey -cne $Value.registry_subkey -or $phase.selected_native_slot -ne $Value.native_slot -or $Value.native_slot -notin @(0,1,2) -or $phase.only_native_tuple_slot -ne $true) { throw 'Protected mutation intent differs from this backup owner/selected slot' }
             # Intent is durable BEFORE RegSet; a partial/failed write still needs
             # raw replay. Never replay an unused pre-write backup on cancellation.
@@ -427,6 +430,7 @@ if ($Role -ne 'Controller') {
 }
 Add-Type -Path $native
 if ($Role -ceq 'Controller') {
+    [DxvkBindingNative01]::RequireModernBinding($BindModernSlots.IsPresent,$Api,$RootAuthorizeLifecycleRestart.IsPresent)
     $lifecyclePhase=$D11Phase; if ($Api -in @('8','9','9ex')) { $lifecyclePhase=$D9Phase }
     [DxvkBindingNative01]::RequireLifecycleMode($RootAuthorizeLifecycleRestart.IsPresent,$ApplyReviewedTuple.IsPresent,$Api,$lifecyclePhase,$WaitForReviewedRefresh.IsPresent)
 }
@@ -529,7 +533,10 @@ public static class DxvkBindingAsync01 {
             [DxvkBindingNative01]::RequireLifecycleNames($probeLuid,[string[]]$value.original_slots,$bound)
             if ($forward.wow_names.passed -ne $true -or $forward.wow_names.current_luid -cne $probeLuid -or $forward.wow_names.expected[0] -ine $value.core) { throw 'Protected actual I386 WoW candidate selection required' }
             $status.effective_candidate_selected=$true; $status.wow_candidate_names=$forward.wow_names
-        } else { $status.effective_candidate_selected=$bound.Names[$value.native_slot].Name -ieq $value.front }
+        } else {
+            $status.effective_candidate_selected=$bound.Names[$value.native_slot].Name -ieq $value.front
+            if ($value.bind_modern_slots) { $status.effective_candidate_selected=$status.effective_candidate_selected -and $bound.Names[1].Name -ieq $value.front }
+        }
         # Existing proven runtime-lifecycle payload contract, confined to this
         # worker and its owned probe; no desktop/system environment changes.
         if ($value.api -ceq '8') {
@@ -673,11 +680,13 @@ $driver=[string](Get-PnpDeviceProperty -InstanceId $InstanceId -KeyName 'DEVPKEY
 if ($driver -cnotmatch '^\{4d36e968-e325-11ce-bfc1-08002be10318\}\\[0-9]{4}$') { throw 'Exact display-adapter class binding required' }
 $subkey='SYSTEM\CurrentControlSet\Control\Class\'+$driver
 $nativeSlot=1; if ($Api -ceq '11') { $nativeSlot=2 } elseif ($Api -cne '10') { $nativeSlot=0 }
+$nativeSlots=@($nativeSlot); if ($BindModernSlots) { $nativeSlots=@(1,2) }
 $bindingValueName='UserModeDriverName'; if ($Api -ceq '8') { $bindingValueName='UserModeDriverNameWoW' }
 if (!$ApplyReviewedTuple) {
     $readonly=[DxvkBindingNative01]::Snapshot($subkey)
     $readonlyNames=[DxvkBindingNative01]::Names($Luid); Check-Names $readonlyNames $Luid
     $readonlyRecord=[ordered]@{schema=1;instance=$InstanceId;driver=$driver;luid=$Luid;api=$Api;native_slot=$nativeSlot;registry_subkey=$subkey;original=$readonly;names=$readonlyNames;hardware_admission=$false;mutation=$false}
+    if ($BindModernSlots) { $readonlyRecord.selected_native_slots=$nativeSlots }
     if ($Api -ceq '8') { $readonlyRecord.Remove('native_slot'); $readonlyRecord.selected_wow_slot=0; $readonlyRecord.selected_value_name='UserModeDriverNameWoW'; $readonlyRecord.wow_tuple=[DxvkBindingNative01]::Tuple($readonly[1]) }
     Write-Json (Join-Path $RunRoot 'readonly-original.json') $readonlyRecord
     exit 0
@@ -696,6 +705,7 @@ $original=[DxvkBindingNative01]::Snapshot($subkey)
 $slots=[DxvkBindingNative01]::Tuple($original[0])
 $names=[DxvkBindingNative01]::Names($Luid); Check-Names $names $Luid
 $applyRecord=[ordered]@{schema=1;instance=$InstanceId;driver=$driver;luid=$Luid;api=$Api;native_slot=$nativeSlot;registry_subkey=$subkey;original=$original;names=$names;exclusive_adapter_lease_held=$true;hardware_admission=$false;mutation=$false}
+if ($BindModernSlots) { $applyRecord.selected_native_slots=$nativeSlots }
 if ($Api -ceq '8') { $applyRecord.Remove('native_slot'); $applyRecord.selected_wow_slot=0; $applyRecord.selected_value_name='UserModeDriverNameWoW' }
 Write-Json (Join-Path $RunRoot 'apply-original.json') $applyRecord
 foreach ($pair in @(@($Probe,$ProbeSha256),@($Front,$FrontSha256),@($Core,$CoreSha256),@($TokenScript,$TokenScriptSha256))) { Check-File $pair[0] $pair[1]; [DxvkBindingNative01]::RequireAbsolute($pair[0]) }
@@ -732,7 +742,7 @@ $selection.IcdJson=$VulkanIcd; $selection.IcdJsonSha256=$VulkanIcdSha256; $selec
 $approved=[DxvkApprovedPayloadPolicy01]::ValidateFiles($ApprovedPayload,$ApprovedPayloadSha256,$selection)
 $vulkanLibrary=$approved.IcdLibrary; $vulkanLoader=$approved.PrivateLoader
 if ($Api -ceq '8') { $root='C:\Users\Public\DxvkD3D8Candidate-'+$approved.SourceCommit.Substring(0,7)+'-'+$approved.CiRun; if ($Core -ine ($root+'\viogpudxvk.dll') -and $Core -ine ($root+'-icd02\viogpudxvk.dll')) { throw 'API8 directcore path must match its exact selected published source/run' } }
-Write-Json (Join-Path $RunRoot 'approved-payload-verified.json') ([ordered]@{schema=1;approved_payload=$ApprovedPayload;approved_payload_sha256=$ApprovedPayloadSha256;source_commit=$approved.SourceCommit;ci_run=$approved.CiRun;arch=$approved.Architecture;files=$approved.Files;metadata_only=$true;native_module_calls=0;hardware_admission=$false})
+Write-Json (Join-Path $RunRoot 'approved-payload-verified.json') ([ordered]@{schema=1;approved_payload=$ApprovedPayload;approved_payload_sha256=$ApprovedPayloadSha256;source_commit=$approved.SourceCommit;ci_run=$approved.CiRun;build_kind=$approved.BuildKind;build_id=$approved.BuildId;arch=$approved.Architecture;files=$approved.Files;metadata_only=$true;native_module_calls=0;hardware_admission=$false})
 $explorer=@(Get-Process explorer -IncludeUserName); $dwm=@(Get-Process dwm)
 if ($explorer.Count -ne 1 -or $dwm.Count -ne 1 -or !$explorer[0].UserName -or $explorer[0].SessionId -le 0 -or $dwm[0].SessionId -ne $explorer[0].SessionId) { throw 'Exactly one existing interactive desktop required' }
 $account=$explorer[0].UserName; $sid=([Security.Principal.NTAccount]$account).Translate([Security.Principal.SecurityIdentifier])
@@ -752,6 +762,7 @@ foreach ($copy in @(@($PSCommandPath,$controllerScript),@($native,$nativeCopy),@
 }
 $self=(Get-Process -Id $PID)
 $value=[ordered]@{schema=2;api=$Api;native_slot=$nativeSlot;d9_phase=$D9Phase;private_loader=$vulkanLoader;vulkan_library=$vulkanLibrary;owner_pid=$PID;owner_start_ticks=$self.StartTime.ToUniversalTime().Ticks;deadline_utc=[DateTime]::UtcNow.AddSeconds(120).ToString('o');registry_subkey=$subkey;original=$original;original_slots=$slots;luid=$Luid;control=$control;output=$output;mutex=('Global\VioGpuD10Binding-'+$runId);task_name=$taskName;restore_task_name=($taskName+'-restore');desktop_sid=$sid.Value;desktop_session=$explorer[0].SessionId;desktop_dwm_pid=$dwm[0].Id;desktop_explorer_pid=$explorer[0].Id;probe=$Probe;probe_sha256=$ProbeSha256;front=$Front;front_sha256=$FrontSha256;core=$Core;core_sha256=$CoreSha256;runner=$runnerCopy;runner_sha256=$runnerSha;token_script=$tokenCopy;vulkan_icd=$VulkanIcd;hold_event=('Local\VioGpuD10Validation-'+$runId)}
+$value.bind_modern_slots=$BindModernSlots.IsPresent
 $value.d11_phase=$D11Phase
 [DxvkBindingNative01]::BindingValueName($Api,$selection.Architecture) | Out-Null
 if ($Api -ceq '8') { $value.Remove('native_slot'); $value.selected_wow_slot=0; $value.binding_value_name='UserModeDriverNameWoW'; $value.original_wow_slots=[DxvkBindingNative01]::Tuple($original[1]); $value.d8_source_id=$D8SourceId; $value.hold_event='Local\VioGpuD8Validation-'+$runId }
@@ -780,6 +791,7 @@ $configFile=Join-Path $control 'config.json'; Write-Json $configFile $value; $co
 $sourceProfile='unregistered-validation8eeb20'; if ($Api -ceq '11') { $sourceProfile='dedicated-SYSTEM-D11-FL10_0-validation' } elseif ($Api -ceq '8') { $sourceProfile='ordinary-SYSTEM-D8-I386-direct-core' } elseif ($Api -cne '10') { $sourceProfile='ordinary-D9-probe739de05' }
 if ($Api -ceq '10' -and $D10Profile -ceq '10_1') { $sourceProfile='ordinary-SYSTEM-D10.1-validation' }
 $lifecycleWorker=$null; $watchdog=$null; $registered=$false; $restoreRegistered=$false; $status=[ordered]@{schema=1;source=$sourceProfile;api=$Api;native_slot=$nativeSlot;registry_restored=$false;hardware_admission=$false;production_admission=$false;default_replacement=$false}
+if ($BindModernSlots) { $status.selected_native_slots=$nativeSlots }
 if ($Api -ceq '8') { $status.Remove('native_slot'); $status.selected_wow_slot=0; $status.selected_value_name='UserModeDriverNameWoW' }
 try {
     $power=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -831,6 +843,9 @@ try {
         if ($Api -ceq '8') {
             $replacement=[DxvkBindingNative01]::ReplaceWowLegacy($original[1],$Core)
             Write-MutationIntent (Join-Path $control 'mutation-intent.json') ([ordered]@{schema=3;owner_pid=$PID;registry_subkey=$subkey;selected_wow_slot=0;selected_value_name='UserModeDriverNameWoW';selected_view=0x100;only_wow_legacy_slot=$true;utc=[DateTime]::UtcNow.ToString('o')})
+        } elseif ($BindModernSlots) {
+            $replacement=[DxvkBindingNative01]::ReplaceNativeModern($original[0],$Front)
+            Write-MutationIntent (Join-Path $control 'mutation-intent.json') ([ordered]@{schema=4;owner_pid=$PID;registry_subkey=$subkey;selected_native_slots=$nativeSlots;only_native_modern_slots=$true;utc=[DateTime]::UtcNow.ToString('o')})
         } else {
             $replacement=[DxvkBindingNative01]::ReplaceNativeSlot($original[0],$Front,$nativeSlot)
             Write-MutationIntent (Join-Path $control 'mutation-intent.json') ([ordered]@{schema=2;owner_pid=$PID;registry_subkey=$subkey;selected_native_slot=$nativeSlot;only_native_tuple_slot=$true;utc=[DateTime]::UtcNow.ToString('o')})
@@ -853,7 +868,7 @@ try {
             if ($Api -ceq '8') {
                 $wowExpected=[string[]]$value.original_wow_slots.Clone(); $wowExpected[0]=$Core
                 $wowForward=D8-Names $value 'forward' $forward.state.identity.Luid $wowExpected
-            } else { $expected[$nativeSlot]=$Front }
+            } else { foreach ($selectedSlot in $nativeSlots) { $expected[$selectedSlot]=$Front } }
             [DxvkBindingNative01]::RequireLifecycleNames($forward.state.identity.Luid,$expected,$forward.state.names)
             $forwardRecord=[ordered]@{schema=1;owner_pid=$PID;instance=$InstanceId;original_backup_luid=$Luid;state=$forward.state;restart=$forward.receipt}
             if ($Api -ceq '8') { $forwardRecord.wow_names=$wowForward }
@@ -883,6 +898,7 @@ try {
         if (![DxvkBindingNative01]::Same($replacement,[DxvkBindingNative01]::Read($subkey,0x100,$bindingValueName))) { throw 'Candidate tuple changed during refresh checkpoint' }
         $boundTimestamp=[Diagnostics.Stopwatch]::GetTimestamp()
         if ($Api -ceq '8') { Write-Json (Join-Path $control 'bound.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);api=$Api;selected_wow_slot=0;selected_value_name='UserModeDriverNameWoW';only_wow_legacy_slot_edited=$true;native_values_untouched=$true;adapter_wide=$true}) }
+        elseif ($BindModernSlots) { Write-Json (Join-Path $control 'bound.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);api=$Api;selected_native_slots=$nativeSlots;only_native_modern_slots_edited=$true;adapter_wide=$true}) }
         else { Write-Json (Join-Path $control 'bound.json') ([ordered]@{utc=[DateTime]::UtcNow.ToString('o');actual=[DxvkBindingNative01]::Snapshot($subkey);api=$Api;selected_native_slot=$nativeSlot;only_native_tuple_slot_edited=$true;adapter_wide=$true}) }
     } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
     $clock.Restart()

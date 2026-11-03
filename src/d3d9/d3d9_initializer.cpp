@@ -183,8 +183,8 @@ namespace dxvk {
 
 
   void D3D9Initializer::FlushCsChunkLocked() {
-    m_parent->InjectCsChunk(std::move(m_csChunk), false);
-    m_csChunk = m_parent->AllocCsChunk();
+    auto chunk = std::exchange(m_csChunk, m_parent->AllocCsChunk());
+    m_parent->InjectCsChunk(std::move(chunk), false);
   }
 
 }

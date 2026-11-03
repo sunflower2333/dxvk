@@ -610,6 +610,8 @@ namespace dxvk {
       return result;
     }
 
+    bool hasExternalOwner() const { return bool(m_externalOwner); }
+
     /**
      * \brief Queries sparse page table
      *
@@ -667,6 +669,9 @@ namespace dxvk {
 
     VkImage                     m_image = VK_NULL_HANDLE;
     DxvkResourceImageViewMap*   m_imageViews = nullptr;
+    // Command lists may retain storage independently of the high-level image.
+    // Destruction runs after the image-view map in the destructor body.
+    std::shared_ptr<void>       m_externalOwner;
     D3DKMT_HANDLE               m_kmtLocal = 0;
     D3DKMT_HANDLE               m_kmtGlobal = 0;
 
@@ -1257,7 +1262,8 @@ namespace dxvk {
     Rc<DxvkResourceAllocation> importImageResource(
       const VkImageCreateInfo&          createInfo,
       const DxvkAllocationInfo&         allocationInfo,
-            VkImage                     imageHandle);
+            VkImage                     imageHandle,
+            std::shared_ptr<void>        owner = {});
 
     /**
      * \brief Queries memory stats

@@ -32,6 +32,7 @@
 #include "umd_d3d11_desc.h"
 #include "umd_input_format.h"
 #include "umd_private_children.h"
+#include "umd_process_storage.h"
 
 #include <wrl/client.h>
 #include <d3d9.h> // Official S_NOT_RESIDENT / S_RESIDENT_IN_SHARED_MEMORY HRESULTs.
@@ -46,6 +47,8 @@
 #include <atomic>
 #include <optional>
 #include <cmath>
+#include <cerrno>
+#include <cstdio>
 
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -53,12 +56,59 @@ struct Shader;
 struct InputLayout;
 struct Device;
 void clearRegisteredChildren(Device*) noexcept;
+void traceDdiError(HRESULT) noexcept;
+
+void traceDdi(const char* event, const char* entry, HRESULT hr = S_OK) noexcept {
+  const DWORD savedError = GetLastError();
+  const int savedErrno = errno;
+  char flag[2] = {};
+  if (GetEnvironmentVariableA("DXVK_UMD_ADAPTER_QUERY_TRACE", flag, sizeof(flag)) == 1
+      && flag[0] == '1') {
+    static std::atomic<unsigned> calls{0}, failures{0};
+    const bool failed = FAILED(hr);
+    const unsigned sequence = (failed ? failures : calls).fetch_add(1, std::memory_order_relaxed) + 1;
+    if (sequence <= (failed ? 16u : 128u)) {
+      std::fprintf(stderr, "VIOGPU_DDI event=%s sequence=%u hr=%08x mapped=%08x entry=%s\n",
+        event, sequence, unsigned(uint32_t(hr)), unsigned(uint32_t(dxvk::umd::ddiResult(hr))), entry);
+      std::fflush(stderr);
+    }
+  }
+  SetLastError(savedError);
+  errno = savedErrno;
+}
+
+void traceFormatCaps(bool multisample, DXGI_FORMAT format, UINT samples,
+    UINT value, HRESULT hr) noexcept {
+  // The runtime queries every sample count for each format. Keep the useful
+  // power-of-two results and any unexpected positive/error result, so these
+  // capability queries cannot consume the separate DDI entry trace budget.
+  if (multisample && !value && SUCCEEDED(hr)
+      && (!samples || samples > 32 || (samples & (samples - 1)))) return;
+  const DWORD savedError = GetLastError();
+  const int savedErrno = errno;
+  char flag[2] = {};
+  if (GetEnvironmentVariableA("DXVK_UMD_ADAPTER_QUERY_TRACE", flag, sizeof(flag)) == 1
+      && flag[0] == '1') {
+    static std::atomic<unsigned> calls{0};
+    const unsigned sequence = calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (sequence <= 1024) {
+      std::fprintf(stderr, "VIOGPU_FORMAT_CAPS kind=%s sequence=%u format=%u samples=%u value=%08x hr=%08x\n",
+        multisample ? "multisample" : "format", sequence, unsigned(format), samples,
+        value, unsigned(uint32_t(hr)));
+      std::fflush(stderr);
+    }
+  }
+  SetLastError(savedError);
+  errno = savedErrno;
+}
 struct NativeClassBindings11 {
   std::vector<ComPtr<ID3D11ClassInstance>> owners;
   std::vector<ID3D11ClassInstance*> pointers;
 };
 struct Device {
-  std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>();
+  explicit Device(bool disableExtraThreads = false)
+  : service(std::make_shared<dxvk::umd::RuntimeService>(false, disableExtraThreads)) { }
+  std::shared_ptr<dxvk::umd::RuntimeService> service;
   std::shared_ptr<const dxvk::umd::AdapterIdentity> adapter;
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
   ComPtr<ID3D11Device> backend;
@@ -145,6 +195,7 @@ struct Device {
   ~Device() { close(); }
   void error(HRESULT hr) {
     if (!FAILED(hr)) return;
+    traceDdiError(hr);
     auto report = [&] {
       const auto callback = callbacks11 ? callbacks11->pfnSetErrorCb
         : (callbacks10 ? callbacks10->pfnSetErrorCb : nullptr);
@@ -166,8 +217,11 @@ struct DeviceRecord {
   DevicePhase phase;
   std::shared_ptr<Device> owner;
 };
-std::mutex deviceStorageMutex;
-std::unordered_map<void*, DeviceRecord> deviceStorage;
+dxvk::umd::ProcessStorage<std::mutex> deviceStorageMutexLifetime;
+auto& deviceStorageMutex = deviceStorageMutexLifetime.get();
+dxvk::umd::ProcessStorage<std::unordered_map<void*, DeviceRecord>> deviceStorageLifetime;
+auto& deviceStorage = deviceStorageLifetime.get();
+bool deviceStorageClosing = false;
 
 void releaseDeviceStorage(void* storage, const std::shared_ptr<Device>& owner) {
   std::lock_guard<std::mutex> lock(deviceStorageMutex);
@@ -178,6 +232,7 @@ void releaseDeviceStorage(void* storage, const std::shared_ptr<Device>& owner) {
 
 struct DeviceOperation {
   void* storage;
+  const char* entry = "unwrapped";
   std::shared_ptr<Device> owner;
   DeviceOperation* previous = nullptr;
   static thread_local DeviceOperation* current;
@@ -200,9 +255,122 @@ struct DeviceOperation {
   }
 };
 thread_local DeviceOperation* DeviceOperation::current = nullptr;
+// Keep the first failures available to a noninvasive debugger in system
+// processes such as DWM, where stderr and an application log directory may
+// not exist. Slots are written once; a reader accepts only published entries.
+// This records errors only and never changes a callback result or lifetime.
+struct ResourceFailureDetail {
+  uint32_t stage = 0, dimension = 0, usage = 0, bindings = 0, map = 0, misc = 0;
+  uint32_t format = 0, width = 0, height = 0, depth = 0, mips = 0, array = 0;
+  uint32_t samples = 0, quality = 0, stride = 0, initial = 0, primary = 0;
+};
+struct ResourceFailureScope {
+  ResourceFailureDetail detail;
+  ResourceFailureScope* previous = current;
+  inline static thread_local ResourceFailureScope* current = nullptr;
+  template<typename Args> explicit ResourceFailureScope(const Args* args) {
+    if (args) {
+      detail.dimension = args->ResourceDimension; detail.usage = args->Usage;
+      detail.bindings = args->BindFlags; detail.map = args->MapFlags; detail.misc = args->MiscFlags;
+      detail.format = args->Format; detail.mips = args->MipLevels; detail.array = args->ArraySize;
+      detail.samples = args->SampleDesc.Count; detail.quality = args->SampleDesc.Quality;
+      detail.initial = args->pInitialDataUP != nullptr; detail.primary = args->pPrimaryDesc != nullptr;
+      if constexpr (std::is_same_v<Args, D3D11DDIARG_CREATERESOURCE>) detail.stride = args->ByteStride;
+      if (args->pMipInfoList && args->MipLevels) {
+        detail.width = args->pMipInfoList[0].TexelWidth;
+        detail.height = args->pMipInfoList[0].TexelHeight;
+        detail.depth = args->pMipInfoList[0].TexelDepth;
+      }
+    }
+    current = this;
+  }
+  ~ResourceFailureScope() { current = previous; }
+  static void stage(uint32_t value) noexcept { if (current) current->detail.stage = value; }
+};
+struct DdiFailureRecord {
+  std::atomic<uint32_t> complete{0};
+  uint32_t result = 0, thread = 0, reserved = 0;
+  uint64_t entry = 0, storage = 0, ticks = 0;
+  ResourceFailureDetail resource;
+};
+struct DdiFailureTrace {
+  uint32_t size = sizeof(DdiFailureTrace), version = 2;
+  std::atomic<uint32_t> count{0};
+  uint32_t capacity = 32;
+  DdiFailureRecord records[32];
+} ddiFailureTrace;
+static_assert(sizeof(DdiFailureRecord) == 112);
+// DXGI entries return HRESULT directly, so their failures never pass through
+// SetErrorCb. Keep their original arguments and result independently of the
+// D3D failure ring, including a call which has not returned yet.
+struct DxgiCallRecord {
+  std::atomic<uint32_t> complete{0};
+  uint32_t kind = 0, result = uint32_t(E_PENDING), thread = 0;
+  uint64_t device = 0, source = 0, destination = 0, ticks = 0;
+  uint32_t flags = 0, sourceSubresource = 0, destinationSubresource = 0, reserved = 0;
+};
+struct DxgiCallTrace {
+  uint32_t size = sizeof(DxgiCallTrace), version = 1;
+  std::atomic<uint32_t> count{0};
+  uint32_t capacity = 64;
+  DxgiCallRecord records[64];
+} dxgiCallTrace;
+static_assert(sizeof(DxgiCallRecord) == 64);
+struct DxgiCallScope {
+  DxgiCallRecord* record = nullptr;
+  HRESULT result = E_FAIL;
+  DxgiCallScope(UINT kind, uint64_t device, uint64_t source, uint64_t destination,
+      UINT flags = 0, UINT sourceSubresource = 0, UINT destinationSubresource = 0) {
+    const DWORD saved = GetLastError();
+    uint32_t index = dxgiCallTrace.count.load(std::memory_order_relaxed);
+    while (index < dxgiCallTrace.capacity
+        && !dxgiCallTrace.count.compare_exchange_weak(index, index + 1, std::memory_order_relaxed)) { }
+    if (index < dxgiCallTrace.capacity) {
+      record = &dxgiCallTrace.records[index];
+      record->kind = kind; record->thread = GetCurrentThreadId();
+      record->device = device; record->source = source; record->destination = destination;
+      record->ticks = GetTickCount64(); record->flags = flags;
+      record->sourceSubresource = sourceSubresource;
+      record->destinationSubresource = destinationSubresource;
+    }
+    SetLastError(saved);
+  }
+  ~DxgiCallScope() {
+    if (record) {
+      record->result = uint32_t(result);
+      record->complete.store(1, std::memory_order_release);
+    }
+  }
+};
+void traceDdiError(HRESULT hr) noexcept {
+  if (FAILED(hr)) {
+    const DWORD savedError = GetLastError();
+    uint32_t index = ddiFailureTrace.count.load(std::memory_order_relaxed);
+    while (index < ddiFailureTrace.capacity
+        && !ddiFailureTrace.count.compare_exchange_weak(index, index + 1,
+          std::memory_order_relaxed)) { }
+    if (index < ddiFailureTrace.capacity) {
+      auto& record = ddiFailureTrace.records[index];
+      const auto operation = DeviceOperation::current;
+      record.result = uint32_t(hr); record.thread = GetCurrentThreadId();
+      record.entry = uint64_t(uintptr_t(operation ? operation->entry : "outside-ddi"));
+      record.storage = uint64_t(uintptr_t(operation ? operation->storage : nullptr));
+      record.ticks = GetTickCount64();
+      if (ResourceFailureScope::current) record.resource = ResourceFailureScope::current->detail;
+      record.complete.store(1, std::memory_order_release);
+    }
+    SetLastError(savedError);
+  }
+  traceDdi("error", DeviceOperation::current ? DeviceOperation::current->entry : "outside-ddi", hr);
+}
 void APIENTRY flush(D3D10DDI_HDEVICE h);
 template<auto function> constexpr bool isFlushEntry = false;
 template<> constexpr bool isFlushEntry<&flush> = true;
+void APIENTRY checkFormat(D3D10DDI_HDEVICE, DXGI_FORMAT, UINT*);
+void APIENTRY checkMultisample(D3D10DDI_HDEVICE, DXGI_FORMAT, UINT, UINT*);
+template<auto function> constexpr bool isFormatQueryEntry = false;
+template<> constexpr bool isFormatQueryEntry<&checkFormat> = true;
+template<> constexpr bool isFormatQueryEntry<&checkMultisample> = true;
 
 // All published D3D device entries pass through this typed WDK-ABI wrapper.
 // Thread-local operation lookup preserves the old owner when a callback
@@ -213,6 +381,12 @@ template<typename Result, typename... Args,
 struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function, predicated> {
   static Result APIENTRY call(D3D10DDI_HDEVICE h, Args... args) {
     DeviceOperation operation(h.pDrvPrivate);
+#ifdef _MSC_VER
+    operation.entry = __FUNCSIG__;
+#else
+    operation.entry = __PRETTY_FUNCTION__;
+#endif
+    if constexpr (!isFormatQueryEntry<function>) traceDdi("enter", operation.entry);
     if (!operation.owner) {
       if constexpr (std::is_void_v<Result>) return;
       // The sole BOOL entry is IsStagingBusy; a retired owner is not ready.
@@ -228,6 +402,7 @@ struct DeviceEntry<Result (APIENTRY *)(D3D10DDI_HDEVICE, Args...), function, pre
       try {
         auto backend = [&]() -> Result {
           DeviceOperation worker(h.pDrvPrivate, operation.owner);
+          worker.entry = operation.entry;
           if constexpr (predicated) {
             if (operation.owner->suppressCommands) return;
           }
@@ -262,11 +437,29 @@ constexpr auto deviceEntry = &DeviceEntry<decltype(function), function, predicat
 struct ResourceRetirement;
 struct PresentSurface {
   dxvk::umd::RuntimeAllocation allocation;
+  // A GPU import pins this independent backing. Pinning PresentSurface would
+  // create a cycle through its texture and could keep a runtime cookie alive.
+  std::shared_ptr<dxvk::umd::RuntimeAllocation> native;
+  std::weak_ptr<dxvk::umd::RuntimeGpu> nativeGpu;
+  std::atomic<bool> nativeRevoked{false};
+  HRESULT revokeNative() noexcept {
+    if (!native || nativeRevoked.exchange(true)) return S_OK;
+    try {
+      const auto gpu = nativeGpu.lock();
+      return gpu ? gpu->revokeNativeSurface(native) : S_OK;
+    } catch (...) { return E_FAIL; }
+  }
+  ~PresentSurface() {
+    // Covers image creation failure and cancellation before publication too.
+    // A canonical GPU token can outlive this individual runtime open.
+    revokeNative();
+    if (native) native->release();
+  }
   // A shared present resource has exactly one allocation owner. Views and
   // suspended presentation both pin that owner; neither can release it early.
   std::shared_ptr<dxvk::umd::SharedSurface> shared;
   dxvk::umd::RuntimeAllocation& backing() {
-    return shared ? shared->allocation : allocation;
+    return native ? *native : shared ? shared->allocation : allocation;
   }
   ComPtr<ID3D11Texture2D> readback;
   std::atomic<bool> active{false};
@@ -279,15 +472,18 @@ struct Resource {
   // Present callbacks can destroy and reclaim the runtime's Resource bytes.
   // A local Present owner keeps this allocation and readback alive separately.
   std::shared_ptr<PresentSurface> present;
-  // Set only for a resource created MISC_SHARED or opened from another
-  // process. Its allocation lives on the surface so
-  // that a view holding the last reference keeps the backing alive.
+  // CPU-backed shared resources own a cache and a separate linear allocation.
+  // Native shared images use present->native and the imported image owner;
+  // they must never also enter the cache refresh/publish path.
   std::shared_ptr<dxvk::umd::SharedSurface> shared;
   std::unique_ptr<ResourceRetirement> retirement;
   // Creation transaction only. Clear the borrowed address before publication.
+  void* creationStorage = nullptr;
+  std::shared_ptr<const char> creationReservation;
   DXGI_DDI_PRIMARY_DESC* primaryOutput = nullptr;
   UINT primaryDriverFlags = 0;
   std::shared_ptr<dxvk::umd::RuntimeAllocation> allocationOwner() const {
+    if (present && present->native) return present->native;
     if (shared) return {shared, &shared->allocation};
     if (present) return {present, &present->backing()};
     return {};
@@ -297,12 +493,16 @@ struct ResourceRetirement final : dxvk::umd::RuntimeService::Retirement {
   std::optional<Resource> resource;
   void release() noexcept override {
     auto device = resource->owner;
-    const HRESULT hr = resource->present && !resource->present->shared
-      ? resource->present->allocation.release() : S_OK;
+    HRESULT hr = S_OK;
+    if (resource->present && !resource->present->shared) {
+      hr = resource->present->revokeNative();
+      const HRESULT released = resource->present->backing().release();
+      if (hr == S_OK) hr = released;
+    }
     resource->present.reset();
     // A view may still hold the surface; its allocation retires with the last
-    // reference, not with this resource. An opened allocation is never
-    // deallocated here in any case -- it belongs to the process that made it.
+    // reference, not with this resource. For an opened resource this closes
+    // only this device's runtime association; other opens retain their backing.
     resource->shared.reset();
     resource->backend.Reset();
     if (FAILED(hr) && !device->retired) device->error(hr);
@@ -313,9 +513,22 @@ struct ResourceRecord {
   Device* owner;
   ResourcePhase phase;
   std::shared_ptr<const char> reservation;
+  std::weak_ptr<PresentSurface> pendingNative;
 };
-std::mutex resourceStorageMutex;
-std::unordered_map<void*, ResourceRecord> resourceStorage;
+dxvk::umd::ProcessStorage<std::mutex> resourceStorageMutexLifetime;
+auto& resourceStorageMutex = resourceStorageMutexLifetime.get();
+dxvk::umd::ProcessStorage<std::unordered_map<void*, ResourceRecord>> resourceStorageLifetime;
+auto& resourceStorage = resourceStorageLifetime.get();
+HRESULT registerPendingNative(Resource& resource, const std::shared_ptr<PresentSurface>& surface) {
+  std::lock_guard<std::mutex> lock(resourceStorageMutex);
+  const auto entry = resourceStorage.find(resource.creationStorage);
+  if (entry == resourceStorage.end() || entry->second.owner != resource.owner
+      || entry->second.phase != ResourcePhase::Creating
+      || entry->second.reservation != resource.creationReservation)
+    return DXGI_ERROR_DEVICE_REMOVED;
+  entry->second.pendingNative = surface;
+  return S_OK;
+}
 struct ComRetirement final : dxvk::umd::RuntimeService::Retirement {
   std::array<ComPtr<IUnknown>, 7> references;
   void release() noexcept override {
@@ -441,8 +654,34 @@ struct Query : Child {
   bool retired = false;
 };
 struct RegisteredChildPrivate { uintptr_t reserved; };
-dxvk::umd::PrivateChildren<Query, dxvk::umd::RuntimeService> queryStorage;
-dxvk::umd::PrivateChildren<InputLayout, dxvk::umd::RuntimeService> layoutStorage;
+dxvk::umd::ProcessStorage<dxvk::umd::PrivateChildren<Query, dxvk::umd::RuntimeService>> queryStorageLifetime;
+auto& queryStorage = queryStorageLifetime.get();
+dxvk::umd::ProcessStorage<dxvk::umd::PrivateChildren<InputLayout, dxvk::umd::RuntimeService>> layoutStorageLifetime;
+auto& layoutStorage = layoutStorageLifetime.get();
+
+// Register cleanup after every registry it can reenter. Device owners must
+// close while the child registries and their mutexes are still alive, not
+// from deviceStorage's later unordered_map destructor. Remove registrations
+// under the lock, then close outside it so callbacks see a live, empty map.
+struct DeviceStorageShutdown {
+  ~DeviceStorageShutdown() {
+    if (dxvk::umd::processTerminating) return;
+    std::remove_reference_t<decltype(deviceStorage)> retiring;
+    {
+      std::lock_guard<std::mutex> lock(deviceStorageMutex);
+      deviceStorageClosing = true;
+      retiring.swap(deviceStorage);
+    }
+    for (auto& entry : retiring) {
+      if (const auto& owner = entry.second.owner) {
+        owner->retired = true;
+        // A separate strong owner may outlive these registries. Close now;
+        // its eventual Device destructor will only take the idempotent path.
+        owner->close();
+      }
+    }
+  }
+} deviceStorageShutdown;
 
 template<typename Object, typename Registry, typename Create>
 HRESULT createRegisteredChild(Device* device, Registry& registry, void* storage, Create&& create) {
@@ -827,6 +1066,43 @@ HRESULT openResourceData(Device* device, const D3D10DDIARG_OPENRESOURCE* args,
     // Reserve the retirement node before any owner exists, for the same reason
     // creation does: destruction must not have to allocate.
     resource->retirement = std::make_unique<ResourceRetirement>();
+    if (args->PrivateDriverDataSize == sizeof(dxvk::umd::NativeResourceShare)) {
+      if (!args->pPrivateDriverData || !device->gpu
+          || !dxvk::umd::nativeSurfacesSupported(device->backend.Get())) return DXGI_ERROR_UNSUPPORTED;
+      dxvk::umd::NativeResourceShare share;
+      std::memcpy(&share, args->pPrivateDriverData, sizeof(share));
+      if (!dxvk::umd::validNativeResourceShare(share, info.width)) return E_INVALIDARG;
+      auto surface = std::make_shared<PresentSurface>();
+      surface->nativeGpu = device->gpu;
+      surface->native = std::make_shared<dxvk::umd::RuntimeAllocation>();
+      auto backing = surface->native;
+      HRESULT hr = registerPendingNative(*resource, surface);
+      if (hr != S_OK) return hr;
+      hr = device->memory.adoptNative(*backing, opened.hAllocation,
+        args->hKMResource.handle, info, share);
+      if (hr != S_OK) return hr;
+      mwd_allocation imported = {};
+      hr = device->gpu->importNativeSurface(backing->handle(), share.key, info.size, backing, &imported,
+        &surface->nativeRevoked);
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      const auto bridge = device->gpu->backend();
+      D3D11_TEXTURE2D_DESC desc = {};
+      desc.Width = info.width; desc.Height = info.height; desc.MipLevels = desc.ArraySize = 1;
+      desc.Format = dxvk::umd::presentCacheFormat(format); desc.SampleDesc.Count = 1;
+      desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+      ComPtr<ID3D11Texture2D> image;
+      hr = dxvk::umd::createNativeTexture2D(device->backend.Get(), desc, bridge, imported, info.pitch, &image, true);
+      const HRESULT released = bridge.create.callbacks->release(bridge.create.owner, imported.token);
+      if (hr == S_OK) hr = released;
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      if (!image || device->retired) return DXGI_ERROR_DEVICE_REMOVED;
+      resource->backend = image; resource->present = std::move(surface);
+      // Native window buffers retain the same typed Present view family as
+      // primary buffers when reopened against their typeless cache image.
+      resource->nativeBindFlags = D3D10_DDI_BIND_SHADER_RESOURCE | D3D10_DDI_BIND_RENDER_TARGET
+        | D3D10_DDI_BIND_PRESENT;
+      return S_OK;
+    }
     auto surface = std::make_shared<dxvk::umd::SharedSurface>();
     // adopt validates the rest of the wire metadata. Do that before anything
     // sizes a copy from it: a private-data blob from another process is the
@@ -862,6 +1138,7 @@ HRESULT openResourceData(Device* device, const D3D10DDIARG_OPENRESOURCE* args,
 HRESULT createResourceData(Device* device,
     const D3D10DDIARG_CREATERESOURCE* args, Resource* resource,
     D3D10DDI_HRTRESOURCE runtime, bool cubeArrays10_1 = false) {
+  ResourceFailureScope::stage(100); // Legacy descriptor validation.
   resource->owner = device;
   resource->nativeFormat = args ? args->Format : DXGI_FORMAT_UNKNOWN;
   UINT miscFlags = 0;
@@ -907,9 +1184,9 @@ HRESULT createResourceData(Device* device,
       || (args->SampleDesc.Count > 1 && args->pInitialDataUP))) {
     return DXGI_ERROR_UNSUPPORTED;
   }
-  // Plain shared present buffers use the same linear allocation for both
-  // contracts. Shared scanout creation still needs a shareable primary-pair
-  // ABI; primaryResourcePlan above deliberately does not admit that shape.
+  // Plain shared buffers have one backing allocation, including optional
+  // primary buffers. Shared scanout remains NO_SCANOUT; eligible shared
+  // images may still use native backing without becoming a scanout primary.
   if (shared && (!sharedSurfaceShape(*args) || !runtime.handle
       || !device->memory.available())) {
     return DXGI_ERROR_UNSUPPORTED;
@@ -930,6 +1207,7 @@ HRESULT createResourceData(Device* device,
     }
     auto data = initial.empty() ? nullptr : initial.data();
     HRESULT hr = E_INVALIDARG;
+    ResourceFailureScope::stage(200); // Embedded renderer resource creation.
     if (args->ResourceDimension == D3D10DDIRESOURCE_BUFFER && args->MipLevels == 1 && args->ArraySize == 1) {
       D3D11_BUFFER_DESC desc = {};
       desc.ByteWidth = args->pMipInfoList[0].TexelWidth;
@@ -966,21 +1244,95 @@ HRESULT createResourceData(Device* device,
       desc.CPUAccessFlags = ((args->MapFlags & D3D10_DDI_CPU_ACCESS_READ) ? D3D11_CPU_ACCESS_READ : 0)
                          | ((args->MapFlags & D3D10_DDI_CPU_ACCESS_WRITE) ? D3D11_CPU_ACCESS_WRITE : 0);
       ComPtr<ID3D11Texture2D> texture;
+      const auto nativeFormat = dxvk::umd::bltLinearFormat(args->Format);
+      const bool nativeStorageCandidate = (presentable || shared) && !data && device->gpu
+        && device->memory.available() && device->adapter && device->adapter->continuity
+        && desc.Usage == D3D11_USAGE_DEFAULT && !desc.CPUAccessFlags
+        && desc.MipLevels == 1 && desc.ArraySize == 1
+        && desc.SampleDesc.Count == 1 && !desc.SampleDesc.Quality && !desc.MiscFlags
+        && !(desc.BindFlags & ~(D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE))
+        && (nativeFormat == DXGI_FORMAT_B8G8R8A8_UNORM || nativeFormat == DXGI_FORMAT_R8G8B8A8_UNORM)
+        && dxvk::umd::nativeSurfacesSupported(device->backend.Get());
+      bool nativePresent = false;
+      const auto creationLive = [&] {
+        std::lock_guard<std::mutex> lock(resourceStorageMutex);
+        const auto entry = resourceStorage.find(resource->creationStorage);
+        return !device->retired && device->adapter->available() && entry != resourceStorage.end()
+          && entry->second.owner == device && entry->second.phase == ResourcePhase::Creating
+          && entry->second.reservation == resource->creationReservation;
+      };
+      if (nativeStorageCandidate && !shared && args->pPrimaryDesc && device->memory.primaryAvailable()
+          && primaryDesc.ModeDesc.RefreshRate.Numerator && primaryDesc.ModeDesc.RefreshRate.Denominator) {
+        const HRESULT mode = device->adapter->continuity->supportsPrimaryMode(
+          dxvk::umd::primaryShape(*args, primaryDesc));
+        // Mode discovery can race device/resource retirement or a reset. Do
+        // not allocate or publish into a runtime reservation that disappeared.
+        if (!creationLive()) return DXGI_ERROR_DEVICE_REMOVED;
+        if (mode == DXGI_ERROR_DEVICE_REMOVED) return mode;
+        if (mode == S_OK) {
+          hr = dxvk::umd::primaryResourcePlan(*args, primaryDesc, primary, true);
+          if (hr != S_OK) return hr;
+          nativePresent = primary.scanout;
+          resource->primaryDriverFlags = primary.driverFlags;
+        }
+      }
+      if (nativeStorageCandidate && (!args->pPrimaryDesc || shared)) {
+        uint32_t capabilities = 0;
+        const HRESULT supported = dxvk::umd::queryNativeSurfaceCapabilities(*device->adapter, capabilities);
+        if (!creationLive()) return DXGI_ERROR_DEVICE_REMOVED;
+        if (supported != S_OK && supported != DXGI_ERROR_UNSUPPORTED) return supported;
+        nativePresent = supported == S_OK && (capabilities & dxvk::umd::NativeSurfaceCapabilityBlt);
+      }
+      // Window/shared buffers need real native Blt on this reset generation.
+      // Sharing reuses the same NativeResourceShare allocation/open ABI and
+      // submitted v2 reader/writer references as reopened window buffers.
+      // Optional shared primaries retain NO_SCANOUT. Do not create a second
+      // CPU cache or publish stale cache contents over the imported image.
+      if (nativePresent) {
+        ResourceFailureScope::stage(310);
+        auto surface = std::make_shared<PresentSurface>();
+        surface->nativeGpu = device->gpu;
+        surface->native = std::make_shared<dxvk::umd::RuntimeAllocation>();
+        auto backing = surface->native;
+        hr = registerPendingNative(*resource, surface);
+        if (hr != S_OK) return hr;
+        hr = device->memory.allocateNative(*backing, runtime.handle, desc.Width, desc.Height,
+          nativeFormat, primary.scanout,
+          primary.scanout ? primaryDesc.ModeDesc.RefreshRate.Numerator : 0,
+          primary.scanout ? primaryDesc.ModeDesc.RefreshRate.Denominator : 0);
+        if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+        if (device->retired) return DXGI_ERROR_DEVICE_REMOVED;
+        mwd_allocation imported = {};
+        hr = device->gpu->importNativeSurface(backing->handle(), backing->nativeShare().key,
+          backing->info().size, backing, &imported, &surface->nativeRevoked);
+        if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+        const auto bridge = device->gpu->backend();
+        hr = dxvk::umd::createNativeTexture2D(device->backend.Get(), desc, bridge, imported,
+          backing->info().pitch, &texture);
+        const HRESULT released = bridge.create.callbacks->release(bridge.create.owner, imported.token);
+        if (hr == S_OK) hr = released;
+        if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+        if (!texture || device->retired) return DXGI_ERROR_DEVICE_REMOVED;
+        resource->present = std::move(surface); resource->backend = texture;
+        return S_OK;
+      }
       hr = device->backend->CreateTexture2D(&desc, data, &texture);
       resource->backend = texture;
     }
     if (hr == S_OK && !resource->backend) hr = E_FAIL;
     if (hr == S_OK && presentable && !shared) {
+      ResourceFailureScope::stage(300); // Present/primary kernel backing.
       resource->present = std::make_shared<PresentSurface>();
       const auto format = dxvk::umd::bltLinearFormat(args->Format);
       if (primary.scanout) hr = device->memory.allocatePrimary(resource->present->allocation, runtime.handle,
         args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight,
         format, primaryDesc.ModeDesc.RefreshRate.Numerator, primaryDesc.ModeDesc.RefreshRate.Denominator);
-      else hr = device->memory.allocate(resource->present->allocation, runtime.handle,
+      else hr = device->memory.allocatePresent(resource->present->allocation, runtime.handle,
         args->pMipInfoList[0].TexelWidth, args->pMipInfoList[0].TexelHeight, format);
       if (FAILED(hr)) resource->backend.Reset();
     }
     if (hr == S_OK && shared) {
+      ResourceFailureScope::stage(400); // Shared kernel backing.
       hr = createSharedResource(device, resource, *args, runtime.handle);
       if (FAILED(hr)) { resource->shared.reset(); resource->backend.Reset(); }
       else if (presentable) {
@@ -998,7 +1350,8 @@ HRESULT createResourceData(Device* device,
 // half-built owner behind. Keeping the two paths on the same code is what
 // stops them drifting apart on exactly those rules.
 template<typename Build>
-void publishNewResource(Device* device, D3D10DDI_HRESOURCE out, Build&& build) {
+void publishNewResource(Device* device, D3D10DDI_HRESOURCE out, Build&& build,
+    HANDLE openedRuntime = nullptr) {
   HRESULT hr = S_OK;
   std::shared_ptr<const char> reservation;
   if (!out.pDrvPrivate || uintptr_t(out.pDrvPrivate) % alignof(Resource)) {
@@ -1016,6 +1369,8 @@ void publishNewResource(Device* device, D3D10DDI_HRESOURCE out, Build&& build) {
     // Stage every backend/allocation owner locally and publish private storage
     // only when all steps succeeded. No runtime callback runs under the lock.
     Resource staged;
+    staged.creationStorage = out.pDrvPrivate;
+    staged.creationReservation = reservation;
     try { hr = build(&staged); }
     catch (const std::bad_alloc&) { hr = E_OUTOFMEMORY; }
     catch (...) { hr = E_FAIL; }
@@ -1029,9 +1384,22 @@ void publishNewResource(Device* device, D3D10DDI_HRESOURCE out, Build&& build) {
         if (staged.primaryOutput && !dxvk::umd::writePrimaryFlags(staged.primaryOutput, staged.primaryDriverFlags))
           hr = DXGI_DDI_ERR_UNSUPPORTED;
         else {
-          staged.primaryOutput = nullptr;
-          new (out.pDrvPrivate) Resource(std::move(staged));
-          entry->second.phase = ResourcePhase::Live;
+          // OpenResource transfers one runtime association only on successful
+          // publication. Failed/cancelled opens never close a borrowed handle.
+          // This commit neither allocates nor calls the runtime under the lock.
+          if (openedRuntime) {
+            auto allocation = staged.present ? &staged.present->backing()
+              : staged.shared ? &staged.shared->allocation : nullptr;
+            hr = allocation ? allocation->completeOpen(openedRuntime) : E_FAIL;
+          }
+          if (hr == S_OK) {
+            staged.primaryOutput = nullptr;
+            staged.creationStorage = nullptr;
+            staged.creationReservation.reset();
+            new (out.pDrvPrivate) Resource(std::move(staged));
+            entry->second.phase = ResourcePhase::Live;
+            entry->second.pendingNative.reset();
+          }
         }
       }
     }
@@ -1049,6 +1417,7 @@ void publishNewResource(Device* device, D3D10DDI_HRESOURCE out, Build&& build) {
 void APIENTRY createResource(D3D10DDI_HDEVICE h,
     const D3D10DDIARG_CREATERESOURCE* args, D3D10DDI_HRESOURCE out,
     D3D10DDI_HRTRESOURCE runtime) {
+  ResourceFailureScope diagnostic(args);
   auto device = get(h);
   publishNewResource(device, out, [&](Resource* staged) {
     return createResourceData(device, args, staged, runtime);
@@ -1066,21 +1435,29 @@ void APIENTRY createResource10_1(D3D10DDI_HDEVICE h,
   });
 }
 void APIENTRY openResource(D3D10DDI_HDEVICE h, const D3D10DDIARG_OPENRESOURCE* args,
-    D3D10DDI_HRESOURCE out, D3D10DDI_HRTRESOURCE) {
+    D3D10DDI_HRESOURCE out, D3D10DDI_HRTRESOURCE runtime) {
   auto device = get(h);
+  if (!runtime.handle) { device->error(E_INVALIDARG); return; }
   publishNewResource(device, out, [&](Resource* staged) {
     return openResourceData(device, args, staged);
-  });
+  }, runtime.handle);
 }
 void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
+  bool live = false;
+  std::shared_ptr<PresentSurface> pendingNative;
   {
     std::lock_guard<std::mutex> lock(resourceStorageMutex);
     const auto entry = resourceStorage.find(resource.pDrvPrivate);
     if (entry == resourceStorage.end() || entry->second.owner != get(h)) return;
-    const bool live = entry->second.phase == ResourcePhase::Live;
+    live = entry->second.phase == ResourcePhase::Live;
+    if (!live) pendingNative = entry->second.pendingNative.lock();
     resourceStorage.erase(entry);
-    // Cancel unpublished creation without accessing runtime private storage.
-    if (!live) return;
+  }
+  // Cancel an unpublished owner outside the registry lock and without touching
+  // private bytes. Its suspended builder remains responsible for final release.
+  if (!live) {
+    if (pendingNative) pendingNative->revokeNative();
+    return;
   }
   auto device = get(h);
   auto object = get(resource);
@@ -1100,6 +1477,19 @@ void APIENTRY destroyResource(D3D10DDI_HDEVICE h, D3D10DDI_HRESOURCE resource) {
   auto retired = std::move(object->retirement);
   retired->resource.emplace(std::move(*object));
   object->~Resource();
+  if (retired->resource->present && retired->resource->present->native) {
+    // All runtime-private bytes are gone before any callback can reenter.
+    // Flush normal destruction while its registration is usable. A nested
+    // destroy must not wait on the suspended parent; revoke immediately so
+    // that parent's later submissions cannot borrow an expired handle.
+    HRESULT hr = S_OK;
+    if (!device->retired && !device->service->nestedOperation())
+      hr = dxvk::umd::prepareNativeTextureForExternalWrite(device->context.Get(),
+        retired->resource->backend.Get());
+    const HRESULT revoked = retired->resource->present->revokeNative();
+    if (hr == S_OK) hr = revoked;
+    if (FAILED(hr) && !device->retired) device->error(hr);
+  }
   // D3D10 RenderCb may reenter here while its submit worker owns the Mesa
   // WDDM lock. Retire private bytes now; final COM/HRESOURCE release runs only
   // after the outer callback has returned, before its outer DDI returns.
@@ -1473,6 +1863,7 @@ void APIENTRY checkFormat(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT* output) 
   try {
     const HRESULT hr = dxvk::umd::queryNativeFormatCaps(format, output,
       [&](DXGI_FORMAT queried, UINT* support) { return device->backend->CheckFormatSupport(queried, support); });
+    traceFormatCaps(false, format, 0, output ? *output : 0, hr);
     device->error(hr);
   } catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
     catch (...) { device->error(E_FAIL); }
@@ -1485,6 +1876,7 @@ void APIENTRY checkMultisample(D3D10DDI_HDEVICE h, DXGI_FORMAT format, UINT coun
       [&](DXGI_FORMAT queried, UINT samples, UINT* levels) {
         return device->backend->CheckMultisampleQualityLevels(queried, samples, levels);
       });
+    traceFormatCaps(true, format, count, output ? *output : 0, hr);
     device->error(hr);
   }
   catch (const std::bad_alloc&) { device->error(E_OUTOFMEMORY); }
@@ -2197,7 +2589,7 @@ UINT inputCapacity(const Device* device) {
     && D3D10_VS_INPUT_REGISTER_COUNT == D3D10_IA_VERTEX_INPUT_STRUCTURE_ELEMENT_COUNT);
   static_assert(D3D10_1_VS_INPUT_REGISTER_COUNT == D3D10_1_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
     && D3D10_1_VS_INPUT_REGISTER_COUNT == D3D10_1_IA_VERTEX_INPUT_STRUCTURE_ELEMENT_COUNT
-    && D3D10_1_VS_INPUT_REGISTER_COUNT == D3D11_VS_INPUT_REGISTER_COUNT);
+    && D3D10_1_VS_INPUT_REGISTER_COUNT == D3D11_IA_VERTEX_INPUT_STRUCTURE_ELEMENT_COUNT);
   return device->featureLevel >= D3D_FEATURE_LEVEL_10_1
     ? D3D10_1_VS_INPUT_REGISTER_COUNT : D3D10_VS_INPUT_REGISTER_COUNT;
 }
@@ -2595,6 +2987,7 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
     ComPtr<ID3D11Texture2D> texture;
     std::shared_ptr<dxvk::umd::SharedSurface> shared;
     std::shared_ptr<dxvk::umd::RuntimeAllocation> allocation;
+    std::shared_ptr<PresentSurface> present;
   };
   std::vector<Participant> chain;
   chain.reserve(args->Resources);
@@ -2616,7 +3009,9 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
     for (const auto& previous : chain) {
       if (previous.resource == resource) return E_INVALIDARG;
       if (allocation && allocation->handle() && previous.allocation
-          && allocation->handle() == previous.allocation->handle())
+          && (allocation->handle() == previous.allocation->handle()
+            || (allocation->native() && previous.allocation->native()
+              && allocation->nativeShare().key == previous.allocation->nativeShare().key)))
         return E_INVALIDARG;
     }
     ComPtr<ID3D11Texture2D> texture;
@@ -2639,10 +3034,13 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
           || desc.BindFlags != shape.BindFlags || desc.MiscFlags != shape.MiscFlags
           || bool(resource->shared) != bool(first.shared)
           || bool(allocation) != bool(firstAllocation)
-          || (allocation && !allocation->canRotateWith(*firstAllocation))) return E_INVALIDARG;
+          || (allocation && !allocation->canRotateWith(*firstAllocation)
+            && !(resource->present && first.present && !resource->shared && !first.shared
+              && allocation->canRotatePresentWith(*firstAllocation)))) return E_INVALIDARG;
       if (first.shared && first.shared == resource->shared) return E_INVALIDARG;
     }
-    chain.push_back({resource, std::move(reservation), std::move(texture), resource->shared, std::move(allocation)});
+    chain.push_back({resource, std::move(reservation), std::move(texture), resource->shared,
+      std::move(allocation), resource->present});
   }
   if (chain.size() < 2) return S_OK;
   auto stillLiveLocked = [&] {
@@ -2659,6 +3057,55 @@ HRESULT rotateResourceData(Device* device, DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITI
     std::lock_guard<std::mutex> lock(resourceStorageMutex);
     return stillLiveLocked();
   };
+  const bool anyNative = std::any_of(chain.begin(), chain.end(), [](const auto& participant) {
+    return participant.allocation && participant.allocation->native();
+  });
+  if (anyNative) {
+    const bool allNative = std::all_of(chain.begin(), chain.end(), [](const auto& participant) {
+      return participant.allocation && participant.allocation->native();
+    });
+    auto validOwnersLocked = [&]() -> HRESULT {
+      if (!stillLiveLocked()) return DXGI_ERROR_DEVICE_REMOVED;
+      for (const auto& participant : chain) {
+        if (!participant.present || participant.shared || !participant.allocation
+            || participant.resource->present != participant.present) return E_INVALIDARG;
+        if (participant.present->nativeRevoked || !participant.allocation->handle())
+          return DXGI_ERROR_DEVICE_REMOVED;
+        if (participant.present->active) return DXGI_ERROR_WAS_STILL_DRAWING;
+        // Owned window and primary buffers may both be native. Their complete
+        // Present owners move together even though the primary flag differs.
+        if (!participant.allocation->canRotatePresentWith(*chain.front().allocation)
+            && !(allNative && participant.allocation->canRotateWith(*chain.front().allocation)))
+          return E_INVALIDARG;
+      }
+      return S_OK;
+    };
+    {
+      std::lock_guard<std::mutex> lock(resourceStorageMutex);
+      const HRESULT valid = validOwnersLocked();
+      if (valid != S_OK) return valid;
+    }
+    std::vector<ID3D11Texture2D*> textures; textures.reserve(chain.size());
+    for (const auto& participant : chain) textures.push_back(participant.texture.Get());
+    const HRESULT hr = dxvk::umd::rotateNativeTextureStorage(context.Get(), UINT(textures.size()), textures.data(),
+      [&](const std::function<void()>& commitStorage) -> HRESULT {
+        // Preparation may service callbacks that retire a resource. Revalidate
+        // and commit both layers under one short lock; no callbacks, waits or
+        // allocation are allowed between the first and last identity change.
+        std::lock_guard<std::mutex> lock(resourceStorageMutex);
+        const HRESULT valid = validOwnersLocked();
+        if (valid != S_OK) return valid;
+        commitStorage();
+        for (size_t i = 0; i + 1 < chain.size(); ++i) {
+          auto& left = chain[i].resource->present;
+          auto& right = chain[i + 1].resource->present;
+          left->backing().swapRuntimeResource(right->backing());
+          left.swap(right);
+        }
+        return S_OK;
+      });
+    return hr == S_OK || FAILED(hr) ? hr : E_FAIL;
+  }
   if (chain.front().shared) {
     // Publish to each OLD allocation before rotating. Publishing dirty cache
     // pixels after the swap would overwrite another buffer's frame. Holding
@@ -2865,6 +3312,7 @@ HRESULT resolveSharedResourceData(Device* device, DXGI_DDI_HRESOURCE handle) {
   auto resource = reinterpret_cast<Resource*>(handle);
   std::shared_ptr<const char> reservation;
   std::shared_ptr<dxvk::umd::SharedSurface> surface;
+  std::shared_ptr<dxvk::umd::RuntimeAllocation> native;
   ComPtr<ID3D11Device> backend;
   ComPtr<ID3D11DeviceContext> context;
   {
@@ -2878,18 +3326,28 @@ HRESULT resolveSharedResourceData(Device* device, DXGI_DDI_HRESOURCE handle) {
     const auto entry = resourceStorage.find(resource);
     if (entry == resourceStorage.end() || entry->second.owner != device
         || entry->second.phase != ResourcePhase::Live) return E_INVALIDARG;
-    if (!resource->shared || !resource->shared->allocation.handle()) return DXGI_DDI_ERR_UNSUPPORTED;
+    if (resource->present) native = resource->present->native;
+    if (!(native && native->handle()) && (!resource->shared || !resource->shared->allocation.handle()))
+      return DXGI_DDI_ERR_UNSUPPORTED;
     reservation = entry->second.reservation; surface = resource->shared;
   }
-  const auto allocation = surface->allocation.handle();
+  const auto allocation = native ? native->handle() : surface->allocation.handle();
   device->resolvingShared = surface.get();
   auto live = [&] {
     std::lock_guard<std::mutex> lock(resourceStorageMutex);
     const auto entry = resourceStorage.find(resource);
     return !device->retired && entry != resourceStorage.end()
       && entry->second.owner == device && entry->second.phase == ResourcePhase::Live
-      && entry->second.reservation == reservation && surface->allocation.handle() == allocation;
+      && entry->second.reservation == reservation
+      && (native ? native->handle() : surface->allocation.handle()) == allocation;
   };
+  if (native) {
+    HRESULT hr = dxvk::umd::flushRuntimeSubmission(context.Get());
+    if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    hr = device->memory.markNativeSubmitted(*native);
+    return live() ? hr : DXGI_ERROR_DEVICE_REMOVED;
+  }
   // Publishing a dirty cache performs a synchronized GPU readback and a
   // balanced KMD upload. It must finish before handing ownership to the next
   // user. Even a clean cache still owes submission of partially built commands.
@@ -2942,6 +3400,7 @@ HRESULT bltData(Device* device, const DXGI_DDI_ARG_BLT& request) {
     std::shared_ptr<const char> reservation;
     ComPtr<ID3D11Texture2D> image;
     std::shared_ptr<dxvk::umd::SharedSurface> shared;
+    std::shared_ptr<dxvk::umd::RuntimeAllocation> native;
     UINT bindings = 0;
     DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
   } source, destination;
@@ -2955,6 +3414,7 @@ HRESULT bltData(Device* device, const DXGI_DDI_ARG_BLT& request) {
       auto& participant = *pair.second;
       participant.storage = resource; participant.reservation = entry->second.reservation;
       participant.shared = resource->shared; participant.bindings = resource->nativeBindFlags;
+      if (resource->present) participant.native = resource->present->native;
       participant.format = resource->nativeFormat;
       if (!resource->backend || FAILED(resource->backend.As(&participant.image))) return DXGI_DDI_ERR_UNSUPPORTED;
     }
@@ -2963,7 +3423,7 @@ HRESULT bltData(Device* device, const DXGI_DDI_ARG_BLT& request) {
       || !(destination.bindings & D3D10_DDI_BIND_RENDER_TARGET)) return DXGI_DDI_ERR_UNSUPPORTED;
   // Present Blt publishes into DWM's real paired shared allocation. A private
   // cache alone cannot satisfy that handoff and must not return success.
-  if (request.Flags.Present && !destination.shared) return DXGI_DDI_ERR_UNSUPPORTED;
+  if (request.Flags.Present && !destination.shared && !destination.native) return DXGI_DDI_ERR_UNSUPPORTED;
   D3D11_TEXTURE2D_DESC srcDesc{}, dstDesc{};
   source.image->GetDesc(&srcDesc); destination.image->GetDesc(&dstDesc);
   if (source.format != DXGI_FORMAT_UNKNOWN) srcDesc.Format = source.format;
@@ -3007,6 +3467,15 @@ HRESULT bltData(Device* device, const DXGI_DDI_ARG_BLT& request) {
     else dxvk::umd::sharedWroteRegion(destination.shared->state);
   }
   if (request.Flags.Present) {
+    if (destination.native) {
+      hr = dxvk::umd::flushRuntimeSubmission(context.Get());
+      if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      hr = device->memory.markNativeSubmitted(*destination.native);
+      if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+      if (hr == S_OK) openSharedEpoch(device);
+      return hr;
+    }
     device->resolvingShared = destination.shared.get();
     hr = dxvk::umd::publishSharedSurface(backend.Get(), context.Get(), device->memory, *destination.shared, epoch);
     if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
@@ -3021,6 +3490,10 @@ HRESULT bltData(Device* device, const DXGI_DDI_ARG_BLT& request) {
 }
 
 HRESULT APIENTRY blt(DXGI_DDI_ARG_BLT* args) {
+  DxgiCallScope trace(1, args ? args->hDevice : 0, args ? args->hSrcResource : 0,
+    args ? args->hDstResource : 0, args ? args->Flags.Value : 0,
+    args ? args->SrcSubresource : 0, args ? args->DstSubresource : 0);
+  return trace.result = [&]() -> HRESULT {
   if (!args || !args->hDevice || !args->hSrcResource || !args->hDstResource) return E_INVALIDARG;
   const auto request = *args;
   DeviceOperation operation(reinterpret_cast<void*>(request.hDevice));
@@ -3033,9 +3506,10 @@ HRESULT APIENTRY blt(DXGI_DDI_ARG_BLT* args) {
     });
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }
+  }();
 }
 
-HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool primaryOnly,
+HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool primaryOnly, bool completeNative,
     const std::function<HRESULT(dxvk::umd::RuntimeAllocation&, const std::function<bool()>&)>& submit) {
   try {
     // A nested Present for another resource can also reenter the same shared
@@ -3093,6 +3567,20 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
     HRESULT hr = publishSharedSurfaces(device, surface->shared.get());
     if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
     if (FAILED(hr)) return hr;
+    if (surface->native) {
+      // The texture already aliases the exact allocation presented below.
+      // Blt and initial mode publication hand exclusive ownership to the
+      // host copy queue. Flip keeps its producer-gated direct path.
+      hr = completeNative ? dxvk::umd::waitNativeTextureIdle(context.Get(), image.Get())
+        : dxvk::umd::flushRuntimeSubmission(context.Get());
+      if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      hr = device->memory.markNativeSubmitted(*surface->native);
+      if (!stillLive()) return DXGI_ERROR_DEVICE_REMOVED;
+      if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+      hr = submit(*surface->native, stillLive);
+      return stillLive() ? hr : DXGI_ERROR_DEVICE_REMOVED;
+    }
     if (surface->shared) {
       // A clean opened cache may be stale after another process's writes.
       // Present/SetDisplayMode are handoff boundaries even when a draw already
@@ -3171,14 +3659,79 @@ HRESULT publishPresentData(Device* device, DXGI_DDI_HRESOURCE storage, bool prim
     catch (...) { return E_FAIL; }
 }
 
-HRESULT presentData(Device* device, DXGI_DDI_ARG_PRESENT* args) {
+HRESULT presentData(Device* device, const DXGI_DDI_ARG_PRESENT* args) {
   if (args->SrcSubResourceIndex || args->DstSubResourceIndex
-      || args->hDstResource || !args->pDXGIContext || args->Flags.Value != 1) return E_INVALIDARG;
-  return publishPresentData(device, args->hSurfaceToPresent, false,
-    [&](auto& allocation, const auto& live) { return device->memory.present(allocation, *args, live); });
+      || !args->pDXGIContext || (args->Flags.Value != 1 && args->Flags.Value != 2)) return E_INVALIDARG;
+  const bool flip = args->Flags.Flip;
+  const auto destinationResource = reinterpret_cast<Resource*>(args->hDstResource);
+  std::shared_ptr<PresentSurface> destination;
+  std::shared_ptr<const char> reservation;
+  ComPtr<ID3D11Resource> image;
+  auto backend = device->backend;
+  auto context = device->context;
+  if (destinationResource) {
+    std::lock_guard<std::mutex> lock(resourceStorageMutex);
+    const auto entry = resourceStorage.find(destinationResource);
+    if (entry == resourceStorage.end() || entry->second.owner != device
+        || entry->second.phase != ResourcePhase::Live || !destinationResource->backend
+        || !destinationResource->present || !destinationResource->present->backing().handle())
+      return E_INVALIDARG;
+    destination = destinationResource->present; reservation = entry->second.reservation;
+    image = destinationResource->backend;
+  }
+  return publishPresentData(device, args->hSurfaceToPresent, flip, !flip,
+    [&](auto& allocation, const auto& sourceLive) {
+      auto live = [&] {
+        if (!sourceLive()) return false;
+        if (!destination) return true;
+        std::lock_guard<std::mutex> lock(resourceStorageMutex);
+        const auto entry = resourceStorage.find(destinationResource);
+        return !device->retired && entry != resourceStorage.end() && entry->second.owner == device
+          && entry->second.phase == ResourcePhase::Live && entry->second.reservation == reservation;
+      };
+      if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+      if (!flip && destination && destination->native) {
+        const HRESULT prepared = dxvk::umd::prepareNativeTextureForExternalWrite(context.Get(), image.Get());
+        if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+        if (prepared != S_OK) return FAILED(prepared) ? prepared : E_FAIL;
+        // Preparing the destination can itself submit layout/clear work.
+        const HRESULT idle = dxvk::umd::waitNativeTextureIdle(context.Get(), image.Get());
+        if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+        if (idle != S_OK) return FAILED(idle) ? idle : E_FAIL;
+      }
+      HRESULT hr = device->memory.present(allocation, *args, live,
+        destination ? &destination->backing() : nullptr);
+      if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+      // A Flip selects the source for scanout. It does not write or refresh
+      // the old destination, even when DXGI supplied its resource handle.
+      if (hr != S_OK || !destination || flip) return hr;
+      // The runtime wrote the same imported image. There is no separate
+      // private cache to refresh, and native backing cannot be CPU mapped.
+      if (destination->native) return S_OK;
+      if (destination->shared) {
+        dxvk::umd::invalidateSharedSurface(*destination->shared);
+        return S_OK;
+      }
+      // The runtime owns clipping/placement in its opaque DXGI context. Read
+      // the completed destination, not an assumed full source copy, into the
+      // private cache so later reads or SetDisplayMode cannot restore old pixels.
+      const auto info = destination->backing().info();
+      std::vector<uint8_t> pixels(size_t(info.size));
+      hr = device->memory.download(destination->backing(), pixels.data(), info.pitch);
+      if (!live()) return DXGI_ERROR_DEVICE_REMOVED;
+      if (hr != S_OK) return hr;
+      return dxvk::umd::submitPrivateTransfer(backend.Get(), context.Get(), live,
+        [&](ID3D11DeviceContext* commands) -> HRESULT {
+          commands->UpdateSubresource(image.Get(), 0, nullptr, pixels.data(), info.pitch, 0);
+          return S_OK;
+        });
+    });
 }
 
 HRESULT APIENTRY setDisplayMode(DXGI_DDI_ARG_SETDISPLAYMODE* args) {
+  DxgiCallScope trace(2, args ? args->hDevice : 0, args ? args->hResource : 0, 0,
+    0, args ? args->SubResourceIndex : 0);
+  return trace.result = [&]() -> HRESULT {
   if (!args || !args->hDevice || !args->hResource || args->SubResourceIndex) return E_INVALIDARG;
   const auto request = *args;
   DeviceOperation operation(reinterpret_cast<void*>(request.hDevice));
@@ -3188,11 +3741,12 @@ HRESULT APIENTRY setDisplayMode(DXGI_DDI_ARG_SETDISPLAYMODE* args) {
     return operation.owner->service->run([&] {
       DeviceOperation worker(operation.storage, operation.owner);
       auto device = operation.owner.get();
-      return publishPresentData(device, request.hResource, true,
+      return publishPresentData(device, request.hResource, true, true,
         [&](auto& allocation, const auto& live) { return device->memory.setDisplayMode(allocation, live); });
     });
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }
+  }();
 }
 
 HRESULT APIENTRY getGammaCaps(DXGI_DDI_ARG_GET_GAMMA_CONTROL_CAPS* args) {
@@ -3206,19 +3760,25 @@ HRESULT APIENTRY getGammaCaps(DXGI_DDI_ARG_GET_GAMMA_CONTROL_CAPS* args) {
 }
 
 HRESULT APIENTRY present(DXGI_DDI_ARG_PRESENT* args) {
+  DxgiCallScope trace(3, args ? args->hDevice : 0, args ? args->hSurfaceToPresent : 0,
+    args ? args->hDstResource : 0, args ? args->Flags.Value : 0,
+    args ? args->SrcSubResourceIndex : 0, args ? args->DstSubResourceIndex : 0);
+  return trace.result = [&]() -> HRESULT {
   if (!args || !args->hDevice || !args->hSurfaceToPresent) return E_INVALIDARG;
-  DeviceOperation operation(reinterpret_cast<void*>(args->hDevice));
+  const auto request = *args;
+  DeviceOperation operation(reinterpret_cast<void*>(request.hDevice));
   if (!operation.owner) return DXGI_ERROR_DEVICE_REMOVED;
   try {
     return operation.owner->service->run([&] {
       DeviceOperation worker(operation.storage, operation.owner);
       auto device = operation.owner.get();
-      const HRESULT hr = presentData(device, args);
+      const HRESULT hr = presentData(device, &request);
       if (!device->retired) openSharedEpoch(device);
       return hr;
     });
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
     catch (...) { return E_FAIL; }
+  }();
 }
 }
 
@@ -3423,10 +3983,19 @@ HRESULT createDdiDevice(
       || (!callbacks11 && (!callbacks || !callbacks->pfnSetErrorCb))
       || (callbacks11 && !callbacks11->pfnSetErrorCb) || !table)
     return E_INVALIDARG;
-  auto owner = std::make_shared<Device>();
+  // Native D3D11 callbacks belong to the current DDI thread. Keep command
+  // recording/submission on that caller as well: otherwise each immediate
+  // DDI needs a threadpool round trip just to pump callbacks back here.
+  // The runtime flag also requires this policy for older native interfaces;
+  // permitting helper threads does not require the driver to create them.
+  const bool disableExtraThreads = native
+    && (dxvk::umd::nativeInterface(native->Interface) == dxvk::umd::NativeInterface::D3D11
+      || (native->Flags & D3D10DDI_CREATEDEVICE_FLAG_DISABLE_EXTRA_THREAD_CREATION));
+  auto owner = std::make_shared<Device>(disableExtraThreads);
   dxvk::umd::RuntimeService::Scope scope(owner->service.get());
   try {
     std::lock_guard<std::mutex> lock(deviceStorageMutex);
+    if (deviceStorageClosing) return DXGI_ERROR_DEVICE_REMOVED;
     if (!deviceStorage.emplace(h.pDrvPrivate, DeviceRecord{DevicePhase::Creating, owner}).second)
       return E_INVALIDARG;
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
@@ -3461,6 +4030,7 @@ HRESULT createDdiDevice(
     device->service->allowDeferredCalls();
   }
   auto backendRuntime = device->gpu ? device->gpu->backend() : dxvk::umd::RuntimeBackend{};
+  backendRuntime.disableExtraThreads = disableExtraThreads;
   const HRESULT hr = device->service->run([&] {
     return dxvk::umd::createDevice(*luid, featureLevel,
       &device->backend, &device->context, device->gpu ? &backendRuntime : nullptr);
@@ -3510,6 +4080,15 @@ HRESULT createDdiDevice(
   guard.published = true;
   return S_OK;
 }
+}
+
+extern "C" BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID reserved) {
+  // The CRT calls user DllMain before global destructors on detach. Process
+  // termination leaves reclamation to the OS; normal FreeLibrary still closes
+  // the registries. Do not take locks or invoke any cleanup from this entry.
+  if (reason == DLL_PROCESS_DETACH && reserved)
+    dxvk::umd::processTerminating = true;
+  return TRUE;
 }
 
 extern "C" HRESULT APIENTRY VioGpuDxvkCreateDdiTestDevice(

@@ -355,7 +355,7 @@ namespace dxvk {
     if (stagingMemoryInFlight > MaxMemoryInFlight) {
       ExecuteFlushLocked();
 
-      m_stagingSignal->wait(stats.allocatedTotal - MaxMemoryInFlight);
+      m_device->waitForFence(*m_stagingSignal, stats.allocatedTotal - MaxMemoryInFlight);
     } else if (m_transferCommands >= MaxCommandsPerSubmission || stats.allocatedSinceLastReset >= MaxMemoryPerSubmission) {
       // Flush pending commands if there are a lot of updates in flight
       // to keep both execution time and staging memory in check.
@@ -413,8 +413,8 @@ namespace dxvk {
 
 
   void D3D11Initializer::FlushCsChunkLocked() {
-    m_parent->GetContext()->InjectCsChunk(DxvkCsQueue::HighPriority, std::move(m_csChunk), false);
-    m_csChunk = m_parent->AllocCsChunk(DxvkCsChunkFlag::SingleUse);
+    auto chunk = std::exchange(m_csChunk, m_parent->AllocCsChunk(DxvkCsChunkFlag::SingleUse));
+    m_parent->GetContext()->InjectCsChunk(DxvkCsQueue::HighPriority, std::move(chunk), false);
   }
 
 

@@ -1,5 +1,6 @@
 #include "../src/umd/umd_view.h"
 #include "../src/umd/umd_state.h"
+#include "../src/umd/umd_d3d11_desc.h"
 #include <d3dcompiler.h>
 #include <d3d11sdklayers.h>
 #include <wrl/client.h>
@@ -56,7 +57,54 @@ static void pixels(ID3D11Device* device, ID3D11DeviceContext* context,
   context->Unmap(staging.Get(), index);
 }
 
+static void displayableDescriptors() {
+  // Exact descriptor shape captured from DWM's first failing CreateResource11.
+  D3D10DDI_MIPINFO shape{3040, 1904, 1, 3040, 1904, 1};
+  DXGI_DDI_PRIMARY_DESC primary{};
+  D3D11DDIARG_CREATERESOURCE args{};
+  args.pMipInfoList = &shape; args.pPrimaryDesc = &primary;
+  args.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+  args.Usage = D3D10_DDI_USAGE_DEFAULT; args.BindFlags = 0xa8;
+  args.MiscFlags = D3DWDDM2_0DDI_RESOURCE_MISC_DISPLAYABLE_SURFACE;
+  args.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  args.MipLevels = args.ArraySize = args.SampleDesc.Count = 1;
+  auto accepts = [](const D3D11DDIARG_CREATERESOURCE& desc, bool expected) {
+    UINT misc = 0, bindings = 0; bool shared = false;
+    CHECK(resource11Flags(desc, misc, bindings) == expected);
+    CHECK(textureMiscFlags(resource10Fields(desc), misc, &shared) == expected);
+    if (expected) {
+      CHECK(!misc && bindings == (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE));
+      CHECK(shared == !!(desc.MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED));
+    }
+  };
+  accepts(args, true);
+  auto backbuffer = args; backbuffer.pPrimaryDesc = nullptr;
+  accepts(backbuffer, true); // FlipEx buffers need not have a primary descriptor.
+  for (const UINT extra : {UINT(D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT),
+      UINT(D3D10_DDI_RESOURCE_MISC_SHARED),
+      UINT(D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT | D3D10_DDI_RESOURCE_MISC_SHARED)}) {
+    auto valid = args; valid.MiscFlags |= extra; accepts(valid, true);
+  }
+  for (const UINT extra : {UINT(D3DWDDM2_0DDI_RESOURCE_MISC_HW_PROTECTED),
+      UINT(D3DWDDM2_0DDI_RESOURCE_MISC_CONTAINS_HW_PROTECTED),
+      UINT(D3DWDDM1_3DDI_RESOURCE_MISC_TILED), UINT(D3D10_DDI_RESOURCE_MISC_REMOTE),
+      UINT(D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP)}) {
+    auto invalid = args; invalid.MiscFlags |= extra; accepts(invalid, false);
+  }
+  auto invalid = args; invalid.BindFlags &= ~D3D10_DDI_BIND_PRESENT; accepts(invalid, false);
+  invalid = args; invalid.BindFlags &= ~D3D10_DDI_BIND_RENDER_TARGET; accepts(invalid, false);
+  invalid = args; invalid.BindFlags |= D3D11_DDI_BIND_UNORDERED_ACCESS; accepts(invalid, false);
+  invalid = args; invalid.ResourceDimension = D3D10DDIRESOURCE_BUFFER; accepts(invalid, false);
+  invalid = args; invalid.Usage = D3D10_DDI_USAGE_STAGING; accepts(invalid, false);
+  invalid = args; invalid.MapFlags = D3D10_DDI_CPU_ACCESS_READ; accepts(invalid, false);
+  invalid = args; invalid.MipLevels = 2; accepts(invalid, false);
+  invalid = args; invalid.ArraySize = 2; accepts(invalid, false);
+  invalid = args; invalid.SampleDesc.Count = 2; accepts(invalid, false);
+  invalid = args; invalid.SampleDesc.Quality = 1; accepts(invalid, false);
+}
+
 int main() {
+  displayableDescriptors();
   D3D11_TEXTURE2D_DESC resource = {};
   resource.Width = resource.Height = 8;
   resource.MipLevels = 2; resource.ArraySize = 2;
@@ -94,10 +142,15 @@ int main() {
   // Generated mips have nowhere to live in a single-image wire format.
   sharedResource.MiscFlags |= D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP;
   CHECK(!textureMiscFlags(sharedResource, mipFlags, &sharedFlag) && !sharedFlag);
-  // A real D3D10 misc flag this driver does not implement stays rejected even
-  // in company it does, so sharing cannot smuggle one through.
+  // Discard is a presentation hint, not a backend texture flag. It can
+  // accompany a plain or shared buffer without changing the sharing owner.
   sharedResource.MiscFlags =
     D3D10_DDI_RESOURCE_MISC_SHARED | D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT;
+  CHECK(textureMiscFlags(sharedResource, mipFlags, &sharedFlag) && sharedFlag && !mipFlags);
+  sharedResource.MiscFlags = D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT;
+  CHECK(textureMiscFlags(sharedResource, mipFlags, &sharedFlag) && !sharedFlag && !mipFlags);
+  // Remote resources remain unsupported even alongside a supported hint.
+  sharedResource.MiscFlags |= D3D10_DDI_RESOURCE_MISC_SHARED | D3D10_DDI_RESOURCE_MISC_REMOTE;
   CHECK(!textureMiscFlags(sharedResource, mipFlags, &sharedFlag) && !sharedFlag);
   D3D10DDIARG_CREATESHADERRESOURCEVIEW native = {};
   native.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;

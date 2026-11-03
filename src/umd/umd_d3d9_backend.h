@@ -126,6 +126,7 @@ public:
                      D3D9BufferResource& source, UINT sourceOffset, UINT bytes,
                      const void* upload = nullptr);
   HRESULT setStreamSource(UINT stream, D3D9BufferResource* buffer, UINT offset, UINT stride);
+  HRESULT setStreamSourceFreq(UINT stream, UINT divider);
   HRESULT setIndices(D3D9BufferResource* buffer);
   HRESULT drawPrimitiveBuffers(D3DPRIMITIVETYPE type, UINT start, UINT count);
   HRESULT drawIndexedPrimitive(D3DPRIMITIVETYPE type, INT base, UINT minimum,
@@ -168,6 +169,7 @@ public:
   HRESULT setLight(UINT index, const D3DLIGHT9& light);
   HRESULT setLightEnabled(UINT index, bool enable);
   HRESULT setRenderState(D3DRENDERSTATETYPE state, DWORD value);
+  HRESULT setWInfo(float wNear, float wFar);
   HRESULT setScene(bool capture);
   HRESULT setSoftwareVertexProcessing(bool enable);
   HRESULT setViewport(UINT x, UINT y, UINT width, UINT height);

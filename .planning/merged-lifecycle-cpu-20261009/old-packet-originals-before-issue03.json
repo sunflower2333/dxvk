@@ -1,0 +1,62 @@
+[
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/frozen-wow-native-cpu-handoff-01.json",
+    "bytes": 4103,
+    "sha256": "c58477687296389c2bcf98fa628af47f8c8c2a898348f3daa58eb41cd5a4dd6a"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/frozen-wow-native-cpu-handoff-02.json",
+    "bytes": 4376,
+    "sha256": "d460dfb76925862958b9812d4be34381de5bfd0d4588db950dd04dd0b4bb5250"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/owned-raw-process-f4bf37f-02.cs",
+    "bytes": 4697,
+    "sha256": "d8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/run-root-wow-native-cpu-e68a6c4-01.py",
+    "bytes": 2958,
+    "sha256": "f336d53e045d054f5ff17c5f4732491d91bc787fd79e7f067989b66e0b8a0f28"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/run-root-wow-native-cpu-e68a6c4-02.py",
+    "bytes": 2958,
+    "sha256": "8498553269bc4d37467df0671a0806a21fcb70156086ed025a65a3879864f513"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/run-wow-native-cpu-e68a6c4-01.ps1",
+    "bytes": 7330,
+    "sha256": "7150e40f4722c2b8afc39e87f3881c4d818f9eca808755e97caf1b774980fa96"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/run-wow-native-cpu-e68a6c4-02.ps1",
+    "bytes": 7331,
+    "sha256": "699fc337155b102df52d62bf4a4560de5c3c190eab0a90393900bd268494b4c1"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/source-inputs.json",
+    "bytes": 2531,
+    "sha256": "8aceda75eb10093d8f822540feb9765045d8b7af5561421a5dbe4a5f458dd02c"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/system-d3d10-binding-native.cs",
+    "bytes": 32322,
+    "sha256": "c74fdf873b103f304f9331ff571a29b8b23dcd8239940978597bbbe39620e4d8"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/wow-cpu-helper-e68a6c4-01.cs",
+    "bytes": 32322,
+    "sha256": "c74fdf873b103f304f9331ff571a29b8b23dcd8239940978597bbbe39620e4d8"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/wow-cpu-runner-e68a6c4-01.cs",
+    "bytes": 4697,
+    "sha256": "d8cf5089bfe02483e8fc3014645ebe08a2683ad53b2a9052637eb46586e0ddad"
+  },
+  {
+    "path": "/home/sunf/droidvm-repos/reference/codes/dxvk-umd-dx8-wow-lifecycle-20261009/artifacts/wow-native-cpu-prepared-e68a6c4-01/wow-native-cpu-source-e68a6c4-01.tar.gz",
+    "bytes": 47977,
+    "sha256": "811c80e7367505b95ad434ad6b247852ee108ca0e55398d7bfb45231c77c5f7d"
+  }
+]

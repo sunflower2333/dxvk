@@ -42,6 +42,7 @@ struct OptionalShared {
       D3D10DDIARG_OPENRESOURCE args{};
       args.NumAllocations=1;args.pOpenAllocationInfo=&opened;args.hKMResource.handle=allocation+1000;
       f.table.pfnOpenResource(f.device,&args,handle,{&runtime});
+      if (lastError==S_OK) CHECK(runtimeOpens.emplace(&runtime,allocation).second);
       driverFlags=creator->driverFlags;
     } else {
       auto words=image(4);

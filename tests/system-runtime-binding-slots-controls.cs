@@ -25,6 +25,18 @@ static class SystemRuntimeBindingSlotsControls {
             if(slot==1) Check(Equal(actual.Data,DxvkBindingNative01.ReplaceDx10(original,candidate).Data));
         }
         foreach(int invalid in new[]{-1,3,4,Int32.MaxValue}) Reject(delegate { DxvkBindingNative01.ReplaceNativeSlot(Row(d9+"\0"+d10+"\0"+d11+"\0\0"),@"C:\V\f.dll",invalid); });
+        foreach(string suffix in new[]{"\0\0","\0\0\0\0"}) {
+            var original=Row(d9+"\0"+d10+"\0"+d11+suffix);var before=(byte[])original.Data.Clone();
+            var modern=DxvkBindingNative01.ReplaceNativeModern(original,@"C:\Candidate\front.dll");
+            Check(Equal(modern.Data,Encoding.Unicode.GetBytes(d9+"\0"+@"C:\Candidate\front.dll"+"\0"+@"C:\Candidate\front.dll"+suffix)));
+            Check(Equal(original.Data,before));
+        }
+        DxvkBindingNative01.RequireModernBinding(true,"11",true);
+        foreach(string api in new[]{"8","9","9ex","10","","12"}) Reject(delegate { DxvkBindingNative01.RequireModernBinding(true,api,true); });
+        Reject(delegate { DxvkBindingNative01.RequireModernBinding(true,"11",false); });
+        DxvkBindingNative01.RequireModernBinding(false,"10",false);
+        var wrongModern=Row(d9+"\0"+d10+"\0"+d11+"\0\0");wrongModern.Name="UserModeDriverNameWoW";
+        Reject(delegate { DxvkBindingNative01.ReplaceNativeModern(wrongModern,@"C:\V\f.dll"); });
         var wow=Row(d9+"\0"+d10+"\0"+d11+"\0\0");wow.View=0x200;Reject(delegate { DxvkBindingNative01.ReplaceNativeSlot(wow,@"C:\V\f.dll",0); });
         var other=Row(d9+"\0"+d10+"\0"+d11+"\0\0");other.Name="InstalledDisplayDrivers";Reject(delegate { DxvkBindingNative01.ReplaceNativeSlot(other,@"C:\V\f.dll",0); });
         Check(DxvkBindingNative01.ProbeArchitecture(Pe(0xaa64))=="arm64");Check(DxvkBindingNative01.ProbeArchitecture(Pe(0x8664))=="x64");

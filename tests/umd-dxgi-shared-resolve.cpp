@@ -40,6 +40,8 @@ struct Backing {
   void* address() { return data.data() + 16; }
 };
 static std::unordered_map<D3DKMT_HANDLE, Backing> backings;
+static std::unordered_map<HANDLE, D3DKMT_HANDLE> runtimeOpens;
+static unsigned openedRuntimeCloses;
 static D3DKMT_HANDLE nextHandle = 100;
 static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* request) {
   runtimeCaller(); CHECK(runtime == &adapterCookie && request && request->PrivateDriverDataSize == 160);
@@ -66,6 +68,11 @@ static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* request) {
 }
 static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* request) {
   runtimeCaller(); CHECK(device == &deviceCookie && request && request->hResource);
+  if (runtimeOpens.count(request->hResource)) {
+    CHECK(!request->NumAllocations && !request->HandleList);
+    CHECK(backings.count(runtimeOpens.at(request->hResource)));
+    runtimeOpens.erase(request->hResource); ++openedRuntimeCloses; return S_OK;
+  }
   auto found = backings.end();
   for (auto entry = backings.begin(); entry != backings.end(); ++entry)
     if (entry->second.runtime == request->hResource) found = entry;
@@ -94,7 +101,8 @@ HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
   CHECK(!std::memcmp(&luid, &selected, sizeof(luid)));
   CHECK(runtime && constructingRuntime);
   *constructingRuntime = *runtime;
-  const HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
+  const HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+    runtime->disableExtraThreads ? D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS : 0,
     &level, 1, D3D11_SDK_VERSION, device, nullptr, context);
   if (hr == S_OK) CHECK(bridges.emplace(*context, constructingRuntime).second);
   return hr;
@@ -102,10 +110,12 @@ HRESULT dxvk::umd::createDevice(const LUID& luid, D3D_FEATURE_LEVEL level,
 HRESULT dxvk::umd::isStagingResourceBusy(ID3D11DeviceContext*, ID3D11Resource*, BOOL*) noexcept { return E_NOTIMPL; }
 HRESULT dxvk::umd::flushRuntimeSubmission(ID3D11DeviceContext* context) noexcept {
   ++submissions;
-  CHECK(GetCurrentThreadId() != caller && bridges.count(context));
-  // This real RuntimeGpu entry pumps QueryAdapterInfo on the original DDI
-  // caller. A synthetic backend must not invent runtime callbacks on its worker.
-  auto bridge = *bridges.at(context); submitting = true;
+  CHECK(bridges.count(context));
+  auto bridge = *bridges.at(context);
+  CHECK((GetCurrentThreadId() == caller) == bridge.disableExtraThreads);
+  // This real RuntimeGpu entry executes QueryAdapterInfo on the original DDI
+  // caller in both the D3D10 worker and D3D11 caller-thread profiles.
+  submitting = true;
   const HRESULT hr = bridge.create.callbacks->status(bridge.create.owner);
   submitting = false;
   if (hr != S_OK) return hr;
@@ -196,6 +206,7 @@ struct Texture {
       D3DDDI_OPENALLOCATIONINFO entry{}; entry.hAllocation = opened; entry.pPrivateDriverData = &info; entry.PrivateDriverDataSize = sizeof(info);
       D3D10DDIARG_OPENRESOURCE args{}; args.NumAllocations = 1; args.pOpenAllocationInfo = &entry; args.hKMResource.handle = opened + 1000;
       f.table.pfnOpenResource(f.device, &args, handle, {&runtime}); allocation = opened;
+      if (lastError == S_OK) CHECK(runtimeOpens.emplace(&runtime, opened).second);
     } else {
       auto initial = image(seed); D3D10_DDIARG_SUBRESOURCE_UP data{initial.data(), width * 4, width * height * 4};
       D3D10DDI_MIPINFO mip{width, height, 1, width, height, 1}; typename F::Desc desc{};
@@ -460,12 +471,13 @@ static void predicateProfile(unsigned index) {
     f.table.pfnStagingResourceUnmap(f.device, staging.handle, 0); CHECK(lastError == S_OK); state();
     context->SetPredication(nullptr, FALSE);
   }
-  CHECK(backings.erase(9002) == 1); // The borrowed allocation never owes DeallocateCb.
+  CHECK(backings.erase(9002) == 1); // Closing this device's open leaves the external backing alive.
 }
 int main() {
   caller = GetCurrentThreadId();
   profile<D3D10DDI_DEVICEFUNCS>(0); profile<D3D10_1DDI_DEVICEFUNCS>(1); profile<D3D11DDI_DEVICEFUNCS>(2);
   predicateProfile<D3D10DDI_DEVICEFUNCS>(0); predicateProfile<D3D10_1DDI_DEVICEFUNCS>(1); predicateProfile<D3D11DDI_DEVICEFUNCS>(2);
+  CHECK(runtimeOpens.empty() && openedRuntimeCloses > 0);
   CHECK(predicateSnapshots == 21 && predicatePixels == 735 && backings.empty() && bridges.empty() && lastError == S_OK);
   std::printf("DXGI shared transfer predicate PASS profiles=3 snapshots=21 pixels=735 hardware_admission=0\n");
   CHECK(snapshots == 15 && pixels == 525 && bridges.empty());

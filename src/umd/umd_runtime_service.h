@@ -36,6 +36,13 @@ public:
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_retirementEpoch;
   }
+  // A nested destroy cannot join the backend operation whose callback is
+  // suspended beneath it. It may revoke borrowed handles without waiting.
+  bool nestedOperation() {
+    if (m_inlineWork) return m_inlineDepth > 1;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_pumps > 1;
+  }
   struct Scope {
     RuntimeService* service;
     Scope* previous;
@@ -47,11 +54,14 @@ public:
   // An owned device may start completion workers during construction. Enable
   // their deferred requests before the first pump can return; enabling them
   // afterwards leaves a window in which a valid worker sees UNSUPPORTED.
-  explicit RuntimeService(bool deferred = false) : m_deferred(deferred) {
-    m_work = CreateThreadpoolWork(work, this, nullptr);
-    if (!m_work) throw std::bad_alloc();
+  explicit RuntimeService(bool deferred = false, bool inlineWork = false)
+  : m_deferred(deferred && !inlineWork), m_inlineWork(inlineWork) {
+    if (!inlineWork) {
+      m_work = CreateThreadpoolWork(work, this, nullptr);
+      if (!m_work) throw std::bad_alloc();
+    }
   }
-  ~RuntimeService() { CloseThreadpoolWork(m_work); }
+  ~RuntimeService() { if (m_work) CloseThreadpoolWork(m_work); }
   RuntimeService(const RuntimeService&) = delete;
   RuntimeService& operator=(const RuntimeService&) = delete;
 
@@ -61,7 +71,7 @@ public:
   // deferred callback is never a replacement for that submission barrier.
   void allowDeferredCalls() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_deferred = true;
+    m_deferred = !m_inlineWork;
   }
 
   bool isCaller() const {
@@ -120,6 +130,23 @@ public:
   template<typename Function> void drain(Function&& function) {
     std::lock_guard<std::recursive_mutex> entry(m_entry);
     Scope scope(this);
+    if (m_inlineWork) {
+      // The matching renderer records, compiles and submits on this caller.
+      // Nested callbacks must leave retirement to the outermost backend call,
+      // just as the worker path waits for its suspended parent to return.
+      ++m_inlineDepth;
+      std::exception_ptr error;
+      try { function(); } catch (...) { error = std::current_exception(); }
+      if (!--m_inlineDepth) {
+        releaseRetired();
+        if (!m_releasing) {
+          performAmortizedProcessing();
+          releaseRetired();
+        }
+      }
+      if (error) std::rethrow_exception(error);
+      return;
+    }
     Job job;
     job.context = &function;
     job.function = [](void* ptr) { (*static_cast<std::remove_reference_t<Function>*>(ptr))(); };
@@ -249,6 +276,8 @@ private:
   uint64_t m_retirementEpoch = 0;
   unsigned m_pumps = 0;
   bool m_deferred = false, m_closed = false, m_releasing = false;
+  const bool m_inlineWork;
+  unsigned m_inlineDepth = 0;
   std::function<void()> m_amortized;
   bool m_amortizedPending = false;
 };

@@ -17,6 +17,7 @@
 #include <climits>
 #include <limits>
 #include <map>
+#include <utility>
 
 static std::atomic<unsigned> checks{0};
 #define CHECK(c) do { const auto n = ++checks; if (!(c)) { \
@@ -66,6 +67,9 @@ struct Fixture {
   bool allocationFailure = false, contextFailure = false, nullBackend = false;
   bool throwAllocation = false, throwOther = false, mapped = false, allocated = false;
   bool callbacksValid = true, adapterValid = true;
+  bool explicitResidency = false, resident = false, pagingPending = false, pagingWaited = false;
+  unsigned pagingCreates = 0, pagingDestroys = 0, makes = 0, evicts = 0, renders = 0, pagingWaits = 0;
+  HRESULT makeResult = S_OK, pagingWaitResult = S_OK;
   std::function<void()> queryHook, contextHook, allocationHook, destroyHook;
   std::function<void()> backendHook;
   std::function<void()> surfaceHook;
@@ -87,6 +91,8 @@ struct Fixture {
   std::vector<RECT> clearRects;
   unsigned declarationCreates = 0, declarationCloses = 0, declarationSets = 0, draws = 0;
   HRESULT declarationResult = S_OK, stateResult = S_OK, drawResult = S_OK;
+  unsigned streamFrequencySets = 0;
+  UINT frequencyStream = UINT_MAX, frequencyDivider = 0;
   bool nullDeclaration = false;
   std::function<void()> declarationHook;
   std::vector<D3DVERTEXELEMENT9> declarationElements;
@@ -96,6 +102,7 @@ struct Fixture {
   D3DPRIMITIVETYPE drawType = D3DPT_POINTLIST;
   D3DRENDERSTATETYPE renderState = D3DRS_ZENABLE;
   DWORD renderValue = 0;
+  D3DDDIARG_WINFO windowRange = {1.0f, 1.0f};
   D3DVIEWPORT9 viewport = {0,0,0,0,0.0f,1.0f};
   RECT scissor = {};
   bool scene = false, software = false;
@@ -183,6 +190,8 @@ struct Fixture {
 };
 static Fixture* f;
 
+// A moved-from std::function can retain a small callable in libc++. Explicitly
+// clear each one-shot hook before invoking it, including callbacks that reenter.
 static HRESULT APIENTRY query(HANDLE adapter, const D3DDDICB_QUERYADAPTERINFO* args) {
   f->runtime();
   CHECK(f->adapterValid);
@@ -190,12 +199,60 @@ static HRESULT APIENTRY query(HANDLE adapter, const D3DDDICB_QUERYADAPTERINFO* a
   auto bytes = static_cast<uint8_t*>(args->pPrivateDriverData);
   for (unsigned i = 0; i < 160; i++) CHECK(bytes[i] == 0);
   ++f->queries;
-  if (f->queryHook) { auto hook = std::move(f->queryHook); hook(); }
+  if (f->queryHook) { auto hook = std::exchange(f->queryHook, {}); hook(); }
   put(bytes, 0, 0x504d5644, 4); put(bytes, 8, 128, 4);
   put(bytes, 16, f->capabilities, 8); put(bytes, 24, f->generation, 8);
   put(bytes, 128, 0x44494c56, 4); put(bytes, 132, 1, 4); put(bytes, 136, 32, 4);
   put(bytes, 140, 1, 4); std::memcpy(bytes+144, &f->luid, sizeof(LUID)); put(bytes, 152, 1, 4);
   return f->queryResult;
+}
+// Substitute only the kernel identity lookup. Production adapter/device code
+// must carry this independently negotiated physical-engine model to both
+// RuntimeGpu and RuntimeMemory, regardless of the legacy API/DDI revision.
+HRESULT dxvk::umd::openKernelIdentity(const RuntimeIdentity& initial,
+    std::shared_ptr<const AdapterIdentitySource>& source) {
+  CHECK(!std::memcmp(initial.luid.data(), &f->luid, sizeof(LUID)));
+  struct Identity final : AdapterIdentitySource {
+    HANDLE runtime;
+    bool residency;
+    Identity(HANDLE handle, bool model) : runtime(handle), residency(model) { }
+    HRESULT query(RuntimeIdentity& result, RuntimeQueryStage stage) const override {
+      return queryRuntimeIdentity(runtime, ::query, result, stage);
+    }
+    bool explicitResidency() const override { return residency; }
+  };
+  source = std::make_shared<Identity>(&f->adapterCookie, f->explicitResidency);
+  return S_OK;
+}
+static HRESULT APIENTRY createPaging(HANDLE device, D3DDDICB_CREATEPAGINGQUEUE* args) {
+  f->runtime(); CHECK(device == &f->deviceCookie && args && !args->hPagingQueue);
+  CHECK(args->Priority == D3DDDI_PAGINGQUEUE_PRIORITY_NORMAL);
+  ++f->pagingCreates; args->hPagingQueue = 751; args->hSyncObject = 752; return S_OK;
+}
+static HRESULT APIENTRY destroyPaging(HANDLE device, const D3DDDI_DESTROYPAGINGQUEUE* args) {
+  f->runtime(); CHECK(device == &f->deviceCookie && args && args->hPagingQueue == 751);
+  CHECK(!f->resident); ++f->pagingDestroys; return S_OK;
+}
+static HRESULT APIENTRY makeResident(HANDLE device, D3DDDI_MAKERESIDENT* args) {
+  f->runtime(); CHECK(device == &f->deviceCookie && args && args->hPagingQueue == 751);
+  CHECK(args->NumAllocations == 1 && args->AllocationList && *args->AllocationList == 31);
+  CHECK(f->allocated && !f->resident && !args->Flags.MustSucceed);
+  ++f->makes;
+  if (FAILED(f->makeResult)) return f->makeResult;
+  f->resident = true;
+  if (f->pagingPending) { args->PagingFenceValue = 91; return E_PENDING; }
+  return S_OK;
+}
+static HRESULT APIENTRY evict(HANDLE device, D3DDDICB_EVICT* args) {
+  f->runtime(); CHECK(device == &f->deviceCookie && args && args->NumAllocations == 1);
+  CHECK(args->AllocationList && *args->AllocationList == 31 && f->resident);
+  f->resident = false; ++f->evicts; return S_OK;
+}
+static HRESULT APIENTRY waitPaging(HANDLE device, const D3DDDICB_WAITFORSYNCHRONIZATIONOBJECTFROMGPU* args) {
+  f->runtime(); CHECK(device == &f->deviceCookie && args && args->hContext == &f->contextCookie);
+  CHECK(args->ObjectCount == 1 && *args->ObjectHandleArray == 752);
+  CHECK(*args->MonitoredFenceValueArray == 91 && f->resident && f->pagingPending);
+  ++f->pagingWaits; f->pagingWaited = f->pagingWaitResult == S_OK; return f->pagingWaitResult;
 }
 static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* args) {
   f->runtime();
@@ -208,7 +265,7 @@ static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* arg
       args->hContext = &f->presentContextCookie;
       f->presentContextLive = true; ++f->presentContexts;
     }
-    if (f->presentContextHook) { auto hook = std::move(f->presentContextHook); hook(); }
+    if (f->presentContextHook) { auto hook = std::exchange(f->presentContextHook, {}); hook(); }
     return f->presentContextResult;
   }
   CHECK(args->PrivateDriverDataSize == 32 && read(args->pPrivateDriverData, 16, 8) == f->generation);
@@ -218,7 +275,7 @@ static HRESULT APIENTRY createContext(HANDLE device, D3DDDICB_CREATECONTEXT* arg
   args->pCommandBuffer = f->commands.data(); args->CommandBufferSize = UINT(f->commands.size());
   args->pAllocationList = f->list; args->AllocationListSize = 64;
   args->pPatchLocationList = f->patches; args->PatchLocationListSize = 64;
-  if (f->contextHook) { auto hook = std::move(f->contextHook); hook(); }
+  if (f->contextHook) { auto hook = std::exchange(f->contextHook, {}); hook(); }
   return S_OK;
 }
 static HRESULT APIENTRY destroyContext(HANDLE device, const D3DDDICB_DESTROYCONTEXT* args) {
@@ -232,7 +289,7 @@ static HRESULT APIENTRY destroyContext(HANDLE device, const D3DDDICB_DESTROYCONT
   CHECK(device == &f->deviceCookie && args && args->hContext == &f->contextCookie);
   CHECK(!f->allocated && !f->mapped);
   f->cleanup.push_back('C'); ++f->contextCloses;
-  if (f->destroyHook) { auto hook = std::move(f->destroyHook); hook(); }
+  if (f->destroyHook) { auto hook = std::exchange(f->destroyHook, {}); hook(); }
   return f->destroyResult;
 }
 static HRESULT APIENTRY escape(HANDLE adapter, const D3DDDICB_ESCAPE* args) {
@@ -273,7 +330,7 @@ static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
     args->hKMResource = f->nullPresentResource ? 0 : allocation.handle + 1000;
     f->presentAllocations.emplace(args->hResource, std::move(allocation));
     ++f->presentAllocationCreates;
-    if (f->presentAllocateHook) { auto hook = std::move(f->presentAllocateHook); hook(); }
+    if (f->presentAllocateHook) { auto hook = std::exchange(f->presentAllocateHook, {}); hook(); }
     return f->presentAllocateResult;
   }
   CHECK(device == &f->deviceCookie && args && !args->hResource && args->NumAllocations == 1);
@@ -285,7 +342,7 @@ static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
   if (f->allocationFailure) return E_OUTOFMEMORY;
   CHECK(!f->allocated); f->allocated = true;
   args->pAllocationInfo->hAllocation = 31;
-  if (f->allocationHook) { auto hook = std::move(f->allocationHook); hook(); }
+  if (f->allocationHook) { auto hook = std::exchange(f->allocationHook, {}); hook(); }
   return S_OK;
 }
 static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* args) {
@@ -295,7 +352,7 @@ static HRESULT APIENTRY deallocate(HANDLE device, const D3DDDICB_DEALLOCATE* arg
     auto entry = f->presentAllocations.find(args->hResource);
     CHECK(entry != f->presentAllocations.end() && !entry->second.mapped);
     ++f->presentReleaseAttempts;
-    if (f->presentReleaseHook) { auto hook = std::move(f->presentReleaseHook); hook(); }
+    if (f->presentReleaseHook) { auto hook = std::exchange(f->presentReleaseHook, {}); hook(); }
     if (SUCCEEDED(f->presentReleaseResult)) {
       ++f->presentReleases; f->presentAllocations.erase(entry); f->cleanup.push_back('R');
     }
@@ -318,7 +375,7 @@ static HRESULT APIENTRY lock(HANDLE device, D3DDDICB_LOCK* args) {
     if (FAILED(f->presentLockResult)) return f->presentLockResult;
     allocation->mapped = true; ++f->presentLocks;
     args->pData = f->badPresentMapping ? nullptr : allocation->guarded.data() + 16;
-    if (f->presentLockHook) { auto hook = std::move(f->presentLockHook); hook(); }
+    if (f->presentLockHook) { auto hook = std::exchange(f->presentLockHook, {}); hook(); }
     return f->presentLockResult;
   }
   CHECK(device == &f->deviceCookie && args && args->hAllocation == 31 && f->allocated && !f->mapped);
@@ -337,13 +394,21 @@ static HRESULT APIENTRY unlock(HANDLE device, const D3DDDICB_UNLOCK* args) {
       CHECK(allocation->guarded[allocation->guarded.size() - 1 - i] == 0xcd);
     }
     allocation->mapped = false; ++f->presentUnlocks;
-    if (f->presentUnlockHook) { auto hook = std::move(f->presentUnlockHook); hook(); }
+    if (f->presentUnlockHook) { auto hook = std::exchange(f->presentUnlockHook, {}); hook(); }
     return f->presentUnlockResult;
   }
   CHECK(device == &f->deviceCookie && args && args->NumAllocations == 1 && *args->phAllocations == 31);
   CHECK(f->mapped); ++f->unlocks; f->mapped = false; f->cleanup.push_back('U'); return S_OK;
 }
-static HRESULT APIENTRY render(HANDLE, D3DDDICB_RENDER*) { CHECK(false); return E_FAIL; }
+static HRESULT APIENTRY render(HANDLE device, D3DDDICB_RENDER* args) {
+  f->runtime(); CHECK(f->explicitResidency && device == &f->deviceCookie && args);
+  CHECK(args->hContext == &f->contextCookie && args->NumAllocations == 1);
+  CHECK(f->list[0].hAllocation == 31 && f->list[0].WriteOperation);
+  // Match VidMm's observed rejection: an allocation list alone cannot make
+  // a WDDM2 allocation resident, and pending paging must precede submission.
+  if (!f->resident || (f->pagingPending && !f->pagingWaited)) return E_FAIL;
+  ++f->renders; return S_OK;
+}
 
 static HRESULT APIENTRY presentCallback(HANDLE device, D3DDDICB_PRESENT* args) {
   f->runtime();
@@ -359,7 +424,7 @@ static HRESULT APIENTRY presentCallback(HANDLE device, D3DDDICB_PRESENT* args) {
   f->presentedPixels.assign(allocation->guarded.begin() + 16, allocation->guarded.end() - 16);
   CHECK(f->presentedPixels == f->expectedPresentPixels);
   f->lastPresent = *args; ++f->presents;
-  if (f->presentHook) { auto hook = std::move(f->presentHook); hook(); }
+  if (f->presentHook) { auto hook = std::exchange(f->presentHook, {}); hook(); }
   return f->presentResult;
 }
 
@@ -402,7 +467,7 @@ HRESULT dxvk::umd::D3D9Backend::createBuffer(const D3D9BufferDesc& desc,
   CHECK(bool(initialData) == bool(desc.systemData) && (!desc.systemData || desc.systemMemory));
   if (initialData) std::memcpy(buffer->m_state->bytes.data(), initialData, desc.bytes);
   f->bufferDescriptions.push_back(desc);
-  if (f->bufferHook) { auto hook = std::move(f->bufferHook); hook(); }
+  if (f->bufferHook) { auto hook = std::exchange(f->bufferHook, {}); hook(); }
   output = std::move(buffer); return S_OK;
 }
 HRESULT dxvk::umd::D3D9Backend::lockBuffer(D3D9BufferResource& buffer, UINT offset, UINT bytes,
@@ -477,6 +542,13 @@ HRESULT dxvk::umd::D3D9Backend::setIndices(D3D9BufferResource* buffer) {
   m_state->indices = buffer;
   if (buffer) ++buffer->m_state->bindings;
   return S_OK;
+}
+HRESULT dxvk::umd::D3D9Backend::setStreamSourceFreq(UINT stream, UINT divider) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  ++f->streamFrequencySets;
+  f->frequencyStream = stream;
+  f->frequencyDivider = divider;
+  return f->stateResult;
 }
 HRESULT dxvk::umd::D3D9Backend::drawPrimitiveBuffers(D3DPRIMITIVETYPE type, UINT start, UINT count) {
   CHECK(GetCurrentThreadId() != f->caller && m_state->declaration && m_state->target);
@@ -570,7 +642,7 @@ IDirect3DDevice9Ex* dxvk::umd::D3D9Backend::device() const noexcept { return nul
 HRESULT dxvk::umd::D3D9Backend::validateDevice(UINT& passes) {
   CHECK(GetCurrentThreadId() != f->caller && passes == 0);
   ++f->validations;
-  if (f->validationHook) { auto hook = std::move(f->validationHook); hook(); }
+  if (f->validationHook) { auto hook = std::exchange(f->validationHook, {}); hook(); }
   if (f->validationThrowAllocation) throw std::bad_alloc();
   if (f->validationThrowOther) throw 1;
   // Deliberately write even on failure: the DDI must stage, not publish, it.
@@ -603,7 +675,7 @@ HRESULT dxvk::umd::D3D9Backend::create(const AdapterLuid& luid, const RuntimeBac
     hr = cb->map(owner, backend->m_state->allocation.token, &pixels, &pitch);
     if (FAILED(hr)) return hr;
     CHECK(pixels == f->pixels.data());
-    if (f->backendHook) { auto hook = std::move(f->backendHook); hook(); }
+    if (f->backendHook) { auto hook = std::exchange(f->backendHook, {}); hook(); }
     output = std::move(backend);
     return S_OK;
   } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
@@ -612,6 +684,12 @@ HRESULT dxvk::umd::D3D9Backend::create(const AdapterLuid& luid, const RuntimeBac
 HRESULT dxvk::umd::D3D9Backend::flush() noexcept {
   CHECK(GetCurrentThreadId() != f->caller); ++f->backendFlushes;
   if (f->flushResult != S_OK) return f->flushResult;
+  if (f->explicitResidency) {
+    const uint32_t stream[] = {0, 0, 0x11223344, 0x55667788};
+    const mwd_reference ref{m_state->allocation.token, 0, 4096, 3, 0};
+    return m_state->bridge.create.callbacks->submit(m_state->bridge.create.owner,
+      stream, sizeof(stream), &ref, 1);
+  }
   return m_state->bridge.create.callbacks->status(m_state->bridge.create.owner);
 }
 
@@ -624,14 +702,14 @@ HRESULT dxvk::umd::D3D9Backend::createQuery(D3DQUERYTYPE type,
   if (f->nullQuery) return S_OK;
   auto query = std::make_unique<D3D9QueryResource>();
   query->m_state->type = type; f->queryType = type;
-  if (f->queryCreateHook) { auto hook = std::move(f->queryCreateHook); hook(); }
+  if (f->queryCreateHook) { auto hook = std::exchange(f->queryCreateHook, {}); hook(); }
   output = std::move(query);
   return S_OK;
 }
 HRESULT dxvk::umd::D3D9Backend::issueQuery(D3D9QueryResource&, DWORD flags) {
   CHECK(GetCurrentThreadId() != f->caller);
   ++f->queryIssues; f->queryIssueFlags = flags;
-  if (f->queryIssueHook) { auto hook = std::move(f->queryIssueHook); hook(); }
+  if (f->queryIssueHook) { auto hook = std::exchange(f->queryIssueHook, {}); hook(); }
   return f->queryIssueResult;
 }
 HRESULT dxvk::umd::D3D9Backend::getQueryData(D3D9QueryResource& query, void* data, UINT bytes) {
@@ -644,7 +722,7 @@ HRESULT dxvk::umd::D3D9Backend::getQueryData(D3D9QueryResource& query, void* dat
       *static_cast<uint8_t*>(data) = 1;
     else std::memcpy(data, f->queryBytes.data(), bytes);
   }
-  if (f->queryDataHook) { auto hook = std::move(f->queryDataHook); hook(); }
+  if (f->queryDataHook) { auto hook = std::exchange(f->queryDataHook, {}); hook(); }
   return f->queryDataResult;
 }
 
@@ -656,7 +734,7 @@ HRESULT dxvk::umd::D3D9Backend::createVertexDeclaration(const D3DVERTEXELEMENT9*
   auto declaration = std::make_unique<D3D9VertexDeclaration>();
   f->declarationElements.clear();
   for (auto p = elements; p->Stream != 0xff; ++p) f->declarationElements.push_back(*p);
-  if (f->declarationHook) { auto hook = std::move(f->declarationHook); hook(); }
+  if (f->declarationHook) { auto hook = std::exchange(f->declarationHook, {}); hook(); }
   output = std::move(declaration);
   return S_OK;
 }
@@ -675,7 +753,7 @@ HRESULT dxvk::umd::D3D9Backend::createShader(D3D9ShaderStage stage, const DWORD*
     output = std::make_unique<D3D9Shader>();
     output->m_state->stage = stage;
   }
-  if (f->shaderHook) { auto hook = std::move(f->shaderHook); hook(); }
+  if (f->shaderHook) { auto hook = std::exchange(f->shaderHook, {}); hook(); }
   return f->shaderResult;
 }
 HRESULT dxvk::umd::D3D9Backend::setShader(D3D9ShaderStage stage, D3D9Shader* shader) {
@@ -753,6 +831,12 @@ HRESULT dxvk::umd::D3D9Backend::setRenderState(D3DRENDERSTATETYPE state, DWORD v
   f->renderState = state; f->renderValue = value;
   return S_OK;
 }
+HRESULT dxvk::umd::D3D9Backend::setWInfo(float wNear, float wFar) {
+  CHECK(GetCurrentThreadId() != f->caller);
+  if (f->stateResult != S_OK) return f->stateResult;
+  f->windowRange = {wNear, wFar};
+  return S_OK;
+}
 HRESULT dxvk::umd::D3D9Backend::setScene(bool capture) {
   CHECK(GetCurrentThreadId() != f->caller);
   if (f->stateResult != S_OK) return f->stateResult;
@@ -802,7 +886,7 @@ HRESULT dxvk::umd::D3D9Backend::createSurface(const D3D9SurfaceDesc& desc,
   resource->m_state->desc = desc;
   resource->m_state->bytes.resize(size_t(desc.width) * desc.height * 4);
   f->descriptions.push_back(desc);
-  if (f->surfaceHook) { auto hook = std::move(f->surfaceHook); hook(); }
+  if (f->surfaceHook) { auto hook = std::exchange(f->surfaceHook, {}); hook(); }
   output = std::move(resource);
   return S_OK;
 }
@@ -879,7 +963,7 @@ HRESULT dxvk::umd::D3D9Backend::colorFill(D3D9SurfaceResource& surface, const RE
   for (LONG y = area.top; y < area.bottom; ++y)
     for (LONG x = area.left; x < area.right; ++x)
       std::memcpy(state.bytes.data() + (size_t(y) * state.desc.width + UINT(x)) * 4, &color, 4);
-  if (f->colorFillHook) { auto hook = std::move(f->colorFillHook); hook(); }
+  if (f->colorFillHook) { auto hook = std::exchange(f->colorFillHook, {}); hook(); }
   return S_OK;
 }
 HRESULT dxvk::umd::D3D9Backend::createTexture(const D3D9SurfaceDesc* levels, UINT count,
@@ -951,7 +1035,7 @@ HRESULT dxvk::umd::D3D9Backend::readSurface(D3D9SurfaceResource& resource,
   CHECK(GetCurrentThreadId() != f->caller);
   CHECK(resource.m_state->desc.renderTarget && !resource.m_state->locked);
   ++f->surfaceReads;
-  if (f->readbackHook) { auto hook = std::move(f->readbackHook); hook(); }
+  if (f->readbackHook) { auto hook = std::exchange(f->readbackHook, {}); hook(); }
   if (f->readbackResult != S_OK) return f->readbackResult;
   pixels = resource.m_state->bytes;
   f->rendererPixels = &resource.m_state->bytes;
@@ -973,6 +1057,11 @@ static void initialize(Fixture& fixture, dxvk::umd::LegacyD3DApi api = dxvk::umd
   cb.pfnLockCb = lock; cb.pfnUnlockCb = unlock;
   cb.pfnCreateContextCb = createContext; cb.pfnDestroyContextCb = destroyContext;
   cb.pfnEscapeCb = escape; cb.pfnRenderCb = render;
+  if (f->explicitResidency) {
+    cb.pfnCreatePagingQueueCb = createPaging; cb.pfnDestroyPagingQueueCb = destroyPaging;
+    cb.pfnMakeResidentCb = makeResident; cb.pfnEvictCb = evict;
+    cb.pfnWaitForSynchronizationObjectFromGpuCb = waitPaging;
+  }
   std::memset(&f->table, 0xa5, sizeof(f->table));
   auto& create = f->create;
   create.hDevice = &f->deviceCookie; create.Interface = UINT(api); create.Version = 0xffffffff;
@@ -1032,6 +1121,7 @@ static void createDevice() {
   expectedTable.pfnSetVertexShaderConstB = f->table.pfnSetVertexShaderConstB;
   expectedTable.pfnSetPixelShaderConstB = f->table.pfnSetPixelShaderConstB;
   expectedTable.pfnSetRenderState = f->table.pfnSetRenderState;
+  expectedTable.pfnUpdateWInfo = f->table.pfnUpdateWInfo;
   expectedTable.pfnValidateDevice = f->table.pfnValidateDevice;
   expectedTable.pfnSetTransform = f->table.pfnSetTransform;
   expectedTable.pfnMultiplyTransform = f->table.pfnMultiplyTransform;
@@ -1049,6 +1139,7 @@ static void createDevice() {
   expectedTable.pfnSetScissorRect = f->table.pfnSetScissorRect;
   expectedTable.pfnSetStreamSourceUm = f->table.pfnSetStreamSourceUm;
   expectedTable.pfnSetStreamSource = f->table.pfnSetStreamSource;
+  expectedTable.pfnSetStreamSourceFreq = f->table.pfnSetStreamSourceFreq;
   expectedTable.pfnSetIndices = f->table.pfnSetIndices;
   expectedTable.pfnDrawPrimitive = f->table.pfnDrawPrimitive;
   expectedTable.pfnDrawIndexedPrimitive = f->table.pfnDrawIndexedPrimitive;
@@ -1450,6 +1541,45 @@ static void colorFillContracts() {
   std::puts("D3D8/9 ColorFill typed forwarding verified rectangle pixels, bindings, rejects and callback retirement; controlled backend only");
 }
 
+static void plainStretchContracts() {
+  for (const auto format : {D3DFMT_A8R8G8B8, D3DFMT_X8R8G8B8}) {
+    Fixture fixture; initialize(fixture); createDevice();
+    char sourceCookie, destinationCookie, readbackCookie;
+    D3DDDI_SURFACEINFO info = {8,6,0,nullptr,0,0};
+    auto source = resourceArgs(&sourceCookie, &info, 1);
+    source.Format = static_cast<D3DDDIFORMAT>(format);
+    auto readback = resourceArgs(&readbackCookie, &info, 1);
+    readback.Format = source.Format;
+    source.Pool = D3DDDIPOOL_VIDEOMEMORY;
+    auto destination = source; destination.hResource = &destinationCookie;
+    CHECK(f->table.pfnCreateResource(f->device, &source) == S_OK);
+    CHECK(f->table.pfnCreateResource(f->device, &destination) == S_OK);
+    CHECK(f->table.pfnCreateResource(f->device, &readback) == S_OK);
+    D3DDDIARG_BLT copy = {};
+    copy.hSrcResource = source.hResource; copy.hDstResource = destination.hResource;
+    copy.SrcRect = {0,0,4,2}; copy.DstRect = {1,1,7,5}; copy.Flags.Point = 1;
+    const auto original = copy;
+    // A renderer failure proves the valid scaled rectangles reached the real
+    // backend boundary. This fixture does not pretend to execute Vulkan blits.
+    f->copyResult = E_OUTOFMEMORY;
+    const auto before = f->copies;
+    f->queryHook = [&] { copy.DstRect = {0,0,99,99}; copy.Flags.Linear = 1; };
+    CHECK(f->table.pfnBlt(f->device, &copy) == E_OUTOFMEMORY && f->copies == before + 1);
+    CHECK(!std::memcmp(&f->copySources.back(), &original.SrcRect, sizeof(RECT)));
+    CHECK(!std::memcmp(&f->copyDestinations.back(), &original.DstRect, sizeof(RECT)));
+    copy = original; copy.hDstResource = readback.hResource;
+    CHECK(f->table.pfnBlt(f->device, &copy) == E_INVALIDARG);
+    copy = original; copy.hSrcResource = readback.hResource;
+    CHECK(f->table.pfnBlt(f->device, &copy) == E_INVALIDARG);
+    copy = original; copy.Flags.Linear = 1;
+    CHECK(f->table.pfnBlt(f->device, &copy) == E_INVALIDARG && f->copies == before + 1);
+    CHECK(f->table.pfnDestroyResource(f->device, source.hResource) == S_OK);
+    CHECK(f->table.pfnDestroyResource(f->device, destination.hResource) == S_OK);
+    CHECK(f->table.pfnDestroyResource(f->device, readback.hResource) == S_OK);
+    closeDevice(); closeAdapter();
+  }
+}
+
 static void discardTargetContracts() {
   for (const auto format : {D3DFMT_A8R8G8B8, D3DFMT_X8R8G8B8}) {
     for (const bool lockable : {false, true}) {
@@ -1519,13 +1649,17 @@ static void discardTargetContracts() {
   }
 }
 
-static void depthContracts() {
+static void depthContracts(bool discard = false) {
   for (const auto format : {D3DFMT_D16, D3DFMT_D24S8}) {
     Fixture fixture; initialize(fixture); createDevice();
     CHECK(f->table.pfnSetDepthStencil);
     char cookie, targetCookie;
     D3DDDI_SURFACEINFO info = {8,4,UINT_MAX,nullptr,UINT_MAX,UINT_MAX};
     auto args = depthArgs(&cookie, &info, format);
+    // SYSTEM D3D9 emits ZBuffer|NotLockable|DiscardRenderTarget (0x1082)
+    // for AIO's CreateDepthStencilSurface(..., Discard=TRUE). The discard
+    // hint must preserve the same creation, binding and cleanup contracts.
+    args.Flags.DiscardRenderTarget = discard;
     const auto valid = args;
     auto before = snapshot(args);
     f->surfaceResult = S_FALSE;
@@ -1893,9 +2027,83 @@ static void drawContracts() {
     CHECK(f->table.pfnSetRenderTarget(f->device,&target) == S_OK);
 
     D3DDDIARG_RENDERSTATE state = {D3DDDIRS_CULLMODE,D3DCULL_NONE};
+    // The SYSTEM runtime invokes this slot unconditionally during projection
+    // initialization. Stage35 reached the null slot with WNear=WFar=1.
+    CHECK(f->table.pfnUpdateWInfo);
+    D3DDDIARG_WINFO wInfo = {1.0f, 1.0f};
+    CHECK(f->table.pfnUpdateWInfo(f->device, &wInfo) == S_OK);
+    wInfo = {0.25f, 1000.0f};
+    f->queryHook = [&] { wInfo = {1.0f, 1.0f}; };
+    CHECK(f->table.pfnUpdateWInfo(f->device, &wInfo) == S_OK);
+    CHECK(f->windowRange.WNear == 0.25f && f->windowRange.WFar == 1000.0f);
+    const auto wQueries = f->queries;
+    CHECK(f->table.pfnUpdateWInfo(f->device, nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnUpdateWInfo(nullptr, &wInfo) == E_INVALIDARG && f->queries == wQueries);
+    f->stateResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnUpdateWInfo(f->device, &wInfo) == E_OUTOFMEMORY);
+    CHECK(f->windowRange.WNear == 0.25f && f->windowRange.WFar == 1000.0f);
+    f->stateResult = S_OK;
+    CHECK(f->table.pfnUpdateWInfo(f->device, &wInfo) == S_OK);
+    CHECK(f->windowRange.WNear == 1.0f && f->windowRange.WFar == 1.0f);
     f->queryHook = [&] { state.State = D3DDDIRS_STENCILENABLE; state.Value = 99; };
     CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK
       && f->renderState == D3DRS_CULLMODE && f->renderValue == D3DCULL_NONE);
+    // SYSTEM D3D9 initializes obsolete DDI states even for a D3D9 device.
+    // Reproduce LINEPATTERN=0 from the native CreateDevice trace. Disabled
+    // unadvertised features must leave the renderer's real cull state intact.
+    for (const auto legacy : {D3DDDIRS_LINEPATTERN, D3DDDIRS_ZVISIBLE,
+        D3DDDIRS_COLORKEYENABLE, D3DDDIRS_OLDALPHABLENDENABLE,
+        D3DDDIRS_TRANSLUCENTSORTINDEPENDENT, D3DDDIRS_COLORKEYBLENDENABLE,
+        D3DDDIRS_PATCHSEGMENTS}) {
+      state = {legacy, 0};
+      const auto queries = f->queries;
+      CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK);
+      CHECK(f->queries > queries && f->renderState == D3DRS_CULLMODE
+        && f->renderValue == D3DCULL_NONE);
+      CHECK(f->table.pfnSetRenderState(nullptr,&state) == E_INVALIDARG);
+      for (const UINT unsupported : {1u, 0x00010001u, UINT_MAX}) {
+        state.Value = unsupported;
+        CHECK(f->table.pfnSetRenderState(f->device,&state) == E_INVALIDARG);
+        CHECK(f->renderState == D3DRS_CULLMODE && f->renderValue == D3DCULL_NONE);
+      }
+    }
+    // Windows also initializes the reserved slots between DEPTHBIAS and
+    // WRAP8. Only their observed reset value is admitted; other unknown
+    // states and other values must keep failing.
+    state = {static_cast<D3DDDIRENDERSTATETYPE>(196), UINT_MAX};
+    CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK);
+    CHECK(f->renderState == D3DRS_CULLMODE && f->renderValue == D3DCULL_NONE);
+    for (const UINT value : {0u, 1u, 0xfffffffeu}) {
+      state.Value = value;
+      CHECK(f->table.pfnSetRenderState(f->device,&state) == E_INVALIDARG);
+    }
+    state = {static_cast<D3DDDIRENDERSTATETYPE>(197), UINT_MAX};
+    CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK);
+    CHECK(f->renderState == D3DRS_CULLMODE && f->renderValue == D3DCULL_NONE);
+    for (const UINT value : {0u, 1u, 0xfffffffeu}) {
+      state.Value = value;
+      CHECK(f->table.pfnSetRenderState(f->device,&state) == E_INVALIDARG);
+    }
+    state = {static_cast<D3DDDIRENDERSTATETYPE>(177), UINT_MAX};
+    CHECK(f->table.pfnSetRenderState(f->device,&state) == E_INVALIDARG);
+    // An all-ones stipple row leaves every pixel enabled. Patterned fills
+    // are not advertised, so nontrivial masks still fail rather than vanish.
+    for (UINT row = D3DDDIRS_STIPPLEPATTERN00; row <= D3DDDIRS_STIPPLEPATTERN31; ++row) {
+      state = {static_cast<D3DDDIRENDERSTATETYPE>(row), UINT_MAX};
+      CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK);
+      CHECK(f->renderState == D3DRS_CULLMODE && f->renderValue == D3DCULL_NONE);
+      state.Value = 0x55555555;
+      CHECK(f->table.pfnSetRenderState(f->device,&state) == E_INVALIDARG);
+    }
+    for (const auto legacy : {D3DDDIRS_EDGEANTIALIAS, D3DDDIRS_ZBIAS}) {
+      state = {legacy, 0};
+      CHECK(f->table.pfnSetRenderState(f->device,&state) == S_OK);
+      CHECK(f->renderState == (legacy == D3DDDIRS_EDGEANTIALIAS
+        ? D3DRS_ANTIALIASEDLINEENABLE : D3DRS_DEPTHBIAS) && f->renderValue == 0);
+      state.Value = 99;
+      CHECK(f->table.pfnSetRenderState(f->device,&state) == E_INVALIDARG);
+    }
+    state.Value = 99;
     for (const UINT invalid : {UINT(0),UINT(10),UINT(30),UINT(40),UINT(62+1),UINT(64),UINT(95),UINT(169),UINT(255),UINT_MAX}) {
       state.State = static_cast<D3DDDIRENDERSTATETYPE>(invalid);
       CHECK(f->table.pfnSetRenderState(f->device,&state) == E_INVALIDARG);
@@ -3106,6 +3314,27 @@ static void bufferContracts() {
     stream = {7,color,4,8}; CHECK(f->table.pfnSetStreamSource(f->device, &stream) == S_OK);
     CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK);
     CHECK(f->drawType == D3DPT_TRIANGLELIST && f->drawStart == 1 && f->drawCount == 1 && f->draws == 1);
+    // Four complete color elements fit. Eight instances/divisor2 consume four,
+    // irrespective of VStart=1; nine instances require an out-of-range fifth.
+    D3DDDIARG_SETSTREAMSOURCEFREQ frequency = {7,D3DSTREAMSOURCE_INSTANCEDATA | 2};
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
+    frequency = {0,D3DSTREAMSOURCE_INDEXEDDATA | 8};
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK);
+    frequency.Divider = D3DSTREAMSOURCE_INDEXEDDATA | 9;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG);
+    f->stateResult = E_OUTOFMEMORY; frequency.Divider = 1;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == E_OUTOFMEMORY);
+    f->stateResult = S_OK;
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == E_INVALIDARG);
+    frequency = {7,D3DSTREAMSOURCE_INSTANCEDATA};
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
+    CHECK(f->table.pfnDrawPrimitive(f->device, &draw, nullptr) == S_OK);
+    frequency.Divider = 1;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
+    frequency.Stream = 0;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
     // Last color element ends at byte32; unused final stride padding is absent.
     const auto originalStream = stream;
     for (const D3DDDIARG_SETSTREAMSOURCE invalid : {D3DDDIARG_SETSTREAMSOURCE{16,color,0,8},
@@ -3139,6 +3368,19 @@ static void bufferContracts() {
     CHECK(f->drawType == D3DPT_TRIANGLELIST && f->drawBase == -3 && f->drawMinimum == 4
       && f->drawVertexCount == 3 && f->drawStart == 2 && f->drawCount == 1);
     const D3DDDIARG_DRAWINDEXEDPRIMITIVE originalIndexed = {D3DPT_TRIANGLELIST,-3,4,3,2,1};
+    indexed = originalIndexed;
+    frequency = {7,D3DSTREAMSOURCE_INSTANCEDATA | 2};
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
+    frequency = {0,D3DSTREAMSOURCE_INDEXEDDATA | 8};
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == S_OK);
+    frequency.Divider = D3DSTREAMSOURCE_INDEXEDDATA | 9;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
+    CHECK(f->table.pfnDrawIndexedPrimitive(f->device, &indexed) == E_INVALIDARG);
+    frequency = {7,1};
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
+    frequency.Stream = 0;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &frequency) == S_OK);
     for (const D3DDDIARG_DRAWINDEXEDPRIMITIVE invalid : {
         D3DDDIARG_DRAWINDEXEDPRIMITIVE{D3DPT_TRIANGLELIST,-5,4,3,2,1},
         D3DDDIARG_DRAWINDEXEDPRIMITIVE{D3DPT_TRIANGLELIST,-3,4,4,2,1},
@@ -3688,6 +3930,7 @@ static void presentationContracts() {
     // token accidentally forwarded instead of the allocated kernel handle.
     const D3DKMT_HANDLE expectedAllocation = uintptr_t(resource) == 71 ? 72u : 71u;
     f->nextPresentAllocation = expectedAllocation;
+    f->nullPresentResource = true; // Non-shared presentation needs only hAllocation.
     CHECK(uintptr_t(resource) != expectedAllocation);
     auto args = presentArgs(resource); const auto before = snapshot(args);
     f->queryHook = [&] { args.hSrcResource = nullptr; args.Flags.Value = 0; };
@@ -3704,9 +3947,21 @@ static void presentationContracts() {
     CHECK(f->lastPresent.hSrcAllocation == expectedAllocation && uintptr_t(resource) != expectedAllocation);
     *f->rendererPixels = f->expectedPresentPixels;
     args = presentArgs(resource);
+    // Compare this invocation's actual input bytes. A newly returned ABI
+    // aggregate need not preserve padding from the first invocation.
+    const auto secondBefore = snapshot(args);
     f->presentLockHook = [] { f->rendererPixels->assign(f->rendererPixels->size(), 0x72); };
     CHECK(f->table.pfnPresent(f->device, &args) == S_OK);
-    CHECK(snapshot(args) == before && f->presents == 2 && f->surfaceReads == 2);
+    const auto secondAfter = snapshot(args);
+    if (secondAfter != secondBefore) {
+      for (size_t i = 0; i < secondBefore.size(); ++i)
+        if (secondBefore[i] != secondAfter[i])
+          std::fprintf(stderr, "Present input byte %zu changed %02x -> %02x\n",
+            i, unsigned(secondBefore[i]), unsigned(secondAfter[i]));
+    }
+    CHECK(secondAfter == secondBefore);
+    CHECK(f->presents == 2);
+    CHECK(f->surfaceReads == 2);
     CHECK(f->presentAllocationCreates == 1 && f->presentContexts == 1);
     CHECK(f->presentLocks == 2 && f->presentUnlocks == 2);
     CHECK(f->table.pfnDestroyResource(f->device, resource) == S_OK);
@@ -3779,7 +4034,7 @@ static void presentationContracts() {
     if (failure == 5) { f->presentAllocateResult = E_OUTOFMEMORY; expected = E_OUTOFMEMORY; }
     if (failure == 6) f->presentAllocateResult = S_FALSE;
     if (failure == 7) f->nullPresentAllocation = true;
-    if (failure == 8) f->nullPresentResource = true;
+    if (failure == 8) { f->nullPresentResource = true; f->nullPresentAllocation = true; }
     if (failure == 9) f->presentLockResult = E_FAIL;
     if (failure == 10) f->presentLockResult = S_FALSE;
     if (failure == 11) f->badPresentMapping = true;
@@ -3917,6 +4172,19 @@ static void legacyDeviceContracts() {
   {
     Fixture fixture; initialize(fixture,Api::D3D8); createDevice();
     CHECK(f->backendApi == Api::D3D8);
+    D3DDDIARG_RENDERSTATE reset{D3DDDIRS_CULLMODE, D3DCULL_NONE};
+    CHECK(f->table.pfnSetRenderState(f->device, &reset) == S_OK);
+    // SYSTEM D3D8 initializes PATCHSEGMENTS with its documented float1
+    // default, although this adapter does not advertise patch drawing.
+    reset = {D3DDDIRS_PATCHSEGMENTS, 0x3f800000};
+    f->queryHook = [&] { reset.Value = 0x40000000; };
+    CHECK(f->table.pfnSetRenderState(f->device, &reset) == S_OK);
+    CHECK(f->renderState == D3DRS_CULLMODE && f->renderValue == D3DCULL_NONE);
+    for (const UINT unsupported : {1u, 0x40000000u, 0x7fc00000u, UINT_MAX}) {
+      reset.Value = unsupported;
+      CHECK(f->table.pfnSetRenderState(f->device, &reset) == E_INVALIDARG);
+      CHECK(f->renderState == D3DRS_CULLMODE && f->renderValue == D3DCULL_NONE);
+    }
     for (const UINT version : {0xfffe0101u,0xffff0101u,0xffff0104u}) {
       const bool vertex = (version >> 16) == 0xfffe;
       const std::array<UINT,5> code{{version,1u,vertex ? 0xc00f0000u : 0x800f0000u,0x90e40000u,0xffffu}};
@@ -3934,26 +4202,69 @@ static void legacyDeviceContracts() {
       }
       CHECK(token && f->shaderCode == std::vector<DWORD>(code.begin(),code.end()));
     }
+    // WDDM lowers DX8 fixed-function state to SM2.0 even though its public
+    // shader API remains SM1.x. Exercise both generated shader stages through
+    // the native DDI, including snapshot ownership and exact backend errors.
     for (const bool vertex : {false,true}) {
-      const std::array<UINT,5> code{{vertex ? 0xfffe0200u : 0xffff0200u,0x02000001u,
-                                    vertex ? 0xc00f0000u : 0x800f0000u,0x90e40000u,0xffffu}};
-      const auto creates = f->shaderCreates;
-      if (vertex) {
-        D3DDDIARG_CREATEVERTEXSHADERFUNC args{sizeof(code),reinterpret_cast<HANDLE>(UINT_PTR(123))}; const auto before = snapshot(args);
-        CHECK(f->table.pfnCreateVertexShaderFunc(f->device,&args,code.data()) == E_INVALIDARG && snapshot(args) == before);
-      } else {
-        D3DDDIARG_CREATEPIXELSHADER args{sizeof(code),reinterpret_cast<HANDLE>(UINT_PTR(123))}; const auto before = snapshot(args);
-        CHECK(f->table.pfnCreatePixelShader(f->device,&args,code.data()) == E_INVALIDARG && snapshot(args) == before);
+      const std::array<UINT,8> original{{vertex ? 0xfffe0200u : 0xffff0200u,
+        0x0200001fu,0x80000000u,0x900f0000u,0x02000001u,
+        vertex ? 0xc00f0000u : 0x800f0800u,0x90e40000u,0xffffu}};
+      auto code = original;
+      D3DDDIARG_CREATEVERTEXSHADERFUNC vs{sizeof(code),reinterpret_cast<HANDLE>(UINT_PTR(123))};
+      D3DDDIARG_CREATEPIXELSHADER ps{sizeof(code),reinterpret_cast<HANDLE>(UINT_PTR(123))};
+      const auto create = [&] {
+        return vertex ? f->table.pfnCreateVertexShaderFunc(f->device,&vs,code.data())
+                      : f->table.pfnCreatePixelShader(f->device,&ps,code.data());
+      };
+      for (const HRESULT failure : {S_FALSE,E_OUTOFMEMORY}) {
+        f->shaderResult = failure;
+        const auto v = snapshot(vs), p = snapshot(ps);
+        CHECK(create() == (failure == S_FALSE ? E_FAIL : failure));
+        CHECK(snapshot(vs) == v && snapshot(ps) == p);
+        CHECK(f->shaderCreates == f->shaderCloses);
       }
-      CHECK(f->shaderCreates == creates);
+      f->shaderResult = S_OK;
+      f->queryHook = [&] {
+        code.fill(0); vs.Size = 8; ps.CodeSize = 8;
+        CHECK(f->table.pfnSetPixelShader(f->device,nullptr) == D3DERR_WASSTILLDRAWING);
+      };
+      CHECK(create() == S_OK);
+      const HANDLE token = vertex ? vs.ShaderHandle : ps.ShaderHandle;
+      CHECK(token && token != reinterpret_cast<HANDLE>(UINT_PTR(123)));
+      CHECK(f->shaderCode == std::vector<DWORD>(original.begin(),original.end()));
+      if (vertex) {
+        CHECK(f->table.pfnSetVertexShaderFunc(f->device,token) == S_OK);
+        CHECK(f->table.pfnDeleteVertexShaderFunc(f->device,token) == S_OK);
+      } else {
+        CHECK(f->table.pfnSetPixelShader(f->device,token) == S_OK);
+        CHECK(f->table.pfnDeletePixelShader(f->device,token) == S_OK);
+      }
+      CHECK(f->shaderCreates == f->shaderCloses);
+      code = original; vs.Size = ps.CodeSize = sizeof(code);
+      // Keep version, stage and framing failures ahead of backend creation.
+      const auto creates = f->shaderCreates;
+      for (const UINT version : {vertex ? 0xfffe0300u : 0xffff0300u,
+          vertex ? 0xfffe0400u : 0xffff0400u, vertex ? 0xffff0200u : 0xfffe0200u}) {
+        code[0] = version;
+        const auto v = snapshot(vs), p = snapshot(ps);
+        CHECK(create() == E_INVALIDARG && snapshot(vs) == v && snapshot(ps) == p);
+        CHECK(f->shaderCreates == creates);
+      }
+      code = original; code.back() = 0;
+      CHECK(create() == E_INVALIDARG && f->shaderCreates == creates);
     }
     const float value[4] = {1,2,3,4};
     D3DDDIARG_SETVERTEXSHADERCONST vs{95,1}; D3DDDIARG_SETPIXELSHADERCONST ps{7,1};
     CHECK(f->table.pfnSetVertexShaderConst(f->device,&vs,value) == S_OK && f->constantFirst == 95);
     CHECK(f->table.pfnSetPixelShaderConst(f->device,&ps,value) == S_OK && f->constantFirst == 7);
-    const auto sets = f->constantSets; vs.Count = ps.Count = 2;
-    CHECK(f->table.pfnSetVertexShaderConst(f->device,&vs,value) == E_INVALIDARG);
-    CHECK(f->table.pfnSetPixelShaderConst(f->device,&ps,value) == E_INVALIDARG && f->constantSets == sets);
+    // The native runtime also uses float constants for its generated fixed
+    // function shaders. Its DDI register file is wider than the public DX8
+    // shader1.x limits. Exercise real forwarding, snapshots, native bounds,
+    // reentry and backend failures, rather than silently dropping the write.
+    constantContract<D3DDDIARG_SETVERTEXSHADERCONST,float>(f->table.pfnSetVertexShaderConst,
+      true,'F',256);
+    constantContract<D3DDDIARG_SETPIXELSHADERCONST,float>(f->table.pfnSetPixelShaderConst,
+      false,'F',224);
     D3DDDIVERTEXELEMENT elements[] = {{0,0,D3DDECLTYPE_FLOAT4,0,D3DDECLUSAGE_POSITIONT,0},
                                      {0,16,D3DDECLTYPE_D3DCOLOR,0,D3DDECLUSAGE_COLOR,0}};
     D3DDDIARG_CREATEVERTEXSHADERDECL declaration{2,nullptr};
@@ -4004,9 +4315,112 @@ static void legacyDeviceContracts() {
   std::puts("D3D8 typed bridge verified immutable API, SM1.1/1.4 and FVF; controlled backend only");
 }
 
+static void legacyResidencyContracts() {
+  for (const auto api : {dxvk::umd::LegacyD3DApi::D3D8, dxvk::umd::LegacyD3DApi::D3D9}) {
+    {
+      Fixture fixture; initialize(fixture, api);
+      SYSTEM_INFO info = {}; GetSystemInfo(&info);
+      auto memory = static_cast<uint8_t*>(VirtualAlloc(nullptr, 2 * size_t(info.dwPageSize),
+        MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+      CHECK(memory); DWORD previous = 0;
+      CHECK(VirtualProtect(memory + info.dwPageSize, info.dwPageSize, PAGE_NOACCESS, &previous));
+      const size_t prefix = offsetof(D3DDDI_DEVICECALLBACKS, pfnDestroyContextCb)
+        + sizeof(PFND3DDDI_DESTROYCONTEXTCB);
+      auto callbacks = reinterpret_cast<D3DDDI_DEVICECALLBACKS*>(memory + info.dwPageSize - prefix);
+      std::memcpy(callbacks, &f->input, prefix); f->create.pCallbacks = callbacks;
+      createDevice(); closeDevice(); closeAdapter();
+      CHECK(!f->makes && !f->pagingCreates && VirtualFree(memory, 0, MEM_RELEASE));
+    }
+    for (const bool pending : {false, true}) {
+      Fixture fixture; fixture.explicitResidency = true; fixture.pagingPending = pending;
+      initialize(fixture, api); createDevice();
+      f->input = {}; // Every callback is retained by the device, not borrowed.
+      CHECK(f->table.pfnFlush(f->device) == S_OK);
+      CHECK(f->resident && f->makes == 1 && f->pagingCreates == 1 && f->renders == 1);
+      CHECK(f->pagingWaits == unsigned(pending));
+      CHECK(f->table.pfnFlush(f->device) == S_OK && f->renders == 2);
+      CHECK(f->pagingWaits == unsigned(pending));
+      closeDevice(); closeAdapter();
+      CHECK(!f->resident && f->evicts == 1 && f->pagingDestroys == 1);
+    }
+    {
+      Fixture fixture; fixture.explicitResidency = true; fixture.makeResult = E_OUTOFMEMORY;
+      initialize(fixture, api); unchangedCreate(E_OUTOFMEMORY);
+      CHECK(f->makes == 2 && !f->resident && !f->renders && !f->evicts);
+      CHECK(f->allocations == f->deallocations && f->pagingDestroys == 1); closeAdapter();
+    }
+    {
+      Fixture fixture; fixture.explicitResidency = true; fixture.pagingPending = true;
+      initialize(fixture, api); createDevice(); f->pagingWaitResult = E_FAIL;
+      CHECK(f->table.pfnFlush(f->device) == E_FAIL && !f->renders);
+      f->pagingWaitResult = S_OK;
+      CHECK(f->table.pfnFlush(f->device) == S_OK && f->renders == 1 && f->pagingWaits == 2);
+      closeDevice(); closeAdapter();
+    }
+  }
+  std::puts("D3D8/9 WDDM2 residency: submit ordering, callback ownership, budget failure and balanced cleanup; controlled backend");
+}
+
+static void streamFrequencyContracts() {
+  static_assert(offsetof(D3DDDI_DEVICEFUNCS, pfnSetStreamSourceFreq) == 52 * sizeof(void*));
+  for (const auto api : {dxvk::umd::LegacyD3DApi::D3D8, dxvk::umd::LegacyD3DApi::D3D9}) {
+    Fixture fixture; initialize(fixture, api); createDevice();
+    CHECK(f->table.pfnSetStreamSourceFreq);
+    D3DDDIARG_SETSTREAMSOURCEFREQ args = {0,1};
+    for (UINT stream = 0; stream < 16; ++stream) {
+      args.Stream = stream;
+      const auto before = snapshot(args);
+      CHECK(f->table.pfnSetStreamSourceFreq(f->device, &args) == S_OK);
+      CHECK(f->frequencyStream == stream && f->frequencyDivider == 1 && snapshot(args) == before);
+    }
+    for (const auto input : {D3DDDIARG_SETSTREAMSOURCEFREQ{0,D3DSTREAMSOURCE_INDEXEDDATA | 7},
+                            D3DDDIARG_SETSTREAMSOURCEFREQ{1,D3DSTREAMSOURCE_INSTANCEDATA | 2}}) {
+      args = input;
+      CHECK(f->table.pfnSetStreamSourceFreq(f->device, &args) == S_OK);
+      CHECK(f->frequencyStream == input.Stream && f->frequencyDivider == input.Divider);
+    }
+    const auto calls = f->streamFrequencySets;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, nullptr) == E_INVALIDARG);
+    CHECK(f->table.pfnSetStreamSourceFreq(nullptr, &args) == E_INVALIDARG);
+    for (const auto input : {D3DDDIARG_SETSTREAMSOURCEFREQ{16,1},
+                            D3DDDIARG_SETSTREAMSOURCEFREQ{0,0},
+                            D3DDDIARG_SETSTREAMSOURCEFREQ{0,D3DSTREAMSOURCE_INSTANCEDATA | 1},
+                            D3DDDIARG_SETSTREAMSOURCEFREQ{1,D3DSTREAMSOURCE_INSTANCEDATA | D3DSTREAMSOURCE_INDEXEDDATA | 1}}) {
+      args = input;
+      CHECK(f->table.pfnSetStreamSourceFreq(f->device, &args) == E_INVALIDARG);
+    }
+    CHECK(f->streamFrequencySets == calls);
+    args = {2,1};
+    f->queryHook = [&] { args = {15,9}; };
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &args) == S_OK);
+    CHECK(f->frequencyStream == 2 && f->frequencyDivider == 1);
+    args = {0,1};
+    f->stateResult = E_OUTOFMEMORY;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &args) == E_OUTOFMEMORY);
+    f->stateResult = S_FALSE;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &args) == E_FAIL);
+    f->stateResult = S_OK;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &args) == S_OK);
+    f->stateResult = DXGI_ERROR_DEVICE_REMOVED;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &args) == D3DERR_DEVICELOST);
+    const auto removedCalls = f->streamFrequencySets;
+    f->stateResult = S_OK;
+    CHECK(f->table.pfnSetStreamSourceFreq(f->device, &args) == D3DERR_DEVICELOST);
+    CHECK(f->streamFrequencySets == removedCalls);
+    const HANDLE stale = f->device;
+    closeDevice();
+    CHECK(f->table.pfnSetStreamSourceFreq(stale, &args) == E_INVALIDARG);
+    closeAdapter();
+  }
+  std::puts("stream frequency: state-block defaults, forwarding, frozen input, errors and lifetime PASS");
+}
+
 int main() {
+  streamFrequencyContracts();
+  legacyResidencyContracts();
   validationContracts();
   colorFillContracts();
+  plainStretchContracts();
   legacyDeviceContracts();
   deviceFunctionBounds();
   creationFlagContracts();
@@ -4016,6 +4430,7 @@ int main() {
   bufferTransferContracts();
   fixedFunctionContracts();
   depthContracts();
+  depthContracts(true);
   bufferContracts();
   indexBufferVertexHintContracts();
   lockedDrawBufferContracts();

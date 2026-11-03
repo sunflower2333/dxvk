@@ -5,6 +5,7 @@
 #include "../src/umd/umd_adapter.h"
 #include "../src/umd/umd_api.h"
 #include "../src/umd/umd_allocation.h"
+#include "umd-fixture-identity.h"
 #include <array>
 #include <atomic>
 #include <cstdio>
@@ -49,6 +50,8 @@ struct Backing {
   uint8_t* data() const { return static_cast<uint8_t*>(page)+16; }
 };
 static std::unordered_map<D3DKMT_HANDLE,Backing> backing;
+static std::unordered_map<HANDLE,D3DKMT_HANDLE> runtimeOpens;
+static unsigned openedRuntimeCloses;
 static std::vector<void*> retiredPages;
 static D3DKMT_HANDLE nextHandle=501,borrowedHandle;
 static std::array<uint8_t,4096> commands[2];
@@ -114,6 +117,12 @@ static HRESULT APIENTRY query(HANDLE adapter,const D3DDDICB_QUERYADAPTERINFO* re
   put(128,0x44494c56,4);put(132,1,4);put(136,32,4);put(140,1,4);put(152,1,4);
   std::memcpy(output+144,&selected,sizeof(selected));return S_OK;
 }
+HRESULT dxvk::umd::openKernelIdentity(const RuntimeIdentity& initial,
+    std::shared_ptr<const AdapterIdentitySource>& source) {
+  CHECK(!std::memcmp(initial.luid.data(), &selected, sizeof(selected)));
+  source = std::make_shared<FixtureIdentitySource>(&adapterCookie, query);
+  return S_OK;
+}
 static HRESULT APIENTRY allocate(HANDLE device,D3DDDICB_ALLOCATE* request) {
   callback();CHECK(device==&deviceCookie && request && !request->hKMResource);
   const bool internal=!request->hResource;
@@ -144,6 +153,11 @@ static HRESULT APIENTRY allocate(HANDLE device,D3DDDICB_ALLOCATE* request) {
 }
 static HRESULT APIENTRY deallocate(HANDLE device,const D3DDDICB_DEALLOCATE* request) {
   callback();CHECK(device==&deviceCookie && request);
+  if (request->hResource && runtimeOpens.count(request->hResource)) {
+    CHECK(!request->NumAllocations && !request->HandleList);
+    CHECK(backing.count(runtimeOpens.at(request->hResource)));
+    runtimeOpens.erase(request->hResource);++openedRuntimeCloses;return S_OK;
+  }
   D3DKMT_HANDLE handle=0;
   if (request->hResource) {
     CHECK(!request->NumAllocations && !request->HandleList);
@@ -297,6 +311,7 @@ struct Texture {
       D3D10DDIARG_OPENRESOURCE args{};args.NumAllocations=1;args.pOpenAllocationInfo=&entry;args.hKMResource.handle=foreign->handle+1000;
       CHECK(f.table.pfnCalcPrivateOpenedResourceSize(f.device,&args)==f.table.pfnCalcPrivateResourceSize(f.device,nullptr));
       f.table.pfnOpenResource(f.device,&args,handle,{&runtime});
+      if (lastError==S_OK) CHECK(runtimeOpens.emplace(&runtime,foreign->handle).second);
     } else {
       D3D10DDI_MIPINFO mip{width,height,1,width,height,1};typename F::Desc desc{};
       desc.pMipInfoList=&mip;desc.ResourceDimension=D3D10DDIRESOURCE_TEXTURE2D;desc.Format=format;
@@ -419,6 +434,7 @@ static void openFrames() {
     info=foreign.info;entry.hAllocation=foreign.handle;entry.pPrivateDriverData=&info;entry.PrivateDriverDataSize=80;
     args.NumAllocations=1;args.pOpenAllocationInfo=&entry;args.hKMResource.handle=foreign.handle+1000;
     lastError=S_OK;f.table.pfnOpenResource(f.device,&args,handle,{&runtime});CHECK(lastError==S_OK);
+    CHECK(runtimeOpens.emplace(&runtime,foreign.handle).second);
     f.table.pfnDestroyResource(f.device,handle);CHECK(acquisitions==oldAcquisitions+1 && releases==oldReleases+1 && internalCount()==0);
     kernelPixels(foreign.handle,1,false);++failedOpenFrames;
   }
@@ -735,6 +751,7 @@ int main() {
   openFrames<D3D10DDI_DEVICEFUNCS>();openFrames<D3D10_1DDI_DEVICEFUNCS>();openFrames<D3D11DDI_DEVICEFUNCS>();
   openRetirement<D3D10DDI_DEVICEFUNCS>();openRetirement<D3D10_1DDI_DEVICEFUNCS>();openRetirement<D3D11DDI_DEVICEFUNCS>();
   ownership();
+  CHECK(runtimeOpens.empty() && openedRuntimeCloses>0);
   CHECK(images==36 && pixels==1260 && backing.empty() && contexts==contextCloses);
   CHECK(locks==unlocks+runtimeTerminalMapClosures && acquisitions==releases+runtimeTerminalReleases);
   CHECK(runtimeTerminalReleases==4 && runtimeTerminalMapClosures==2);
@@ -743,6 +760,7 @@ int main() {
   const auto openedPrimaryChecks=checks.load(),openedPrimaryCallbacks=errorCallbacks;
   sharedPresentChecks=true;
   sharedPresentProfile<D3D10DDI_DEVICEFUNCS>(0);sharedPresentProfile<D3D10_1DDI_DEVICEFUNCS>(1);sharedPresentProfile<D3D11DDI_DEVICEFUNCS>(2);
+  CHECK(runtimeOpens.empty());
   CHECK(sharedPresentImages==48 && sharedPresentPixels==1680 && sharedPresents==45 && sharedModes==24 && sharedNegativeCases==60);
   CHECK(backing.empty() && contexts==contextCloses && locks==unlocks+runtimeTerminalMapClosures
     && acquisitions==releases+runtimeTerminalReleases);

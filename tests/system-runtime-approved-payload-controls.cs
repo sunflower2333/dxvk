@@ -165,7 +165,83 @@ public static class SystemRuntimeApprovedPayloadControls {
         Reject(delegate { DxvkApprovedPayloadPolicy01.RequireProcessJoin(123,start,0,123,start,44); },"missing census handle");
         Reject(delegate { DxvkApprovedPayloadPolicy01.RequireProcessJoin(123,start,40,123,start,0); },"missing original handle");
         Reject(delegate { DxvkApprovedPayloadPolicy01.RequireProcessJoin(123,"invalid",40,123,"invalid",44); },"invalid joined UTC start");
+        LocalBuildControls();
         Console.WriteLine("SYSTEM approved payload controls PASS checks="+checks+" historical_icd_bytes=220 api_profiles=4 module_calls=0 registry_calls=0 hardware_admission=0");
         return 0;
+    }
+    static void LocalBuildControls() {
+        var local=Parse(tuple); var original=Parse(config);
+        string source=(string)local["source_commit"];
+        string sourceDocument=Serialize(new Dictionary<string,object> {
+            {"schema","local-umd-source-v1"},{"base_commit",source},{"inputs",new object[] {PinText("C:\\Source\\adapter.cpp","fixture-only")}}});
+        var build=new Dictionary<string,object> {
+            {"schema","local-umd-build-v1"},{"base_commit",source},{"arch","arm64"},{"exit_code",0},{"machine",0xaa64},
+            {"working_tree_changes",true},{"native_source_unchanged",true},{"source_manifest_sha256",Hash(sourceDocument)},
+            {"library_name","viogpudxvk.dll"},{"loader_policy","module-local-private-no-fallback"},
+            {"vulkan_loader","viogpu_gl_loader_arm64.dll"},{"dll",original["dll"]},{"configuration_files",original["configuration_files"]}};
+        local["schema"]="system-runtime-local-build-payload-v1";
+        foreach (string field in new string[] {"ci_run","ci_run_attempt","ci_repository","ci_result","build_configuration","canonical_source"}) local.Remove(field);
+        local["build_record"]=PinText("C:\\Approved\\local-build.json",Serialize(build));
+        local["source_manifest"]=PinText("C:\\Approved\\local-source.json",sourceDocument);
+        string localJson=Serialize(local), buildJson=Serialize(build);
+        var approved=DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(localJson,buildJson,sourceDocument,header,options,machines,icd,Selection("11"));
+        Check(approved.BuildKind == "local" && approved.CiRun == "" && approved.SourceCommit == source,"local build is not relabeled as CI");
+        foreach (var edit in new Action<Dictionary<string,object>>[] {
+            x=>x["exit_code"]=1, x=>x["machine"]=0x8664, x=>x["arch"]="x64",
+            x=>x["base_commit"]=new string('a',40), x=>x["working_tree_changes"]=false,
+            x=>x["native_source_unchanged"]=false, x=>x["source_manifest_sha256"]=new string('a',64),
+            x=>x["loader_policy"]="public-search", x=>x["vulkan_loader"]="vulkan-1.dll",
+            x=>D(x["dll"])["sha256"]=new string('a',64), x=>x["configuration_files"]=new object[0]}) {
+            var changed=Parse(buildJson); edit(changed);
+            Reject(()=>DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(localJson,Serialize(changed),sourceDocument,header,options,machines,icd,Selection("11")),"local build mismatch");
+        }
+        foreach (var edit in new Action<Dictionary<string,object>>[] {
+            x=>x["ci_run"]="123", x=>x["arch"]="x64", x=>x["configuration_files"]=new object[0],
+            x=>D(x["core"])["sha256"]=new string('a',64),
+            x=>x["dependencies"]=new object[] {PinText("C:\\Approved\\warp.dll","software")},
+            x=>x["dependencies"]=new object[] {x["core"]}}) {
+            var changed=Parse(localJson); edit(changed);
+            Reject(()=>DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(Serialize(changed),buildJson,sourceDocument,header,options,machines,icd,Selection("11")),"local payload mismatch");
+        }
+        Reject(()=>DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(localJson,buildJson,sourceDocument,header,options,machines,icd,Selection("8")),"local API8 scope");
+        Reject(()=>DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(localJson,buildJson,sourceDocument,header,options,machines.Replace("aarch64","x86_64"),icd,Selection("11")),"local machine mismatch");
+        DirectDriverControls(localJson,buildJson,sourceDocument);
+    }
+    static void DirectDriverControls(string localJson,string buildJson,string sourceDocument) {
+        const string loader="viogpu_dxvk_loader_arm64.dll", driver="viogpu_dxvk_vk_arm64.dll";
+        var direct=Parse(localJson); var build=Parse(buildJson);
+        D(direct["private_loader"])["path"]=((string)D(direct["private_loader"])["path"]).Replace("viogpu_gl_loader_arm64.dll",loader);
+        D(direct["icd_library"])["path"]=((string)D(direct["icd_library"])["path"]).Replace("viogpu_gl_vk_arm64.dll",driver);
+        string directIcd=icd.Replace("viogpu_gl_vk_arm64.dll",driver);
+        direct["icd_metadata"]=Parse(directIcd);
+        direct["icd_json"]=PinText((string)D(direct["icd_json"])["path"],directIcd);
+        build["vulkan_loader"]=loader; build["vulkan_driver"]=driver;
+        string directHeader=header.Replace("viogpu_gl_loader_arm64.dll",loader)+"\n#define DXVK_PRIVATE_VULKAN_DRIVER \""+driver+"\"\n";
+        var directOptions=new List<object>((object[])Json.DeserializeObject(options.Replace("viogpu_gl_loader_arm64.dll",loader)));
+        directOptions.Add(new Dictionary<string,object> {{"name","umd_vulkan_driver"},{"value",driver}});
+        string optionsJson=Serialize(directOptions);
+        string directBuild=Serialize(build);
+        direct["build_record"]=PinText((string)D(direct["build_record"])["path"],directBuild);
+        string directJson=Serialize(direct);
+        var selected=Selection("11"); selected.PrivateLoader=(string)D(direct["private_loader"])["path"]; selected.IcdJsonSha256=Hash(directIcd);
+        var approved=DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(directJson,directBuild,sourceDocument,directHeader,optionsJson,machines,directIcd,selected);
+        Check(approved.PrivateLoader == selected.PrivateLoader && approved.IcdLibrary == (string)D(direct["icd_library"])["path"],"direct driver package closure");
+        foreach (string invalidHeader in new string[] {
+            directHeader.Replace("DXVK_PRIVATE_VULKAN_DRIVER","UNRELATED_DRIVER"),
+            directHeader.Replace(driver,"foreign.dll"),
+            directHeader+"\n#define DXVK_PRIVATE_VULKAN_DRIVER \""+driver+"\"\n" }) {
+            Reject(()=>DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(directJson,directBuild,sourceDocument,invalidHeader,optionsJson,machines,directIcd,selected),"direct driver generated definition");
+        }
+        Reject(()=>DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(directJson,directBuild,sourceDocument,directHeader,optionsJson.Replace(driver,"foreign.dll"),machines,directIcd,selected),"direct driver Meson option");
+        foreach (var edit in new Action<Dictionary<string,object>>[] {
+            x=>x.Remove("vulkan_driver"),x=>x["vulkan_driver"]="foreign.dll",x=>x["vulkan_loader"]="viogpu_gl_loader_arm64.dll"}) {
+            var changed=Parse(directBuild); edit(changed);
+            Reject(()=>DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(directJson,Serialize(changed),sourceDocument,directHeader,optionsJson,machines,directIcd,selected),"direct driver build record");
+        }
+        var foreign=Parse(directJson); string foreignIcd=directIcd.Replace(driver,"foreign.dll");
+        foreign["icd_metadata"]=Parse(foreignIcd); foreign["icd_json"]=PinText(selected.IcdJson,foreignIcd);
+        D(foreign["icd_library"])["path"]=((string)D(foreign["icd_library"])["path"]).Replace(driver,"foreign.dll");
+        selected.IcdJsonSha256=Hash(foreignIcd);
+        Reject(()=>DxvkApprovedPayloadPolicy01.ValidateLocalDocuments(Serialize(foreign),directBuild,sourceDocument,directHeader,optionsJson,machines,foreignIcd,selected),"ICD differs from compiled direct driver");
     }
 }

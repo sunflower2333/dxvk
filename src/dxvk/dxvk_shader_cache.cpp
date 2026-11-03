@@ -7,6 +7,10 @@
 
 namespace dxvk {
 
+  // Invalidate cached IR/SPIR-V and raster stream metadata produced before
+  // the native UMD stream-output compiler fixes, including local same-version builds.
+  static constexpr char ShaderCacheVersion[] = DXVK_VERSION "-umd-so2";
+
   DxvkShaderCache::Instance DxvkShaderCache::s_instance;
 
   DxvkShaderCache::DxvkShaderCache()
@@ -186,7 +190,7 @@ namespace dxvk {
 
     LutHeader header = { };
     header.magic = { 'D', 'X', 'V', 'K' };
-    header.versionString = DXVK_VERSION;
+    header.versionString = ShaderCacheVersion;
 
     if (!writeHeader(m_lutFile, header)) {
       Logger::warn(str::format("Failed to write cache header: ", path + m_filePaths.lutFile));
@@ -209,9 +213,9 @@ namespace dxvk {
       return false;
     }
 
-    if (header.versionString != DXVK_VERSION) {
+    if (header.versionString != ShaderCacheVersion) {
       Logger::warn(str::format("Cache was created with DXVK version ", header.versionString,
-        ", but current version is ", DXVK_VERSION, ". Discarding old cache."));
+        ", but current version is ", ShaderCacheVersion, ". Discarding old cache."));
       return false;
     }
 

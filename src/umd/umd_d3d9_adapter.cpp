@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "umd_d3d9_adapter.h"
 #include "umd_legacy_diagnostics.h"
 #include "umd_d3d8_compat.h"
@@ -83,10 +84,11 @@ HRESULT current(const std::shared_ptr<Adapter>& adapter) noexcept {
 // no filtered stretch, autogen, shared resources or gamma. Plain BGRA
 // surfaces support ColorFill and unfiltered GPU-to-GPU StretchRect.
 constexpr FORMATOP formats[] = {
+  // VERTEXTEXTURE: shader model 3 requires vertex texture fetch on some format.
   {D3DDDIFMT_X8R8G8B8, FORMATOP_TEXTURE | FORMATOP_OFFSCREEN_RENDERTARGET
-    | FORMATOP_OFFSCREENPLAIN | FORMATOP_DISPLAYMODE | FORMATOP_3DACCELERATION, 0, 0, 0},
+    | FORMATOP_OFFSCREENPLAIN | FORMATOP_DISPLAYMODE | FORMATOP_3DACCELERATION | FORMATOP_VERTEXTEXTURE, 0, 0, 0},
   {D3DDDIFMT_A8R8G8B8, FORMATOP_TEXTURE | FORMATOP_OFFSCREEN_RENDERTARGET
-    | FORMATOP_OFFSCREENPLAIN, 0, 0, 0},
+    | FORMATOP_OFFSCREENPLAIN | FORMATOP_VERTEXTEXTURE, 0, 0, 0},
   {D3DDDIFMT_D16, FORMATOP_ZSTENCIL_WITH_ARBITRARY_COLOR_DEPTH, 0, 0, 0},
   {D3DDDIFMT_D24S8, FORMATOP_ZSTENCIL_WITH_ARBITRARY_COLOR_DEPTH, 0, 0, 0},
 };
@@ -96,11 +98,19 @@ constexpr D3DDDIQUERYTYPE queries[] = {
 };
 
 D3DCAPS9 nativeCaps() {
+  // Shader model stays 2.0: d3d9!IsD3DHALSupported drops the whole HAL for a
+  // VS/PS 3.0 claim unless the full DX9.0c set is present, including cube and
+  // volume textures (TextureCaps 0x1EC41, cube/volume filter caps 0x03030300),
+  // BOTHSRCALPHA blends, MaxTextureRepeat >= 8192, MaxAnisotropy >= 16, guard
+  // band, VERTEXELEMENTSCANSHARESTREAMOFFSET, full VS20/PS20 caps and 30-slot
+  // counts in [512, 32768]. The D3D9 device path implements 2D textures only,
+  // so SM3 (needed by JavaFX Prism D3D) waits for cube/volume resources.
+  constexpr unsigned test = 0x7;
   D3DCAPS9 caps = {};
   caps.DeviceType = D3DDEVTYPE_HAL;
   caps.Caps2 = D3DCAPS2_DYNAMICTEXTURES;
   caps.Caps3 = D3DCAPS3_COPY_TO_VIDMEM | D3DCAPS3_COPY_TO_SYSTEMMEM;
-  caps.PresentationIntervals = D3DPRESENT_INTERVAL_IMMEDIATE;
+  caps.PresentationIntervals = D3DPRESENT_INTERVAL_IMMEDIATE | ((test & 4) ? D3DPRESENT_INTERVAL_ONE : 0u);
   caps.DevCaps = D3DDEVCAPS_TLVERTEXSYSTEMMEMORY | D3DDEVCAPS_TLVERTEXVIDEOMEMORY
     | D3DDEVCAPS_TEXTUREVIDEOMEMORY | D3DDEVCAPS_DRAWPRIMTLVERTEX
     | D3DDEVCAPS_DRAWPRIMITIVES2 | D3DDEVCAPS_DRAWPRIMITIVES2EX
@@ -108,6 +118,7 @@ D3DCAPS9 nativeCaps() {
   caps.PrimitiveMiscCaps = D3DPMISCCAPS_CULLNONE | D3DPMISCCAPS_CULLCW | D3DPMISCCAPS_CULLCCW
     | D3DPMISCCAPS_COLORWRITEENABLE | D3DPMISCCAPS_CLIPTLVERTS | D3DPMISCCAPS_TSSARGTEMP
     | D3DPMISCCAPS_BLENDOP | D3DPMISCCAPS_PERSTAGECONSTANT | D3DPMISCCAPS_SEPARATEALPHABLEND
+    | ((test & 1) ? (D3DPMISCCAPS_MASKZ | D3DPMISCCAPS_FOGANDSPECULARALPHA) : 0u)
     | dxvk::umd::d3d9DdiFogInFvf;
   caps.RasterCaps = D3DPRASTERCAPS_ZTEST | D3DPRASTERCAPS_FOGVERTEX | D3DPRASTERCAPS_FOGTABLE
     | D3DPRASTERCAPS_MIPMAPLODBIAS | D3DPRASTERCAPS_FOGRANGE | D3DPRASTERCAPS_WFOG
@@ -130,8 +141,8 @@ D3DCAPS9 nativeCaps() {
   caps.TextureAddressCaps = D3DPTADDRESSCAPS_WRAP | D3DPTADDRESSCAPS_MIRROR | D3DPTADDRESSCAPS_CLAMP
     | D3DPTADDRESSCAPS_BORDER | D3DPTADDRESSCAPS_INDEPENDENTUV | D3DPTADDRESSCAPS_MIRRORONCE;
   caps.LineCaps = D3DLINECAPS_TEXTURE | D3DLINECAPS_ZTEST | D3DLINECAPS_BLEND | D3DLINECAPS_ALPHACMP | D3DLINECAPS_FOG;
-  // Conservative limits within the Vulkan minimum and the renderer/DDI bounds.
-  caps.MaxTextureWidth = caps.MaxTextureHeight = caps.MaxTextureAspectRatio = 2048;
+  // Turnip's 2D image limit; a 3040x1904 desktop surface must fit (JavaFX Prism D3D).
+  caps.MaxTextureWidth = caps.MaxTextureHeight = caps.MaxTextureAspectRatio = (test & 2) ? 16384 : 2048;
   caps.MaxTextureRepeat = 128; caps.MaxAnisotropy = 1; caps.MaxVertexW = 1e10f;
   caps.StencilCaps = D3DSTENCILCAPS_KEEP | D3DSTENCILCAPS_ZERO | D3DSTENCILCAPS_REPLACE
     | D3DSTENCILCAPS_INCRSAT | D3DSTENCILCAPS_DECRSAT | D3DSTENCILCAPS_INVERT
@@ -149,7 +160,8 @@ D3DCAPS9 nativeCaps() {
   caps.MaxVertexBlendMatrices = 4; caps.MaxPointSize = 64.f;
   caps.MaxPrimitiveCount = 65535; caps.MaxVertexIndex = 65534;
   caps.MaxStreams = dxvk::caps::MaxStreams; caps.MaxStreamStride = 256;
-  caps.VertexShaderVersion = D3DVS_VERSION(2, 0); caps.PixelShaderVersion = D3DPS_VERSION(2, 0);
+  if (test & 8) { caps.VertexShaderVersion = D3DVS_VERSION(3, 0); caps.PixelShaderVersion = D3DPS_VERSION(3, 0); }
+  else { caps.VertexShaderVersion = D3DVS_VERSION(2, 0); caps.PixelShaderVersion = D3DPS_VERSION(2, 0); }
   caps.MaxVertexShaderConst = dxvk::caps::MaxFloatConstantsVS; caps.PixelShader1xMaxValue = 8.f;
   caps.DevCaps2 = D3DDEVCAPS2_STREAMOFFSET;
   caps.NumberOfAdaptersInGroup = 1;
@@ -160,6 +172,26 @@ D3DCAPS9 nativeCaps() {
   caps.VS20Caps.NumTemps = 12; caps.VS20Caps.StaticFlowControlDepth = 1;
   caps.PS20Caps.NumTemps = 12; caps.PS20Caps.StaticFlowControlDepth = 1;
   caps.PS20Caps.NumInstructionSlots = 96;
+  if (test & 8) {
+    // d3d9!IsD3DHALSupported requirements for VS/PS 3.0 (beyond the shader caps):
+    // guard band, shared stream offsets, texture repeat >= 8192, anisotropy >= 16.
+    caps.GuardBandLeft = caps.GuardBandTop = -32768.f; caps.GuardBandRight = caps.GuardBandBottom = 32768.f;
+    caps.DevCaps2 |= D3DDEVCAPS2_VERTEXELEMENTSCANSHARESTREAMOFFSET;
+    caps.MaxTextureRepeat = 8192; caps.MaxAnisotropy = 16;
+    caps.TextureFilterCaps |= 0x00000400u | 0x04000000u; // MINFANISOTROPY | MAGFANISOTROPY
+    caps.RasterCaps |= D3DPRASTERCAPS_ANISOTROPY;
+    caps.VS20Caps.Caps = D3DVS20CAPS_PREDICATION;
+    caps.VS20Caps.DynamicFlowControlDepth = D3DVS20_MAX_DYNAMICFLOWCONTROLDEPTH;
+    caps.VS20Caps.NumTemps = D3DVS20_MAX_NUMTEMPS; caps.VS20Caps.StaticFlowControlDepth = D3DVS20_MAX_STATICFLOWCONTROLDEPTH;
+    caps.PS20Caps.Caps = D3DPS20CAPS_ARBITRARYSWIZZLE | D3DPS20CAPS_GRADIENTINSTRUCTIONS | D3DPS20CAPS_PREDICATION
+      | D3DPS20CAPS_NODEPENDENTREADLIMIT | D3DPS20CAPS_NOTEXINSTRUCTIONLIMIT;
+    caps.PS20Caps.DynamicFlowControlDepth = D3DPS20_MAX_DYNAMICFLOWCONTROLDEPTH;
+    caps.PS20Caps.NumTemps = D3DPS20_MAX_NUMTEMPS; caps.PS20Caps.StaticFlowControlDepth = D3DPS20_MAX_STATICFLOWCONTROLDEPTH;
+    caps.PS20Caps.NumInstructionSlots = D3DPS20_MAX_NUMINSTRUCTIONSLOTS;
+    caps.MaxVertexShader30InstructionSlots = caps.MaxPixelShader30InstructionSlots = 32768;
+    // VS 3.0 requires vertex texture fetch; point filtering is the minimum.
+    caps.VertexTextureFilterCaps = D3DPTFILTERCAPS_MINFPOINT | D3DPTFILTERCAPS_MAGFPOINT;
+  }
   caps.MaxVShaderInstructionsExecuted = caps.MaxPShaderInstructionsExecuted = 65535;
   return caps;
 }

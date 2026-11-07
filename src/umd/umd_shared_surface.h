@@ -9,7 +9,10 @@
 
 namespace dxvk::umd {
 
-// A D3D resource that more than one process can name.
+// CPU-backed fallback for a D3D resource that multiple processes can name.
+// Eligible native shared images instead import the same AHB into each device
+// and do not construct this cache/staging pair. These helpers remain necessary
+// for descriptors or backends that cannot use the native allocation/open ABI.
 //
 // The embedded renderer allocates its images from Turnip through the native
 // context; the kernel allocation that other processes open is a separate,
@@ -20,10 +23,9 @@ namespace dxvk::umd {
 // -- refresh reads the allocation into the cache, publish writes the cache
 // back out.
 //
-// This is the design the Mesa UMD already ships on this stack, and it is
-// chosen for the same reason: no Vulkan external-memory path exists here that
-// could alias a guest KMT allocation as a Turnip image. It is deliberately not
-// zero copy.
+// This path cannot alias the ordinary CPU-visible KMT allocation as a Turnip
+// image. It is deliberately not zero copy; native sharing bypasses it using
+// the separate NativeResourceShare allocation and import contract.
 //
 // What is NOT inherited is Mesa's refresh policy. There, a read-only shared
 // surface is refreshed before every draw that binds it, because nothing

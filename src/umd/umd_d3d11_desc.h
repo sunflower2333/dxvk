@@ -1,6 +1,7 @@
 #pragma once
 #include "umd_ddi.h"
 #include "umd_uav_texture_policy.h"
+#include "umd_displayable.h"
 #include <d3d11.h>
 
 namespace dxvk::umd {
@@ -10,13 +11,16 @@ namespace dxvk::umd {
 constexpr bool resource11Flags(const D3D11DDIARG_CREATERESOURCE& native,
     UINT& misc, UINT& bindings) {
   constexpr UINT known = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP
-    | D3D10_DDI_RESOURCE_MISC_SHARED | D3D11_DDI_RESOURCE_MISC_DRAWINDIRECT_ARGS
+    | D3D10_DDI_RESOURCE_MISC_SHARED | D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT
+    | D3D11_DDI_RESOURCE_MISC_DRAWINDIRECT_ARGS
     | D3D11_DDI_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS
-    | D3D11_DDI_RESOURCE_MISC_BUFFER_STRUCTURED | D3D11_DDI_RESOURCE_MISC_RESOURCE_CLAMP;
+    | D3D11_DDI_RESOURCE_MISC_BUFFER_STRUCTURED | D3D11_DDI_RESOURCE_MISC_RESOURCE_CLAMP
+    | D3DWDDM2_0DDI_RESOURCE_MISC_DISPLAYABLE_SURFACE;
   constexpr UINT bind = D3D10_DDI_BIND_PIPELINE_MASK | D3D10_DDI_BIND_PRESENT
     | D3D11_DDI_BIND_UNORDERED_ACCESS;
   if ((native.MiscFlags & ~known) || (native.BindFlags & ~bind)
-      || (native.MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK)) return false;
+      || (native.MapFlags & ~D3D10_DDI_CPU_ACCESS_MASK)
+      || !displayableSurfaceShape(native)) return false;
   misc = 0;
   bindings = native.BindFlags & D3D10_DDI_BIND_PIPELINE_MASK;
   // Native UAV bind is 0x100; the public D3D11 resource bind is 0x80.

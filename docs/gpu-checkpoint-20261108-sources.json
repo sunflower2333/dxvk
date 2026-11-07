@@ -1,0 +1,549 @@
+[
+  {
+    "path": "meson_options.txt",
+    "mode": "100644",
+    "bytes": 1468,
+    "sha256": "d341ef3881d2c954c4b2382e3dae8aba0c8874dcbfe10c075eb86b5522085141"
+  },
+  {
+    "path": "scripts/test-umd-mrt.ps1",
+    "mode": "100644",
+    "bytes": 5722,
+    "sha256": "a2cf63560f512642c7941e8cd82730b19b6100fbdd25364cebef58b45ea89599"
+  },
+  {
+    "path": "src/d3d11/d3d11_context.h",
+    "mode": "100644",
+    "bytes": 52355,
+    "sha256": "d96dc26870415917ec3b2c96bf0b984e525dc0d1cb1ce42b18f82e8f6c1704f1"
+  },
+  {
+    "path": "src/d3d11/d3d11_context_imm.cpp",
+    "mode": "100644",
+    "bytes": 49618,
+    "sha256": "7b4696ad89a0721f40bb84a7d6bdc3e55e18b10688076cbc37986816688db4da"
+  },
+  {
+    "path": "src/d3d11/d3d11_context_imm.h",
+    "mode": "100644",
+    "bytes": 8375,
+    "sha256": "8a0e91bb2913d0cd192d521b7a8ec107c1430ece390fe916b8b5e82da58187f0"
+  },
+  {
+    "path": "src/d3d11/d3d11_device.cpp",
+    "mode": "100644",
+    "bytes": 143865,
+    "sha256": "0d4b8ce3f9497d2e1648ce5859609b3bc98c2a5ea05840bc08b5f92e2d04ac60"
+  },
+  {
+    "path": "src/d3d11/d3d11_initializer.cpp",
+    "mode": "100644",
+    "bytes": 13875,
+    "sha256": "38824a5846bd2c7ef8e77e0357e8c03133202e052ae6c539850b524f5bfd1192"
+  },
+  {
+    "path": "src/d3d11/d3d11_texture.cpp",
+    "mode": "100644",
+    "bytes": 63147,
+    "sha256": "211c6de9f89fc39d51f3085f173a9f62783f662a42baba98843b2647a7a2b3fe"
+  },
+  {
+    "path": "src/d3d11/d3d11_texture.h",
+    "mode": "100644",
+    "bytes": 27554,
+    "sha256": "41b8e23f89dc41f7d567c6b8adbb89c9b1d6b78651e275037274eddd1d57c378"
+  },
+  {
+    "path": "src/d3d9/d3d9_device.cpp",
+    "mode": "100644",
+    "bytes": 342479,
+    "sha256": "440ef76de7a121389482d25de41b2ce1390f6acb6830ad300cce9fea02b369b2"
+  },
+  {
+    "path": "src/d3d9/d3d9_device.h",
+    "mode": "100644",
+    "bytes": 59986,
+    "sha256": "63c93a1618ce2be625f7efdb08e569f7ba6e6b6fd00769ed92c46ab1c785f3a4"
+  },
+  {
+    "path": "src/d3d9/d3d9_initializer.cpp",
+    "mode": "100644",
+    "bytes": 5265,
+    "sha256": "3420fb09605bbb3ae621a07fc1ddddf9d517aafbbed6289f33e69d592c8fce00"
+  },
+  {
+    "path": "src/d3d9/d3d9_query.cpp",
+    "mode": "100644",
+    "bytes": 9450,
+    "sha256": "3f284396ff0602de57099b1243c1141e5b9eaf6525e3f573b7c1f2f217d54672"
+  },
+  {
+    "path": "src/dxvk/dxvk_adapter.cpp",
+    "mode": "100644",
+    "bytes": 15740,
+    "sha256": "e867e76f9b3f0a35d9630ea78e5a18a2091759d844d5b3ddac838fea23fc0058"
+  },
+  {
+    "path": "src/dxvk/dxvk_cmdlist.cpp",
+    "mode": "100644",
+    "bytes": 41162,
+    "sha256": "bcdc9f4f6a63789bcca2da1d26d064da90b928acaa466036697af5b5c7245827"
+  },
+  {
+    "path": "src/dxvk/dxvk_context.cpp",
+    "mode": "100644",
+    "bytes": 442539,
+    "sha256": "d559048bf9ceb71104a340a4b9d387e4e855e2a4b28a6453031eb3267568abd6"
+  },
+  {
+    "path": "src/dxvk/dxvk_context.h",
+    "mode": "100644",
+    "bytes": 80558,
+    "sha256": "59c847185306d94ac360f26785e119cb6c81bae133c6cb6ea7d144dc20548b8f"
+  },
+  {
+    "path": "src/dxvk/dxvk_cs.cpp",
+    "mode": "100644",
+    "bytes": 8778,
+    "sha256": "ab7b3748ee72b0fe80ecd99528ebe6b6bdd06a2d7ffcbc077989df78c08ef694"
+  },
+  {
+    "path": "src/dxvk/dxvk_cs.h",
+    "mode": "100644",
+    "bytes": 14912,
+    "sha256": "f4a7d53187a85feeb0da779435e978e9c90c2e7c3c217709c90e03e557ae0679"
+  },
+  {
+    "path": "src/dxvk/dxvk_descriptor_worker.cpp",
+    "mode": "100644",
+    "bytes": 8082,
+    "sha256": "edb0ff7e6e1dd82b68df3bbc978c11998320445caeaa11d3206166f286f50bb0"
+  },
+  {
+    "path": "src/dxvk/dxvk_device.cpp",
+    "mode": "100644",
+    "bytes": 36594,
+    "sha256": "ef8508de3827b8ced1a81f5623977b9ea3f4d317e92c58c05982b1e7b0b0303a"
+  },
+  {
+    "path": "src/dxvk/dxvk_device.h",
+    "mode": "100644",
+    "bytes": 23579,
+    "sha256": "f67788c364fbba8381362f6ce9aa0efa24476d36b3c3ed1fff314f1534d1c18f"
+  },
+  {
+    "path": "src/dxvk/dxvk_image.cpp",
+    "mode": "100644",
+    "bytes": 28946,
+    "sha256": "d4ecf7513ae426ae7ebe9483e8b4d35424a12aff06dd9831969238e6ec371ccd"
+  },
+  {
+    "path": "src/dxvk/dxvk_image.h",
+    "mode": "100644",
+    "bytes": 29746,
+    "sha256": "6557525eada4cb1c26d4669eb479af305f75c30ab1f1621e0ed43e56109b8a72"
+  },
+  {
+    "path": "src/dxvk/dxvk_instance.cpp",
+    "mode": "100644",
+    "bytes": 17022,
+    "sha256": "39665035f95d93ef3152df51cb7d0445f4ea80f42a9b406412e2d7fd9d3b5d29"
+  },
+  {
+    "path": "src/dxvk/dxvk_memory.cpp",
+    "mode": "100644",
+    "bytes": 103678,
+    "sha256": "9be8920f0680102a0f0365de0a6bf8bd03de493921b42e90c47bbfed26d1356f"
+  },
+  {
+    "path": "src/dxvk/dxvk_memory.h",
+    "mode": "100644",
+    "bytes": 43942,
+    "sha256": "e27199aeb789665a50a0faced227c61ef08c3ca8bfa7b3da142b1bbdc35d7c9b"
+  },
+  {
+    "path": "src/dxvk/dxvk_pipemanager.cpp",
+    "mode": "100644",
+    "bytes": 13959,
+    "sha256": "eae4bd68f36461895e9498099a4369c902de5892accf64aba8e72d1f7176acdd"
+  },
+  {
+    "path": "src/dxvk/dxvk_queue.cpp",
+    "mode": "100644",
+    "bytes": 14685,
+    "sha256": "8f5361af95c1d0e380475f08126a7924df6c393d07b270f65164d81f1f8cf78b"
+  },
+  {
+    "path": "src/dxvk/dxvk_queue.h",
+    "mode": "100644",
+    "bytes": 6904,
+    "sha256": "a09aa2e38568359cbf6b6c791b78f5524224d4ffa20c9af63d413f24a59c9121"
+  },
+  {
+    "path": "src/dxvk/dxvk_shader_cache.cpp",
+    "mode": "100644",
+    "bytes": 20585,
+    "sha256": "8465d5539c686e53d2c295961f2bddf064b93e036516976586d3414f961f3cf5"
+  },
+  {
+    "path": "src/dxvk/dxvk_shader_ir.cpp",
+    "mode": "100644",
+    "bytes": 89678,
+    "sha256": "a8be20edbed75b6a75ba3c9f58b6222a5ef7a400fef719ec17936c6b6eca90af"
+  },
+  {
+    "path": "src/umd/mesa_wddm_runtime.h",
+    "mode": "100644",
+    "bytes": 3322,
+    "sha256": "9129e09f3c34984ba7c56207aa978826b62a4fc2f273a1e4ca5a25d7556ecce3"
+  },
+  {
+    "path": "src/umd/meson.build",
+    "mode": "100644",
+    "bytes": 25269,
+    "sha256": "8fd832e1780667d7f96683aead3484d1369d16b975f758adb4377b96871e75fa"
+  },
+  {
+    "path": "src/umd/umd_adapter.cpp",
+    "mode": "100644",
+    "bytes": 19395,
+    "sha256": "fc351590672c9c635deeee540e305de48348e71c6ab6cbc86255c365a6f786b1"
+  },
+  {
+    "path": "src/umd/umd_adapter.h",
+    "mode": "100644",
+    "bytes": 1108,
+    "sha256": "457187f9e820694ee6f0993e0e1533fe1be9e25d9c51d87b3426397ef4a73845"
+  },
+  {
+    "path": "src/umd/umd_adapter_identity.h",
+    "mode": "100644",
+    "bytes": 3554,
+    "sha256": "a12062640975c8e1be248324bcec0162996947fc0a31ef350fe507f2f1079fa4"
+  },
+  {
+    "path": "src/umd/umd_allocation.cpp",
+    "mode": "100644",
+    "bytes": 74978,
+    "sha256": "888c2842c167f72097c987db34ff4248e8666008b45b3492e7593f877c771ce2"
+  },
+  {
+    "path": "src/umd/umd_allocation.h",
+    "mode": "100644",
+    "bytes": 14497,
+    "sha256": "5aef47b0cbfedad8e8538c940871e6086d28390cc1898b5fc008f0ab7f3af1d5"
+  },
+  {
+    "path": "src/umd/umd_api.h",
+    "mode": "100644",
+    "bytes": 2342,
+    "sha256": "b1952c43d24a5c091b3b1afc4a6b882f2c7639fe523ed4f2430aa322328e0ec1"
+  },
+  {
+    "path": "src/umd/umd_d3d11_ddi.inl",
+    "mode": "100644",
+    "bytes": 27504,
+    "sha256": "4998b5d77642b651dca32932302b94af262b1b262ee3a12c383840cc528bef28"
+  },
+  {
+    "path": "src/umd/umd_d3d11_desc.h",
+    "mode": "100644",
+    "bytes": 8517,
+    "sha256": "61df96b7965afdae2eb7e1a4b64dfc2f0df49b28fe645bc7bd697c1707a08852"
+  },
+  {
+    "path": "src/umd/umd_d3d11_shader.inl",
+    "mode": "100644",
+    "bytes": 25996,
+    "sha256": "089828745bec8341778abc31afcc8ac9a7d9d856129d1a92e2eda7eb60e373ea"
+  },
+  {
+    "path": "src/umd/umd_d3d9_adapter.cpp",
+    "mode": "100644",
+    "bytes": 17528,
+    "sha256": "a7c70e81bbcd1c95d40e2b8097ae6b03cbd27efe182cebff88ce8b5a689d85fc"
+  },
+  {
+    "path": "src/umd/umd_d3d9_backend.cpp",
+    "mode": "100644",
+    "bytes": 27185,
+    "sha256": "8cfff0f2a0584d651b1ff1e330c4f772bd6f95ce620f1c6fae703188a9c61c30"
+  },
+  {
+    "path": "src/umd/umd_d3d9_backend.h",
+    "mode": "100644",
+    "bytes": 7726,
+    "sha256": "fa819cffca7fd8a5fe731516f8dbef6dc6003b582f92b2ae7a4441543166b09f"
+  },
+  {
+    "path": "src/umd/umd_d3d9_device.cpp",
+    "mode": "100644",
+    "bytes": 92602,
+    "sha256": "8caf73f2315cee9a5ae988ee3180e4eeec644b95ebb8629e92ae2b5a4a53e4c8"
+  },
+  {
+    "path": "src/umd/umd_ddi.cpp",
+    "mode": "100644",
+    "bytes": 216458,
+    "sha256": "f119b8e0dafcf4944f164d6b3bc5a1d8c93c679bdc685a6b7198e62e72325a7f"
+  },
+  {
+    "path": "src/umd/umd_displayable.h",
+    "mode": "100644",
+    "bytes": 1337,
+    "sha256": "0cac4eea86f64ed312f62598707cf8b3d3458cf9f9905341665c75b7d46e1e8e"
+  },
+  {
+    "path": "src/umd/umd_format.h",
+    "mode": "100644",
+    "bytes": 3518,
+    "sha256": "d00e4e0a4852a298ec7235d8b04dce1afa4aa58569c6adc3d16fcd59180814e2"
+  },
+  {
+    "path": "src/umd/umd_gpu_backend.cpp",
+    "mode": "100644",
+    "bytes": 2329,
+    "sha256": "a08da88907cdb9300009022fdd4a535952a7f0d78184998b681ff209b8fec9ba"
+  },
+  {
+    "path": "src/umd/umd_interface.h",
+    "mode": "100644",
+    "bytes": 2904,
+    "sha256": "edc46690f8de9895dfd8123def8a4a6d714085c7b809677cc0ec8310c4d10e32"
+  },
+  {
+    "path": "src/umd/umd_kernel_identity.cpp",
+    "mode": "100644",
+    "bytes": 8465,
+    "sha256": "bac8c5e2872b484da0418f089b2cf449d4c0a69ee0d2084acf75fa3280a0da40"
+  },
+  {
+    "path": "src/umd/umd_kernel_identity.h",
+    "mode": "100644",
+    "bytes": 685,
+    "sha256": "2b712c631695da823ad412893bd66bb6a96c83c14324b8b407e2f4ddca86f49c"
+  },
+  {
+    "path": "src/umd/umd_legacy_api.h",
+    "mode": "100644",
+    "bytes": 1415,
+    "sha256": "58cea310aef3f71a164e425158093d8c2e44fbdcf42351354ef26cc6741c90d5"
+  },
+  {
+    "path": "src/umd/umd_legacy_diagnostics.h",
+    "mode": "100644",
+    "bytes": 2074,
+    "sha256": "9c2def68fedf5a48c3ad9b440e385c5cf9e97c620163441bdeab65186f6a1419"
+  },
+  {
+    "path": "src/umd/umd_native_image.cpp",
+    "mode": "100644",
+    "bytes": 16992,
+    "sha256": "ee49403c2aaa2f94d1e22575df575da84755397fd9f77274094e3cfdd66b4572"
+  },
+  {
+    "path": "src/umd/umd_native_surface.cpp",
+    "mode": "100644",
+    "bytes": 8933,
+    "sha256": "9d3e5f38a16263ef592b896b2c081136e09ffde7dbd6efeb6e9a36fbc79b4851"
+  },
+  {
+    "path": "src/umd/umd_native_surface.h",
+    "mode": "100644",
+    "bytes": 1701,
+    "sha256": "7ca0fd73ec40e5fe5c74caabf91f0def5420fea9f6cd334262d9d6163f26b51d"
+  },
+  {
+    "path": "src/umd/umd_native_surface_wire.h",
+    "mode": "100644",
+    "bytes": 3238,
+    "sha256": "47914de7e61dcb6b9ad09ca28f7585bb130c29f2ba1966e0c0164d0f35d320ad"
+  },
+  {
+    "path": "src/umd/umd_primary.h",
+    "mode": "100644",
+    "bytes": 3262,
+    "sha256": "73fdc6835cd935eeea8467c3da079aaf038d82550c6a51e212df7ebf3fabd739"
+  },
+  {
+    "path": "src/umd/umd_primary_access.cpp",
+    "mode": "100644",
+    "bytes": 1939,
+    "sha256": "eac476a49c0cdb04b2001397bd4eca29c36daf71c57db434de1f9434a59bdb4f"
+  },
+  {
+    "path": "src/umd/umd_primary_access_x86_seh.c",
+    "mode": "100644",
+    "bytes": 525,
+    "sha256": "6d1dc0727215429ad5b19f75fefa7c08b3ec16eeb827c1bde379715f4833f208"
+  },
+  {
+    "path": "src/umd/umd_primary_policy.h",
+    "mode": "100644",
+    "bytes": 2772,
+    "sha256": "732cc606ed56578e9504fe63105a9bea9d1bfa5833d9064cf384f7feecc68b15"
+  },
+  {
+    "path": "src/umd/umd_process_storage.h",
+    "mode": "100644",
+    "bytes": 1045,
+    "sha256": "8a346083dc8e2d61ded3e735bf500e287268a5afe7642061efe36d4bb56e2d65"
+  },
+  {
+    "path": "src/umd/umd_runtime_bridge.h",
+    "mode": "100644",
+    "bytes": 469,
+    "sha256": "fd26e4c7f3a098d2971bd14fdc5b112049cb777cfdcdfae3a6fb6323a7a09f79"
+  },
+  {
+    "path": "src/umd/umd_runtime_gpu.cpp",
+    "mode": "100644",
+    "bytes": 48719,
+    "sha256": "eb76606c04ff1f18b4ae125e3e310e2dbca78b8aa742a0aa38ab2ef465ab81b8"
+  },
+  {
+    "path": "src/umd/umd_runtime_gpu.h",
+    "mode": "100644",
+    "bytes": 5827,
+    "sha256": "7fd33b44eaacb9ef466ea2adc495820b45972d56c4dd5c49a15f34e0f72d50dc"
+  },
+  {
+    "path": "src/umd/umd_runtime_service.h",
+    "mode": "100644",
+    "bytes": 11431,
+    "sha256": "801e9173eeb5c7d42d8321f3f40acb6702fb3b87f55b13d90a01daf1d62062c2"
+  },
+  {
+    "path": "src/umd/umd_runtime_validation.h",
+    "mode": "100644",
+    "bytes": 1834,
+    "sha256": "39b2db753bc4177039504ea1c08cec6cb1d85d972ed96c611695aa731fb84804"
+  },
+  {
+    "path": "src/umd/umd_shader11.cpp",
+    "mode": "100644",
+    "bytes": 28608,
+    "sha256": "cf95d067d4bd43e687c7055c36f1f44153795bba919bb0fec43703210f3ff1f6"
+  },
+  {
+    "path": "src/umd/umd_shader11.h",
+    "mode": "100644",
+    "bytes": 2786,
+    "sha256": "544772e26693f116560875e7eec2cb72db69261fa41394caa7e8cc617e8b3242"
+  },
+  {
+    "path": "src/umd/umd_shared_surface.h",
+    "mode": "100644",
+    "bytes": 8707,
+    "sha256": "46677eec7cf15d68fb27eddbb5cd2d292b542f4449565c89292ffbab090fb979"
+  },
+  {
+    "path": "src/umd/umd_view.h",
+    "mode": "100644",
+    "bytes": 13297,
+    "sha256": "62d60adc50ea75c2cdeafe310e9668db66664e55da384fc21e9ffa37ae1fc992"
+  },
+  {
+    "path": "src/umd/viogpudxvk.def",
+    "mode": "100644",
+    "bytes": 453,
+    "sha256": "f6f053fe6fb26518881dbfa8fdbb7daa6dbd4df44887b24da17069439005f2ae"
+  },
+  {
+    "path": "src/vulkan/meson.build",
+    "mode": "100644",
+    "bytes": 1625,
+    "sha256": "d785afff7bb54c03aff994c1c964e4571d1e30f5110e99fb70f082603ab82bf3"
+  },
+  {
+    "path": "src/vulkan/vulkan_loader.cpp",
+    "mode": "100644",
+    "bytes": 6426,
+    "sha256": "14e4d676078f62a7b4ef43ec190ebe82469a0cd88c5ea9f819f07062dc03de52"
+  },
+  {
+    "path": "src/vulkan/vulkan_loader.h",
+    "mode": "100644",
+    "bytes": 18549,
+    "sha256": "9deeaee6fccd9e5e9c2fc47f40bcff3a7c9db7cdb36f6ac51e290e9787563aa3"
+  },
+  {
+    "path": "tests/umd-allocation.cpp",
+    "mode": "100644",
+    "bytes": 30000,
+    "sha256": "e1ec6fc06e316af1d0198d2ae8c7c7806375b88c21a6409a29ef3b76ede53e8f"
+  },
+  {
+    "path": "tests/umd-d3d11-system-front.cpp",
+    "mode": "100644",
+    "bytes": 12378,
+    "sha256": "56b08df9ef2a75bfa2efcb55e5d3e9312cf38f8499b3fbeb7d20b757a7214c7b"
+  },
+  {
+    "path": "tests/umd-d3d9-device.cpp",
+    "mode": "100644",
+    "bytes": 255174,
+    "sha256": "9c58b4fc5989f3556290dab9b8f9d9a5031fcfb943e922225fa436049a49ef19"
+  },
+  {
+    "path": "tests/umd-dll-process-host.cpp",
+    "mode": "100644",
+    "bytes": 1751,
+    "sha256": "444cb942e770491cbc205dc725dd4b75ee61e50679f426a3e11c5b782b9579f8"
+  },
+  {
+    "path": "tests/umd-dll-process-teardown.cpp",
+    "mode": "100644",
+    "bytes": 11239,
+    "sha256": "f4a68b930d1493478e3e3d8e9fd174e37c1bfb89b086d399816a1257a33a53c0"
+  },
+  {
+    "path": "tests/umd-dll-process-teardown.py",
+    "mode": "100644",
+    "bytes": 12375,
+    "sha256": "2a344080f6f0aefd8ac454ce9f4285b46d55dc36ea44ae252e9b5e02a745efbd"
+  },
+  {
+    "path": "tests/umd-dxgi-primary.cpp",
+    "mode": "100644",
+    "bytes": 50112,
+    "sha256": "b8992239f1ad50394e6cc8ca6369c18c2a5a8c4b828f9a8ea596bd7a2cd498b9"
+  },
+  {
+    "path": "tests/umd-kernel-identity.cpp",
+    "mode": "100644",
+    "bytes": 12103,
+    "sha256": "4de332a8f6375ba30b5b258efd79e867dd49dfabc650beabcce39759616b071f"
+  },
+  {
+    "path": "tests/umd-native-entry.cpp",
+    "mode": "100644",
+    "bytes": 24136,
+    "sha256": "629c1d0a74804e31a6c1cfe8c2f8f29bc278270e2c7d9ab18cf1c951ef3e1b7f"
+  },
+  {
+    "path": "tests/umd-process-teardown.cpp",
+    "mode": "100644",
+    "bytes": 9030,
+    "sha256": "0220d56c80a7618bf2493764954f3670f8830db42aae93fa064ceee763b5eb79"
+  },
+  {
+    "path": "tests/umd-process-teardown.py",
+    "mode": "100644",
+    "bytes": 5222,
+    "sha256": "846bd601cb52c6dc24edaf6ac6cb6ff5e5995da5f2ff156d885155764b75f867"
+  },
+  {
+    "path": "tests/umd-view.cpp",
+    "mode": "100644",
+    "bytes": 25569,
+    "sha256": "8f25dd14a439789e16e60993b4ccb06539da96fe39f7b6dd6c3eec4ef017ffbb"
+  },
+  {
+    "path": "docs/stage73-retained-source-inputs.json",
+    "mode": "100644",
+    "bytes": 165660,
+    "sha256": "287f8e8a66f15d6c41a7e6bcabddbf007de1b63d94ddcb1f03913584f8bb3137",
+    "publication_metadata": true
+  }
+]

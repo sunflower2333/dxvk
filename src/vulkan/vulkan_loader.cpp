@@ -20,12 +20,11 @@ namespace dxvk::vk {
   // which is never on that path, and an emulated x64 or x86 process has no
   // guaranteed matching-architecture public vulkan-1.dll. There is no
   // fallback to winevulkan.dll or vulkan-1.dll.
-  static HMODULE loadPrivateVulkanLibrary(std::wstring& path) {
-    static const wchar_t name[] = L"" DXVK_PRIVATE_VULKAN_LOADER;
+  static HMODULE loadPrivateVulkanLibrary(const wchar_t* name, std::wstring& path) {
     HMODULE self = nullptr;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
           | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-        name, &self))
+        reinterpret_cast<LPCWSTR>(&loadPrivateVulkanLibrary), &self))
       return nullptr;
     std::vector<wchar_t> buffer(32768);
     DWORD length = GetModuleFileNameW(self, buffer.data(), DWORD(buffer.size()));
@@ -59,7 +58,7 @@ namespace dxvk::vk {
 #ifdef _WIN32
     if (sizeof(DXVK_PRIVATE_VULKAN_LOADER) > 1) {
       std::wstring path;
-      HMODULE library = loadPrivateVulkanLibrary(path);
+      HMODULE library = loadPrivateVulkanLibrary(L"" DXVK_PRIVATE_VULKAN_LOADER, path);
       auto proc = library ? GetProcAddress(library, "vkGetInstanceProcAddr") : nullptr;
 
       if (!proc) {
@@ -107,6 +106,21 @@ namespace dxvk::vk {
 
   LibraryLoader::LibraryLoader() {
     std::tie(m_library, m_getInstanceProcAddr) = loadVulkanLibrary();
+#ifdef _WIN32
+    if (m_getInstanceProcAddr && sizeof(DXVK_PRIVATE_VULKAN_DRIVER) > 1) {
+      std::wstring path;
+      m_driver = loadPrivateVulkanLibrary(L"" DXVK_PRIVATE_VULKAN_DRIVER, path);
+      m_driverProc = m_driver ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+        GetProcAddress(m_driver, "vk_icdGetInstanceProcAddr")) : nullptr;
+      if (!m_driverProc) {
+        Logger::err(str::format("Vulkan: private driver not usable at ", path.c_str()));
+        // A configured package must never silently discover a different ICD.
+        m_getInstanceProcAddr = nullptr;
+      } else {
+        Logger::info(str::format("Vulkan: Direct driver ", path.c_str()));
+      }
+    }
+#endif
   }
 
   LibraryLoader::LibraryLoader(PFN_vkGetInstanceProcAddr loaderProc) {
@@ -116,6 +130,8 @@ namespace dxvk::vk {
   LibraryLoader::~LibraryLoader() {
     if (m_library)
       FreeLibrary(m_library);
+    if (m_driver)
+      FreeLibrary(m_driver);
   }
 
   PFN_vkVoidFunction LibraryLoader::sym(VkInstance instance, const char* name) const {

@@ -14,11 +14,15 @@ namespace dxvk {
     const DxvkDeviceCapabilities&   caps,
     const DxvkDeviceQueueSet&       queues,
     const DxvkQueueCallback&        queueCallback,
-    std::shared_ptr<void>          runtimeOwner)
+    std::shared_ptr<void>          runtimeOwner,
+    bool                          disableExtraThreads,
+    bool                          nativeSurfaces)
   : m_options           (instance->options()),
     m_instance          (instance),
     m_adapter           (adapter),
     m_runtimeOwner      (std::move(runtimeOwner)),
+    m_nativeSurfaces    (nativeSurfaces),
+    m_disableExtraThreads(disableExtraThreads),
     m_vkd               (vkd),
     m_debugFlags        (instance->debugFlags()),
     m_queues            (queues),
@@ -40,7 +44,7 @@ namespace dxvk {
 
     determineShaderOptions();
 
-    if (env::getEnvVar("DXVK_SHADER_CACHE") != "0" && DxvkShader::getShaderDumpPath().empty())
+    if (!m_disableExtraThreads && env::getEnvVar("DXVK_SHADER_CACHE") != "0" && DxvkShader::getShaderDumpPath().empty())
       m_shaderCache = DxvkShaderCache::getInstance();
 
     logBindingModel();
@@ -553,9 +557,10 @@ namespace dxvk {
   Rc<DxvkImage> DxvkDevice::importImage(
     const DxvkImageCreateInfo&  createInfo,
           VkImage               image,
-          VkMemoryPropertyFlags memoryType) {
+          VkMemoryPropertyFlags memoryType,
+          std::shared_ptr<void> owner) {
     return new DxvkImage(this, createInfo, image,
-      m_objects.memoryManager(), memoryType);
+      m_objects.memoryManager(), memoryType, std::move(owner));
   }
 
 
@@ -640,10 +645,10 @@ namespace dxvk {
     latencyInfo.tracker = tracker;
     latencyInfo.frameId = frameId;
 
+    // Inline completion can recycle/reset the list before submit returns.
+    { std::lock_guard<sync::Spinlock> statLock(m_statLock);
+      m_statCounters.merge(commandList->statCounters()); }
     m_submissionQueue.submit(submitInfo, latencyInfo, status);
-
-    std::lock_guard<sync::Spinlock> statLock(m_statLock);
-    m_statCounters.merge(commandList->statCounters());
   }
   
   
@@ -665,11 +670,18 @@ namespace dxvk {
 
     auto t0 = dxvk::high_resolution_clock::now();
 
-    fence.wait(value);
+    if (m_disableExtraThreads) {
+      m_submissionQueue.synchronizeUntil([&] {
+        return fence.value() >= value;
+      });
+    } else {
+      fence.wait(value);
+    }
 
     auto t1 = dxvk::high_resolution_clock::now();
     auto us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
 
+    std::lock_guard<sync::Spinlock> lock(m_statLock);
     m_statCounters.addCtr(DxvkStatCounter::GpuSyncCount, 1);
     m_statCounters.addCtr(DxvkStatCounter::GpuSyncTicks, us.count());
   }

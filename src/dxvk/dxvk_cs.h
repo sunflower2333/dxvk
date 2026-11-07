@@ -603,6 +603,11 @@ namespace dxvk {
         ? m_seqOrdered : m_seqHighPrio;
     }
 
+    void executeInline(
+            DxvkCsQueue     queue,
+            DxvkCsChunkRef  chunk,
+            uint64_t        sequence);
+
     void threadFunc();
     
   };

@@ -92,9 +92,15 @@ namespace dxvk {
       const DxvkDeviceCapabilities&   caps,
       const DxvkDeviceQueueSet&       queues,
       const DxvkQueueCallback&        queueCallback,
-      std::shared_ptr<void>          runtimeOwner = {});
+      std::shared_ptr<void>          runtimeOwner = {},
+      bool                          disableExtraThreads = false,
+      bool                          nativeSurfaces = false);
       
     ~DxvkDevice();
+
+    bool disableExtraThreads() const { return m_disableExtraThreads; }
+    bool nativeSurfaces() const { return m_nativeSurfaces; }
+    bool ownsRuntime(const void* owner) const { return owner && m_runtimeOwner.get() == owner; }
     
     /**
      * \brief Vulkan device functions
@@ -263,6 +269,12 @@ namespace dxvk {
      */
     VkResult getDeviceStatus() const {
       return m_submissionQueue.getLastError();
+    }
+
+    // A failed recording operation leaves the context unusable even when no
+    // queue submission has observed the Vulkan error yet.
+    void recordCommandError(VkResult result) {
+      m_submissionQueue.recordCommandError(result);
     }
 
     /**
@@ -537,7 +549,8 @@ namespace dxvk {
     Rc<DxvkImage> importImage(
       const DxvkImageCreateInfo&  createInfo,
             VkImage               image,
-            VkMemoryPropertyFlags memoryType);
+            VkMemoryPropertyFlags memoryType,
+            std::shared_ptr<void> owner = {});
 
     /**
      * \brief Retrieves stat counters
@@ -743,6 +756,10 @@ namespace dxvk {
      * \param [in] access Access mode to check
      */
     void waitForResource(const DxvkPagedResource& resource, DxvkAccess access);
+
+    void pollCompletions() {
+      m_submissionQueue.pollCompletions();
+    }
     
     /**
      * \brief Waits until the device becomes idle
@@ -762,6 +779,8 @@ namespace dxvk {
     Rc<DxvkAdapter>             m_adapter;
     // Declared before m_vkd so the callback owner outlives vkDestroyDevice.
     std::shared_ptr<void>       m_runtimeOwner;
+    bool                       m_nativeSurfaces = false;
+    const bool                 m_disableExtraThreads;
     Rc<vk::DeviceFn>            m_vkd;
     D3DKMT_HANDLE               m_kmtLocal = 0;
 

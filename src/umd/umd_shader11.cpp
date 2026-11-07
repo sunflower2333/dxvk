@@ -142,10 +142,12 @@ bool interfaceChunk(const ShaderCode11& shader, std::vector<unsigned char>& byte
 }
 
 std::string shader11ClassName(uint32_t table) { return "VIOGPU_TABLE_" + std::to_string(table); }
-bool shader11ClassPointer(uint32_t cb, uint32_t byteOffset, uint32_t texture,
+bool shader11ClassPointer(uint32_t cb, uint32_t constantOffset, uint32_t texture,
     uint32_t sampler, uint32_t& vectorOffset) {
-  if (cb >= 14 || byteOffset >= 4096 || byteOffset % 16 || texture >= 128 || sampler >= 16) return false;
-  vectorOffset = byteOffset / 16; return true;
+  // The SYSTEM runtime forwards constant-vector indices in uCBOffset.
+  // Preserve the 12-bit index for CreateClassInstance's vector offset.
+  if (cb >= 14 || constantOffset >= 4096 || texture >= 128 || sampler >= 16) return false;
+  vectorOffset = constantOffset; return true;
 }
 bool shader11InterfaceTable(const ShaderCode11& shader, uint32_t slot, uint32_t table) {
   for (const auto& iface : shader.interfaces)

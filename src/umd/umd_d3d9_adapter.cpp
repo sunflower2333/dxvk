@@ -1,6 +1,8 @@
 #include "umd_d3d9_adapter.h"
+#include "umd_legacy_diagnostics.h"
 #include "umd_d3d8_compat.h"
 #include "umd_runtime_query.h"
+#include "umd_process_storage.h"
 #include "../d3d9/d3d9_caps.h"
 #include <dxgi.h>
 #include <atomic>
@@ -18,8 +20,10 @@ struct Adapter {
   std::atomic_flag querying = ATOMIC_FLAG_INIT;
 };
 
-std::mutex adaptersMutex;
-std::unordered_map<HANDLE, std::shared_ptr<Adapter>> adapters;
+dxvk::umd::ProcessStorage<std::mutex> adaptersMutexLifetime;
+auto& adaptersMutex = adaptersMutexLifetime.get();
+dxvk::umd::ProcessStorage<std::unordered_map<HANDLE, std::shared_ptr<Adapter>>> adaptersLifetime;
+auto& adapters = adaptersLifetime.get();
 uintptr_t nextHandle = 1;
 thread_local bool opening = false;
 
@@ -76,11 +80,13 @@ HRESULT current(const std::shared_ptr<Adapter>& adapter) noexcept {
 // This is the subset implemented by the native DDI, rather than the larger
 // private DXVK renderer's caps. OpenAdapter exposes only this legacy profile.
 // In particular: one RT, static/dynamic 2D mip chains, no cube/volume/MSAA/instancing,
-// no stretched plain surfaces, autogen, shared resources or gamma.
+// no filtered stretch, autogen, shared resources or gamma. Plain BGRA
+// surfaces support ColorFill and unfiltered GPU-to-GPU StretchRect.
 constexpr FORMATOP formats[] = {
   {D3DDDIFMT_X8R8G8B8, FORMATOP_TEXTURE | FORMATOP_OFFSCREEN_RENDERTARGET
-    | FORMATOP_DISPLAYMODE | FORMATOP_3DACCELERATION, 0, 0, 0},
-  {D3DDDIFMT_A8R8G8B8, FORMATOP_TEXTURE | FORMATOP_OFFSCREEN_RENDERTARGET, 0, 0, 0},
+    | FORMATOP_OFFSCREENPLAIN | FORMATOP_DISPLAYMODE | FORMATOP_3DACCELERATION, 0, 0, 0},
+  {D3DDDIFMT_A8R8G8B8, FORMATOP_TEXTURE | FORMATOP_OFFSCREEN_RENDERTARGET
+    | FORMATOP_OFFSCREENPLAIN, 0, 0, 0},
   {D3DDDIFMT_D16, FORMATOP_ZSTENCIL_WITH_ARBITRARY_COLOR_DEPTH, 0, 0, 0},
   {D3DDDIFMT_D24S8, FORMATOP_ZSTENCIL_WITH_ARBITRARY_COLOR_DEPTH, 0, 0, 0},
 };
@@ -164,13 +170,16 @@ HRESULT APIENTRY getCaps(HANDLE handle, const D3DDDIARG_GETCAPS* args) {
   if (FAILED(hr)) return hr;
   if (!args) return E_INVALIDARG;
   const auto input = *args;
+  dxvk::umd::traceLegacyState("GetCaps.type-size", UINT(input.Type), input.DataSize);
   if (input.pInfo) return E_INVALIDARG;
   UINT size = 0;
   switch (input.Type) {
     case D3DDDICAPS_GETFORMATCOUNT:
     case D3DDDICAPS_GETD3DQUERYCOUNT: size = sizeof(UINT); break;
     case D3DDDICAPS_GETD3D9CAPS:
-      if (adapter->identity->legacyApi != dxvk::umd::LegacyD3DApi::D3D9) return D3DERR_NOTAVAILABLE;
+      // SYSTEM D3D8 queries this full native layout during hardware device
+      // initialization, after querying its public D3DCAPS8 prefix. The query
+      // does not change the immutable API8 identity or its public projection.
       size = sizeof(D3DCAPS9); break;
     case D3DDDICAPS_GETD3D8CAPS:
       if (adapter->identity->legacyApi != dxvk::umd::LegacyD3DApi::D3D8) return D3DERR_NOTAVAILABLE;
@@ -191,7 +200,11 @@ HRESULT APIENTRY getCaps(HANDLE handle, const D3DDDIARG_GETCAPS* args) {
   if (FAILED(hr)) return hr;
   switch (input.Type) {
     case D3DDDICAPS_GETD3D8CAPS: {
-      const auto caps = nativeCaps();
+      auto caps = nativeCaps();
+      // D3DCAPS2_CANRENDERWINDOWED is a D3D8-only public bit, absent from
+      // d3d9caps.h. Both legacy APIs use the implemented windowed Present
+      // bridge; D3D8 rejects every windowed CheckDeviceType without this bit.
+      caps.Caps2 |= 0x00080000u;
       if (dxvk::umd::projectD3D8Caps9(caps, input.pData, size)
           != dxvk::umd::D3D8CapsResult::Success) return E_INVALIDARG;
       break;
@@ -238,6 +251,7 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
     callbacks.pfnDestroyContextCb = source.pfnDestroyContextCb;
     callbacks.pfnEscapeCb = source.pfnEscapeCb; callbacks.pfnRenderCb = source.pfnRenderCb;
     callbacks.pfnPresentCb = source.pfnPresentCb;
+    dxvk::umd::copyResidencyCallbacks(*adapter->identity, source, callbacks);
     D3DDDI_DEVICEFUNCS table = {};
     auto output = input.pDeviceFuncs;
     D3DDDIARG_CREATEDEVICE local = {};
@@ -246,14 +260,15 @@ HRESULT APIENTRY createDevice(HANDLE handle, D3DDDIARG_CREATEDEVICE* args) {
     local.pCallbacks = &callbacks; local.pDeviceFuncs = &table;
     hr = current(adapter);
     if (FAILED(hr)) return hr;
-    hr = dxvk::umd::createAdapterDevice9(adapter->identity, &local);
+    hr = dxvk::umd::traceLegacyDdi("CreateDevice.backend",
+      dxvk::umd::createAdapterDevice9(adapter->identity, &local));
     if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
     struct DeviceGuard {
       HANDLE handle;
       PFND3DDDI_DESTROYDEVICE destroy;
       ~DeviceGuard() { if (handle) destroy(handle); }
     } guard{local.hDevice, table.pfnDestroyDevice};
-    hr = current(adapter);
+    hr = dxvk::umd::traceLegacyDdi("CreateDevice.post-identity", current(adapter));
     {
       std::lock_guard<std::mutex> lock(adaptersMutex);
       if (SUCCEEDED(hr)) hr = state(adapter);
@@ -297,15 +312,23 @@ HRESULT openLegacyAdapter(D3DDDIARG_OPENADAPTER* args) {
     identity->runtime = input.hAdapter;
     identity->query = query;
     dxvk::umd::RuntimeIdentity observed;
-    const HRESULT hr = queryError(dxvk::umd::queryRuntimeIdentity(
-      identity->runtime, identity->query, observed));
+    HRESULT hr = queryError(dxvk::umd::queryRuntimeIdentity(
+      identity->runtime, identity->query, observed, dxvk::umd::RuntimeQueryStage::OpenAdapter));
     if (FAILED(hr)) return hr;
     std::memcpy(&identity->luid, observed.luid.data(), sizeof(LUID));
     identity->generation = observed.generation;
     identity->capabilities = observed.capabilities;
+    // The physical engine's residency model is independent of the original
+    // 8/9 DDI table. Bind the exact runtime LUID/generation before reading any
+    // WDDM2 callback tail; retain the Vista-sized driver-function output.
+    hr = queryError(dxvk::umd::openKernelIdentity(observed, identity->continuity));
+    if (hr != S_OK) return FAILED(hr) ? hr : E_FAIL;
+    if (!identity->continuity) return E_FAIL;
     identity->live = adapter->live;
     adapter->identity = std::move(identity);
-    const D3DDDI_ADAPTERFUNCS functions = {getCaps, createDevice, closeAdapter};
+    D3DDDI_ADAPTERFUNCS functions = {getCaps, createDevice, closeAdapter};
+    if (dxvk::umd::legacyDiagnosticsEnabled())
+      functions.pfnGetCaps = dxvk::umd::tracedLegacyDdi<getCaps>;
     std::lock_guard<std::mutex> lock(adaptersMutex);
     // Opaque tokens are never reused, including after shared owners expire.
     // Wraparound fails closed rather than making a stale handle valid again.

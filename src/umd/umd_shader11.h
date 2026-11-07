@@ -49,9 +49,9 @@ bool decodeShader11(ShaderStage stage, const uint32_t* code, size_t words, Shade
 bool buildShader11Container(const ShaderCode11& shader, std::vector<unsigned char>& output);
 std::string shader11ClassName(uint32_t table);
 bool shader11InterfaceTable(const ShaderCode11& shader, uint32_t slot, uint32_t table);
-// The native DDI pointer stores a byte offset. The D3D11 class API stores a
-// constant-vector offset, so conversion requires a 16-byte aligned byte offset.
-bool shader11ClassPointer(uint32_t cb, uint32_t byteOffset, uint32_t texture,
+// The SYSTEM runtime forwards a constant-vector index in the native DDI
+// pointer's uCBOffset field; preserve that index for the D3D11 class API.
+bool shader11ClassPointer(uint32_t cb, uint32_t constantOffset, uint32_t texture,
   uint32_t sampler, uint32_t& vectorOffset);
 // Split a register's output masks where the downstream shader consumes
 // different scalar types. Other streams retain their raw bit representation.

@@ -9,7 +9,8 @@ namespace dxvk {
     m_appendFence   (new sync::Fence()),
     m_consumeFence  (new sync::Fence()),
     m_writeBufferDescriptorsFn(getWriteBufferDescriptorFn()) {
-    if (m_device->canUseDescriptorHeap() || m_device->canUseDescriptorBuffer())
+    if (!m_device->disableExtraThreads()
+     && (m_device->canUseDescriptorHeap() || m_device->canUseDescriptorBuffer()))
       m_thread = std::thread([this] { runWorker(); });
   }
 
@@ -30,6 +31,10 @@ namespace dxvk {
 
     // Ensure the next block is actually usable
     uint64_t append = m_appendFence->value() + 1u;
+    if (m_device->disableExtraThreads()) {
+      processBlock(m_blocks[m_blockIndex]);
+      m_consumeFence->signal(append);
+    }
     m_appendFence->signal(append);
 
     if (append >= BlockCount)

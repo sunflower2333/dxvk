@@ -1107,6 +1107,10 @@ namespace dxvk {
     // RT0 contract; native resources still require this device's ownership.
     HRESULT SetNativeRenderTarget(IDirect3DSurface9* target);
 
+    // The runtime supplies the Z/W fog choice, including fixed-function
+    // vertex processing that it has lowered to a programmable shader.
+    HRESULT SetNativeWInfo(float wNear, float wFar);
+
     // A preclipped native clear must not apply viewport/scissor clipping again.
     HRESULT ClearNative(DWORD count, const D3DRECT* rects, DWORD flags,
                         D3DCOLOR color, float depth, DWORD stencil, bool computeRects);
@@ -1260,8 +1264,8 @@ namespace dxvk {
       }
 
       if (unlikely(!m_csChunk->push(command))) {
-        EmitCsChunk(std::move(m_csChunk));
-        m_csChunk = AllocCsChunk();
+        auto chunk = std::exchange(m_csChunk, AllocCsChunk());
+        EmitCsChunk(std::move(chunk));
 
         if constexpr (AllowFlush)
           ConsiderFlush(GpuFlushType::ImplicitWeakHint);
@@ -1276,8 +1280,8 @@ namespace dxvk {
       m_csData = m_csChunk->pushCmd<M, Cmd>(command, count);
 
       if (unlikely(!m_csData)) {
-        EmitCsChunk(std::move(m_csChunk));
-        m_csChunk = AllocCsChunk();
+        auto chunk = std::exchange(m_csChunk, AllocCsChunk());
+        EmitCsChunk(std::move(chunk));
 
         if constexpr (AllowFlush)
           ConsiderFlush(GpuFlushType::ImplicitWeakHint);
@@ -1294,8 +1298,8 @@ namespace dxvk {
 
     void FlushCsChunk() {
       if (likely(!m_csChunk->empty())) {
-        EmitCsChunk(std::move(m_csChunk));
-        m_csChunk = AllocCsChunk();
+        auto chunk = std::exchange(m_csChunk, AllocCsChunk());
+        EmitCsChunk(std::move(chunk));
       }
     }
 
@@ -1334,7 +1338,8 @@ namespace dxvk {
             size_t*               pLength,
             D3D9ShaderType        ShaderType,
       const DWORD*                pShaderBytecode,
-            size_t                bytecodeSize = size_t(-1));
+            size_t                bytecodeSize = size_t(-1),
+            bool                  nativeShader = false);
 
     inline uint32_t GetUPDataSize(uint32_t vertexCount, uint32_t stride) {
       return vertexCount * stride;
@@ -1655,6 +1660,8 @@ namespace dxvk {
 
     bool                            m_isSWVP;
     bool                            m_ffZTest          = false;
+    bool                            m_nativeWInfoValid = false;
+    bool                            m_nativeFogUseZ    = false;
 
     // the enablement of below features is tracked independently
     // of render states both due to complexity and to avoid

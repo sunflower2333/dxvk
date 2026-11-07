@@ -80,6 +80,17 @@ namespace dxvk {
   };
   
   
+  // Only backing properties move during a runtime identity rotation. Format
+  // lists, debug names and all logical texture/view properties stay in place.
+  struct DxvkImageStorageIdentity {
+    Rc<DxvkResourceAllocation> storage;
+    VkImageCreateFlags flags = 0;
+    VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkBool32 shared = VK_FALSE;
+    bool unifiedLayout = false;
+  };
+
   /**
    * \brief Extra image usage info
    *
@@ -419,6 +430,14 @@ namespace dxvk {
    * Can be accessed by the host if allocated on a suitable
    * memory type and if created with the linear tiling option.
    */
+  class DxvkImageImport {
+  public:
+    virtual ~DxvkImageImport() = default;
+    // The importer validates the exact renderer usage/format list and returns
+    // its actual image layout. Its owner outlives views and pending GPU use.
+    virtual VkImage create(DxvkDevice* device, DxvkImageCreateInfo& info) = 0;
+  };
+
   class DxvkImage : public DxvkPagedResource {
     friend DxvkImageView;
     friend class DxvkContext;
@@ -443,7 +462,8 @@ namespace dxvk {
       const DxvkImageCreateInfo&  createInfo,
             VkImage               imageHandle,
             DxvkMemoryAllocator&  allocator,
-            VkMemoryPropertyFlags memFlags);
+            VkMemoryPropertyFlags memFlags,
+            std::shared_ptr<void> owner = {});
     
     /**
      * \brief Destroys image
@@ -708,6 +728,15 @@ namespace dxvk {
     Rc<DxvkResourceAllocation> storage() const {
       return m_storage;
     }
+
+    DxvkImageStorageIdentity storageIdentity() const {
+      return {m_storage, m_info.flags, m_info.tiling, m_info.layout,
+        m_info.shared, m_unifiedLayoutEnabled};
+    }
+
+    // Requires all old storage to be retained, tracked, fixed in place, and
+    // in its default layout. No allocation, Vulkan call or final release.
+    void assignStorageIdentity(const DxvkImageStorageIdentity& identity) noexcept;
 
     /**
      * \brief Retrieves current keyed mutex

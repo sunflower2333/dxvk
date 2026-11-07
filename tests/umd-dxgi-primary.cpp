@@ -20,18 +20,18 @@
 
 static std::atomic<unsigned> checks{0};
 static unsigned snapshots, pixels, pairAllocations, renders, modes, presents, releases, contexts, contextCloses, locks, unlocks, unlockAttempts, unlockFailures;
-static unsigned runtimeTerminalReleases, runtimeTerminalMapClosures;
+static unsigned runtimeTerminalReleases, runtimeTerminalMapClosures, destinationPresents;
 static DWORD caller;
 static ID3D11DeviceContext* primaryRendererContext;
-static bool runtimeValid = true, malformedRender, nonExactAllocate, allocationFails;
+static bool runtimeValid = true, malformedRender, nonExactAllocate, allocationFails, zeroKernelResource;
 static unsigned malformedAllocation;
 static HRESULT lastError = S_OK, modeResult = S_OK, renderResult = S_OK, lockResult = S_OK, unlockResult = S_OK;
 static char deviceCookie, adapterCookie, coreCookie, contextCookie;
 static LUID selected{0x13579024, -51};
 static uint64_t generation = 23;
-static std::function<void()> allocateBeforeAction, allocateBeforeContinuation, allocateAction, lockBeforeAction, lockAction, unlockAction, contextAction, renderAction, modeAction, queryAction;
+static std::function<void()> allocateBeforeAction, allocateBeforeContinuation, allocateAction, lockBeforeAction, lockAction, unlockAction, contextAction, renderAction, modeAction, queryAction, presentAction;
 static unsigned queryCountdown, lockCountdown = 1, unlockFailureCountdown;
-static D3DKMT_HANDLE expectedHandle, nextHandle = 301;
+static D3DKMT_HANDLE expectedHandle, expectedDestination, nextHandle = 301;
 #define CHECK(value) do { ++checks; if (!(value)) { \
   std::fprintf(stderr, "DXGI primary line=%d: %s error=%08lx\n", __LINE__, #value, static_cast<unsigned long>(lastError)); std::abort(); \
 } } while (0)
@@ -95,12 +95,11 @@ static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* request) {
     // A callback cannot redefine the UMD's retained format/shape/refresh.
     std::memset(entry.pPrivateDriverData, 0xff, 80);
   }
-  request->hKMResource = nextHandle + 1000;
+  request->hKMResource = zeroKernelResource ? 0 : nextHandle + 1000;
   if (request->NumAllocations == 2) ++pairAllocations;
   if (malformedAllocation == 1) request->pAllocationInfo[0].hAllocation = 0;
   if (malformedAllocation == 2) request->pAllocationInfo[1].hAllocation = 0;
   if (malformedAllocation == 3) request->pAllocationInfo[1].hAllocation = request->pAllocationInfo[0].hAllocation;
-  if (malformedAllocation == 4) request->hKMResource = 0;
   if (malformedAllocation == 5) request->NumAllocations = 1;
   if (allocateAction) std::exchange(allocateAction, {})();
   return nonExactAllocate ? S_FALSE : S_OK;
@@ -207,8 +206,17 @@ static HRESULT APIENTRY mode(HANDLE device, D3DDDICB_SETDISPLAYMODE* request) {
 static HRESULT APIENTRY present(HANDLE device, DXGIDDICB_PRESENT* request) {
   callback(); CHECK(device == &deviceCookie && request && request->hSrcAllocation == expectedHandle);
   CHECK(request->hContext == &contextCookie && request->pDXGIContext == &adapterCookie
-    && !request->hDstAllocation && owned.at(expectedHandle).info.flags == 2);
-  ++presents; return S_OK;
+    && request->hDstAllocation == expectedDestination && owned.at(expectedHandle).info.flags == 2);
+  if (expectedDestination) {
+    auto& source = owned.at(expectedHandle); auto& destination = owned.at(expectedDestination);
+    CHECK(source.runtime != destination.runtime && destination.info.flags == 1);
+    CHECK(!source.mapped && !destination.mapped);
+    std::memcpy(destination.data(), source.data(), 128);
+    ++destinationPresents;
+  }
+  ++presents;
+  if (presentAction) std::exchange(presentAction, {})();
+  return S_OK;
 }
 static HRESULT APIENTRY wrongMode(HANDLE, D3DDDICB_SETDISPLAYMODE*) { CHECK(false); return E_FAIL; }
 static HRESULT APIENTRY wrongRender(HANDLE, D3DDDICB_RENDER*) { CHECK(false); return E_FAIL; }
@@ -285,7 +293,7 @@ struct Fixture {
     if (live) retire(); CHECK(owned.empty());
     for (auto page : retiredPages) CHECK(VirtualFree(page, 0, MEM_RELEASE)); retiredPages.clear();
     CHECK(!allocateBeforeAction && !allocateBeforeContinuation && !allocateAction && !lockBeforeAction && !lockAction
-      && !unlockAction && !contextAction && !renderAction && !modeAction && !queryAction);
+      && !unlockAction && !contextAction && !renderAction && !modeAction && !queryAction && !presentAction);
     CHECK(locks == unlocks + runtimeTerminalMapClosures);
   }
   HRESULT set(DXGI_DDI_HRESOURCE resource, UINT subresource = 0) {
@@ -305,12 +313,14 @@ struct Texture {
   D3D10DDI_HRESOURCE handle{storage.bytes}; char runtime{}; bool live = false;
   DXGI_DDI_PRIMARY_DESC primary{};
   D3DKMT_HANDLE allocation = 0;
-  Texture(F& f, DXGI_FORMAT format, bool optional = false, unsigned malformed = 0, UINT extraBind = 0)
+  Texture(F& f, DXGI_FORMAT format, bool optional = false, unsigned malformed = 0, UINT extraBind = 0,
+      UINT misc = 0)
   : fixture(f), storage(f.table.pfnCalcPrivateResourceSize(f.device, nullptr)) {
     D3D10DDI_MIPINFO shapes[2]{{8, 4, 1, 8, 4, 1}, {4, 2, 1, 4, 2, 1}};
     typename F::Desc args{}; args.pMipInfoList = shapes; args.MipLevels = args.ArraySize = 1;
     args.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D; args.Usage = D3D10_DDI_USAGE_DEFAULT;
     args.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT | extraBind;
+    args.MiscFlags = misc;
     args.Format = format; args.SampleDesc = {1, 0}; args.pPrimaryDesc = &primary;
     primary.Flags = optional ? DXGI_DDI_PRIMARY_OPTIONAL : 0; primary.DriverFlags = 0x12345678;
     primary.ModeDesc = {8, 4, format, {60000, 1001}, DXGI_DDI_MODE_SCANLINE_ORDER_PROGRESSIVE,
@@ -385,6 +395,34 @@ static void capture(unsigned profile, unsigned image, D3DKMT_HANDLE handle, uint
 template<typename Table, bool dxgi11>
 static void profile(unsigned number) {
   Fixture<Table, dxgi11> f;
+  // Exercise actual typed DDI creation and publication, including DWM's
+  // DISPLAYABLE bit. The KMD-facing destination must receive real pixels.
+  for (const UINT misc : {UINT(D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT),
+      UINT(D3DWDDM2_0DDI_RESOURCE_MISC_DISPLAYABLE_SURFACE),
+      UINT(D3DWDDM2_0DDI_RESOURCE_MISC_DISPLAYABLE_SURFACE | D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT)}) {
+    for (bool optional : {false, true}) {
+      zeroKernelResource = (misc & D3DWDDM2_0DDI_RESOURCE_MISC_DISPLAYABLE_SURFACE) != 0;
+      Texture<decltype(f)> texture(f, DXGI_FORMAT_B8G8R8A8_UNORM, optional, 0,
+        D3D10_DDI_BIND_SHADER_RESOURCE, misc);
+      zeroKernelResource = false;
+      CHECK(texture.live);
+      texture.clear({0, 1, 0, 1}); expectedHandle = texture.allocation;
+      const auto oldRenders = renders;
+      if (optional) {
+        DXGI_DDI_ARG_PRESENT args{};
+        args.hDevice = reinterpret_cast<DXGI_DDI_HDEVICE>(f.device.pDrvPrivate);
+        args.hSurfaceToPresent = reinterpret_cast<DXGI_DDI_HRESOURCE>(texture.handle.pDrvPrivate);
+        args.pDXGIContext = &adapterCookie; args.Flags.Blt = 1;
+        CHECK(f.dxgi.table.pfnPresent(&args) == S_OK && renders == oldRenders);
+      } else {
+        CHECK(f.set(reinterpret_cast<DXGI_DDI_HRESOURCE>(texture.handle.pDrvPrivate)) == S_OK);
+        CHECK(renders == oldRenders + 1);
+      }
+      std::array<uint32_t, 32> actual{};
+      std::memcpy(actual.data(), owned.at(texture.allocation).data(), sizeof(actual));
+      for (const auto pixel : actual) CHECK(pixel == 0xff00ff00);
+    }
+  }
   std::array<uint8_t, sizeof(DXGI_GAMMA_CONTROL_CAPABILITIES)> gamma; gamma.fill(0xa5);
   CHECK(f.gamma(gamma.data()) == DXGI_DDI_ERR_UNSUPPORTED);
   for (auto byte : gamma) CHECK(byte == 0xa5);
@@ -423,6 +461,60 @@ static void profile(unsigned number) {
   presentArgs.pDXGIContext = &adapterCookie; presentArgs.Flags.Blt = 1;
   CHECK(f.dxgi.table.pfnPresent(&presentArgs) == S_OK && modes == oldModes && renders == oldRenders);
   capture(number, 3, optional.allocation, 0xffffff00);
+}
+template<typename Table, bool dxgi11>
+static void destinationPresent() {
+  Fixture<Table, dxgi11> f;
+  Texture<decltype(f)> destination(f, DXGI_FORMAT_B8G8R8A8_UNORM);
+  Texture<decltype(f)> source(f, DXGI_FORMAT_B8G8R8A8_UNORM, true);
+  destination.clear({0, 0, 1, 1}); source.clear({1, 0, 0, 1});
+  expectedHandle = destination.allocation;
+  CHECK(f.set(reinterpret_cast<DXGI_DDI_HRESOURCE>(destination.handle.pDrvPrivate)) == S_OK);
+  DXGI_DDI_ARG_PRESENT args{};
+  args.hDevice = reinterpret_cast<DXGI_DDI_HDEVICE>(f.device.pDrvPrivate);
+  args.hSurfaceToPresent = reinterpret_cast<DXGI_DDI_HRESOURCE>(source.handle.pDrvPrivate);
+  args.hDstResource = reinterpret_cast<DXGI_DDI_HRESOURCE>(destination.handle.pDrvPrivate);
+  args.pDXGIContext = &adapterCookie; args.Flags.Blt = 1;
+  expectedHandle = source.allocation; expectedDestination = destination.allocation;
+  // DWM supplies its already selected primary as the destination. The runtime
+  // must receive both KMT allocation handles and copy the actual rendered bytes.
+  const auto before = destinationPresents;
+  CHECK(f.dxgi.table.pfnPresent(&args) == S_OK && destinationPresents == before + 1);
+  std::array<uint32_t, 32> actual{};
+  std::memcpy(actual.data(), owned.at(destination.allocation).data(), sizeof(actual));
+  for (auto pixel : actual) CHECK(pixel == 0xffff0000);
+  expectedHandle = destination.allocation;
+  CHECK(f.set(reinterpret_cast<DXGI_DDI_HRESOURCE>(destination.handle.pDrvPrivate)) == S_OK);
+  std::memcpy(actual.data(), owned.at(destination.allocation).data(), sizeof(actual));
+  for (auto pixel : actual) CHECK(pixel == 0xffff0000);
+  expectedHandle = source.allocation;
+  args.DstSubResourceIndex = 1;
+  CHECK(f.dxgi.table.pfnPresent(&args) == E_INVALIDARG);
+  args.DstSubResourceIndex = 0;
+  Storage invalid(4096); invalid.protect();
+  args.hDstResource = reinterpret_cast<DXGI_DDI_HRESOURCE>(invalid.bytes);
+  CHECK(f.dxgi.table.pfnPresent(&args) == E_INVALIDARG && destinationPresents == before + 1);
+  expectedDestination = 0;
+}
+static void destinationRetirement(unsigned point) {
+  Fixture<D3D11DDI_DEVICEFUNCS, true> f;
+  Texture<decltype(f)> destination(f, DXGI_FORMAT_B8G8R8A8_UNORM);
+  Texture<decltype(f)> source(f, DXGI_FORMAT_B8G8R8A8_UNORM, true);
+  source.clear({0, 1, 0, 1});
+  DXGI_DDI_ARG_PRESENT args{};
+  args.hDevice = reinterpret_cast<DXGI_DDI_HDEVICE>(f.device.pDrvPrivate);
+  args.hSurfaceToPresent = reinterpret_cast<DXGI_DDI_HRESOURCE>(source.handle.pDrvPrivate);
+  args.hDstResource = reinterpret_cast<DXGI_DDI_HRESOURCE>(destination.handle.pDrvPrivate);
+  args.pDXGIContext = &adapterCookie; args.Flags.Blt = 1;
+  expectedHandle = source.allocation; expectedDestination = destination.allocation;
+  auto retire = [&] { destination.retire(); };
+  if (point == 0) lockAction = retire;
+  if (point == 1) contextAction = retire;
+  if (point == 2) presentAction = retire;
+  const auto before = destinationPresents;
+  CHECK(f.dxgi.table.pfnPresent(&args) == DXGI_ERROR_DEVICE_REMOVED);
+  CHECK(!destination.live && destinationPresents == before + (point == 2 ? 1u : 0u));
+  expectedDestination = 0;
 }
 static void retirement(unsigned point) {
   Fixture<D3D10_1DDI_DEVICEFUNCS, true> f;
@@ -468,7 +560,7 @@ static void retirement(unsigned point) {
   CHECK(!f.live && owned.empty());
   CHECK(f.gamma(reinterpret_cast<void*>(1)) == DXGI_ERROR_DEVICE_REMOVED);
 }
-static void pitchedTransfer() {
+static void pitchedTransfer(bool withKernelResource = true) {
   runtimeValid = true;
   dxvk::umd::RuntimeMemory memory; dxvk::umd::RuntimeAllocation allocation;
   auto service = std::make_shared<dxvk::umd::RuntimeService>();
@@ -483,7 +575,13 @@ static void pitchedTransfer() {
   identity->generation = generation; identity->capabilities = 3;
   memory.initialize(&deviceCookie, kernel, &dxgi, identity, service);
   char resource;
-  CHECK(memory.allocatePrimary(allocation, &resource, 8, 4, DXGI_FORMAT_R8G8B8A8_UNORM, 60000, 1001) == S_OK);
+  zeroKernelResource = !withKernelResource;
+  const HRESULT allocated = memory.allocatePrimary(allocation, &resource, 8, 4,
+    DXGI_FORMAT_R8G8B8A8_UNORM, 60000, 1001);
+  if (allocated != S_OK) std::fprintf(stderr, "primary pair withKernelResource=%u hr=%08lx\n",
+    unsigned(withKernelResource), static_cast<unsigned long>(allocated));
+  CHECK(allocated == S_OK);
+  zeroKernelResource = false;
   expectedHandle = allocation.handle();
   CHECK(memory.setDisplayMode(allocation) == E_INVALIDARG); // Not published yet.
   std::array<uint32_t, 40> upload; upload.fill(0xa5a5a5a5);
@@ -658,13 +756,18 @@ int main() {
   profile<D3D10_1DDI_DEVICEFUNCS, false>(2); profile<D3D10_1DDI_DEVICEFUNCS, true>(3);
   profile<D3D11DDI_DEVICEFUNCS, false>(4); profile<D3D11DDI_DEVICEFUNCS, true>(5);
   for (unsigned point = 0; point <= 11; ++point) retirement(point);
-  pitchedTransfer(); mappedOwnerRetirement(false); mappedOwnerRetirement(true); protectedPrimaryOutput();
+  // Creator-side ownership and copy/display publication use the two actual
+  // allocations and hRTResource. A zero optional sharing handle must not reject
+  // a valid pair; pixels, move ownership and exactly-once cleanup still apply.
+  pitchedTransfer(); pitchedTransfer(false);
+  mappedOwnerRetirement(false); mappedOwnerRetirement(true); protectedPrimaryOutput();
   failedUnlocks(); directFailedUnlockMoveAndAllocation();
   {
     Fixture<D3D10DDI_DEVICEFUNCS, true> f;
     nonExactAllocate = true; Texture<decltype(f)> failed(f, DXGI_FORMAT_R8G8B8A8_UNORM); nonExactAllocate = false;
     allocationFails = true; Texture<decltype(f)> allocationFailure(f, DXGI_FORMAT_R8G8B8A8_UNORM); allocationFails = false;
     for (malformedAllocation = 1; malformedAllocation <= 6; ++malformedAllocation) {
+      if (malformedAllocation == 4) continue; // Zero hKMResource is a valid creator reply.
       const auto beforeRelease = releases;
       Texture<decltype(f)> incomplete(f, DXGI_FORMAT_R8G8B8A8_UNORM);
       CHECK(releases == beforeRelease + (malformedAllocation == 6 ? 0u : 1u));
@@ -688,7 +791,13 @@ int main() {
     CHECK(lastError == DXGI_DDI_ERR_UNSUPPORTED && owned.empty());
   }
   terminalUnlockFailures();
-  CHECK(snapshots == 24 && pixels == 768 && presents == 6 && owned.empty()
+  CHECK(presents == 24); // Six profiles, each with three flag variants and the original optional present.
+  destinationPresent<D3D10DDI_DEVICEFUNCS, false>(); destinationPresent<D3D10DDI_DEVICEFUNCS, true>();
+  destinationPresent<D3D10_1DDI_DEVICEFUNCS, false>(); destinationPresent<D3D10_1DDI_DEVICEFUNCS, true>();
+  destinationPresent<D3D11DDI_DEVICEFUNCS, false>(); destinationPresent<D3D11DDI_DEVICEFUNCS, true>();
+  for (unsigned point = 0; point < 3; ++point) destinationRetirement(point);
+  CHECK(destinationPresents == 7 && presents == 31);
+  CHECK(snapshots == 24 && pixels == 768 && owned.empty()
     && contexts == contextCloses && locks == unlocks + runtimeTerminalMapClosures
     && unlockAttempts == unlocks + unlockFailures && runtimeTerminalReleases == 3 && runtimeTerminalMapClosures == 2);
   std::printf("DXGI primary/display PASS checks=%u profiles=6 snapshots=24 pixels=768 hardware_admission=0\n", checks.load());

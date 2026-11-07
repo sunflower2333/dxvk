@@ -134,6 +134,36 @@ namespace dxvk {
     std::vector<VkExtensionProperties> extensionNamesSupported(extensionNameCount);
     m_vkl->vkEnumerateInstanceExtensionProperties(nullptr, &extensionNameCount, extensionNamesSupported.data());
 
+    const auto directDriver = m_vkl->getDriverProc();
+    if (directDriver) {
+      // The loader's pre-instance query cannot see a directly supplied ICD.
+      // Query that ICD, retaining only extensions implemented by the loader
+      // itself from the system enumeration. Never change process environment.
+      auto loaderSupports = [&](const char* name) {
+        return std::any_of(extensionNamesSupported.begin(), extensionNamesSupported.end(),
+          [&](const auto& ext) { return !std::strcmp(ext.extensionName, name); });
+      };
+      if (!loaderSupports(VK_LUNARG_DIRECT_DRIVER_LOADING_EXTENSION_NAME)) {
+        Logger::err("Vulkan: private loader lacks direct driver loading");
+        return false;
+      }
+      VkExtensionProperties debugUtils = { };
+      for (const auto& ext : extensionNamesSupported) {
+        if (!std::strcmp(ext.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+          debugUtils = ext;
+      }
+      const auto enumerate = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
+        directDriver(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties"));
+      if (!enumerate || enumerate(nullptr, &extensionNameCount, nullptr) != VK_SUCCESS)
+        return false;
+      extensionNamesSupported.resize(extensionNameCount);
+      if (enumerate(nullptr, &extensionNameCount, extensionNamesSupported.data()) != VK_SUCCESS)
+        return false;
+      extensionNamesSupported.resize(extensionNameCount);
+      if (debugUtils.specVersion)
+        extensionNamesSupported.push_back(debugUtils);
+    }
+
     // When importing an instance, filter by enabled instance extensions
     if (args.instance) {
       for (uint32_t i = 0u; i < args.extensionCount; i++)
@@ -218,6 +248,8 @@ namespace dxvk {
       for (const auto& ext : provider->getInstanceExtensions())
         extensionsEnabled.insert(ext);
     }
+    if (directDriver)
+      extensionsEnabled.insert(vk::makeExtension(VK_LUNARG_DIRECT_DRIVER_LOADING_EXTENSION_NAME));
 
     Logger::info("Enabled instance extensions:");
 
@@ -254,6 +286,14 @@ namespace dxvk {
       info.ppEnabledLayerNames      = layerNames.data();
       info.enabledExtensionCount    = extensionNames.size();
       info.ppEnabledExtensionNames  = extensionNames.data();
+
+      VkDirectDriverLoadingInfoLUNARG driverInfo = { VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_INFO_LUNARG };
+      driverInfo.pfnGetInstanceProcAddr = directDriver;
+      VkDirectDriverLoadingListLUNARG drivers = { VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_LIST_LUNARG };
+      drivers.mode = VK_DIRECT_DRIVER_LOADING_MODE_EXCLUSIVE_LUNARG;
+      drivers.driverCount = 1;
+      drivers.pDrivers = &driverInfo;
+      if (directDriver) info.pNext = &drivers;
 
       VkResult status = m_vkl->vkCreateInstance(&info, nullptr, &instance);
 

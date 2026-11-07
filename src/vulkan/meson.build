@@ -14,8 +14,16 @@ if vk_private_loader != '' and (platform != 'windows'
     or vk_private_loader.contains('"'))
   error('umd_vulkan_loader must be a bare Windows DLL file name')
 endif
+vk_private_driver = get_option('umd_vulkan_driver')
+if vk_private_driver != '' and (vk_private_loader == ''
+    or not vk_private_driver.to_lower().endswith('.dll')
+    or vk_private_driver.contains('/') or vk_private_driver.contains('\\')
+    or vk_private_driver.contains('"') or vk_private_driver == vk_private_loader)
+  error('umd_vulkan_driver must be a distinct bare Windows DLL beside a private loader')
+endif
 vk_loader_conf = configuration_data()
 vk_loader_conf.set_quoted('DXVK_PRIVATE_VULKAN_LOADER', vk_private_loader)
+vk_loader_conf.set_quoted('DXVK_PRIVATE_VULKAN_DRIVER', vk_private_driver)
 vk_loader_config = configure_file(
   configuration : vk_loader_conf,
   output        : 'vulkan_loader_config.h',

@@ -1324,11 +1324,13 @@ namespace dxvk {
   Rc<DxvkResourceAllocation> DxvkMemoryAllocator::importImageResource(
     const VkImageCreateInfo&          createInfo,
     const DxvkAllocationInfo&         allocationInfo,
-          VkImage                     imageHandle) {
+          VkImage                     imageHandle,
+          std::shared_ptr<void>        owner) {
     Rc<DxvkResourceAllocation> allocation = m_allocationPool.create(this, nullptr);
     allocation->m_flags.set(DxvkAllocationFlag::Imported);
     allocation->m_resourceCookie = allocationInfo.resourceCookie;
     allocation->m_image = imageHandle;
+    allocation->m_externalOwner = std::move(owner);
 
     return allocation;
   }

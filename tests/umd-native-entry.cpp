@@ -2,6 +2,7 @@
 #include "../src/umd/umd_api.h"
 #include "../src/umd/umd_contract.h"
 #include "../src/umd/umd_runtime_gpu.h"
+#include "umd-fixture-identity.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -67,7 +68,9 @@ static HRESULT APIENTRY allocate(HANDLE device, D3DDDICB_ALLOCATE* args) {
   CHECK(device == &deviceCookie && args && args->hResource == &resourceCookie);
   CHECK(args->NumAllocations == 1 && args->pAllocationInfo);
   args->pAllocationInfo[0].hAllocation = zeroAllocation ? 0 : 123;
-  args->hKMResource = 456; ++allocations;
+  // Real non-shared SYSTEM swapchain creation returns a valid allocation
+  // without a kernel resource handle; upload/Present/destruction must work.
+  args->hKMResource = 0; ++allocations;
   if (cancelResourceCreation) {
     cancelResourceCreation = false;
     activeTable->pfnDestroyResource(activeCreate->hDrvDevice, activeResource);
@@ -150,6 +153,13 @@ static HRESULT APIENTRY query(HANDLE runtime, const D3DDDICB_QUERYADAPTERINFO* a
   set(128, 0x44494c56, 4); set(132, 1, 4); set(136, 32, 4); set(140, 1, 4); set(152, 1, 4);
   std::memcpy(bytes+144, &expected, sizeof(expected));
   return queryResult;
+}
+
+HRESULT dxvk::umd::openKernelIdentity(const RuntimeIdentity& initial,
+    std::shared_ptr<const AdapterIdentitySource>& source) {
+  CHECK(!std::memcmp(initial.luid.data(), &expected, sizeof(expected)));
+  source = std::make_shared<FixtureIdentitySource>(&adapterCookie, query);
+  return S_OK;
 }
 
 static void APIENTRY error(D3D10DDI_HRTCORELAYER runtime, HRESULT hr) {
@@ -326,6 +336,7 @@ int main() {
     desc.pMipInfoList = &mip; desc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
     desc.Usage = D3D10_DDI_USAGE_DEFAULT;
     desc.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT;
+    desc.MiscFlags = D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT;
     desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
     desc.MipLevels = 1; desc.ArraySize = 1;
     uint32_t pixels[] = {0xff0000ff, 0xff00ff00, 0xffff0000, 0xffffffff};

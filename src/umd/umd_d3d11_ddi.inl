@@ -6,6 +6,7 @@ SIZE_T APIENTRY resourceSize11(D3D10DDI_HDEVICE, const D3D11DDIARG_CREATERESOURC
 }
 HRESULT createResourceData11(Device* device, const D3D11DDIARG_CREATERESOURCE* args,
     Resource* resource, D3D10DDI_HRTRESOURCE runtime) {
+  ResourceFailureScope::stage(11); // Modern descriptor validation.
   if (!args || !args->pMipInfoList || !args->MipLevels || !args->ArraySize
       || args->MipLevels > D3D11_REQ_MIP_LEVELS
       || args->ArraySize > D3D11_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION) return E_INVALIDARG;
@@ -15,7 +16,9 @@ HRESULT createResourceData11(Device* device, const D3D11DDIARG_CREATERESOURCE* a
       || (args->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED)) {
     // Paired KMD allocations currently describe only a plain 2D image. Keep
     // the existing shared/present ownership path and reject extra semantics.
-    constexpr UINT legacyMisc = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP | D3D10_DDI_RESOURCE_MISC_SHARED;
+    constexpr UINT legacyMisc = D3D10_DDI_RESOURCE_AUTO_GEN_MIP_MAP
+      | D3D10_DDI_RESOURCE_MISC_SHARED | D3D10_DDI_RESOURCE_MISC_DISCARD_ON_PRESENT
+      | D3DWDDM2_0DDI_RESOURCE_MISC_DISPLAYABLE_SURFACE;
     if (args->ByteStride || (args->MiscFlags & ~legacyMisc)
         || (args->BindFlags & D3D11_DDI_BIND_UNORDERED_ACCESS)) return DXGI_ERROR_UNSUPPORTED;
     const auto legacy = dxvk::umd::resource10Fields(*args);
@@ -46,6 +49,7 @@ HRESULT createResourceData11(Device* device, const D3D11DDIARG_CREATERESOURCE* a
   const auto usage = static_cast<D3D11_USAGE>(args->Usage);
   const UINT cpu = dxvk::umd::resource11CpuAccess(args->MapFlags);
   HRESULT hr = E_INVALIDARG;
+  ResourceFailureScope::stage(211); // Modern embedded renderer resource creation.
   if (args->ResourceDimension == D3D10DDIRESOURCE_BUFFER) {
     D3D11_BUFFER_DESC desc = {};
     if (!dxvk::umd::buffer11Desc(*args, desc)) return E_INVALIDARG;
@@ -80,6 +84,7 @@ HRESULT createResourceData11(Device* device, const D3D11DDIARG_CREATERESOURCE* a
 }
 void APIENTRY createResource11(D3D10DDI_HDEVICE h, const D3D11DDIARG_CREATERESOURCE* args,
     D3D10DDI_HRESOURCE out, D3D10DDI_HRTRESOURCE runtime) {
+  ResourceFailureScope diagnostic(args);
   auto device = get(h);
   publishNewResource(device, out, [&](Resource* staged) { return createResourceData11(device, args, staged, runtime); });
 }

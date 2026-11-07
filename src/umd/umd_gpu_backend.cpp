@@ -13,6 +13,7 @@ HRESULT GpuBackend::initialize(const AdapterLuid& luid, DxvkInstanceFlags flags,
   try {
     RuntimeBackendSnapshot retained(runtime);
     const RuntimeBackend* bridge = retained.get();
+    RuntimeBackend negotiated;
 
     GpuBackend candidate;
     candidate.instance = new DxvkInstance(flags);
@@ -34,6 +35,9 @@ HRESULT GpuBackend::initialize(const AdapterLuid& luid, DxvkInstanceFlags flags,
       properties.pNext = &support;
       candidate.instance->vki()->vkGetPhysicalDeviceProperties2(candidate.adapter->handle(), &properties);
       if (!supportsRuntimeBackend(support)) return DXGI_ERROR_UNSUPPORTED;
+      negotiated = *bridge;
+      negotiated.nativeSurfaces = supportsNativeSurface(support);
+      bridge = &negotiated;
       mwd_context_info info = {};
       const HRESULT ready = bridge->create.callbacks->context(bridge->create.owner, &info);
       if (ready != S_OK) return FAILED(ready) ? ready : E_FAIL;

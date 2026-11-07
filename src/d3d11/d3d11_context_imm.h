@@ -115,11 +115,21 @@ namespace dxvk {
     template<typename Fn>
     void InjectCs(
             DxvkCsQueue                 Queue,
-            Fn&&                        Command) {
+            Fn&&                        Command,
+            bool                        Synchronize = false) {
       auto chunk = AllocCsChunk();
       chunk->push(std::move(Command));
 
-      InjectCsChunk(Queue, std::move(chunk), false);
+      if (Synchronize && Queue == DxvkCsQueue::Ordered) {
+        // Ordered work shares the resource sequence timeline. A synchronous
+        // external injection would advance CS without m_csSeqNum, letting a
+        // later Map mistake this completed chunk for its pending copy.
+        FlushCsChunk();
+        EmitCsChunk(std::move(chunk));
+        m_csThread.synchronize(m_csSeqNum);
+      } else {
+        InjectCsChunk(Queue, std::move(chunk), Synchronize);
+      }
     }
 
   private:

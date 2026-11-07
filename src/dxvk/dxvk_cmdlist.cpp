@@ -119,8 +119,10 @@ namespace dxvk {
     VkCommandPoolCreateInfo poolInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
     poolInfo.queueFamilyIndex = queueFamily;
 
-    if (vk->vkCreateCommandPool(vk->device(), &poolInfo, nullptr, &m_commandPool))
+    if (VkResult result = vk->vkCreateCommandPool(vk->device(), &poolInfo, nullptr, &m_commandPool)) {
+      m_device->recordCommandError(result);
       throw DxvkError("DxvkCommandPool: Failed to create command pool");
+    }
   }
 
 
@@ -143,8 +145,10 @@ namespace dxvk {
 
       VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 
-      if (vk->vkAllocateCommandBuffers(vk->device(), &allocInfo, &commandBuffer))
+      if (VkResult result = vk->vkAllocateCommandBuffers(vk->device(), &allocInfo, &commandBuffer)) {
+        m_device->recordCommandError(result);
         throw DxvkError("DxvkCommandPool: Failed to allocate command buffer");
+      }
 
       m_primaryBuffers.push_back(commandBuffer);
     }
@@ -156,8 +160,10 @@ namespace dxvk {
     VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    if (vk->vkBeginCommandBuffer(commandBuffer, &info))
+    if (VkResult result = vk->vkBeginCommandBuffer(commandBuffer, &info)) {
+      m_device->recordCommandError(result);
       throw DxvkError("DxvkCommandPool: Failed to begin command buffer");
+    }
 
     if (m_device->debugFlags().test(DxvkDebugFlag::Capture)) {
       auto vki = m_device->vki();
@@ -194,8 +200,10 @@ namespace dxvk {
 
       VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 
-      if (vk->vkAllocateCommandBuffers(vk->device(), &allocInfo, &commandBuffer))
+      if (VkResult result = vk->vkAllocateCommandBuffers(vk->device(), &allocInfo, &commandBuffer)) {
+        m_device->recordCommandError(result);
         throw DxvkError("DxvkCommandPool: Failed to allocate secondary command buffer");
+      }
 
       m_secondaryBuffers.push_back(commandBuffer);
     }
@@ -208,8 +216,10 @@ namespace dxvk {
                | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
     info.pInheritanceInfo = &inheritanceInfo;
 
-    if (vk->vkBeginCommandBuffer(commandBuffer, &info))
+    if (VkResult result = vk->vkBeginCommandBuffer(commandBuffer, &info)) {
+      m_device->recordCommandError(result);
       throw DxvkError("DxvkCommandPool: Failed to begin secondary command buffer");
+    }
 
     return commandBuffer;
   }
@@ -219,8 +229,10 @@ namespace dxvk {
     auto vk = m_device->vkd();
 
     if (m_nextPrimary || m_nextSecondary) {
-      if (vk->vkResetCommandPool(vk->device(), m_commandPool, 0))
+      if (VkResult result = vk->vkResetCommandPool(vk->device(), m_commandPool, 0)) {
+        m_device->recordCommandError(result);
         throw DxvkError("DxvkCommandPool: Failed to reset command pool");
+      }
 
       m_nextPrimary = 0;
       m_nextSecondary = 0;
@@ -502,9 +514,19 @@ namespace dxvk {
 
     m_wsiSemaphores = PresenterSync();
 
-    // Reset actual command buffers and pools
-    m_graphicsPool->reset();
-    m_transferPool->reset();
+    // Resource retirement also runs from the command-list destructor. Once
+    // recording has failed, leave the pools for destruction instead of
+    // throwing again during cleanup or treating their buffers as reusable.
+    if (m_device->getDeviceStatus() == VK_SUCCESS) {
+      try {
+        m_graphicsPool->reset();
+        m_transferPool->reset();
+      } catch (const DxvkError& error) {
+        if (m_device->getDeviceStatus() == VK_SUCCESS)
+          throw;
+        Logger::err(error.message());
+      }
+    }
   }
 
 
@@ -1034,8 +1056,10 @@ namespace dxvk {
     if (m_device->debugFlags().test(DxvkDebugFlag::Capture))
       m_vki->vkCmdEndDebugUtilsLabelEXT(cmdBuffer);
 
-    if (vk->vkEndCommandBuffer(cmdBuffer))
+    if (VkResult result = vk->vkEndCommandBuffer(cmdBuffer)) {
+      m_device->recordCommandError(result);
       throw DxvkError("DxvkCommandList: Failed to end command buffer");
+    }
   }
 
 

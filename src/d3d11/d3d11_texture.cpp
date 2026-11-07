@@ -16,7 +16,8 @@ namespace dxvk {
           D3D11_RESOURCE_DIMENSION    Dimension,
           DXGI_USAGE                  DxgiUsage,
           VkImage                     vkImage,
-          HANDLE                      hSharedHandle)
+          HANDLE                      hSharedHandle,
+          std::shared_ptr<DxvkImageImport> nativeImage)
   : m_interface(pInterface), m_device(pDevice), m_dimension(Dimension), m_desc(*pDesc),
     m_11on12(p11on12Info ? *p11on12Info : D3D11_ON_12_RESOURCE_INFO()), m_dxgiUsage(DxgiUsage) {
     DXGI_VK_FORMAT_MODE   formatMode   = GetFormatMode();
@@ -43,7 +44,7 @@ namespace dxvk {
     imageInfo.tiling          = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.layout          = VK_IMAGE_LAYOUT_GENERAL;
     imageInfo.initialLayout   = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.shared          = vkImage != VK_NULL_HANDLE;
+    imageInfo.shared          = vkImage != VK_NULL_HANDLE || nativeImage != nullptr;
 
     // Normalise hSharedhandle to INVALID_HANDLE_VALUE to allow passing in nullptr
     if (hSharedHandle == nullptr)
@@ -239,10 +240,17 @@ namespace dxvk {
     if (m_11on12.Resource != nullptr)
       vkImage = VkImage(m_11on12.VulkanHandle);
 
+    if (nativeImage) {
+      if (vkImage || m_mapMode != D3D11_COMMON_TEXTURE_MAP_MODE_NONE)
+        throw DxvkError("Native image cannot alias another imported or CPU-mapped resource");
+      vkImage = nativeImage->create(pDevice->GetDXVKDevice().ptr(), imageInfo);
+      if (!vkImage) throw DxvkError("Native image import returned no image");
+    }
+
     if (!vkImage)
       m_image = m_device->GetDXVKDevice()->createImage(imageInfo, memoryProperties);
     else
-      m_image = m_device->GetDXVKDevice()->importImage(imageInfo, vkImage, memoryProperties);
+      m_image = m_device->GetDXVKDevice()->importImage(imageInfo, vkImage, memoryProperties, std::move(nativeImage));
 
     if (m_mapMode == D3D11_COMMON_TEXTURE_MAP_MODE_DIRECT)
       m_mapPtr = m_image->mapPtr(0);
@@ -1409,9 +1417,10 @@ namespace dxvk {
           D3D11Device*                pDevice,
     const D3D11_COMMON_TEXTURE_DESC*  pDesc,
           DXGI_USAGE                  DxgiUsage,
-          VkImage                     vkImage)
+          VkImage                     vkImage,
+          std::shared_ptr<DxvkImageImport> nativeImage)
   : D3D11DeviceChild<ID3D11Texture2D1>(pDevice),
-    m_texture   (this, pDevice, pDesc, nullptr, D3D11_RESOURCE_DIMENSION_TEXTURE2D, DxgiUsage, vkImage, nullptr),
+    m_texture   (this, pDevice, pDesc, nullptr, D3D11_RESOURCE_DIMENSION_TEXTURE2D, DxgiUsage, vkImage, nullptr, std::move(nativeImage)),
     m_interop   (this, &m_texture),
     m_surface   (this),
     m_resource  (this, pDevice),

@@ -5,7 +5,9 @@
 #include "umd_runtime_service.h"
 #include "umd_runtime_diagnostics.h"
 #include <map>
+#include <list>
 #include <mutex>
+#include <atomic>
 
 namespace dxvk::umd {
 
@@ -19,6 +21,16 @@ public:
     std::shared_ptr<RuntimeService> service = {});
   ~RuntimeGpu();
   RuntimeBackend backend();
+  // Import a real VidMm Native AHB wrapper into this device's GPU context.
+  // The caller retains the wrapper through allocationOwner; this bridge never
+  // deallocates its borrowed handle or exposes a guest CPU mapping.
+  HRESULT importNativeSurface(uint32_t handle, uint64_t key, uint64_t size,
+    std::shared_ptr<void> allocationOwner, mwd_allocation* out,
+    const std::atomic<bool>* revoked = nullptr);
+  // End one runtime open without retiring another open of the same image.
+  // Must run before its borrowed handle becomes invalid. A pending RenderCb
+  // already owns its allocation-list references; later packets may not use it.
+  HRESULT revokeNativeSurface(const std::shared_ptr<void>& allocationOwner);
   // Close on the DestroyDevice caller after synchronous backend drain, before
   // that DDI returns and the runtime may invalidate handles and backing.
   HRESULT close();
@@ -36,12 +48,25 @@ public:
   }
 
 private:
+  struct NativeOwner {
+    std::shared_ptr<void> owner;
+    uint32_t handle = 0;
+    bool active = true, resident = false;
+  };
   struct Allocation {
     void* token = nullptr;
     uint64_t address = 0, size = 0;
     uint32_t handle = 0, flags = 0, users = 1, maps = 0;
     void* mapping = nullptr;
-    bool pending = false, locked = false, mapValid = false;
+    bool pending = false, locked = false, mapValid = false, resident = false;
+    uint64_t nativeKey = 0;
+    bool nativeUncertain = false;
+    std::list<NativeOwner> nativeOwners;
+    bool native() const { return (flags & MWD_ALLOCATION_NATIVE_SURFACE) != 0; }
+    void selectNativeHandle() {
+      handle = 0;
+      for (const auto& entry : nativeOwners) if (entry.active) { handle = entry.handle; break; }
+    }
   };
   struct Call {
     RuntimeGpu* value;
@@ -54,6 +79,12 @@ private:
   RuntimeGpu() = default;
   HRESULT identity();
   HRESULT context();
+  HRESULT makeResident(Allocation& allocation);
+  HRESULT makeResident(uint32_t handle, bool& resident, const bool* active = nullptr);
+  HRESULT evict(Allocation& allocation);
+  HRESULT evict(uint32_t handle, bool& resident);
+  void revokeNativeOwner(Allocation& allocation, NativeOwner& owner);
+  HRESULT waitPaging();
   RuntimeGpuDiagnosticInfo traceInfo() const;
   RuntimeGpuDiagnosticInfo traceCloseInfo() const;
   HRESULT traceFailure(const char* stage, HRESULT hr,
@@ -63,6 +94,9 @@ private:
   }
   HRESULT unlock(Allocation& allocation);
   HRESULT release(Allocation& allocation);
+  HRESULT reserve(uint64_t size, uint64_t alignment, uint64_t requested,
+    uint32_t flags, Allocation*& allocation);
+  HRESULT nativeShare(Allocation& allocation, uint32_t opcode);
   Allocation* find(void* token);
   void publish(Allocation& allocation, mwd_allocation* out);
   static int32_t MWD_CALL getContext(void*, mwd_context_info*);
@@ -81,6 +115,10 @@ private:
   std::shared_ptr<RuntimeService> m_service;
   HANDLE m_device = nullptr, m_context = nullptr;
   D3DDDI_DEVICECALLBACKS m_callbacks = {};
+  D3DKMT_HANDLE m_pagingQueue = 0, m_pagingSync = 0;
+  uint64_t m_pagingFence = 0;
+  void* m_pagingCpuFence = nullptr;
+  DWORD m_pagingWaitStatus = WAIT_FAILED;
   std::shared_ptr<const AdapterIdentity> m_identity;
   mwd_context_info m_info = {};
   std::map<uint64_t, std::unique_ptr<Allocation>> m_allocations;

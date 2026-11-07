@@ -3,6 +3,7 @@
 #include "umd_ddi.h"
 #include "umd_adapter.h"
 #include "umd_runtime_service.h"
+#include "umd_native_surface.h"
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -46,6 +47,9 @@ public:
   RuntimeAllocation(RuntimeAllocation&& other) noexcept;
   ~RuntimeAllocation();
   HRESULT release();
+  // Commit a successful OpenResource's runtime association. Failed opens
+  // remain borrowed; their runtime owns the failed-open cleanup.
+  HRESULT completeOpen(HANDLE runtimeResource) noexcept;
   D3DKMT_HANDLE handle() const { return m_handle; }
   D3DKMT_HANDLE kernelResource() const { return m_kernelResource; }
   HANDLE runtimeResource() const { return m_resource; }
@@ -55,14 +59,25 @@ public:
   // also own an independent internal staging allocation; only that allocation
   // can be passed to this device's DeallocateCb.
   bool opened() const { return m_opened; }
-  bool primary() const { return m_info.flags == 1 && m_stagingHandle != 0; }
+  bool primary() const { return m_info.flags == 1 && (m_stagingHandle || native()); }
+  bool native() const { return m_nativeShare.key != 0; }
+  const NativeResourceShare& nativeShare() const { return m_nativeShare; }
+  const NativeSurfaceInfo* nativeSurface() const { return m_nativeLease ? &m_nativeLease->info() : nullptr; }
   // DXGI rotates kernel identities, not runtime resource handles. The latter
   // remain the keys DeallocateCb uses after the runtime performs its rotation.
   // Preflight the entire chain before making any mutation or callback.
   bool canRotateWith(const RuntimeAllocation& other) const noexcept;
+  // Whole present owners may cross native/ordinary storage boundaries. Only
+  // complete, owned single allocations can take this path; no handle or lease
+  // is copied out of its owner.
+  bool canRotatePresentWith(const RuntimeAllocation& other) const noexcept;
   void swapIdentity(RuntimeAllocation& other) noexcept;
+  // Native storage, GPU import and kernel handle stay together. Rotation
+  // exchanges only their runtime resource associations before moving owners.
+  void swapRuntimeResource(RuntimeAllocation& other) noexcept { std::swap(m_resource, other.m_resource); }
 private:
   friend class RuntimeMemory;
+  bool rotationIdleWith(const RuntimeAllocation& other) const noexcept;
   RuntimeMemory* m_owner = nullptr;
   HANDLE m_resource = nullptr;
   D3DKMT_HANDLE m_handle = 0;
@@ -72,6 +87,8 @@ private:
   D3DKMT_HANDLE m_stagingHandle = 0;
   uint64_t m_generation = 0;
   AllocationInfo m_info;
+  NativeResourceShare m_nativeShare;
+  std::shared_ptr<NativeSurfaceLease> m_nativeLease;
   bool m_published = false;
   bool m_opened = false;
   bool m_ownedStaging = false;
@@ -111,10 +128,26 @@ public:
     UINT height, DXGI_FORMAT format) {
     return call([&] { return allocateImpl(out, resource, width, height, format); });
   }
+  // Copy-style backbuffers and shared surfaces are addressed by hAllocation.
+  // Retain the runtime resource association for sharing and DeallocateCb;
+  // the runtime can withhold hKMResource on either creation path.
+  HRESULT allocatePresent(RuntimeAllocation& out, HANDLE resource, UINT width,
+    UINT height, DXGI_FORMAT format) {
+    return allocate(out, resource, width, height, format);
+  }
   HRESULT allocatePrimary(RuntimeAllocation& out, HANDLE resource, UINT width,
     UINT height, DXGI_FORMAT format, UINT numerator, UINT denominator) {
     return call([&] { return allocatePrimaryImpl(out, resource, width, height, format,
       numerator, denominator); });
+  }
+  HRESULT allocateNative(RuntimeAllocation& out, HANDLE resource, UINT width,
+    UINT height, DXGI_FORMAT format, bool primary, UINT numerator = 0, UINT denominator = 0) {
+    return call([&] { return allocateNativeImpl(out, resource, width, height, format,
+      primary, numerator, denominator); });
+  }
+  // Called only after the renderer has joined recording and kernel submission.
+  HRESULT markNativeSubmitted(RuntimeAllocation& allocation) {
+    return call([&] { return markNativeSubmittedImpl(allocation); });
   }
   bool primaryAvailable() const {
     return !m_callbacks.pfnPresentCb && available() && m_callbacks.pfnRenderCb
@@ -131,8 +164,8 @@ public:
   HRESULT download(RuntimeAllocation& allocation, void* pixels, UINT rowPitch) {
     return call([&] { return downloadImpl(allocation, pixels, rowPitch); });
   }
-  // Take a view of an allocation another process created and this device only
-  // opened. No AllocateCb ran, so no DeallocateCb may run either.
+  // Stage a view of an allocation another process created. completeOpen
+  // commits this device's runtime association only after OpenResource succeeds.
   HRESULT adopt(RuntimeAllocation& out, D3DKMT_HANDLE allocation,
     D3DKMT_HANDLE kernelResource, const AllocationInfo& info) {
     return call([&] { return adoptImpl(out, allocation, kernelResource, info); });
@@ -143,6 +176,10 @@ public:
   HRESULT adoptPrimary(RuntimeAllocation& out, D3DKMT_HANDLE allocation,
     D3DKMT_HANDLE kernelResource, const AllocationInfo& info) {
     return call([&] { return adoptPrimaryImpl(out, allocation, kernelResource, info); });
+  }
+  HRESULT adoptNative(RuntimeAllocation& out, D3DKMT_HANDLE allocation,
+    D3DKMT_HANDLE resource, const AllocationInfo& info, const NativeResourceShare& share) {
+    return call([&] { return adoptNativeImpl(out, allocation, resource, info, share); });
   }
   // Raw allocation handles originate from pinned tracked resource owners;
   // runtime resource cookies and kernel resource handles are never interchanged.
@@ -157,8 +194,8 @@ public:
   // The pinned allocation may outlive the resource whose runtime storage was
   // reclaimed by a callback. Revalidate that resource before submitting it.
   HRESULT present(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args,
-    const std::function<bool()>& live = {}) {
-    return call([&] { return presentImpl(source, args, live); });
+    const std::function<bool()>& live = {}, RuntimeAllocation* destination = nullptr) {
+    return call([&] { return presentImpl(source, args, live, destination); });
   }
   HRESULT present9(RuntimeAllocation& source, const D3DDDIARG_PRESENT& args,
     const std::function<bool()>& live = {}) {
@@ -167,7 +204,7 @@ public:
   HRESULT setDisplayMode(RuntimeAllocation& primary, const std::function<bool()>& live = {}) {
     return call([&] { return setDisplayModeImpl(primary, live); });
   }
-  HRESULT close() { return !m_context ? S_OK : call([&] { return closeImpl(); }); }
+  HRESULT close() { return call([&] { return closeImpl(); }); }
   // Terminal modern-device cleanup happens while DestroyDevice's original
   // callback owner is valid, including when surfaces remain pinned by an
   // interrupted operation. Ordinary context-only close and typed9 are separate.
@@ -184,9 +221,13 @@ private:
   HRESULT allocateImpl(RuntimeAllocation& out, HANDLE resource, UINT width,
     UINT height, DXGI_FORMAT format);
   HRESULT allocatePrimaryImpl(RuntimeAllocation&, HANDLE, UINT, UINT, DXGI_FORMAT, UINT, UINT);
+  HRESULT allocateNativeImpl(RuntimeAllocation&, HANDLE, UINT, UINT, DXGI_FORMAT, bool, UINT, UINT);
+  HRESULT markNativeSubmittedImpl(RuntimeAllocation&);
   HRESULT adoptImpl(RuntimeAllocation& out, D3DKMT_HANDLE allocation,
     D3DKMT_HANDLE kernelResource, const AllocationInfo& info);
   HRESULT adoptPrimaryImpl(RuntimeAllocation&, D3DKMT_HANDLE, D3DKMT_HANDLE, const AllocationInfo&);
+  HRESULT adoptNativeImpl(RuntimeAllocation&, D3DKMT_HANDLE, D3DKMT_HANDLE,
+    const AllocationInfo&, const NativeResourceShare&);
   HRESULT releaseStaging(RuntimeAllocation&);
   void detachOpenedPrimary(RuntimeAllocation&) noexcept;
   HRESULT releaseImpl(RuntimeAllocation& allocation);
@@ -201,13 +242,16 @@ private:
     const std::function<bool()>& live);
   HRESULT setPriorityImpl(D3DKMT_HANDLE, UINT, const std::function<bool()>& live);
   HRESULT presentImpl(RuntimeAllocation& source, const DXGI_DDI_ARG_PRESENT& args,
-    const std::function<bool()>& live);
+    const std::function<bool()>& live, RuntimeAllocation* destination);
   HRESULT present9Impl(RuntimeAllocation& source, const D3DDDIARG_PRESENT& args,
     const std::function<bool()>& live);
   HRESULT setDisplayModeImpl(RuntimeAllocation&, const std::function<bool()>& live);
   HRESULT closeImpl();
   HRESULT closeDeviceAllocationsImpl();
   HRESULT ensureContext();
+  HRESULT submitResident(RuntimeAllocation&, bool staging,
+    const std::function<bool()>& live, const std::function<HRESULT()>& submit,
+    RuntimeAllocation* destination = nullptr);
   HRESULT checkIdentity();
   HANDLE m_device = nullptr;
   D3DDDI_DEVICECALLBACKS m_callbacks = {};
@@ -228,6 +272,9 @@ private:
   bool m_policyActive = false;
   bool m_primaryActive = false;
   bool m_creatingContext = false;
+  D3DDDICB_CREATEPAGINGQUEUE m_paging = {};
+  bool m_pagingReady = false;
+  bool m_residencyActive = false;
 };
 
 }

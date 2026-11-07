@@ -15,7 +15,12 @@ inline bool validRuntimeBackend(const RuntimeBackend& runtime) {
 inline bool supportsRuntimeBackend(const mwd_support& support) {
   return support.magic == MWD_RUNTIME_MAGIC
     && support.version == MWD_RUNTIME_ABI_VERSION
-    && support.size == sizeof(mwd_callbacks) && support.flags == 1;
+    && support.size == sizeof(mwd_callbacks) && (support.flags & 1u)
+    && !(support.flags & ~(1u | MWD_SUPPORT_NATIVE_SURFACE));
+}
+
+inline bool supportsNativeSurface(const mwd_support& support) {
+  return supportsRuntimeBackend(support) && (support.flags & MWD_SUPPORT_NATIVE_SURFACE);
 }
 
 inline bool matchesRuntimeContext(const AdapterLuid& luid, const mwd_context_info& info) {

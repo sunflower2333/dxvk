@@ -3562,7 +3562,7 @@ namespace dxvk {
     if (!shader || !validateD3D9ShaderCode(code, bytes, true)) return D3DERR_INVALIDCALL;
     D3D9CommonShader module;
     size_t length = 0;
-    const HRESULT hr = CreateShaderModule(&module, &length, D3D9ShaderType::VertexShader, code, bytes);
+    const HRESULT hr = CreateShaderModule(&module, &length, D3D9ShaderType::VertexShader, code, bytes, true);
     if (FAILED(hr)) return hr;
     *shader = ref(new D3D9VertexShader(this, &m_shaderAllocator, module, code, uint32_t(length)));
     return S_OK;
@@ -3932,7 +3932,7 @@ namespace dxvk {
     if (!shader || !validateD3D9ShaderCode(code, bytes, false)) return D3DERR_INVALIDCALL;
     D3D9CommonShader module;
     size_t length = 0;
-    const HRESULT hr = CreateShaderModule(&module, &length, D3D9ShaderType::PixelShader, code, bytes);
+    const HRESULT hr = CreateShaderModule(&module, &length, D3D9ShaderType::PixelShader, code, bytes, true);
     if (FAILED(hr)) return hr;
     *shader = ref(new D3D9PixelShader(this, &m_shaderAllocator, module, code, uint32_t(length)));
     return S_OK;
@@ -4942,6 +4942,7 @@ namespace dxvk {
     const DxvkPagedResource&                Resource,
           uint64_t                          SequenceNumber,
           DWORD                             MapFlags) {
+    m_dxvkDevice->pollCompletions();
     // Wait for the any pending D3D9 command to be executed
     // on the CS thread so that we can determine whether the
     // resource is currently in use or not.
@@ -6670,7 +6671,9 @@ namespace dxvk {
     bool fogEnabled = bool(rs[D3DRS_FOGENABLE]);
     bool fogUseZ = false;
 
-    if (fogEnabled && !UseProgrammableVS()) {
+    if (fogEnabled && m_nativeWInfoValid) {
+      fogUseZ = m_nativeFogUseZ;
+    } else if (fogEnabled && !UseProgrammableVS()) {
       // Z fog is only used if the projection matrix is not a perspective matrix,
       // otherwise we get W fog, including programmable vertex shaders. SM2 pixel
       // shaders behave just like fixed-function.
@@ -7651,7 +7654,7 @@ namespace dxvk {
     uint64_t submissionId = m_submissionFence->value();
 
     while (++submissionId <= m_submissionId) {
-      m_submissionFence->wait(submissionId);
+      m_dxvkDevice->waitForFence(*m_submissionFence, submissionId);
 
       // Need to manually update sampler stats here since we
       // might otherwise hit this path again the next time
@@ -7950,7 +7953,8 @@ namespace dxvk {
           size_t*                 pBytecodeLength,
           D3D9ShaderType          ShaderType,
     const DWORD*                  pShaderBytecode,
-          size_t                  bytecodeSize) {
+          size_t                  bytecodeSize,
+          bool                    nativeShader) {
 
     if (!pShaderBytecode)
       return D3DERR_INVALIDCALL;
@@ -7979,7 +7983,9 @@ namespace dxvk {
     // Vertex shader version checks
     if (ShaderType == D3D9ShaderType::VertexShader) {
       // Late fixed-function capable hardware exposed support for VS 1.1
-      const uint32_t shaderModelVS = m_d3dCompatibility.test(D3DCompatibility::D3D8) ? 1u
+      // Native WDDM calls include runtime-generated SM2 fixed-function
+      // shaders, including for DX8. Only the public API keeps the SM1 cap.
+      const uint32_t shaderModelVS = m_d3dCompatibility.test(D3DCompatibility::D3D8) && !nativeShader ? 1u
                                                                                      : std::max(1u, m_d3d9Options.shaderModel);
       if (unlikely(info.getVersion().first > shaderModelVS
                || (info.getVersion().first == 1 && info.getVersion().second > 1)
@@ -7990,7 +7996,7 @@ namespace dxvk {
       }
     // Pixel shader version checks
     } else if (ShaderType == D3D9ShaderType::PixelShader) {
-      const uint32_t shaderModelPS = m_d3dCompatibility.test(D3DCompatibility::D3D8) ? std::min(1u, m_d3d9Options.shaderModel)
+      const uint32_t shaderModelPS = m_d3dCompatibility.test(D3DCompatibility::D3D8) && !nativeShader ? std::min(1u, m_d3d9Options.shaderModel)
                                                                                      : m_d3d9Options.shaderModel;
       if (unlikely(info.getVersion().first > shaderModelPS
                || (info.getVersion().first == 1 && info.getVersion().second > 4)
@@ -9063,6 +9069,17 @@ namespace dxvk {
     if (surface && surface->GetDevice() != this)
       return D3DERR_INVALIDCALL;
     return SetRenderTargetInternal(0, target);
+  }
+
+  HRESULT D3D9DeviceEx::SetNativeWInfo(float wNear, float wFar) {
+    D3D9DeviceLock lock = LockDevice();
+    if (!m_parent->IsNativeRenderer()) return D3DERR_INVALIDCALL;
+    // WINFO describes fog selection, not a normalized depth range. In
+    // particular, the runtime's (1, 1) default selects Z fog.
+    m_nativeWInfoValid = true;
+    m_nativeFogUseZ = wNear == 1.0f && wFar == 1.0f;
+    m_dirty.set(D3D9DeviceDirtyFlag::Fog);
+    return D3D_OK;
   }
 
   HRESULT D3D9DeviceEx::InitializeNativeOffscreen() {

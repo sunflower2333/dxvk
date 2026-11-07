@@ -234,6 +234,25 @@ namespace dxvk {
     std::vector<VkExtensionProperties> extensions(extensionCount);
     caps.queryDeviceExtensions(&extensionCount, extensions.data());
 
+    if (runtime && runtime->nativeSurfaces) {
+      uint32_t count = 0;
+      if (vk->vkEnumerateDeviceExtensionProperties(m_handle, nullptr, &count, nullptr) != VK_SUCCESS
+          || !count || count > 1024)
+        throw DxvkError("Native surface extension enumeration failed");
+      std::vector<VkExtensionProperties> available(count);
+      if (vk->vkEnumerateDeviceExtensionProperties(m_handle, nullptr, &count, available.data()) != VK_SUCCESS
+          || count > available.size())
+        throw DxvkError("Native surface extension enumeration changed");
+      auto modifier = std::find_if(available.begin(), available.begin() + count, [](const auto& ext) {
+        return !std::strcmp(ext.extensionName, VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME);
+      });
+      if (modifier == available.begin() + count)
+        throw DxvkError("Native surface ICD lacks explicit image layout support");
+      if (std::none_of(extensions.begin(), extensions.end(), [&](const auto& ext) {
+          return !std::strcmp(ext.extensionName, modifier->extensionName);
+        })) extensions.push_back(*modifier);
+    }
+
     for (const auto& extra : m_extraExtensions) {
       bool found = false;
 
@@ -323,7 +342,8 @@ namespace dxvk {
     deviceQueues.sparse   = getDeviceQueue(vkd, caps, queueMapping.sparse);
 
     return new DxvkDevice(m_instance, this, vkd, caps, deviceQueues, DxvkQueueCallback(),
-      runtime ? runtime->owner : std::shared_ptr<void>());
+      runtime ? runtime->owner : std::shared_ptr<void>(),
+      runtime && runtime->disableExtraThreads, runtime && runtime->nativeSurfaces);
   }
 
 

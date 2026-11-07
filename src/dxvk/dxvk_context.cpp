@@ -90,8 +90,9 @@ namespace dxvk {
   
   
   void DxvkContext::beginRecording(const Rc<DxvkCommandList>& cmdList) {
+    // Do not publish a list whose execution buffer failed to initialize.
+    cmdList->init();
     m_cmd = cmdList;
-    m_cmd->init();
 
     if (unlikely(!m_trackingId)) {
       // If this is the first command list ever, check if
@@ -192,6 +193,12 @@ namespace dxvk {
 
       m_endLatencyTracking = false;
     }
+
+    // Inline submission has already published its result. A failed submit
+    // leaves this context without a recording command list; abort the current
+    // CS chunk before attempting to initialize or use another one.
+    if (m_device->disableExtraThreads() && m_device->getDeviceStatus() != VK_SUCCESS)
+      throw DxvkError("DxvkContext: Inline submission failed");
 
     // If we have a zero buffer, see if we can get rid of it
     freeZeroBuffer();
@@ -1526,6 +1533,30 @@ namespace dxvk {
   }
 
 
+  void DxvkContext::prepareImageIdentityRotation(const Rc<DxvkImage>& image) {
+    endCurrentPass(true);
+    flushDeferredClear(*image, image->getAvailableSubresources());
+    DxvkImageUsageInfo usage;
+    usage.stableGpuAddress = VK_TRUE;
+    // Self-assignment prepares the OLD allocation, including its tracker
+    // references, layout transitions and allocator relocation exclusion.
+    invalidateImageWithUsage(image, image->storage(), usage, image->info().layout);
+  }
+
+
+  void DxvkContext::commitImageIdentityRotation(const Rc<DxvkImage>& image,
+      const DxvkImageStorageIdentity& identity) noexcept {
+    const auto usage = image->info().usage;
+    if (usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT))
+      m_descriptorState.dirtyViews(image->getShaderStages());
+    if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+      m_flags.set(DxvkContextFlag::GpDirtyRenderTargets);
+    // All old allocations remain held by the complete chain and by prepared
+    // command lists. Do not append trackers or create views inside commit.
+    image->assignStorageIdentity(identity);
+  }
+
+
   bool DxvkContext::ensureImageCompatibility(
     const Rc<DxvkImage>&            image,
     const DxvkImageUsageInfo&       usageInfo) {
@@ -2014,6 +2045,16 @@ namespace dxvk {
     }
   }
 
+
+  void DxvkContext::prepareImageForExternalWrite(const Rc<DxvkImage>& image) {
+    endCurrentPass(false);
+    // Preserve previous partial contents. On a fresh import the tracked
+    // UNDEFINED layout must leave this state before the external writer runs.
+    DxvkResourceAccess access(*image, image->getAvailableSubresources(),
+      VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+      VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT, false);
+    acquireResources(DxvkCmdBuffer::ExecBuffer, 1u, &access);
+  }
 
   void DxvkContext::transformImage(
     const Rc<DxvkImage>&            dstImage,
@@ -9756,9 +9797,18 @@ namespace dxvk {
     // Only flush clears for shared images, and restore layouts
     bool hasSharedClear = false;
 
-    for (const auto& image : m_nonDefaultLayoutImages) {
-      if (image->info().shared)
-        hasSharedClear = flushDeferredClear(*image, image->getAvailableSubresources());
+    // A deferred clear has not transitioned its image yet. In particular a
+    // newly imported native AHB can have no non-default-layout list entry at
+    // all. Submission must still materialize that clear before another owner
+    // presents, opens or rotates the storage. Iterate the actual clear queue;
+    // flushDeferredClear removes every matching entry and can grow the layout
+    // list while recording the clear.
+    for (size_t i = 0; i < m_deferredClears.size(); ) {
+      Rc<DxvkImage> image = m_deferredClears[i].imageView->image();
+      if (image->info().shared && flushDeferredClear(*image, image->getAvailableSubresources()))
+        hasSharedClear = true;
+      else
+        ++i;
     }
 
     if (hasSharedClear)

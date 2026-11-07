@@ -18,7 +18,8 @@ struct PrimaryPlan {
   uint32_t pitch = 0;
   uint64_t bytes = 0;
 };
-inline PrimaryStatus primaryPlan(const PrimaryShape& shape, PrimaryPlan& output) {
+inline PrimaryStatus primaryPlan(const PrimaryShape& shape, PrimaryPlan& output,
+    bool nativeModeSupported = false) {
   if ((shape.flags & ~15u) || !shape.width || !shape.height
       || shape.width > 16384 || shape.height > 16384
       || shape.width != shape.modeWidth || shape.height != shape.modeHeight
@@ -36,7 +37,10 @@ inline PrimaryStatus primaryPlan(const PrimaryShape& shape, PrimaryPlan& output)
     return PrimaryStatus::Unsupported;
   if (!optional && (!shape.numerator || !shape.denominator)) return PrimaryStatus::Invalid;
   PrimaryPlan plan;
-  plan.scanout = !optional; plan.driverFlags = optional ? 1 : 0;
+  const bool nativeFormat = shape.format == 28 || shape.format == 87 || shape.format == 91;
+  plan.scanout = !optional || (nativeModeSupported && nativeFormat
+    && shape.numerator && shape.denominator);
+  plan.driverFlags = plan.scanout ? 0 : 1;
   plan.pitch = shape.width * 4; plan.bytes = uint64_t(plan.pitch) * shape.height;
   output = plan;
   return PrimaryStatus::Valid;

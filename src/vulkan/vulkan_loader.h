@@ -28,10 +28,13 @@ namespace dxvk::vk {
     PFN_vkVoidFunction sym(VkInstance instance, const char* name) const;
     PFN_vkVoidFunction sym(const char* name) const;
     PFN_vkGetInstanceProcAddr getLoaderProc() const { return m_getInstanceProcAddr; }
+    PFN_vkGetInstanceProcAddr getDriverProc() const { return m_driverProc; }
     HMODULE library() const { return m_library; }
   protected:
     HMODULE                   m_library             = nullptr;
     PFN_vkGetInstanceProcAddr m_getInstanceProcAddr = nullptr;
+    HMODULE                   m_driver              = nullptr;
+    PFN_vkGetInstanceProcAddr m_driverProc          = nullptr;
   };
   
   

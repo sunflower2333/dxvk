@@ -1,7 +1,9 @@
 #include "umd_d3d9_adapter.h"
 #include "umd_d3d9_backend.h"
+#include "umd_legacy_diagnostics.h"
 #include "umd_allocation.h"
 #include "umd_runtime_gpu.h"
+#include "umd_process_storage.h"
 #include "../d3d9/d3d9_shader_code.h"
 #include "../d3d9/d3d9_caps.h"
 #include <array>
@@ -67,7 +69,7 @@ struct Query {
   std::unique_ptr<dxvk::umd::D3D9QueryResource> backend;
 };
 struct Device {
-  explicit Device(dxvk::umd::LegacyD3DApi api) : legacyApi(api) { }
+  explicit Device(dxvk::umd::LegacyD3DApi api) : legacyApi(api) { streamFrequencies.fill(1); }
   const dxvk::umd::LegacyD3DApi legacyApi;
   std::shared_ptr<dxvk::umd::RuntimeService> service = std::make_shared<dxvk::umd::RuntimeService>(true);
   std::shared_ptr<dxvk::umd::RuntimeGpu> gpu;
@@ -88,6 +90,7 @@ struct Device {
   UINT userStride = 0;
   struct Stream { HANDLE buffer = nullptr; UINT offset = 0, stride = 0; };
   std::array<Stream, 16> streams = {};
+  std::array<UINT, 16> streamFrequencies;
   HANDLE indices = nullptr;
   HANDLE target = nullptr;
   UINT targetIndex = 0;
@@ -162,9 +165,12 @@ struct Device {
   ~Device() { close(); }
 };
 
-std::mutex devicesMutex;
-std::unordered_map<HANDLE, std::shared_ptr<Device>> devices;
-std::unordered_map<HANDLE, std::shared_ptr<Device>> runtimeDevices;
+dxvk::umd::ProcessStorage<std::mutex> devicesMutexLifetime;
+auto& devicesMutex = devicesMutexLifetime.get();
+dxvk::umd::ProcessStorage<std::unordered_map<HANDLE, std::shared_ptr<Device>>> devicesLifetime;
+auto& devices = devicesLifetime.get();
+dxvk::umd::ProcessStorage<std::unordered_map<HANDLE, std::shared_ptr<Device>>> runtimeDevicesLifetime;
+auto& runtimeDevices = runtimeDevicesLifetime.get();
 uintptr_t nextHandle = 1;
 
 // Serialize the device before inspecting its private handles. A runtime
@@ -226,6 +232,8 @@ bool validArea(const RECT& area, const dxvk::umd::D3D9SurfaceDesc& desc) {
 HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   if (!args || !args->hResource || !args->pSurfList || !args->SurfCount) return E_INVALIDARG;
   const auto input = *args;
+  dxvk::umd::traceLegacyState("CreateResource.flags-pool", input.Flags.Value, input.Pool);
+  dxvk::umd::traceLegacyState("CreateResource.format-surfaces", input.Format, input.SurfCount);
   const bool buffer = input.Flags.VertexBuffer || input.Flags.IndexBuffer;
   if (input.Flags.Value & ~(buffer ? UINT(0x21800cc) : UINT(0x11087))) return E_INVALIDARG;
   if (buffer && (bool(input.Flags.VertexBuffer) == bool(input.Flags.IndexBuffer) || input.SurfCount != 1))
@@ -240,9 +248,9 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
   const bool texture = input.Flags.Texture != 0;
   const bool dynamic = input.Flags.Dynamic != 0;
   // DiscardRenderTarget permits dropping old pixels; retaining them is valid.
-  // The runtime supplies this hint for ordinary windowed back buffers. It does
+  // The runtime supplies this hint for color and depth/stencil buffers. It does
   // not imply primary ownership, sharing, or a different allocation contract.
-  if (input.Flags.DiscardRenderTarget && (!target || buffer || depth)) return E_INVALIDARG;
+  if (input.Flags.DiscardRenderTarget && ((!target && !depth) || buffer)) return E_INVALIDARG;
   if (!buffer && dynamic && (!texture || target || depth)) return E_INVALIDARG;
   if (depth && (target || texture || input.SurfCount != 1)) return E_INVALIDARG;
   if (input.Flags.NotLockable && !target && !texture && !buffer && !depth) return E_INVALIDARG;
@@ -369,6 +377,8 @@ HRESULT APIENTRY createResource(HANDLE handle, D3DDDIARG_CREATERESOURCE* args) {
 HRESULT APIENTRY present(HANDLE handle, const D3DDDIARG_PRESENT* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
+  dxvk::umd::traceLegacyState("Present.flags-destination", input.Flags.Value, input.hDstResource != nullptr);
+  dxvk::umd::traceLegacyState("Present.source-destination-index", input.SrcSubResourceIndex, input.DstSubResourceIndex);
   // Destination index and flip interval are reserved for this source-only
   // blit. A runtime resource token is never a kernel allocation handle.
   if (!input.hSrcResource || input.hDstResource || input.SrcSubResourceIndex
@@ -396,7 +406,7 @@ HRESULT APIENTRY present(HANDLE handle, const D3DDDIARG_PRESENT* args) {
       auto allocation = std::make_unique<dxvk::umd::RuntimeAllocation>();
       const auto format = surface.desc.format == D3DFMT_X8R8G8B8
         ? DXGI_FORMAT_B8G8R8X8_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
-      hr = result(device.memory.allocate(*allocation, resource.runtime,
+      hr = result(device.memory.allocatePresent(*allocation, resource.runtime,
         surface.desc.width, surface.desc.height, format));
       if (FAILED(hr)) return hr;
       surface.present = std::move(allocation);
@@ -549,9 +559,13 @@ HRESULT APIENTRY blt(HANDLE handle, const D3DDDIARG_BLT* args) {
     auto dst = surface(device, input.hDstResource, input.DstSubResourceIndex);
     if (!src || !dst || src->locked || dst->locked || src->desc.depthStencil || dst->desc.depthStencil
         || src->desc.format != dst->desc.format
-        || !validArea(input.SrcRect, src->desc) || !validArea(input.DstRect, dst->desc)
-        || input.SrcRect.right - input.SrcRect.left != input.DstRect.right - input.DstRect.left
-        || input.SrcRect.bottom - input.SrcRect.top != input.DstRect.bottom - input.DstRect.top)
+        || !validArea(input.SrcRect, src->desc) || !validArea(input.DstRect, dst->desc))
+      return E_INVALIDARG;
+    // UpdateSurface and readback copies preserve dimensions. GPU surfaces
+    // use DXVK StretchRect, including its temporary for overlapping copies.
+    if ((src->desc.systemMemory || dst->desc.systemMemory)
+        && (input.SrcRect.right - input.SrcRect.left != input.DstRect.right - input.DstRect.left
+          || input.SrcRect.bottom - input.SrcRect.top != input.DstRect.bottom - input.DstRect.top))
       return E_INVALIDARG;
     return device.backend->copySurface(*dst->backend, input.DstRect, *src->backend, input.SrcRect);
   });
@@ -743,7 +757,10 @@ HRESULT APIENTRY setTextureStageState(HANDLE handle, const D3DDDIARG_TEXTURESTAG
   const bool sample = samplerState(input.State, sampleState);
   UINT slot = 0;
   if (sample ? !textureSlot(input.Stage, slot)
-             : (input.Stage >= 8 || !textureStageState(input.State, textureState))) return E_INVALIDARG;
+             : (input.Stage >= 8 || !textureStageState(input.State, textureState))) {
+    dxvk::umd::traceLegacyState("SetTextureStageState.rejected", input.State, input.Value);
+    return E_INVALIDARG;
+  }
   // Native colorkey and TEXTUREMAP are not public API state enums. They need
   // dedicated semantics; never cast them to D3DTSS or D3DSAMP.
   return operation(handle, [&](Device& device) {
@@ -1014,9 +1031,17 @@ HRESULT createShader(HANDLE handle, ShaderStage stage, UINT bytes,
   return preparedOperation(handle, [&](Device& device) {
     code.resize(bytes / sizeof(DWORD));
     std::memcpy(code.data(), input, bytes);
-    return dxvk::umd::legacyShaderModelAllowed(device.legacyApi, code.front(), stage == ShaderStage::Vertex)
-      && dxvk::validateD3D9ShaderCode(code.data(), bytes, stage == ShaderStage::Vertex)
-      ? S_OK : E_INVALIDARG;
+    const bool vertex = stage == ShaderStage::Vertex;
+    const bool modelAllowed = dxvk::umd::legacyNativeShaderModelAllowed(device.legacyApi, code.front(), vertex);
+    const bool codeValid = dxvk::validateD3D9ShaderCode(code.data(), bytes, vertex);
+    dxvk::umd::traceLegacyState(vertex ? "VertexShader.version-bytes" : "PixelShader.version-bytes", code.front(), bytes);
+    dxvk::umd::traceLegacyState("Shader.model-valid", modelAllowed, codeValid);
+    if (!modelAllowed || !codeValid) {
+      for (UINT i = 0; i < std::min<UINT>(UINT(code.size()), 32u); i++)
+        dxvk::umd::traceLegacyState("Shader.rejected-word", i, code[i]);
+      return E_INVALIDARG;
+    }
+    return S_OK;
   }, [&](Device& device) {
     auto shader = std::make_unique<Shader>();
     shader->stage = stage;
@@ -1078,6 +1103,9 @@ template<ShaderStage Stage, ConstantType Type, typename Args, typename T>
 HRESULT shaderConstants(HANDLE handle, const Args* args, const T* input) {
   if (!args) return E_INVALIDARG;
   const auto data = *args;
+  if constexpr (Type == ConstantType::Float)
+    dxvk::umd::traceLegacyState(Stage == ShaderStage::Vertex
+      ? "VertexConstantsF.register-count" : "PixelConstantsF.register-count", data.Register, data.Count);
   constexpr UINT limit = Type == ConstantType::Float
     ? (Stage == ShaderStage::Vertex ? dxvk::caps::MaxFloatConstantsVS : dxvk::caps::MaxSM3FloatConstantsPS)
     : dxvk::caps::MaxOtherConstants;
@@ -1091,8 +1119,10 @@ HRESULT shaderConstants(HANDLE handle, const Args* args, const T* input) {
   return preparedOperation(handle, [&](Device& device) {
     if (device.legacyApi == dxvk::umd::LegacyD3DApi::D3D8) {
       if constexpr (Type != ConstantType::Float) return E_INVALIDARG;
-      const UINT apiLimit = dxvk::umd::legacyFloatConstantLimit(device.legacyApi, Stage == ShaderStage::Vertex, limit);
-      if (data.Register > apiLimit || data.Count > apiLimit - data.Register) return E_INVALIDARG;
+      // SYSTEM D3D8 lowers fixed-function state to internal float constants
+      // beyond the public shader1.x register ranges. The native register-file
+      // bounds above apply here; the public API limits belong to the runtime.
+      // Snapshot and forward the actual values through the existing backend.
     }
     if (data.Count) {
       values.resize(size_t(data.Count) * components);
@@ -1173,12 +1203,55 @@ bool renderState(D3DDDIRENDERSTATETYPE input, D3DRENDERSTATETYPE& output) {
 #undef D3D9_STATE
 }
 
+bool inactiveLegacyRenderState(const D3DDDIARG_RENDERSTATE& input) {
+  // The system runtime initializes old DDI states, including LINEPATTERN=0,
+  // while creating a D3D9 device. These features are not advertised and can
+  // never become active in this bridge. Accept their disabled values, not
+  // arbitrary unsupported settings or DDI-only command numbers.
+  // Windows initializes reserved slots 196/197 to all ones after line-AA. The
+  // Microsoft D3D9On12 PipelineState::SetRenderState stores these unhandled
+  // slots without changing the pipeline (f3352d12, 9on12PipelineState.cpp).
+  // Admit this reset value explicitly, without accepting arbitrary holes.
+  if (UINT(input.State) == 196 || UINT(input.State) == 197) return input.Value == UINT_MAX;
+  switch (input.State) {
+    case D3DDDIRS_LINEPATTERN:
+    case D3DDDIRS_ZVISIBLE:
+    case D3DDDIRS_COLORKEYENABLE:
+    case D3DDDIRS_OLDALPHABLENDENABLE:
+    case D3DDDIRS_TRANSLUCENTSORTINDEPENDENT:
+    case D3DDDIRS_COLORKEYBLENDENABLE:
+      return input.Value == 0;
+    case D3DDDIRS_PATCHSEGMENTS:
+      // DX8 initializes the documented float1 default. Patch rendering is
+      // unadvertised; retain this inactive default alongside DX9's zero.
+      return input.Value == 0 || input.Value == 0x3f800000u;
+    default:
+      // An all-ones stipple row admits every fragment, i.e. solid fill.
+      return input.State >= D3DDDIRS_STIPPLEPATTERN00
+        && input.State <= D3DDDIRS_STIPPLEPATTERN31 && input.Value == UINT_MAX;
+  }
+}
+
+HRESULT APIENTRY updateWInfo(HANDLE handle, const D3DDDIARG_WINFO* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  return operation(handle, [&](Device& device) {
+    return device.backend->setWInfo(input.WNear, input.WFar);
+  });
+}
+
 HRESULT APIENTRY setRenderState(HANDLE handle, const D3DDDIARG_RENDERSTATE* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
+  dxvk::umd::traceLegacyState("SetRenderState", input.State, input.Value);
+  if (inactiveLegacyRenderState(input))
+    return operation(handle, [](Device&) { return S_OK; });
   D3DRENDERSTATETYPE mapped = D3DRS_ZENABLE;
   if (input.State == D3DDDIRS_SCENECAPTURE || input.State == D3DDDIRS_SOFTWAREVERTEXPROCESSING) {
     if (input.Value > 1) return E_INVALIDARG;
+  } else if (input.State == D3DDDIRS_EDGEANTIALIAS || input.State == D3DDDIRS_ZBIAS) {
+    if (input.Value != 0) return E_INVALIDARG;
+    mapped = input.State == D3DDDIRS_EDGEANTIALIAS ? D3DRS_ANTIALIASEDLINEENABLE : D3DRS_DEPTHBIAS;
   } else if (!renderState(input.State, mapped)) return E_INVALIDARG;
   return operation(handle, [&](Device& device) {
     if (input.State == D3DDDIRS_SCENECAPTURE) return device.backend->setScene(input.Value != 0);
@@ -1354,6 +1427,22 @@ HRESULT APIENTRY setStreamSource(HANDLE handle, const D3DDDIARG_SETSTREAMSOURCE*
   });
 }
 
+HRESULT APIENTRY setStreamSourceFreq(HANDLE handle, const D3DDDIARG_SETSTREAMSOURCEFREQ* args) {
+  if (!args) return E_INVALIDARG;
+  const auto input = *args;
+  const bool indexed = input.Divider & D3DSTREAMSOURCE_INDEXEDDATA;
+  const bool instanced = input.Divider & D3DSTREAMSOURCE_INSTANCEDATA;
+  if (input.Stream >= 16 || !input.Divider || (indexed && instanced)
+      || (!input.Stream && instanced)) return E_INVALIDARG;
+  // SYSTEM D3D9 replays this callback for every stream when applying a state
+  // block, including the default divider 1 on streams without bound buffers.
+  return operation(handle, [&](Device& device) {
+    const HRESULT hr = result(device.backend->setStreamSourceFreq(input.Stream, input.Divider));
+    if (SUCCEEDED(hr)) device.streamFrequencies[input.Stream] = input.Divider;
+    return hr;
+  });
+}
+
 HRESULT APIENTRY setIndices(HANDLE handle, const D3DDDIARG_SETINDICES* args) {
   if (!args) return E_INVALIDARG;
   const auto input = *args;
@@ -1409,8 +1498,17 @@ bool drawBindings(Device& device, const Declaration& declaration, uint64_t first
     if (entry == device.resources.end() || !entry->second->buffer
         || (entry->second->bufferLocked && !entry->second->bufferLockDrawFromLocked)
         || stream.stride < declaration.streamSizes[i]) return false;
+    // Match DXVK's instance count/divisor decoding for instanced bindings.
+    // These streams start at instance zero, independently of VStart/base vertex.
+    uint64_t last = count ? first + count - 1 : 0;
+    const UINT frequency = device.streamFrequencies[i];
+    if (frequency & D3DSTREAMSOURCE_INSTANCEDATA) {
+      const UINT instances = std::max(device.streamFrequencies[0] & 0x7fffffu, 1u);
+      const UINT divisor = frequency & 0x7fffffu;
+      last = divisor ? (instances - 1) / divisor : 0;
+    }
     // Count complete declarations, rather than requiring unused final stride padding.
-    if (count && uint64_t(stream.offset) + (first + count - 1) * stream.stride
+    if (count && uint64_t(stream.offset) + last * stream.stride
         + declaration.streamSizes[i] > entry->second->bufferDesc.bytes) return false;
   }
   return true;
@@ -1600,6 +1698,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   cb.pfnDestroyContextCb = input.pCallbacks->pfnDestroyContextCb;
   cb.pfnEscapeCb = input.pCallbacks->pfnEscapeCb; cb.pfnRenderCb = input.pCallbacks->pfnRenderCb;
   cb.pfnPresentCb = input.pCallbacks->pfnPresentCb;
+  copyResidencyCallbacks(*identity, *input.pCallbacks, cb);
   if (!cb.pfnAllocateCb || !cb.pfnDeallocateCb || !cb.pfnLockCb || !cb.pfnUnlockCb
       || !cb.pfnCreateContextCb || !cb.pfnDestroyContextCb || !cb.pfnEscapeCb || !cb.pfnRenderCb)
     return E_INVALIDARG;
@@ -1657,6 +1756,7 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnSetVertexShaderConstB = vertexConstantsB;
   table.pfnSetPixelShaderConstB = pixelConstantsB;
   table.pfnSetRenderState = setRenderState;
+  table.pfnUpdateWInfo = updateWInfo;
   table.pfnValidateDevice = validateDevice;
   table.pfnSetTransform = setTransform<D3DDDIARG_SETTRANSFORM, false>;
   table.pfnMultiplyTransform = setTransform<D3DDDIARG_MULTIPLYTRANSFORM, true>;
@@ -1674,9 +1774,66 @@ HRESULT dxvk::umd::createAdapterDevice9(const std::shared_ptr<const AdapterIdent
   table.pfnSetScissorRect = setScissorRect;
   table.pfnSetStreamSourceUm = setStreamSourceUm;
   table.pfnSetStreamSource = setStreamSource;
+  table.pfnSetStreamSourceFreq = setStreamSourceFreq;
   table.pfnSetIndices = setIndices;
   table.pfnDrawPrimitive = drawPrimitive;
   table.pfnDrawIndexedPrimitive = drawIndexedPrimitive;
+  if (legacyDiagnosticsEnabled()) {
+    table.pfnFlush = tracedLegacyDdi<flush>;
+    table.pfnDestroyDevice = tracedLegacyDdi<destroyDevice>;
+    table.pfnPresent = tracedLegacyDdi<present>;
+    table.pfnCreateResource = tracedLegacyDdi<createResource>;
+    table.pfnDestroyResource = tracedLegacyDdi<destroyResource>;
+    table.pfnSetRenderTarget = tracedLegacyDdi<setRenderTarget>;
+    table.pfnSetDepthStencil = tracedLegacyDdi<setDepthStencil>;
+    table.pfnClear = tracedLegacyDdi<clear>;
+    table.pfnColorFill = tracedLegacyDdi<colorFill>;
+    table.pfnBlt = tracedLegacyDdi<blt>;
+    table.pfnBufBlt = tracedLegacyDdi<bufferBlt>;
+    table.pfnLock = tracedLegacyDdi<lockResource>;
+    table.pfnUnlock = tracedLegacyDdi<unlockResource>;
+    table.pfnSetTexture = tracedLegacyDdi<setTexture>;
+    table.pfnSetTextureStageState = tracedLegacyDdi<setTextureStageState>;
+    table.pfnTexBlt = tracedLegacyDdi<texBlt>;
+    table.pfnCreateVertexShaderDecl = tracedLegacyDdi<createVertexDeclaration>;
+    table.pfnSetVertexShaderDecl = tracedLegacyDdi<setVertexDeclaration>;
+    table.pfnDeleteVertexShaderDecl = tracedLegacyDdi<destroyVertexDeclaration>;
+    table.pfnCreateVertexShaderFunc = tracedLegacyDdi<createVertexShader>;
+    table.pfnSetVertexShaderFunc = tracedLegacyDdi<setShader<ShaderStage::Vertex>>;
+    table.pfnDeleteVertexShaderFunc = tracedLegacyDdi<destroyShader<ShaderStage::Vertex>>;
+    table.pfnCreatePixelShader = tracedLegacyDdi<createPixelShader>;
+    table.pfnSetPixelShader = tracedLegacyDdi<setShader<ShaderStage::Pixel>>;
+    table.pfnDeletePixelShader = tracedLegacyDdi<destroyShader<ShaderStage::Pixel>>;
+    table.pfnSetVertexShaderConst = tracedLegacyDdi<vertexConstantsF>;
+    table.pfnSetPixelShaderConst = tracedLegacyDdi<pixelConstantsF>;
+    table.pfnSetVertexShaderConstI = tracedLegacyDdi<vertexConstantsI>;
+    table.pfnSetPixelShaderConstI = tracedLegacyDdi<pixelConstantsI>;
+    table.pfnSetVertexShaderConstB = tracedLegacyDdi<vertexConstantsB>;
+    table.pfnSetPixelShaderConstB = tracedLegacyDdi<pixelConstantsB>;
+    table.pfnSetRenderState = tracedLegacyDdi<setRenderState>;
+    table.pfnUpdateWInfo = tracedLegacyDdi<updateWInfo>;
+    table.pfnValidateDevice = tracedLegacyDdi<validateDevice>;
+    table.pfnSetTransform = tracedLegacyDdi<setTransform<D3DDDIARG_SETTRANSFORM, false>>;
+    table.pfnMultiplyTransform = tracedLegacyDdi<setTransform<D3DDDIARG_MULTIPLYTRANSFORM, true>>;
+    table.pfnSetMaterial = tracedLegacyDdi<setMaterial>;
+    table.pfnSetClipPlane = tracedLegacyDdi<setClipPlane>;
+    table.pfnCreateQuery = tracedLegacyDdi<createQuery>;
+    table.pfnIssueQuery = tracedLegacyDdi<issueQuery>;
+    table.pfnGetQueryData = tracedLegacyDdi<getQueryData>;
+    table.pfnDestroyQuery = tracedLegacyDdi<destroyQuery>;
+    table.pfnCreateLight = tracedLegacyDdi<createLight>;
+    table.pfnSetLight = tracedLegacyDdi<setLight>;
+    table.pfnDestroyLight = tracedLegacyDdi<destroyLight>;
+    table.pfnSetViewport = tracedLegacyDdi<setViewport>;
+    table.pfnSetZRange = tracedLegacyDdi<setZRange>;
+    table.pfnSetScissorRect = tracedLegacyDdi<setScissorRect>;
+    table.pfnSetStreamSourceUm = tracedLegacyDdi<setStreamSourceUm>;
+    table.pfnSetStreamSource = tracedLegacyDdi<setStreamSource>;
+    table.pfnSetStreamSourceFreq = tracedLegacyDdi<setStreamSourceFreq>;
+    table.pfnSetIndices = tracedLegacyDdi<setIndices>;
+    table.pfnDrawPrimitive = tracedLegacyDdi<drawPrimitive>;
+    table.pfnDrawIndexedPrimitive = tracedLegacyDdi<drawIndexedPrimitive>;
+  }
   {
     std::lock_guard<std::mutex> lock(devicesMutex);
     if (!nextHandle) return E_OUTOFMEMORY;

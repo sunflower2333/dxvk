@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <list>
 #include <mutex>
 #include <queue>
 
@@ -110,6 +111,8 @@ namespace dxvk {
     VkResult getLastError() const {
       return m_lastError.load();
     }
+
+    void recordCommandError(VkResult result);
     
     /**
      * \brief Submits a command list asynchronously
@@ -159,6 +162,11 @@ namespace dxvk {
      */
     void synchronize();
 
+    // Service completed entries when the runtime prohibits worker threads.
+    // Polls GPU timelines without waiting. Resource release callbacks may
+    // perform additional backend synchronization during retirement.
+    void pollCompletions();
+
     /**
      * \brief Synchronizes until a given condition becomes true
      *
@@ -167,6 +175,17 @@ namespace dxvk {
      */
     template<typename Pred>
     void synchronizeUntil(const Pred& pred) {
+      if (m_inline) {
+        std::unique_lock<dxvk::recursive_mutex> lock(m_inlineMutex);
+        while (!pred() && m_lastError.load() == VK_SUCCESS) {
+          if (!finishInline(true)) {
+            m_inlineCond.wait(lock, [&] {
+              return pred() || !m_inlineQueue.empty() || m_lastError.load() != VK_SUCCESS;
+            });
+          }
+        }
+        return;
+      }
       std::unique_lock<dxvk::mutex> lock(m_mutex);
       m_finishCond.wait(lock, pred);
     }
@@ -199,6 +218,7 @@ namespace dxvk {
     DxvkDevice*                 m_device;
     DxvkCheckpointBuffer*       m_checkpoints = nullptr;
     DxvkQueueCallback           m_callback;
+    const bool                  m_inline;
 
     DxvkTimelineSemaphores      m_semaphores;
     DxvkTimelineSemaphoreValues m_timelines;
@@ -220,6 +240,15 @@ namespace dxvk {
 
     dxvk::thread                m_submitThread;
     dxvk::thread                m_finishThread;
+
+    uint64_t m_inlineSubmitId = 0, m_inlinePresentId = 0;
+    dxvk::recursive_mutex m_inlineMutex;
+    std::condition_variable_any m_inlineCond;
+    std::list<DxvkSubmitEntry> m_inlineQueue;
+    void submitInline(DxvkSubmitEntry entry);
+    bool finishInline(bool wait);
+    void executeEntry(DxvkSubmitEntry& entry, uint64_t& trackedSubmitId, uint64_t& trackedPresentId);
+    bool finishEntry(DxvkSubmitEntry& entry, uint64_t timeout = ~0ull);
 
     void submitCmdLists();
 

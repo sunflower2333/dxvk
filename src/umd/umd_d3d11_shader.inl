@@ -225,8 +225,13 @@ void APIENTRY createGeometryStream11(D3D10DDI_HDEVICE h,
           || !signatureRange11(signature->pInputSignature, signature->NumInputSignatureEntries)) {
         device->error(E_INVALIDARG); return;
       }
+      // Null-GS SO consumes the upstream VS/DS registers. SYSTEM places
+      // these in the input signature, with no outputs for SO-only draws.
+      // The SO decoder expects the producer's output view of that signature.
+      const D3D10DDIARG_STAGE_IO_SIGNATURES upstream{nullptr, 0,
+        signature->pInputSignature, signature->NumInputSignatureEntries};
       std::vector<dxvk::umd::ShaderSignatureEntry> outputs;
-      if (!dxvk::umd::streamOutputPassthroughSignature(*signature, outputs)) {
+      if (!dxvk::umd::streamOutputPassthroughSignature(upstream, outputs)) {
         device->error(E_INVALIDARG); return;
       }
       Shader staged; staged.owner = device; staged.stage = dxvk::umd::ShaderStage::Geometry;
@@ -235,7 +240,7 @@ void APIENTRY createGeometryStream11(D3D10DDI_HDEVICE h,
       dxvk::umd::ShaderCode11 decoded;
       for (const auto& entry : outputs)
         decoded.outputs.push_back({entry.systemValue, entry.registerIndex, entry.mask, entry.scalar});
-      signatureOrdinals11(decoded.outputs, signature->pOutputSignature, signature->NumOutputSignatureEntries);
+      signatureOrdinals11(decoded.outputs, upstream.pOutputSignature, upstream.NumOutputSignatureEntries);
       std::vector<dxvk::umd::ShaderStreamDeclaration11> entries;
       for (UINT i = 0; i < stream->NumEntries; ++i) {
         const auto& entry = stream->pOutputStreamDecl[i];
